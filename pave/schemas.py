@@ -57,3 +57,74 @@ class CreateCollectionBody(BaseModel):
     """Optional API request body for collection creation."""
     embedder_type: str | None = None
     embed_model: str | None = None
+
+
+class CreateCollectionResponse(OkResponse):
+    """API response for collection creation."""
+    tenant: str
+    collection: str
+    embedder_type: str
+    embed_model: str
+
+
+class DeleteCollectionResponse(OkResponse):
+    """API response for collection deletion."""
+    tenant: str
+    deleted: str
+
+
+class RenameCollectionResponse(OkResponse):
+    """API response for collection rename."""
+    tenant: str
+    old_name: str
+    new_name: str
+
+
+class ListCollectionsResponse(OkResponse):
+    """API response for collection listing."""
+    tenant: str
+    collections: list[str]
+    count: int
+
+
+class ListTenantsResponse(OkResponse):
+    """API response for tenant listing."""
+    tenants: list[str]
+    count: int
+
+
+class IngestDocumentResponse(OkResponse):
+    """API response for document ingest."""
+    tenant: str
+    collection: str
+    docid: str
+    chunks: int
+
+
+class DeleteDocumentResponse(OkResponse):
+    """API response for document deletion."""
+    tenant: str
+    collection: str
+    docid: str
+    chunks_deleted: int
+
+
+class GetDocumentResponse(OkResponse):
+    """API response for document lookup."""
+    tenant: str
+    collection: str
+    docid: str
+    version: int
+    ingested_at: str
+    metadata: dict[str, Any]
+    chunk_ids: list[str]
+    chunk_count: int
+
+
+class RestoreArchiveResponse(OkResponse):
+    """API response for archive restore."""
+
+
+class ResetMetricsResponse(OkResponse):
+    """API response for metrics reset."""
+    reset_at: float

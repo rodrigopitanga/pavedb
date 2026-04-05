@@ -13,6 +13,11 @@ from starlette.background import BackgroundTask
 
 from pave.auth import AuthContext, auth_ctx
 from pave.metrics import inc, reset as metrics_reset
+from pave.schemas import (
+    ListTenantsResponse,
+    ResetMetricsResponse,
+    RestoreArchiveResponse,
+)
 from pave.service import (
     dump_archive as svc_dump_archive,
     list_tenants as svc_list_tenants,
@@ -70,6 +75,7 @@ def build_admin_router(cfg, error, resp) -> APIRouter:
 
     @router.put(
         "/admin/archive",
+        response_model=RestoreArchiveResponse,
         responses=resp(400, 401, 403, 500),
     )
     async def restore_archive(
@@ -98,6 +104,7 @@ def build_admin_router(cfg, error, resp) -> APIRouter:
 
     @router.delete(
         "/admin/metrics",
+        response_model=ResetMetricsResponse,
         responses=resp(401, 403),
     )
     def delete_metrics(
@@ -110,6 +117,7 @@ def build_admin_router(cfg, error, resp) -> APIRouter:
 
     @router.get(
         "/admin/tenants",
+        response_model=ListTenantsResponse,
         responses=resp(401, 403, 500),
     )
     def list_tenants(

@@ -8,7 +8,14 @@ from fastapi import APIRouter, Body, Depends, Request
 from pave.auth import AuthContext, tenant_rate_limit
 from pave.log import ops_event
 from pave.metrics import inc
-from pave.schemas import CreateCollectionBody, RenameCollectionBody
+from pave.schemas import (
+    CreateCollectionBody,
+    CreateCollectionResponse,
+    DeleteCollectionResponse,
+    ListCollectionsResponse,
+    RenameCollectionBody,
+    RenameCollectionResponse,
+)
 from pave.service import (
     create_collection as svc_create_collection,
     delete_collection as svc_delete_collection,
@@ -26,6 +33,7 @@ def build_collections_router(error, resp) -> APIRouter:
 
     @router.get(
         "/collections/{tenant}",
+        response_model=ListCollectionsResponse,
         responses=resp(401, 403, 429, 500),
     )
     @ops_event("list_collections", coll=None)
@@ -47,6 +55,7 @@ def build_collections_router(error, resp) -> APIRouter:
     @router.post(
         "/collections/{tenant}/{name}",
         status_code=201,
+        response_model=CreateCollectionResponse,
         responses=resp(400, 401, 403, 429, 500),
     )
     @ops_event("create_collection")
@@ -80,6 +89,7 @@ def build_collections_router(error, resp) -> APIRouter:
 
     @router.delete(
         "/collections/{tenant}/{name}",
+        response_model=DeleteCollectionResponse,
         responses=resp(401, 403, 429, 500),
     )
     @ops_event("delete_collection")
@@ -101,6 +111,7 @@ def build_collections_router(error, resp) -> APIRouter:
 
     @router.put(
         "/collections/{tenant}/{name}",
+        response_model=RenameCollectionResponse,
         responses=resp(400, 401, 403, 404, 409, 429, 500),
     )
     @ops_event(

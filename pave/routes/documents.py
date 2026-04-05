@@ -12,6 +12,11 @@ from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
 from pave.auth import AuthContext, tenant_rate_limit
 from pave.log import ops_event
 from pave.metrics import inc
+from pave.schemas import (
+    DeleteDocumentResponse,
+    GetDocumentResponse,
+    IngestDocumentResponse,
+)
 from pave.service import (
     ServiceError,
     delete_document as svc_delete_document,
@@ -30,6 +35,7 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
     @router.post(
         "/collections/{tenant}/{collection}/documents",
         status_code=201,
+        response_model=IngestDocumentResponse,
         responses=resp(400, 401, 403, 413, 429, 500, 503),
     )
     @ops_event(
@@ -142,6 +148,7 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
 
     @router.delete(
         "/collections/{tenant}/{collection}/documents/{docid}",
+        response_model=DeleteDocumentResponse,
         responses=resp(401, 403, 429, 500),
     )
     @ops_event("delete_doc", coll="collection", docid="docid")
@@ -164,6 +171,7 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
 
     @router.get(
         "/collections/{tenant}/{collection}/documents/{docid}",
+        response_model=GetDocumentResponse,
         responses=resp(401, 403, 404, 429, 500),
     )
     @ops_event("get_doc", coll="collection", docid="docid")
