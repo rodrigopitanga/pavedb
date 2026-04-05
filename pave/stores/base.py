@@ -4,7 +4,7 @@
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 import os
 from typing import Any
 
@@ -29,6 +29,29 @@ class SearchResult:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass
+class SearchOutput:
+    """Store-layer search output with matches and optional timing detail."""
+    matches: list[SearchResult]
+    timing: dict[str, float] = field(default_factory=dict)
+
+    def __iter__(self):
+        return iter(self.matches)
+
+    def __len__(self) -> int:
+        return len(self.matches)
+
+    def __getitem__(self, index):
+        return self.matches[index]
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, SearchOutput):
+            return self.matches == other.matches and self.timing == other.timing
+        if isinstance(other, list):
+            return self.matches == other
+        return NotImplemented
 
 
 class BaseStore(ABC):
@@ -75,8 +98,8 @@ class BaseStore(ABC):
 
     @abstractmethod
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
-               filters: dict[str, Any] | None = None) -> list[SearchResult]:
-        """Search for similar documents. Returns a list of SearchResult entries."""
+               filters: dict[str, Any] | None = None) -> SearchOutput:
+        """Search for similar documents."""
         ...
 
     def catalog_metrics(self) -> dict[str, int]:

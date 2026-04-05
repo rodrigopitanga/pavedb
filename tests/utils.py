@@ -11,7 +11,7 @@ from typing import Any
 
 import numpy as np
 
-from pave.stores.base import BaseStore, Record, SearchResult
+from pave.stores.base import BaseStore, Record, SearchOutput, SearchResult
 from pave.config import get_cfg
 
 
@@ -271,10 +271,10 @@ class DummyStore(BaseStore):
         return len(ids)
 
     def search(self, tenant: str, collection: str, text: str, k: int = 5,
-               filters: dict[str, Any] | None = None) -> list[SearchResult]:
+               filters: dict[str, Any] | None = None) -> SearchOutput:
         cat = os.path.join(self._dir(tenant, collection), "catalog.json")
         if not os.path.isfile(cat):
-            return []
+            return SearchOutput(matches=[])
         data = json.load(open(cat, "r", encoding="utf-8"))
         hits: list[SearchResult] = []
         for docid, ids in data.items():
@@ -283,7 +283,7 @@ class DummyStore(BaseStore):
                     id=cid, score=1.0, text=None, tenant=tenant,
                     collection=collection, meta={"docid": docid},
                     match_reason="matched"))
-        return hits
+        return SearchOutput(matches=hits)
 
     def dump_archive(
         self,
@@ -373,7 +373,7 @@ class SpyStore(BaseStore):
         )
 
     def search(self, tenant: str, collection: str, text: str, k: int = 5,
-               filters: dict[str, Any] | None = None) -> list[SearchResult]:
+               filters: dict[str, Any] | None = None) -> SearchOutput:
         self.calls.append(("search", tenant, collection, text, k, filters))
         return self.impl.search(tenant, collection, text, k, filters)
 

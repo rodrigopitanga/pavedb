@@ -15,6 +15,7 @@ from datetime import datetime, date, timezone as tz
 from pathlib import Path
 from threading import Lock
 from typing import Any
+import time as _time
 
 # Python 3.12 deprecated the default sqlite3 datetime adapters.
 # Register explicit ISO adapters so sqlite I/O doesn't warn.
@@ -29,6 +30,7 @@ from pave.stores.base import (
     BaseStore,
     MetadataValidationError,
     Record,
+    SearchOutput,
     SearchResult,
 )
 from pave.config import get_cfg, get_logger
@@ -592,7 +594,7 @@ class LocalStore(BaseStore):
         return chunk_count
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
-               filters: dict[str, Any] | None = None) -> list[SearchResult]:
+               filters: dict[str, Any] | None = None) -> SearchOutput:
         """
         Queries the FAISS backend for top-k and keeps overfetch inside the
         store.
@@ -601,6 +603,11 @@ class LocalStore(BaseStore):
         - FAISS search runs inside collection_lock
         - Meta read (get_meta_batch) runs OUTSIDE lock — WAL concurrent reads
         """
+        _perf = _time.perf_counter
+
+        def _ms_since(t0: float) -> float:
+            return round((_perf() - t0) * 1000, 2)
+
         kk = max(1, int(k))
 
         fetch_k = max(50, kk * 5)
@@ -619,24 +626,36 @@ class LocalStore(BaseStore):
             key = (tenant, collection)
             backend = self._emb[key]
             col_db = self._dbs.get(key)
+
+            t0 = _perf()
             q_vec = self._embedder.encode([query])[0]
+            embed_ms = _ms_since(t0)
+
+            t0 = _perf()
             raw = backend.search(q_vec, fetch_k)
             candidate_rids = [rid for rid, _ in raw if rid]
+            search_ms = _ms_since(t0)
 
+        filter_push_ms = 0.0
         if normed_filters and col_db is not None:
+            t0 = _perf()
             surviving = col_db.filter_by_meta(
                 candidate_rids,
                 normed_filters,
             )
             raw = [(rid, score) for rid, score in raw if rid in surviving]
             candidate_rids = [rid for rid, _score in raw if rid]
+            filter_push_ms = _ms_since(t0)
 
         # --- OUTSIDE lock: WAL meta read is concurrent ---
+        t0 = _perf()
         meta_batch = self._read_meta_batch_safe(tenant, collection, candidate_rids)
+        hydrate_meta_ms = _ms_since(t0)
 
         kept: list[tuple[str, float]] = []
         if normed_filters:
             log.debug(f"SEARCH-FILTER-POST: {normed_filters}")
+        t0 = _perf()
         for rid, score in raw:
             if not rid:
                 continue
@@ -645,8 +664,10 @@ class LocalStore(BaseStore):
                 kept.append((rid, score))
                 if len(kept) >= kk:
                     break
+        filter_post_ms = _ms_since(t0)
 
         out: list[SearchResult] = []
+        t0 = _perf()
         for rid, score in kept:
             txt = self._load_chunk_text(tenant, collection, rid)
             rid_meta = meta_batch.get(rid, {})
@@ -661,10 +682,19 @@ class LocalStore(BaseStore):
                     query, score, filters, rid_meta
                 ),
             ))
+        hydrate_text_ms = _ms_since(t0)
         _hits = [(r.id, round(r.score, 3)) for r in out[:3]]
         _sfx = " ..." if len(out) > 3 else ""
         log.debug(f"SEARCH-OUT: {len(out)} hits {_hits}{_sfx}")
-        return out
+        return SearchOutput(
+            matches=out,
+            timing={
+                "embed_ms": embed_ms,
+                "search_ms": search_ms,
+                "filter_ms": round(filter_push_ms + filter_post_ms, 2),
+                "hydrate_ms": round(hydrate_meta_ms + hydrate_text_ms, 2),
+            },
+        )
 
     def _build_match_reason(self, query: str, score: float,
                             filters: dict[str, Any] | None,
