@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 from pave.auth import AuthContext, auth_ctx
+from pave.log import ops_event
 from pave.metrics import inc, reset as metrics_reset
 from pave.schemas import (
     ListTenantsResponse,
@@ -26,7 +27,7 @@ from pave.service import (
 from pave.stores.base import BaseStore
 
 
-def build_admin_router(error, resp) -> APIRouter:
+def build_admin_router(error, resp, get_rid, trace) -> APIRouter:
     router = APIRouter()
 
     def current_store(request: Request) -> BaseStore:
@@ -37,25 +38,42 @@ def build_admin_router(error, resp) -> APIRouter:
         response_class=FileResponse,
         responses=resp(401, 403, 404, 500),
     )
+    @ops_event("dump_archive", coll=None, request_id="rid")
     async def dump_archive(
+        request: Request,
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
         if not ctx.is_admin:
-            return error(403, "admin_required", "admin access required")
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
 
         try:
             archive_path, tmp_dir = await run_in_threadpool(
                 svc_dump_archive, store
             )
         except FileNotFoundError:
-            return error(404, "data_dir_not_found", "data directory not found")
+            return error(
+                404,
+                "data_dir_not_found",
+                "data directory not found",
+                request=request,
+                request_id=rid,
+            )
         except Exception as exc:
             return error(
                 500,
                 "archive_dump_failed",
                 f"failed to dump archive: {exc}",
+                request=request,
+                request_id=rid,
             )
 
         filename = os.path.basename(archive_path)
@@ -78,28 +96,45 @@ def build_admin_router(error, resp) -> APIRouter:
         response_model=RestoreArchiveResponse,
         responses=resp(400, 401, 403, 500),
     )
+    @ops_event("restore_archive", coll=None, request_id="rid")
     async def restore_archive(
+        request: Request,
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
         file: UploadFile = File(...),
     ):
         inc("requests_total")
         if not ctx.is_admin:
-            return error(403, "admin_required", "admin access required")
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
 
         content = await file.read()
         try:
             out = await run_in_threadpool(
                 svc_restore_archive, store, content
             )
-            return out
+            return trace(out, request, request_id=rid)
         except ValueError as exc:
-            return error(400, "archive_invalid", str(exc))
+            return error(
+                400,
+                "archive_invalid",
+                str(exc),
+                request=request,
+                request_id=rid,
+            )
         except Exception as exc:
             return error(
                 500,
                 "archive_restore_failed",
                 f"failed to restore archive: {exc}",
+                request=request,
+                request_id=rid,
             )
 
     @router.delete(
@@ -107,33 +142,53 @@ def build_admin_router(error, resp) -> APIRouter:
         response_model=ResetMetricsResponse,
         responses=resp(401, 403),
     )
+    @ops_event("delete_metrics", coll=None, request_id="rid")
     def delete_metrics(
+        request: Request,
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(auth_ctx),
     ):
         inc("requests_total")
         if not ctx.is_admin:
-            return error(403, "admin_required", "admin access required")
-        return metrics_reset()
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
+        return trace(metrics_reset(), request, request_id=rid)
 
     @router.get(
         "/admin/tenants",
         response_model=ListTenantsResponse,
         responses=resp(401, 403, 500),
     )
+    @ops_event("list_tenants", coll=None, request_id="rid")
     def list_tenants(
+        request: Request,
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
         if not ctx.is_admin:
-            return error(403, "admin_required", "admin access required")
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
         result = svc_list_tenants(store)
         if not result.get("ok"):
             return error(
                 500,
                 result.get("code", "list_tenants_failed"),
                 result.get("error", "failed to list tenants"),
+                request=request,
+                request_id=rid,
             )
-        return result
+        return trace(result, request, request_id=rid)
 
     return router

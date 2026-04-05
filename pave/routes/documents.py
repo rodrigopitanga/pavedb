@@ -26,7 +26,7 @@ from pave.service import (
 from pave.stores.base import BaseStore
 
 
-def build_documents_router(cfg, error, resp) -> APIRouter:
+def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
     router = APIRouter()
 
     def current_store(request: Request) -> BaseStore:
@@ -47,6 +47,7 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
         chunks=lambda kw, r: (
             r.get("chunks") if isinstance(r, dict) and r.get("ok") else None
         ),
+        request_id="rid",
     )
     async def ingest_document(
         request: Request,
@@ -58,6 +59,7 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
         csv_has_header: str | None = Query(None, pattern="^(auto|yes|no)$"),
         csv_meta_cols: str | None = Query(None),
         csv_include_cols: str | None = Query(None),
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
@@ -71,6 +73,8 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
                     400,
                     "invalid_metadata_json",
                     f"invalid metadata json: {e}",
+                    request=request,
+                    request_id=rid,
                 )
 
         content = await file.read()
@@ -82,6 +86,8 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
                 413,
                 "file_too_large",
                 f"file exceeds the {int(max_mb)} MB limit",
+                request=request,
+                request_id=rid,
             )
 
         csv_opts = None
@@ -99,6 +105,8 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
                     503,
                     "ingest_overloaded",
                     "too many concurrent ingests, try again later",
+                    request=request,
+                    request_id=rid,
                 )
             request.app.state.active_ingests += 1
         try:
@@ -128,8 +136,10 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
                         status_map.get(code, 500),
                         code,
                         result.get("error", "failed to ingest document"),
+                        request=request,
+                        request_id=rid,
                     )
-                return result
+                return trace(result, request, request_id=rid)
             except ServiceError as exc:
                 code = exc.code
                 status_map = {
@@ -141,6 +151,8 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
                     status_map.get(code, 500),
                     code,
                     exc.message,
+                    request=request,
+                    request_id=rid,
                 )
         finally:
             if max_i > 0:
@@ -151,11 +163,18 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
         response_model=DeleteDocumentResponse,
         responses=resp(401, 403, 429, 500),
     )
-    @ops_event("delete_doc", coll="collection", docid="docid")
+    @ops_event(
+        "delete_doc",
+        coll="collection",
+        docid="docid",
+        request_id="rid",
+    )
     def delete_document(
+        request: Request,
         tenant: str,
         collection: str,
         docid: str,
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
@@ -166,19 +185,28 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
                 500,
                 result.get("code", "delete_document_failed"),
                 result.get("error", "failed to delete document"),
+                request=request,
+                request_id=rid,
             )
-        return result
+        return trace(result, request, request_id=rid)
 
     @router.get(
         "/collections/{tenant}/{collection}/documents/{docid}",
         response_model=GetDocumentResponse,
         responses=resp(401, 403, 404, 429, 500),
     )
-    @ops_event("get_doc", coll="collection", docid="docid")
+    @ops_event(
+        "get_doc",
+        coll="collection",
+        docid="docid",
+        request_id="rid",
+    )
     def get_document(
+        request: Request,
         tenant: str,
         collection: str,
         docid: str,
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
@@ -194,7 +222,9 @@ def build_documents_router(cfg, error, resp) -> APIRouter:
                 status_map.get(error_type, 500),
                 result.get("code", "get_document_failed"),
                 result.get("error", "failed to get document"),
+                request=request,
+                request_id=rid,
             )
-        return result
+        return trace(result, request, request_id=rid)
 
     return router

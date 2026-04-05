@@ -25,7 +25,7 @@ from pave.service import (
 from pave.stores.base import BaseStore
 
 
-def build_collections_router(error, resp) -> APIRouter:
+def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
     router = APIRouter()
 
     def current_store(request: Request) -> BaseStore:
@@ -36,9 +36,11 @@ def build_collections_router(error, resp) -> APIRouter:
         response_model=ListCollectionsResponse,
         responses=resp(401, 403, 429, 500),
     )
-    @ops_event("list_collections", coll=None)
+    @ops_event("list_collections", coll=None, request_id="rid")
     def list_collections(
+        request: Request,
         tenant: str,
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
@@ -49,8 +51,10 @@ def build_collections_router(error, resp) -> APIRouter:
                 500,
                 result.get("code", "list_collections_failed"),
                 result.get("error", "failed to list collections"),
+                request=request,
+                request_id=rid,
             )
-        return result
+        return trace(result, request, request_id=rid)
 
     @router.post(
         "/collections/{tenant}/{name}",
@@ -58,11 +62,13 @@ def build_collections_router(error, resp) -> APIRouter:
         response_model=CreateCollectionResponse,
         responses=resp(400, 401, 403, 429, 500),
     )
-    @ops_event("create_collection")
+    @ops_event("create_collection", request_id="rid")
     def create_collection(
+        request: Request,
         tenant: str,
         name: str,
         body: CreateCollectionBody | None = Body(None),
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
@@ -84,18 +90,22 @@ def build_collections_router(error, resp) -> APIRouter:
                 status_map.get(error_type, 500),
                 result.get("code", "create_collection_failed"),
                 result.get("error", "failed to create collection"),
+                request=request,
+                request_id=rid,
             )
-        return result
+        return trace(result, request, request_id=rid)
 
     @router.delete(
         "/collections/{tenant}/{name}",
         response_model=DeleteCollectionResponse,
         responses=resp(401, 403, 429, 500),
     )
-    @ops_event("delete_collection")
+    @ops_event("delete_collection", request_id="rid")
     def delete_collection(
+        request: Request,
         tenant: str,
         name: str,
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
@@ -106,8 +116,10 @@ def build_collections_router(error, resp) -> APIRouter:
                 500,
                 result.get("code", "delete_collection_failed"),
                 result.get("error", "failed to delete collection"),
+                request=request,
+                request_id=rid,
             )
-        return result
+        return trace(result, request, request_id=rid)
 
     @router.put(
         "/collections/{tenant}/{name}",
@@ -117,11 +129,14 @@ def build_collections_router(error, resp) -> APIRouter:
     @ops_event(
         "rename_collection",
         new_name=lambda kw, r: kw["body"].new_name,
+        request_id="rid",
     )
     def rename_collection(
+        request: Request,
         tenant: str,
         name: str,
         body: RenameCollectionBody,
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
@@ -140,7 +155,9 @@ def build_collections_router(error, resp) -> APIRouter:
                 status_code,
                 result.get("code", "rename_invalid"),
                 result.get("error", "failed to rename collection"),
+                request=request,
+                request_id=rid,
             )
-        return result
+        return trace(result, request, request_id=rid)
 
     return router

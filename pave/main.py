@@ -3,12 +3,13 @@
 
 from __future__ import annotations
 
-import argparse, asyncio, os, logging
+import argparse, asyncio, os, logging, time, uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 import uvicorn
 
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from pave.config import get_cfg, get_logger, reload_cfg
@@ -88,6 +89,16 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         description=cfg.get("instance.desc","Vector Search Microservice"),
         lifespan=lifespan,
     )
+
+    @app.middleware("http")
+    async def request_id_middleware(request: Request, call_next):
+        rid = request.headers.get("x-request-id") or str(uuid.uuid4())
+        request.state.request_id = rid
+        request.state.started_at = time.perf_counter()
+        response = await call_next(request)
+        response.headers["X-Request-ID"] = _get_request_id(request) or rid
+        return response
+
     app.state.store = LocalStore(
         data_dir=str(cfg.get("data_dir")),
         embedder=get_embedder(),
@@ -135,7 +146,63 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     ops_log.configure(cfg.get("log.ops_log"))
 
-    async def _do_search(fn):
+    def _get_request_id(request: Request) -> str | None:
+        return getattr(request.state, "request_id", None)
+
+    def _get_latency_ms(request: Request) -> float | None:
+        started = getattr(request.state, "started_at", None)
+        if started is None:
+            return None
+        return round((time.perf_counter() - started) * 1000, 2)
+
+    def _apply_trace_fields(
+        body: dict,
+        *,
+        request_id: str | None = None,
+        latency_ms: float | None = None,
+    ) -> dict:
+        if request_id is not None:
+            body["request_id"] = request_id
+        if latency_ms is not None:
+            body["latency_ms"] = latency_ms
+        return body
+
+    def _trace_body(
+        body: dict,
+        request: Request,
+        *,
+        request_id: str | None = None,
+    ) -> dict:
+        rid = request_id if request_id is not None else _get_request_id(request)
+        latency_ms = _get_latency_ms(request)
+        return _apply_trace_fields(
+            body,
+            request_id=rid,
+            latency_ms=latency_ms,
+        )
+
+    def _error(
+        status_code: int,
+        code: str,
+        message: str,
+        *,
+        request: Request | None = None,
+        request_id: str | None = None,
+        latency_ms: float | None = None,
+    ) -> JSONResponse:
+        if request is not None:
+            if request_id is None:
+                request_id = _get_request_id(request)
+            if latency_ms is None:
+                latency_ms = _get_latency_ms(request)
+        body = _apply_trace_fields(
+            {"ok": False, "code": code, "error": message},
+            request_id=request_id,
+            latency_ms=latency_ms,
+        )
+        return JSONResponse(body, status_code=status_code)
+
+    async def _do_search(fn, *, request: Request, request_id: str | None = None):
         """Concurrency gate + timeout wrapper for all search handlers."""
         timeout_s = app.state.search_timeout_s
         max_s = app.state.max_searches
@@ -145,6 +212,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 return _error(
                     503, "search_overloaded",
                     "too many concurrent searches, try again later",
+                    request=request,
+                    request_id=request_id,
                 )
             app.state.active_searches += 1
         try:
@@ -157,6 +226,12 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                     )
                 else:
                     result = await future
+                if isinstance(result, dict) and result.get("ok"):
+                    return _trace_body(
+                        result,
+                        request,
+                        request_id=request_id,
+                    )
                 return result
             except asyncio.TimeoutError:
                 # Thread keeps running; suppress its eventual result/exception.
@@ -166,9 +241,17 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 return _error(
                     503, "search_timeout",
                     f"search timed out after {int(timeout_s * 1000)}ms",
+                    request=request,
+                    request_id=request_id,
                 )
             except ServiceError as exc:
-                return _error(500, exc.code, exc.message)
+                return _error(
+                    500,
+                    exc.code,
+                    exc.message,
+                    request=request,
+                    request_id=request_id,
+                )
         finally:
             if max_s > 0:
                 app.state.active_searches -= 1
@@ -183,9 +266,32 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             code = "http_error"
             message = str(detail)
         return JSONResponse(
-            {"ok": False, "code": code, "error": message},
+            _apply_trace_fields(
+                {"ok": False, "code": code, "error": message},
+                request_id=_get_request_id(request),
+                latency_ms=_get_latency_ms(request),
+            ),
             status_code=exc.status_code,
             headers=exc.headers,
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(
+        request: Request,
+        exc: RequestValidationError,
+    ):
+        return JSONResponse(
+            _apply_trace_fields(
+                {
+                    "ok": False,
+                    "code": "validation_error",
+                    "error": "validation failed",
+                    "details": {"errors": exc.errors()},
+                },
+                request_id=_get_request_id(request),
+                latency_ms=_get_latency_ms(request),
+            ),
+            status_code=422,
         )
 
     # Initialize metrics persistence
@@ -193,17 +299,27 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     if data_dir:
         metrics_set_data_dir(data_dir)
 
-    def _error(status_code: int, code: str, message: str) -> JSONResponse:
-        return JSONResponse(
-            {"ok": False, "code": code, "error": message},
-            status_code=status_code,
-        )
-
-    app.include_router(build_health_router(cfg, VERSION))
-    app.include_router(build_admin_router(_error, _resp), prefix="/v1")
-    app.include_router(build_collections_router(_error, _resp), prefix="/v1")
-    app.include_router(build_documents_router(cfg, _error, _resp), prefix="/v1")
-    app.include_router(build_search_router(cfg, _do_search, _resp), prefix="/v1")
+    app.include_router(
+        build_health_router(cfg, VERSION, _trace_body),
+        prefix="",
+    )
+    app.include_router(
+        build_admin_router(_error, _resp, _get_request_id, _trace_body),
+        prefix="/v1",
+    )
+    app.include_router(
+        build_collections_router(_error, _resp, _get_request_id, _trace_body),
+        prefix="/v1",
+    )
+    app.include_router(
+        build_documents_router(
+            cfg, _error, _resp, _get_request_id, _trace_body),
+        prefix="/v1",
+    )
+    app.include_router(
+        build_search_router(cfg, _do_search, _resp, _get_request_id, _trace_body),
+        prefix="/v1",
+    )
 
     return app
 

@@ -6,7 +6,7 @@ from __future__ import annotations
 import functools
 import json
 
-from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from pave.auth import AuthContext, auth_ctx, tenant_rate_limit
 from pave.log import ops_event
@@ -16,7 +16,7 @@ from pave.service import search as svc_search
 from pave.stores.base import BaseStore
 
 
-def build_search_router(cfg, do_search, resp) -> APIRouter:
+def build_search_router(cfg, do_search, resp, get_rid, trace) -> APIRouter:
     router = APIRouter()
 
     def current_store(request: Request) -> BaseStore:
@@ -36,19 +36,22 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
             if getattr(r, "status_code", 400) < 400 else None
         ),
         request_id=lambda kw, r: (
-            kw["body"].request_id or kw.get("x_request_id")
+            kw["body"].request_id or kw.get("rid")
         ),
     )
     async def search_post(
+        request: Request,
         tenant: str,
         name: str,
         body: SearchBody,
-        x_request_id: str | None = Header(None, alias="X-Request-ID"),
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
-        request_id = body.request_id or x_request_id
+        request_id = body.request_id or rid
+        if request_id is not None:
+            request.state.request_id = request_id
         include_common = bool(cfg.common_enabled)
         return await do_search(
             functools.partial(
@@ -63,7 +66,9 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
                 common_tenant=cfg.common_tenant,
                 common_collection=cfg.common_collection,
                 request_id=request_id,
-            )
+            ),
+            request=request,
+            request_id=request_id,
         )
 
     @router.get(
@@ -79,14 +84,15 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
             len(json.loads(r.body).get("matches", []))
             if getattr(r, "status_code", 400) < 400 else None
         ),
-        request_id="x_request_id",
+        request_id="rid",
     )
     async def search_get(
+        request: Request,
         tenant: str,
         name: str,
         q: str = Query(...),
         k: int = Query(5, ge=1),
-        x_request_id: str | None = Header(None, alias="X-Request-ID"),
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
@@ -104,8 +110,10 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
                 include_common=include_common,
                 common_tenant=cfg.common_tenant,
                 common_collection=cfg.common_collection,
-                request_id=x_request_id,
-            )
+                request_id=rid,
+            ),
+            request=request,
+            request_id=rid,
         )
 
     @router.post(
@@ -114,26 +122,31 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
         responses=resp(401, 403, 500, 503),
     )
     async def search_common_post(
+        request: Request,
         body: SearchBody,
-        x_request_id: str | None = Header(None, alias="X-Request-ID"),
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
-        request_id = body.request_id or x_request_id
+        request_id = body.request_id or rid
+        if request_id is not None:
+            request.state.request_id = request_id
         if not cfg.common_enabled:
-            return {
-                "ok": True,
-                "matches": [],
-                "latency_ms": 0.0,
-                "timing": {
-                    "embed_ms": 0.0,
-                    "search_ms": 0.0,
-                    "filter_ms": 0.0,
-                    "hydrate_ms": 0.0,
+            return trace(
+                {
+                    "ok": True,
+                    "matches": [],
+                    "timing": {
+                        "embed_ms": 0.0,
+                        "search_ms": 0.0,
+                        "filter_ms": 0.0,
+                        "hydrate_ms": 0.0,
+                    },
                 },
-                "request_id": request_id,
-            }
+                request,
+                request_id=request_id,
+            )
         return await do_search(
             functools.partial(
                 svc_search,
@@ -144,7 +157,9 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
                 body.k,
                 filters=body.filters,
                 request_id=request_id,
-            )
+            ),
+            request=request,
+            request_id=request_id,
         )
 
     @router.get(
@@ -153,26 +168,29 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
         responses=resp(401, 403, 500, 503),
     )
     async def search_common_get(
+        request: Request,
         q: str = Query(...),
         k: int = Query(5, ge=1),
-        x_request_id: str | None = Header(None, alias="X-Request-ID"),
+        rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
         if not cfg.common_enabled:
-            return {
-                "ok": True,
-                "matches": [],
-                "latency_ms": 0.0,
-                "timing": {
-                    "embed_ms": 0.0,
-                    "search_ms": 0.0,
-                    "filter_ms": 0.0,
-                    "hydrate_ms": 0.0,
+            return trace(
+                {
+                    "ok": True,
+                    "matches": [],
+                    "timing": {
+                        "embed_ms": 0.0,
+                        "search_ms": 0.0,
+                        "filter_ms": 0.0,
+                        "hydrate_ms": 0.0,
+                    },
                 },
-                "request_id": x_request_id,
-            }
+                request,
+                request_id=rid,
+            )
         return await do_search(
             functools.partial(
                 svc_search,
@@ -182,8 +200,10 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
                 q,
                 k,
                 filters=None,
-                request_id=x_request_id,
-            )
+                request_id=rid,
+            ),
+            request=request,
+            request_id=rid,
         )
 
     return router

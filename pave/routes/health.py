@@ -13,7 +13,7 @@ from pave.metrics import inc, set_error, snapshot, to_prometheus
 from pave.stores.base import BaseStore
 
 
-def build_health_router(cfg, version: str) -> APIRouter:
+def build_health_router(cfg, version: str, trace) -> APIRouter:
     router = APIRouter()
 
     def current_store(request: Request) -> BaseStore:
@@ -61,19 +61,25 @@ def build_health_router(cfg, version: str) -> APIRouter:
         inc("requests_total")
         d = readiness_check(request)
         status = "ready" if d.get("ok") else "degraded"
-        return {"ok": d["ok"], "status": status, "version": version}
+        return trace(
+            {"ok": d["ok"], "status": status, "version": version},
+            request,
+        )
 
     @router.get("/health/live")
-    def health_live():
+    def health_live(request: Request):
         inc("requests_total")
-        return {"ok": True, "status": "live", "version": version}
+        return trace(
+            {"ok": True, "status": "live", "version": version},
+            request,
+        )
 
     @router.get("/health/ready")
     def health_ready(request: Request):
         inc("requests_total")
         d = readiness_check(request)
         code = 200 if d.get("ok") else 503
-        return JSONResponse(d, status_code=code)
+        return JSONResponse(trace(d, request), status_code=code)
 
     @router.get("/health/metrics")
     def health_metrics(
@@ -88,7 +94,7 @@ def build_health_router(cfg, version: str) -> APIRouter:
             **request.app.state.hw_info,
         }
         extra.update(store_metrics(store))
-        return snapshot(extra)
+        return trace(snapshot(extra), request)
 
     @router.get("/metrics")
     def metrics_prom(store: BaseStore = Depends(current_store)):
