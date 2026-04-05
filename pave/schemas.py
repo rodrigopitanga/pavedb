@@ -7,17 +7,21 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
-class ErrorResponse(BaseModel):
+class TraceResponse(BaseModel):
+    """Shared tracing metadata for JSON responses."""
+    request_id: str | None = None
+    latency_ms: float | None = None
+
+
+class ErrorResponse(TraceResponse):
     """API error envelope."""
     ok: Literal[False]
     code: str
     error: str
     details: dict[str, Any] | None = None
-    request_id: str | None = None
-    latency_ms: float | None = None
 
 
-class OkResponse(BaseModel):
+class OkResponse(TraceResponse):
     """Base success envelope."""
     ok: Literal[True] = True
 
@@ -48,12 +52,10 @@ class SearchTiming(BaseModel):
 class SearchResponse(OkResponse):
     """API response for search endpoints."""
     matches: list[SearchResult]
-    latency_ms: float | None = None
     timing: SearchTiming | None = Field(
         default=None,
         description="Per-phase latency breakdown",
     )
-    request_id: str | None = None
 
 
 class SearchBody(BaseModel):
