@@ -4,7 +4,7 @@
 """Pydantic schemas for API request/response validation."""
 
 from typing import Any, Literal
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ErrorResponse(BaseModel):
@@ -33,10 +33,26 @@ class SearchResult(BaseModel):
     match_reason: str
 
 
+class SearchTiming(BaseModel):
+    """Per-phase latency breakdown."""
+    embed_ms: float = Field(description="Query embedding time")
+    search_ms: float = Field(description="Vector search time")
+    filter_ms: float = Field(
+        description="Metadata filter time (pushdown + post-filter)"
+    )
+    hydrate_ms: float = Field(
+        description="Metadata and chunk text load time"
+    )
+
+
 class SearchResponse(OkResponse):
     """API response for search endpoints."""
     matches: list[SearchResult]
     latency_ms: float | None = None
+    timing: SearchTiming | None = Field(
+        default=None,
+        description="Per-phase latency breakdown",
+    )
     request_id: str | None = None
 
 

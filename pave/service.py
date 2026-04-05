@@ -23,7 +23,12 @@ from pave.metrics import (
     inc as m_inc, timed as m_timed, record_latency as m_record_latency
 )
 from pave.preprocess import preprocess
-from pave.stores.base import BaseStore, MetadataValidationError, SearchResult
+from pave.stores.base import (
+    BaseStore,
+    MetadataValidationError,
+    SearchOutput,
+    SearchResult,
+)
 
 log = get_logger()
 
@@ -102,6 +107,20 @@ def create_collection(
             "error": str(e),
             "error_type": "failed",
         }
+
+
+def _normalize_search_output(result: SearchOutput | list[SearchResult]) -> SearchOutput:
+    if isinstance(result, SearchOutput):
+        return result
+    return SearchOutput(matches=list(result))
+
+
+def _sum_timing(*timings: dict[str, float]) -> dict[str, float]:
+    keys = ("embed_ms", "search_ms", "filter_ms", "hydrate_ms")
+    return {
+        key: round(sum(timing.get(key, 0.0) for timing in timings), 2)
+        for key in keys
+    }
 
 def delete_collection(store, tenant: str, name: str) -> dict[str, Any]:
     try:
@@ -347,12 +366,13 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
     m_inc("search_total", 1.0)
     try:
         if include_common and common_tenant and common_collection:
-            matches: list[SearchResult] = []
-            matches.extend(store.search(
+            local = _normalize_search_output(store.search(
                 tenant, collection, q, max(10, k * 2), filters=filters))
-            matches.extend(store.search(
+            common = _normalize_search_output(store.search(
                 common_tenant, common_collection, q, max(10, k * 2),
                 filters=filters))
+            matches = list(local.matches) + list(common.matches)
+            timing = _sum_timing(local.timing, common.timing)
             from heapq import nlargest
             top = nlargest(k, matches, key=lambda x: x.score)
             m_inc("matches_total", float(len(top) or 0))
@@ -368,9 +388,13 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
                 "ok": True,
                 "matches": [r.to_dict() for r in top],
                 "latency_ms": latency_ms,
+                "timing": timing,
                 "request_id": request_id,
             }
-        top = store.search(tenant, collection, q, k, filters=filters)
+        result = _normalize_search_output(
+            store.search(tenant, collection, q, k, filters=filters)
+        )
+        top = result.matches
         m_inc("matches_total", float(len(top) or 0))
         latency_ms = round((_time.perf_counter() - start) * 1000, 2)
         m_record_latency("search", latency_ms)
@@ -384,6 +408,7 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
             "ok": True,
             "matches": [r.to_dict() for r in top],
             "latency_ms": latency_ms,
+            "timing": result.timing,
             "request_id": request_id,
         }
     except Exception as exc:

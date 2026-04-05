@@ -126,6 +126,12 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
                 "ok": True,
                 "matches": [],
                 "latency_ms": 0.0,
+                "timing": {
+                    "embed_ms": 0.0,
+                    "search_ms": 0.0,
+                    "filter_ms": 0.0,
+                    "hydrate_ms": 0.0,
+                },
                 "request_id": request_id,
             }
         return await do_search(
@@ -159,6 +165,12 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
                 "ok": True,
                 "matches": [],
                 "latency_ms": 0.0,
+                "timing": {
+                    "embed_ms": 0.0,
+                    "search_ms": 0.0,
+                    "filter_ms": 0.0,
+                    "hydrate_ms": 0.0,
+                },
                 "request_id": x_request_id,
             }
         return await do_search(
