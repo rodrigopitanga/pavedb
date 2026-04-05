@@ -7,7 +7,6 @@ import functools
 import json
 
 from fastapi import APIRouter, Depends, Header, Query, Request
-from fastapi.responses import JSONResponse
 
 from pave.auth import AuthContext, auth_ctx, tenant_rate_limit
 from pave.log import ops_event
@@ -69,6 +68,7 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
 
     @router.get(
         "/collections/{tenant}/{name}/search",
+        response_model=SearchResponse,
         responses=resp(401, 403, 429, 500, 503),
     )
     @ops_event(
@@ -110,6 +110,7 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
 
     @router.post(
         "/search",
+        response_model=SearchResponse,
         responses=resp(401, 403, 500, 503),
     )
     async def search_common_post(
@@ -121,13 +122,12 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
         inc("requests_total")
         request_id = body.request_id or x_request_id
         if not cfg.common_enabled:
-            return JSONResponse(
-                {
-                    "matches": [],
-                    "latency_ms": 0.0,
-                    "request_id": request_id,
-                }
-            )
+            return {
+                "ok": True,
+                "matches": [],
+                "latency_ms": 0.0,
+                "request_id": request_id,
+            }
         return await do_search(
             functools.partial(
                 svc_search,
@@ -143,6 +143,7 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
 
     @router.get(
         "/search",
+        response_model=SearchResponse,
         responses=resp(401, 403, 500, 503),
     )
     async def search_common_get(
@@ -154,13 +155,12 @@ def build_search_router(cfg, do_search, resp) -> APIRouter:
     ):
         inc("requests_total")
         if not cfg.common_enabled:
-            return JSONResponse(
-                {
-                    "matches": [],
-                    "latency_ms": 0.0,
-                    "request_id": x_request_id,
-                }
-            )
+            return {
+                "ok": True,
+                "matches": [],
+                "latency_ms": 0.0,
+                "request_id": x_request_id,
+            }
         return await do_search(
             functools.partial(
                 svc_search,

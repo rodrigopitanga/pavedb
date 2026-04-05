@@ -17,6 +17,11 @@ class ErrorResponse(BaseModel):
     latency_ms: float | None = None
 
 
+class OkResponse(BaseModel):
+    """Base success envelope."""
+    ok: Literal[True] = True
+
+
 class SearchResult(BaseModel):
     """API response item for search results."""
     id: str
@@ -28,7 +33,7 @@ class SearchResult(BaseModel):
     match_reason: str
 
 
-class SearchResponse(BaseModel):
+class SearchResponse(OkResponse):
     """API response for search endpoints."""
     matches: list[SearchResult]
     latency_ms: float | None = None

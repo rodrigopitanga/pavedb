@@ -365,6 +365,7 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
                 + (f" top=[{_t.id} {_t.score:.3f}] \"{(_t.text or '')[:60]}{'...' if len(_t.text or '') > 60 else ''}\"" if _t else "")
                 + (f" req={request_id}" if request_id else ""))
             return {
+                "ok": True,
                 "matches": [r.to_dict() for r in top],
                 "latency_ms": latency_ms,
                 "request_id": request_id,
@@ -380,6 +381,7 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
             + (f" top=[{_t.id} {_t.score:.3f}] \"{(_t.text or '')[:60]}{'...' if len(_t.text or '') > 60 else ''}\"" if _t else "")
             + (f" req={request_id}" if request_id else ""))
         return {
+            "ok": True,
             "matches": [r.to_dict() for r in top],
             "latency_ms": latency_ms,
             "request_id": request_id,

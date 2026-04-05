@@ -157,7 +157,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                     )
                 else:
                     result = await future
-                return JSONResponse(result)
+                return result
             except asyncio.TimeoutError:
                 # Thread keeps running; suppress its eventual result/exception.
                 future.add_done_callback(
