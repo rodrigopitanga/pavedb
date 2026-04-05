@@ -134,17 +134,17 @@ reuse the bearer token exported earlier:
 ```bash
 # create collection
 curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
-  -X POST http://localhost:8086/collections/demo/books
+  -X POST http://localhost:8086/v1/collections/demo/books
 
 # ingest document
 curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
-  -X POST http://localhost:8086/collections/demo/books/documents \
+  -X POST http://localhost:8086/v1/collections/demo/books/documents \
   -F "file=@20k_leagues.txt" \
   -F 'metadata={"lang":"en"}'
 
 # run search
 curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
-  "http://localhost:8086/collections/demo/books/search?q=captain+nemo&k=3"
+  "http://localhost:8086/v1/collections/demo/books/search?q=captain+nemo&k=3"
 ```
 
 Every hit comes back with provenance you can trace, plus latency
@@ -176,7 +176,7 @@ and request id for observability:
 
 The Swagger UI is available at `http://localhost:8086/`.
 
-Health and metrics endpoints are available at `/health` and `/metrics`.
+Health and metrics endpoints are available at `/health` and `/health/metrics`.
 
 Runtime options are also accepted via the `PATCHVEC_*` environment variable scheme
 (`PATCHVEC_SERVER__PORT`, `PATCHVEC_AUTH__MODE`, etc.), which precedes config files.
@@ -205,12 +205,12 @@ Delete by ID then ingest (REST path example):
 
 ```bash
 curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
-  -X DELETE http://localhost:8086/collections/demo/books/documents/verne-20k
+  -X DELETE http://localhost:8086/v1/collections/demo/books/documents/verne-20k
 
 # make changes
 
 curl -H "Authorization: Bearer $PATCHVEC_GLOBAL_KEY" \
-  -X POST http://localhost:8086/collections/demo/books/documents \
+  -X POST http://localhost:8086/v1/collections/demo/books/documents \
   -F "file=@demo/20k_leagues.txt" \
   -F 'docid=verne-20k'
 ```

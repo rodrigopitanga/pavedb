@@ -200,10 +200,10 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         )
 
     app.include_router(build_health_router(cfg, VERSION))
-    app.include_router(build_admin_router(cfg, _error, _resp))
-    app.include_router(build_collections_router(_error, _resp))
-    app.include_router(build_documents_router(cfg, _error, _resp))
-    app.include_router(build_search_router(cfg, _do_search, _resp))
+    app.include_router(build_admin_router(_error, _resp), prefix="/v1")
+    app.include_router(build_collections_router(_error, _resp), prefix="/v1")
+    app.include_router(build_documents_router(cfg, _error, _resp), prefix="/v1")
+    app.include_router(build_search_router(cfg, _do_search, _resp), prefix="/v1")
 
     return app
 

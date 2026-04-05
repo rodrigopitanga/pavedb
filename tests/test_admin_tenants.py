@@ -18,7 +18,7 @@ def _mk_collection(store, base: Path, tenant: str, collection: str) -> None:
 def test_admin_list_tenants_sorted(client, temp_data_dir):
     _mk_collection(client.app.state.store.impl, Path(temp_data_dir), "beta", "docs")
     _mk_collection(client.app.state.store.impl, Path(temp_data_dir), "alpha", "docs")
-    r = client.get("/admin/tenants")
+    r = client.get("/v1/admin/tenants")
     assert r.status_code == 200
     data = r.json()
     assert data["ok"] is True
@@ -41,9 +41,9 @@ def test_admin_list_tenants_requires_admin(tmp_path):
     client = TestClient(app)
     app.state.store.create_collection("acme", "docs")
 
-    r = client.get("/admin/tenants")
+    r = client.get("/v1/admin/tenants")
     assert r.status_code == 401
 
-    r = client.get("/admin/tenants", headers={"Authorization": "Bearer sekret"})
+    r = client.get("/v1/admin/tenants", headers={"Authorization": "Bearer sekret"})
     assert r.status_code == 200
     assert r.json()["tenants"] == ["acme"]

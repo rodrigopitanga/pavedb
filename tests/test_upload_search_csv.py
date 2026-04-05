@@ -9,14 +9,14 @@ pytestmark = pytest.mark.slow
 
 def test_upload_csv_and_search(client):
     # create collection
-    client.post("/collections/acme/csvs")
+    client.post("/v1/collections/acme/csvs")
 
     # CSV with header + 2 rows
     csv_bytes = b"id,name,qty\n1,banana,3\n2,abacaxi,7\n"
     files = {"file": ("items.csv", csv_bytes, "text/csv")}
     data = {"docid": "DOC-CSV"}
 
-    r = client.post("/collections/acme/csvs/documents", files=files, data=data)
+    r = client.post("/v1/collections/acme/csvs/documents", files=files, data=data)
     assert r.status_code == 201, r.text
     out = r.json()
     assert out["ok"] is True
@@ -25,14 +25,14 @@ def test_upload_csv_and_search(client):
 
     # POST search with filters by docid — should find "banana"
     body = {"q": "banana", "k": 5, "filters": {"docid": "DOC-CSV"}}
-    s = client.post("/collections/acme/csvs/search", json=body)
+    s = client.post("/v1/collections/acme/csvs/search", json=body)
     assert s.status_code == 200
     texts = " ".join(m.get("text") or "" for m in s.json()["matches"])
     assert "banana" in texts.lower()
 
     # GET search (no filters)
     s2 = client.get(
-        "/collections/acme/csvs/search",
+        "/v1/collections/acme/csvs/search",
         params={"q": "abacaxi", "k": 5}
     )
     assert s2.status_code == 200

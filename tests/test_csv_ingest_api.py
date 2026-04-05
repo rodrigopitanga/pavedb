@@ -3,10 +3,10 @@
 
 
 def test_api_invalid_csv_options_returns_code(client):
-    client.post("/collections/acme/csvbad")
+    client.post("/v1/collections/acme/csvbad")
     files = {"file": ("bad.csv", b"a,b\n1,2\n", "text/csv")}
     r = client.post(
-        "/collections/acme/csvbad/documents",
+        "/v1/collections/acme/csvbad/documents",
         files=files,
         params={
             "csv_has_header": "no",
@@ -21,10 +21,10 @@ def test_api_invalid_csv_options_returns_code(client):
 
 
 def test_api_invalid_metadata_keys_returns_code(client):
-    client.post("/collections/acme/metabad")
+    client.post("/v1/collections/acme/metabad")
     files = {"file": ("bad.txt", b"hello world\n", "text/plain")}
     r = client.post(
-        "/collections/acme/metabad/documents",
+        "/v1/collections/acme/metabad/documents",
         files=files,
         data={"metadata": '{"doc id":"shadow-docid"}'},
     )

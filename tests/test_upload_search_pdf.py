@@ -8,7 +8,7 @@ pytestmark = pytest.mark.slow
 
 def test_upload_pdf_and_search(client):
     # create collection
-    client.post("/collections/acme/pdfs")
+    client.post("/v1/collections/acme/pdfs")
 
     # Minimal 1-page PDF (no visible text). Still yields one chunk per page.
     pdf_bytes = (
@@ -24,7 +24,7 @@ def test_upload_pdf_and_search(client):
     files = {"file": ("blank.pdf", pdf_bytes, "application/pdf")}
     data = {"docid": "DOC-PDF"}
 
-    r = client.post("/collections/acme/pdfs/documents", files=files, data=data)
+    r = client.post("/v1/collections/acme/pdfs/documents", files=files, data=data)
     assert r.status_code == 201, r.text
     out = r.json()
     assert out["ok"] is True
@@ -32,11 +32,11 @@ def test_upload_pdf_and_search(client):
 
     # POST search (filters by docid). DummyStore returns results even when text doesn't match.
     body = {"q": "anything", "k": 5, "filters": {"docid": "DOC-PDF"}}
-    s = client.post("/collections/acme/pdfs/search", json=body)
+    s = client.post("/v1/collections/acme/pdfs/search", json=body)
     assert s.status_code == 200
     assert len(s.json()["matches"]) >= 1
 
     # GET search (no filters)
-    s2 = client.get("/collections/acme/pdfs/search", params={"q": "anything", "k": 5})
+    s2 = client.get("/v1/collections/acme/pdfs/search", params={"q": "anything", "k": 5})
     assert s2.status_code == 200
     assert len(s2.json()["matches"]) >= 1

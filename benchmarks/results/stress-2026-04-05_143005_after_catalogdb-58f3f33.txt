@@ -1,0 +1,35 @@
+==> Benchmark: stress
+    ts        : 2026-04-05 14:32:56 UTC
+    runner    : rodrigo@cylons  |  x86_64, 4 cores, 16.3 GB RAM
+    server    : http://127.0.0.1:18086  v0.5.9  store=faiss
+    server hw : x86_64  4 cores  16.3 GB RAM  (Linux 6.18.3-gnu-parabola1-2)
+
+Seeding initial collections...
+Seeded 3 collections with 3 docs each.
+Running stress test for 90s with concurrency=8...
+
+Cleaning up...
+
+==============================================================================================
+  STRESS TEST RESULTS  (90.5s elapsed)
+==============================================================================================
+  Total operations : 2295
+  Throughput       : 25.4 ops/s
+  Total errors     : 0  (0.0%)
+
+Operation               Count     OK     Err (%)       Min       p50       p95       p99       Max
+--------------------------------------------------------------------------------------------------
+archive_download           23     23    0 (0.0%)    284.0ms   1283.7ms   2223.7ms   2337.4ms   2368.7ms
+archive_restore            16     16    0 (0.0%)    639.8ms   1678.8ms   2808.7ms   3169.2ms   3259.3ms
+collection_create         104    104    0 (0.0%)      8.2ms     52.6ms   1453.2ms   1889.4ms   2055.7ms
+collection_delete          51     51    0 (0.0%)      6.1ms     33.9ms    628.4ms    953.0ms    975.1ms
+doc_delete                136    136    0 (0.0%)      4.0ms     28.6ms    622.7ms   1062.6ms   1364.0ms
+health                     44     44    0 (0.0%)      3.6ms     27.7ms   1286.0ms   1445.1ms   1500.3ms
+health_live                83     83    0 (0.0%)      2.2ms      6.4ms     17.7ms     24.9ms     38.4ms
+health_metrics             27     27    0 (0.0%)      7.1ms     55.1ms    252.4ms    270.7ms    273.2ms
+health_ready               29     29    0 (0.0%)      3.8ms     20.9ms   1135.8ms   1236.8ms   1268.2ms
+ingest_chunked            117    117    0 (0.0%)    585.8ms   1204.4ms   1831.5ms   2243.5ms   2610.5ms
+ingest_small              307    307    0 (0.0%)     29.0ms    158.5ms   1037.4ms   1545.8ms   2132.3ms
+search                   1358   1358    0 (0.0%)     23.0ms    150.4ms    971.1ms   1483.6ms   2143.2ms
+--------------------------------------------------------------------------------------------------
+

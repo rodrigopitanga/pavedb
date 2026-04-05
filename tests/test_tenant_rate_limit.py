@@ -16,7 +16,7 @@ def test_tenant_rate_limited_returns_429(app, monkeypatch):
 
     c = TestClient(app)
     r = c.post(
-        "/collections/acme/rlcol/search",
+        "/v1/collections/acme/rlcol/search",
         json={"q": "x", "k": 1},
         headers={"Authorization": "Bearer acmetoken"},
     )
@@ -35,9 +35,9 @@ def test_admin_bypasses_tenant_limit(app, monkeypatch):
     monkeypatch.setitem(app.state.tenant_active, "acme", 1)
 
     c = TestClient(app)
-    c.post("/collections/acme/adminbypass")
+    c.post("/v1/collections/acme/adminbypass")
     r = c.post(
-        "/collections/acme/adminbypass/search",
+        "/v1/collections/acme/adminbypass/search",
         json={"q": "x", "k": 1},
     )
     # Admin bypasses the rate limit; must not be 429.
@@ -58,7 +58,7 @@ def test_unconfigured_tenant_uses_default(app, monkeypatch):
 
     c = TestClient(app)
     r = c.post(
-        "/collections/acme/rlcol2/search",
+        "/v1/collections/acme/rlcol2/search",
         json={"q": "x", "k": 1},
         headers={"Authorization": "Bearer acmetoken"},
     )
@@ -82,7 +82,7 @@ def test_unconfigured_tenant_no_default_unlimited(app, monkeypatch):
 
     c = TestClient(app)
     r = c.post(
-        "/collections/acme/unlimited_rl/search",
+        "/v1/collections/acme/unlimited_rl/search",
         json={"q": "x", "k": 1},
         headers={"Authorization": "Bearer acmetoken"},
     )

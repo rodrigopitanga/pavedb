@@ -1,0 +1,36 @@
+==> Benchmark: search_latency
+    ts        : 2026-04-05 14:32:09 UTC
+    runner    : rodrigo@cylons  |  x86_64, 4 cores, 16.3 GB RAM
+    server    : http://127.0.0.1:18086  v0.5.9  store=faiss
+    server hw : x86_64  4 cores  16.3 GB RAM  (Linux 6.18.3-gnu-parabola1-2)
+
+Setting up collection bench/lat_1775399529...
+Indexed 10 documents.
+Running 1200 queries with concurrency=42...
+
+==============================================================================================
+  SEARCH LATENCY RESULTS  (25.1s elapsed)
+==============================================================================================
+  Total queries  : 1200
+  Total hits     : 1440
+  Throughput     : 47.8 ops/s
+  Concurrency    : 42
+  Errors         : 0 (0.0%)
+
+Operation               Count     OK     Hits     Err (%)       Min       p50       p95       p99       Max
+-----------------------------------------------------------------------------------------------------------
+search_mixed             1200   1200     1440    0 (0.0%)    111.1ms    865.4ms    891.3ms    899.0ms    987.7ms
+-----------------------------------------------------------------------------------------------------------
+
+Sample results:
+  q: "machine learning artificial intelligence"
+     [doc1::chunk_0  0.697]  Machine learning is a subset of artificial intelligence that enables systems to learn from...
+     [doc3::chunk_0  0.401]  Deep learning uses neural networks with many layers to model complex patterns.
+  q: "neural networks deep learning"
+     [doc4::chunk_0  0.217]  Vector databases store embeddings for efficient similarity search operations.
+     [doc7::chunk_0  0.212]  Embeddings represent text as dense vectors in high-dimensional space.
+  q: "semantic meaning search"
+     [doc10::chunk_0  0.203]  Fine-tuning adapts pre-trained models to specific domains and tasks.
+
+
+Cleaned up collection bench/lat_1775399529

@@ -8,43 +8,43 @@ pytestmark = pytest.mark.slow
 
 
 def test_upload_txt_and_search_post_get(client):
-    client.post("/collections/acme/txts")
+    client.post("/v1/collections/acme/txts")
     content = b"hello world\nthis is a test of patchvec"
     files = {"file": ("sample.txt", content, "text/plain")}
     data = {"docid": "DOC-TXT", "metadata": json.dumps({"lang": "pt"})}
-    r = client.post("/collections/acme/txts/documents", files=files, data=data)
+    r = client.post("/v1/collections/acme/txts/documents", files=files, data=data)
     assert r.status_code == 201
 
     # GET without filters
-    s2 = client.get("/collections/acme/txts/search",
+    s2 = client.get("/v1/collections/acme/txts/search",
                     params={"q": "patchvec", "k": 3})
     print(s2.status_code, s2.json())
     assert s2.status_code == 200 and len(s2.json()["matches"]) >= 1
 
     # POST without filters
     body = {"q": "world", "k": 5}
-    s = client.post("/collections/acme/txts/search", json=body)
+    s = client.post("/v1/collections/acme/txts/search", json=body)
     print(s.status_code, s.json())
     assert s.status_code == 200 and len(s.json()["matches"]) >= 1
 
     # POST with filters
     body = {"q": "world", "k": 5, "filters": {"docid": "DOC-TXT"}}
-    s = client.post("/collections/acme/txts/search", json=body)
+    s = client.post("/v1/collections/acme/txts/search", json=body)
     print(s.status_code, s.json())
     assert s.status_code == 200 and len(s.json()["matches"]) >= 1
 
 def test_reupload_same_docid_calls_purge_and_reindexes(client):
-    client.post("/collections/acme/reup")
+    client.post("/v1/collections/acme/reup")
     store = client.app.state.store
     # first upload
-    r1 = client.post("/collections/acme/reup/documents",
+    r1 = client.post("/v1/collections/acme/reup/documents",
                      files={"file":
                             ("a.txt", b"alpha bravo charlie", "text/plain")},
                      data={"docid": "R-42"})
     assert r1.status_code == 201
 
     # second upload with same docid -> must call purge
-    r2 = client.post("/collections/acme/reup/documents",
+    r2 = client.post("/v1/collections/acme/reup/documents",
                      files={"file":
                             ("a.txt", b"delta echo foxtrot", "text/plain")},
                      data={"docid": "R-42"})
@@ -53,7 +53,7 @@ def test_reupload_same_docid_calls_purge_and_reindexes(client):
 
     # confirm only new content appears
     s = client.post(
-        "/collections/acme/reup/search",
+        "/v1/collections/acme/reup/search",
         json={"q": "delta", "k": 5,"filters": {"docid": "R-42"}}
     )
     assert s.status_code == 200
@@ -62,17 +62,17 @@ def test_reupload_same_docid_calls_purge_and_reindexes(client):
 
 
 def test_upload_diff_docid_same_coll(client):
-    client.post("/collections/acme/acoll")
+    client.post("/v1/collections/acme/acoll")
     store = client.app.state.store
     # first upload
-    r1 = client.post("/collections/acme/acoll/documents",
+    r1 = client.post("/v1/collections/acme/acoll/documents",
                      files={"file":
                             ("a.txt", b"pareciam estar sentados", "text/plain")},
                      data={"docid": "D-41"})
     assert r1.status_code == 201
 
     s0 = client.post(
-        "/collections/acme/acoll/search",
+        "/v1/collections/acme/acoll/search",
         json={"q": "pareciam", "k": 5}
     )
     assert s0.status_code == 200
@@ -85,7 +85,7 @@ def test_upload_diff_docid_same_coll(client):
     assert "foxtrot" not in text0.lower() and "pareciam" in text0.lower()
 
     # second upload with different docid -> must NOT call purge
-    r2 = client.post("/collections/acme/acoll/documents",
+    r2 = client.post("/v1/collections/acme/acoll/documents",
                      files={"file":
                             ("b.txt", b"delta echo foxtrot", "text/plain")},
                      data={"docid": "D-42"})
@@ -96,7 +96,7 @@ def test_upload_diff_docid_same_coll(client):
 
     # confirm new content appears
     s2 = client.post(
-        "/collections/acme/acoll/search",
+        "/v1/collections/acme/acoll/search",
         json={"q": "delta", "k": 5}
     )
     assert s2.status_code == 200
@@ -110,7 +110,7 @@ def test_upload_diff_docid_same_coll(client):
 
     # confirm preexisting content still appears
     s1 = client.post(
-        "/collections/acme/acoll/search",
+        "/v1/collections/acme/acoll/search",
         json={"q": "sentados", "k": 5}
     )
     assert s1.status_code == 200

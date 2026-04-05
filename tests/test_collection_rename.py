@@ -7,12 +7,12 @@ import pytest
 def test_rename_collection_basic(client):
     """Basic rename: collection data stays intact after rename."""
     # Create and populate collection
-    r = client.post("/collections/acme/invoices")
+    r = client.post("/v1/collections/acme/invoices")
     assert r.status_code == 201 and r.json()["ok"] is True
 
     # Upload a document
     r = client.post(
-        "/collections/acme/invoices/documents",
+        "/v1/collections/acme/invoices/documents",
         files={"file": ("test.txt", b"Captain Nemo submarine voyage", "text/plain")},
         data={"docid": "verne"},
     )
@@ -20,7 +20,7 @@ def test_rename_collection_basic(client):
 
     # Search before rename
     r = client.post(
-        "/collections/acme/invoices/search",
+        "/v1/collections/acme/invoices/search",
         json={"q": "submarine", "k": 2},
     )
     assert r.status_code == 200
@@ -29,7 +29,7 @@ def test_rename_collection_basic(client):
 
     # Rename collection
     r = client.put(
-        "/collections/acme/invoices",
+        "/v1/collections/acme/invoices",
         json={"new_name": "bills"},
     )
     assert r.status_code == 200
@@ -40,7 +40,7 @@ def test_rename_collection_basic(client):
 
     # Search under new name returns same results
     r = client.post(
-        "/collections/acme/bills/search",
+        "/v1/collections/acme/bills/search",
         json={"q": "submarine", "k": 2},
     )
     assert r.status_code == 200
@@ -49,7 +49,7 @@ def test_rename_collection_basic(client):
 
     # Old name should no longer work (collection doesn't exist)
     r = client.post(
-        "/collections/acme/invoices/search",
+        "/v1/collections/acme/invoices/search",
         json={"q": "submarine", "k": 2},
     )
     # This should return empty results (fresh empty collection created on access)
@@ -60,7 +60,7 @@ def test_rename_collection_basic(client):
 def test_rename_nonexistent_collection(client):
     """Rename non-existent collection should fail with 404."""
     r = client.put(
-        "/collections/acme/nonexistent",
+        "/v1/collections/acme/nonexistent",
         json={"new_name": "something"},
     )
     assert r.status_code == 404
@@ -72,11 +72,11 @@ def test_rename_nonexistent_collection(client):
 def test_rename_to_same_name(client):
     """Rename to same name should fail with 400."""
     # Create collection first
-    r = client.post("/collections/acme/samename")
+    r = client.post("/v1/collections/acme/samename")
     assert r.status_code == 201
 
     r = client.put(
-        "/collections/acme/samename",
+        "/v1/collections/acme/samename",
         json={"new_name": "samename"},
     )
     assert r.status_code == 400
@@ -88,15 +88,15 @@ def test_rename_to_same_name(client):
 def test_rename_collision_sequence(client):
     """Collision test: rename to existing name should fail gracefully."""
     # 1. Create two collections: foo and bar
-    r = client.post("/collections/acme/foo")
+    r = client.post("/v1/collections/acme/foo")
     assert r.status_code == 201 and r.json()["ok"] is True
 
-    r = client.post("/collections/acme/bar")
+    r = client.post("/v1/collections/acme/bar")
     assert r.status_code == 201 and r.json()["ok"] is True
 
     # 2. Rename bar -> foo (should fail - foo exists)
     r = client.put(
-        "/collections/acme/bar",
+        "/v1/collections/acme/bar",
         json={"new_name": "foo"},
     )
     assert r.status_code == 409
@@ -105,24 +105,24 @@ def test_rename_collision_sequence(client):
     assert "already exists" in data["error"]
 
     # 3. Delete foo
-    r = client.delete("/collections/acme/foo")
+    r = client.delete("/v1/collections/acme/foo")
     assert r.status_code == 200
 
     # 4. Now rename bar -> foo (should succeed)
     r = client.put(
-        "/collections/acme/bar",
+        "/v1/collections/acme/bar",
         json={"new_name": "foo"},
     )
     assert r.status_code == 200
     assert r.json()["ok"] is True
 
     # 5. Create new bar
-    r = client.post("/collections/acme/bar")
+    r = client.post("/v1/collections/acme/bar")
     assert r.status_code == 201 and r.json()["ok"] is True
 
     # 6. Try to rename bar -> foo again (should fail)
     r = client.put(
-        "/collections/acme/bar",
+        "/v1/collections/acme/bar",
         json={"new_name": "foo"},
     )
     assert r.status_code == 409

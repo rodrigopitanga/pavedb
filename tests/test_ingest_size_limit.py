@@ -3,12 +3,12 @@
 
 
 def test_ingest_rejects_oversized_file(client, cfg):
-    client.post("/collections/acme/sizelimit")
+    client.post("/v1/collections/acme/sizelimit")
 
     cfg.set("ingest.max_file_size_mb", 0.000001)  # ~1 byte limit
 
     files = {"file": ("big.txt", b"hello world", "text/plain")}
-    r = client.post("/collections/acme/sizelimit/documents", files=files)
+    r = client.post("/v1/collections/acme/sizelimit/documents", files=files)
 
     assert r.status_code == 413
     data = r.json()
@@ -17,22 +17,22 @@ def test_ingest_rejects_oversized_file(client, cfg):
 
 
 def test_ingest_accepts_file_within_limit(client, cfg):
-    client.post("/collections/acme/sizelimit2")
+    client.post("/v1/collections/acme/sizelimit2")
 
     cfg.set("ingest.max_file_size_mb", 100)
 
     files = {"file": ("small.txt", b"hello world", "text/plain")}
-    r = client.post("/collections/acme/sizelimit2/documents", files=files)
+    r = client.post("/v1/collections/acme/sizelimit2/documents", files=files)
 
     assert r.status_code == 201
 
 
 def test_ingest_no_limit_when_zero(client, cfg):
-    client.post("/collections/acme/sizelimit3")
+    client.post("/v1/collections/acme/sizelimit3")
 
     cfg.set("ingest.max_file_size_mb", 0)  # 0 = unlimited
 
     files = {"file": ("any.txt", b"hello world", "text/plain")}
-    r = client.post("/collections/acme/sizelimit3/documents", files=files)
+    r = client.post("/v1/collections/acme/sizelimit3/documents", files=files)
 
     assert r.status_code == 201

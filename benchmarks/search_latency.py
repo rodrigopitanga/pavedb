@@ -35,6 +35,8 @@ except ImportError:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import print_run_header  # type: ignore[import]  # noqa: E402
 
+API_PREFIX = "/v1"
+
 SAMPLE_DOCS = [
     (
         "doc1",
@@ -181,7 +183,7 @@ async def setup_collection(
     """Create collection and index sample documents."""
     resp = await _post_with_retries(
         client,
-        f"/collections/{tenant}/{collection}",
+        f"{API_PREFIX}/collections/{tenant}/{collection}",
         attempts=attempts,
     )
     if resp.status_code >= 400:
@@ -192,7 +194,7 @@ async def setup_collection(
         data = {"docid": docid, "metadata": json.dumps(meta)}
         resp = await _post_with_retries(
             client,
-            f"/collections/{tenant}/{collection}/documents",
+            f"{API_PREFIX}/collections/{tenant}/{collection}/documents",
             attempts=attempts,
             files={
                 "file": (
@@ -242,7 +244,7 @@ async def search(
 
     start = time.perf_counter()
     r = await client.post(
-        f"/collections/{tenant}/{collection}/search",
+        f"{API_PREFIX}/collections/{tenant}/{collection}/search",
         json=body,
     )
     latency_ms = (time.perf_counter() - start) * 1000
@@ -434,7 +436,7 @@ async def run_benchmark(
 
         # Cleanup
         await client.delete(
-            f"/collections/{tenant}/{collection}"
+            f"{API_PREFIX}/collections/{tenant}/{collection}"
         )
         print(
             f"\nCleaned up collection"

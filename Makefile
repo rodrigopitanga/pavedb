@@ -717,19 +717,19 @@ check-run: install
 	AHDR=""; if [ "$(CHECK_AUTH_MODE)" = "static" ]; then AHDR="Authorization: Bearer $(CHECK_TOKEN)"; fi; \
 	echo "==> Create collection: $(CHECK_TENANT)/$(CHECK_COLL)"; \
 	if [ -n "$$AHDR" ]; then \
-	  curl -fsS -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)" -H "$$AHDR" -H "Content-Length: 0" >/dev/null; \
+	  curl -fsS -X POST "$$BASE/v1/collections/$(CHECK_TENANT)/$(CHECK_COLL)" -H "$$AHDR" -H "Content-Length: 0" >/dev/null; \
 	else \
-	  curl -fsS -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)" -H "Content-Length: 0" >/dev/null; \
+	  curl -fsS -X POST "$$BASE/v1/collections/$(CHECK_TENANT)/$(CHECK_COLL)" -H "Content-Length: 0" >/dev/null; \
 	fi; \
 	[ -f "$(CHECK_TXT_FILE)" ] || { echo "Missing file: $(CHECK_TXT_FILE)"; exit 1; }; \
 	echo "==> Ingest: $(CHECK_TXT_FILE) (docid=$(CHECK_DOCID))"; \
 	if [ -n "$$AHDR" ]; then \
-	  curl -fsS -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/documents" -H "$$AHDR" \
+	  curl -fsS -X POST "$$BASE/v1/collections/$(CHECK_TENANT)/$(CHECK_COLL)/documents" -H "$$AHDR" \
 	    -F "file=@$(CHECK_TXT_FILE)" \
 	    -F "docid=$(CHECK_DOCID)" \
 	    -F "metadata={\"lang\":\"en\",\"source\":\"Gutenberg\"}" >/dev/null; \
 	else \
-	  curl -fsS -X POST "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/documents" \
+	  curl -fsS -X POST "$$BASE/v1/collections/$(CHECK_TENANT)/$(CHECK_COLL)/documents" \
 	    -F "file=@$(CHECK_TXT_FILE)" \
 	    -F "docid=$(CHECK_DOCID)" \
 	    -F "metadata={\"lang\":\"en\",\"source\":\"Gutenberg\"}" >/dev/null; \
@@ -737,17 +737,17 @@ check-run: install
 	echo "==> Search (GET) q='$(CHECK_QUERY)' k=$(CHECK_K)"; \
 	ENCQ=$$(printf %s "$(CHECK_QUERY)" | jq -sRr @uri 2>/dev/null || printf %s "$(CHECK_QUERY)"); \
 	if [ -n "$$AHDR" ]; then \
-	  curl -fsS "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/search?q=$$ENCQ&k=$(CHECK_K)" -H "$$AHDR" | tee .check_search.json >/dev/null; \
+	  curl -fsS "$$BASE/v1/collections/$(CHECK_TENANT)/$(CHECK_COLL)/search?q=$$ENCQ&k=$(CHECK_K)" -H "$$AHDR" | tee .check_search.json >/dev/null; \
 	else \
-	  curl -fsS "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)/search?q=$$ENCQ&k=$(CHECK_K)" | tee .check_search.json >/dev/null; \
+	  curl -fsS "$$BASE/v1/collections/$(CHECK_TENANT)/$(CHECK_COLL)/search?q=$$ENCQ&k=$(CHECK_K)" | tee .check_search.json >/dev/null; \
 	fi; \
 	$(PYTHON_BIN) -c 'import json,sys; d=json.load(open(".check_search.json")); m=d.get("matches"); (print("Empty search results", file=sys.stderr), sys.exit(1)) if (not isinstance(m, list) or not m) else None; f=m[0] if isinstance(m[0], dict) else {}; reason=f.get("match_reason") or f.get("reason") or ""; latency=d.get("latency_ms"); text=(f.get("text") or "").replace("\n", " "); print(f"==> First match reason: {reason}"); print(f"==> First match text: {text}"); print(f"==> Search latency_ms: {latency}")'; \
 	rm -f .check_search.json; \
 	echo "==> Cleanup: delete collection $(CHECK_TENANT)/$(CHECK_COLL)"; \
 	if [ -n "$$AHDR" ]; then \
-	  curl -fsS -X DELETE "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)" -H "$$AHDR" >/dev/null; \
+	  curl -fsS -X DELETE "$$BASE/v1/collections/$(CHECK_TENANT)/$(CHECK_COLL)" -H "$$AHDR" >/dev/null; \
 	else \
-	  curl -fsS -X DELETE "$$BASE/collections/$(CHECK_TENANT)/$(CHECK_COLL)" >/dev/null; \
+	  curl -fsS -X DELETE "$$BASE/v1/collections/$(CHECK_TENANT)/$(CHECK_COLL)" >/dev/null; \
 	fi; \
 	echo "✅ make check passed."
 

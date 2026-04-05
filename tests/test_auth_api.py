@@ -7,7 +7,7 @@ def test_auth_missing_token_returns_code(client, cfg):
     cfg.set("auth.global_key", None)
     cfg.set("auth.api_keys", {"acme": "sekret"})
 
-    r = client.post("/collections/acme/invoices")
+    r = client.post("/v1/collections/acme/invoices")
     assert r.status_code == 401
     data = r.json()
     assert data["ok"] is False
@@ -21,7 +21,7 @@ def test_auth_forbidden_returns_code(client, cfg):
     cfg.set("auth.api_keys", {"acme": "sekret"})
 
     r = client.post(
-        "/collections/acme/invoices",
+        "/v1/collections/acme/invoices",
         headers={"Authorization": "Bearer nope"},
     )
     assert r.status_code == 403

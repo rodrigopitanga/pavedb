@@ -12,14 +12,14 @@ def test_metrics_json(client):
 
 def test_metrics_counters(client):
     # create, upload, search -> counters move
-    r = client.post("/collections/acme/m", headers={})
+    r = client.post("/v1/collections/acme/m", headers={})
     assert r.status_code == 201
-    r = client.post("/collections/acme/m/documents",
+    r = client.post("/v1/collections/acme/m/documents",
                     files={"file": ("a.txt", b"hello world", "text/plain")},
                     data={"docid": "D1"})
     assert r.status_code == 201
 
-    r = client.get("/collections/acme/m/search", params={"q": "hello", "k": 5})
+    r = client.get("/v1/collections/acme/m/search", params={"q": "hello", "k": 5})
     assert r.status_code == 200
 
     snap = client.get("/health/metrics").json()
@@ -37,17 +37,17 @@ def test_metrics_exposes_build_labels(client):
 
 
 def test_health_metrics_include_store_catalog_counts(client):
-    client.post("/collections/acme/c1")
-    client.post("/collections/acme/c2")
-    client.post("/collections/beta/c1")
+    client.post("/v1/collections/acme/c1")
+    client.post("/v1/collections/acme/c2")
+    client.post("/v1/collections/beta/c1")
 
     client.post(
-        "/collections/acme/c1/documents",
+        "/v1/collections/acme/c1/documents",
         files={"file": ("a.txt", b"alpha", "text/plain")},
         data={"docid": "A1"},
     )
     client.post(
-        "/collections/beta/c1/documents",
+        "/v1/collections/beta/c1/documents",
         files={"file": ("b.txt", b"beta", "text/plain")},
         data={"docid": "B1"},
     )
@@ -60,7 +60,7 @@ def test_health_metrics_include_store_catalog_counts(client):
 
 
 def test_metrics_prometheus_includes_store_catalog_counts(client):
-    client.post("/collections/acme/promc")
+    client.post("/v1/collections/acme/promc")
     r = client.get("/metrics")
     assert r.status_code == 200
     txt = r.text
@@ -72,12 +72,12 @@ def test_metrics_prometheus_includes_store_catalog_counts(client):
 def test_latency_percentiles_in_snapshot(client):
     """After search and ingest, latency percentiles should appear in metrics."""
     # create collection and ingest a document
-    client.post("/collections/acme/lat", headers={})
-    client.post("/collections/acme/lat/documents",
+    client.post("/v1/collections/acme/lat", headers={})
+    client.post("/v1/collections/acme/lat/documents",
                 files={"file": ("b.txt", b"latency test content", "text/plain")},
                 data={"docid": "D2"})
     # perform a search
-    client.get("/collections/acme/lat/search", params={"q": "latency", "k": 5})
+    client.get("/v1/collections/acme/lat/search", params={"q": "latency", "k": 5})
 
     snap = client.get("/health/metrics").json()
     # Check search latency fields
@@ -95,11 +95,11 @@ def test_latency_percentiles_in_snapshot(client):
 
 def test_latency_prometheus_format(client):
     """Latency percentiles should be exported in Prometheus format."""
-    client.post("/collections/acme/prom", headers={})
-    client.post("/collections/acme/prom/documents",
+    client.post("/v1/collections/acme/prom", headers={})
+    client.post("/v1/collections/acme/prom/documents",
                 files={"file": ("c.txt", b"prometheus test", "text/plain")},
                 data={"docid": "D3"})
-    client.get("/collections/acme/prom/search", params={"q": "prometheus", "k": 5})
+    client.get("/v1/collections/acme/prom/search", params={"q": "prometheus", "k": 5})
 
     r = client.get("/metrics")
     txt = r.text
@@ -184,16 +184,16 @@ def test_metrics_load_on_restart(tmp_path):
 def test_metrics_reset_api(client):
     """DELETE /admin/metrics should reset all metrics."""
     # First do some operations to have non-zero metrics
-    client.post("/collections/acme/rst", headers={})
-    client.post("/collections/acme/rst/documents",
+    client.post("/v1/collections/acme/rst", headers={})
+    client.post("/v1/collections/acme/rst/documents",
                 files={"file": ("r.txt", b"reset test", "text/plain")},
                 data={"docid": "R1"})
-    client.get("/collections/acme/rst/search", params={"q": "reset", "k": 5})
+    client.get("/v1/collections/acme/rst/search", params={"q": "reset", "k": 5})
     # Verify we have some metrics
     snap1 = client.get("/health/metrics").json()
     assert snap1["search_total"] >= 1
     # Reset metrics
-    r = client.delete("/admin/metrics")
+    r = client.delete("/v1/admin/metrics")
     assert r.status_code == 200
     assert r.json()["ok"] is True
     # Verify metrics are reset

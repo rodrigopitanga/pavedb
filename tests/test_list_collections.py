@@ -19,11 +19,11 @@ def test_list_collections_api_sorted(client, tmp_path, monkeypatch):
     store = client.app.state.store.impl
     monkeypatch.setattr(store, "_data_dir", str(tmp_path))
 
-    client.post("/collections/acme/invoices")
-    client.post("/collections/acme/contracts")
-    client.post("/collections/acme/reports")
+    client.post("/v1/collections/acme/invoices")
+    client.post("/v1/collections/acme/contracts")
+    client.post("/v1/collections/acme/reports")
 
-    r = client.get("/collections/acme")
+    r = client.get("/v1/collections/acme")
     assert r.status_code == 200
     data = r.json()
     assert data["ok"] is True
@@ -39,7 +39,7 @@ def test_list_collections_api_empty_tenant(client, tmp_path, monkeypatch):
     # Create tenant dir but no collections
     (tmp_path / "t_empty").mkdir(parents=True, exist_ok=True)
 
-    r = client.get("/collections/empty")
+    r = client.get("/v1/collections/empty")
     assert r.status_code == 200
     data = r.json()
     assert data["ok"] is True
@@ -54,7 +54,7 @@ def test_list_collections_ignores_legacy_catalog_only(client, tmp_path, monkeypa
     coll_dir.mkdir(parents=True, exist_ok=True)
     (coll_dir / "catalog.json").write_text("{}", encoding="utf-8")
 
-    r = client.get("/collections/acme")
+    r = client.get("/v1/collections/acme")
     assert r.status_code == 200
     data = r.json()
     assert data["ok"] is True
@@ -66,7 +66,7 @@ def test_list_collections_api_nonexistent_tenant(client, tmp_path, monkeypatch):
     store = client.app.state.store.impl
     monkeypatch.setattr(store, "_data_dir", str(tmp_path))
 
-    r = client.get("/collections/nonexistent")
+    r = client.get("/v1/collections/nonexistent")
     assert r.status_code == 200
     data = r.json()
     assert data["ok"] is True

@@ -1,0 +1,37 @@
+==> Benchmark: search_latency
+    ts        : 2026-04-05 14:30:54 UTC
+    runner    : rodrigo@cylons  |  x86_64, 4 cores, 16.3 GB RAM
+    server    : http://127.0.0.1:18086  v0.5.9  store=faiss
+    server hw : x86_64  4 cores  16.3 GB RAM  (Linux 6.18.3-gnu-parabola1-2)
+
+Setting up collection bench/lat_1775399454...
+Indexed 10 documents.
+Running 1200 queries with concurrency=42...
+
+==============================================================================================
+  SEARCH LATENCY RESULTS  (25.7s elapsed)
+==============================================================================================
+  Total queries  : 1200
+  Total hits     : 3840
+  Throughput     : 46.7 ops/s
+  Concurrency    : 42
+  Errors         : 0 (0.0%)
+
+Operation               Count     OK     Hits     Err (%)       Min       p50       p95       p99       Max
+-----------------------------------------------------------------------------------------------------------
+search_exact             1200   1200     3840    0 (0.0%)    113.0ms    884.4ms    920.6ms    927.7ms   1002.1ms
+-----------------------------------------------------------------------------------------------------------
+
+Sample results:
+  q: "machine learning artificial intelligence"
+     [doc1::chunk_0  0.697]  Machine learning is a subset of artificial intelligence that enables systems to learn from...
+     [doc3::chunk_0  0.401]  Deep learning uses neural networks with many layers to model complex patterns.
+  q: "natural language understanding"
+     [doc1::chunk_0  0.312]  Machine learning is a subset of artificial intelligence that enables systems to learn from...
+     [doc3::chunk_0  0.224]  Deep learning uses neural networks with many layers to model complex patterns.
+  q: "neural networks deep learning"
+     [doc6::chunk_0  0.232]  Transformers revolutionized NLP with attention mechanisms and parallel processing.
+     [doc2::chunk_0  0.219]  Natural language processing helps computers understand human language and text.
+
+
+Cleaned up collection bench/lat_1775399454

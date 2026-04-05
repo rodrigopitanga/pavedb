@@ -5,14 +5,14 @@ import time as _time
 
 
 def test_search_failure_returns_code(client, app, monkeypatch):
-    client.post("/collections/acme/failsearch")
+    client.post("/v1/collections/acme/failsearch")
 
     def boom(*args, **kwargs):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(app.state.store, "search", boom, raising=True)
     r = client.post(
-        "/collections/acme/failsearch/search",
+        "/v1/collections/acme/failsearch/search",
         json={"q": "x", "k": 1},
     )
     assert r.status_code == 500
@@ -23,7 +23,7 @@ def test_search_failure_returns_code(client, app, monkeypatch):
 
 def test_search_timeout_returns_503(client, app, monkeypatch):
     """Search that exceeds timeout_ms returns 503 search_timeout."""
-    client.post("/collections/acme/timeouttestcol")
+    client.post("/v1/collections/acme/timeouttestcol")
 
     def slow(*args, **kwargs):
         _time.sleep(5)
@@ -33,7 +33,7 @@ def test_search_timeout_returns_503(client, app, monkeypatch):
     monkeypatch.setattr(app.state.store, "search", slow, raising=True)
 
     r = client.post(
-        "/collections/acme/timeouttestcol/search",
+        "/v1/collections/acme/timeouttestcol/search",
         json={"q": "x", "k": 1},
     )
     assert r.status_code == 503
@@ -44,13 +44,13 @@ def test_search_timeout_returns_503(client, app, monkeypatch):
 
 def test_search_overloaded_returns_503(client, app, monkeypatch):
     """Counter at max returns 503 search_overloaded immediately."""
-    client.post("/collections/acme/overloadcol")
+    client.post("/v1/collections/acme/overloadcol")
 
     monkeypatch.setattr(app.state, "max_searches", 1)
     monkeypatch.setattr(app.state, "active_searches", 1)
 
     r = client.post(
-        "/collections/acme/overloadcol/search",
+        "/v1/collections/acme/overloadcol/search",
         json={"q": "x", "k": 1},
     )
     assert r.status_code == 503

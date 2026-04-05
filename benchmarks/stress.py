@@ -88,6 +88,7 @@ QUERIES = [
 ]
 
 TENANT = "stress"
+API_PREFIX = "/v1"
 
 
 def _rand_name(n: int = 8) -> str:
@@ -256,7 +257,7 @@ async def op_create_collection(client: httpx.AsyncClient, world: World, stats: S
     name = f"s_{_rand_name()}"
     t0 = time.perf_counter()
     try:
-        r = await client.post(f"/collections/{TENANT}/{name}")
+        r = await client.post(f"{API_PREFIX}/collections/{TENANT}/{name}")
         lat = (time.perf_counter() - t0) * 1000
         if _is_rate_limited(r):
             _record_rate_limited(stats, lat)
@@ -280,7 +281,7 @@ async def op_delete_collection(client: httpx.AsyncClient, world: World, stats: S
     # does not empty out prematurely when the request fails or is slow.
     t0 = time.perf_counter()
     try:
-        r = await client.delete(f"/collections/{TENANT}/{name}")
+        r = await client.delete(f"{API_PREFIX}/collections/{TENANT}/{name}")
         lat = (time.perf_counter() - t0) * 1000
         if _is_rate_limited(r):
             _record_rate_limited(stats, lat)
@@ -306,7 +307,7 @@ async def op_ingest_small(client: httpx.AsyncClient, world: World, stats: Stats)
     t0 = time.perf_counter()
     try:
         r = await client.post(
-            f"/collections/{TENANT}/{coll}/documents",
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/documents",
             files={"file": (f"{docid}.txt", text.encode(), "text/plain")},
             data={"docid": docid},
         )
@@ -333,7 +334,7 @@ async def op_ingest_large(client: httpx.AsyncClient, world: World, stats: Stats)
     t0 = time.perf_counter()
     try:
         r = await client.post(
-            f"/collections/{TENANT}/{coll}/documents",
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/documents",
             files={"file": (f"{docid}.txt", LONG_TEXT.encode(), "text/plain")},
             data={"docid": docid},
         )
@@ -361,7 +362,7 @@ async def op_delete_document(client: httpx.AsyncClient, world: World, stats: Sta
     t0 = time.perf_counter()
     try:
         r = await client.delete(
-            f"/collections/{TENANT}/{coll}/documents/{docid}"
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/documents/{docid}"
         )
         lat = (time.perf_counter() - t0) * 1000
         if _is_rate_limited(r):
@@ -384,7 +385,7 @@ async def op_search(client: httpx.AsyncClient, world: World, stats: Stats):
     t0 = time.perf_counter()
     try:
         r = await client.post(
-            f"/collections/{TENANT}/{coll}/search",
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/search",
             json={"q": query, "k": 5},
         )
         lat = (time.perf_counter() - t0) * 1000
@@ -403,7 +404,7 @@ async def op_search(client: httpx.AsyncClient, world: World, stats: Stats):
 async def op_archive_download(client: httpx.AsyncClient, _: World, stats: Stats):
     t0 = time.perf_counter()
     try:
-        r = await client.get("/admin/archive")
+        r = await client.get(f"{API_PREFIX}/admin/archive")
         lat = (time.perf_counter() - t0) * 1000
         if not _ok_response(r):
             stats.record(OpResult("archive_download", lat, False,
@@ -479,7 +480,7 @@ async def op_archive_restore(client: httpx.AsyncClient, _: World, stats: Stats):
     # First download an archive, then restore it
     t0 = time.perf_counter()
     try:
-        dl = await client.get("/admin/archive")
+        dl = await client.get(f"{API_PREFIX}/admin/archive")
         lat = (time.perf_counter() - t0) * 1000
         if not _ok_response(dl):
             stats.record(OpResult("archive_restore", lat, False,
@@ -494,7 +495,7 @@ async def op_archive_restore(client: httpx.AsyncClient, _: World, stats: Stats):
     t0 = time.perf_counter()
     try:
         r = await client.put(
-            "/admin/archive",
+            f"{API_PREFIX}/admin/archive",
             files={"file": ("archive.zip", archive_bytes, "application/zip")},
         )
         lat = (time.perf_counter() - t0) * 1000
@@ -560,7 +561,7 @@ async def run_stress(
             name = f"s_seed{i}"
             r = await _post_with_retries(
                 client,
-                f"/collections/{TENANT}/{name}",
+                f"{API_PREFIX}/collections/{TENANT}/{name}",
             )
             _ensure_ok(r, "seed collection")
             await world.add_collection(name)
@@ -570,7 +571,7 @@ async def run_stress(
                 text = SAMPLE_TEXTS[j % len(SAMPLE_TEXTS)]
                 r = await _post_with_retries(
                     client,
-                    f"/collections/{TENANT}/{name}/documents",
+                    f"{API_PREFIX}/collections/{TENANT}/{name}/documents",
                     files={"file": (f"{docid}.txt", text.encode(), "text/plain")},
                     data={"docid": docid},
                 )
@@ -626,7 +627,7 @@ async def run_stress(
         print("Cleaning up...")
         for name in await world.snapshot_collections():
             try:
-                await client.delete(f"/collections/{TENANT}/{name}")
+                await client.delete(f"{API_PREFIX}/collections/{TENANT}/{name}")
             except Exception:
                 pass
 

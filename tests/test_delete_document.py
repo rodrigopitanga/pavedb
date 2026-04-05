@@ -3,18 +3,18 @@
 
 def test_delete_document_success(client):
     """DELETE /collections/{t}/{c}/documents/{docid} should delete a document."""
-    client.post("/collections/acme/deldoc")
-    client.post("/collections/acme/deldoc/documents",
+    client.post("/v1/collections/acme/deldoc")
+    client.post("/v1/collections/acme/deldoc/documents",
                 files={"file": ("a.txt", b"hello world", "text/plain")},
                 data={"docid": "DOC-DEL-1"})
     # Verify document is searchable
-    r = client.post("/collections/acme/deldoc/search",
+    r = client.post("/v1/collections/acme/deldoc/search",
                     json={"q": "hello", "k": 5, "filters": {"docid": "DOC-DEL-1"}})
     assert r.status_code == 200
     assert len(r.json()["matches"]) >= 1
 
     # Delete the document
-    r = client.delete("/collections/acme/deldoc/documents/DOC-DEL-1")
+    r = client.delete("/v1/collections/acme/deldoc/documents/DOC-DEL-1")
     assert r.status_code == 200
     data = r.json()
     assert data["ok"] is True
@@ -22,15 +22,15 @@ def test_delete_document_success(client):
     assert data["chunks_deleted"] >= 1
 
     # Verify document is no longer searchable
-    r = client.post("/collections/acme/deldoc/search",
+    r = client.post("/v1/collections/acme/deldoc/search",
                     json={"q": "hello", "k": 5, "filters": {"docid": "DOC-DEL-1"}})
     assert r.status_code == 200
     assert len(r.json()["matches"]) == 0
 
 def test_delete_document_not_found(client):
     """DELETE non-existent document is idempotent: 200 with chunks_deleted=0."""
-    client.post("/collections/acme/deldoc2")
-    r = client.delete("/collections/acme/deldoc2/documents/NONEXISTENT")
+    client.post("/v1/collections/acme/deldoc2")
+    r = client.delete("/v1/collections/acme/deldoc2/documents/NONEXISTENT")
     assert r.status_code == 200
     data = r.json()
     assert data["ok"] is True
@@ -38,42 +38,42 @@ def test_delete_document_not_found(client):
 
 def test_delete_document_preserves_others(client):
     """Deleting one document should not affect other documents."""
-    client.post("/collections/acme/deldoc3")
+    client.post("/v1/collections/acme/deldoc3")
     # Upload two documents
-    client.post("/collections/acme/deldoc3/documents",
+    client.post("/v1/collections/acme/deldoc3/documents",
                 files={"file": ("a.txt", b"alpha bravo charlie", "text/plain")},
                 data={"docid": "DOC-A"})
-    client.post("/collections/acme/deldoc3/documents",
+    client.post("/v1/collections/acme/deldoc3/documents",
                 files={"file": ("b.txt", b"delta echo foxtrot", "text/plain")},
                 data={"docid": "DOC-B"})
 
     # Delete DOC-A
-    r = client.delete("/collections/acme/deldoc3/documents/DOC-A")
+    r = client.delete("/v1/collections/acme/deldoc3/documents/DOC-A")
     assert r.status_code == 200
 
     # DOC-B should still be searchable
-    r = client.post("/collections/acme/deldoc3/search",
+    r = client.post("/v1/collections/acme/deldoc3/search",
                     json={"q": "delta", "k": 5, "filters": {"docid": "DOC-B"}})
     assert r.status_code == 200
     assert len(r.json()["matches"]) >= 1
 
     # DOC-A should not be searchable
-    r = client.post("/collections/acme/deldoc3/search",
+    r = client.post("/v1/collections/acme/deldoc3/search",
                     json={"q": "alpha", "k": 5, "filters": {"docid": "DOC-A"}})
     assert r.status_code == 200
     assert len(r.json()["matches"]) == 0
 
 def test_delete_document_metrics(client):
     """Deleting a document should increment documents_deleted_total."""
-    client.post("/collections/acme/deldoc4")
-    client.post("/collections/acme/deldoc4/documents",
+    client.post("/v1/collections/acme/deldoc4")
+    client.post("/v1/collections/acme/deldoc4/documents",
                 files={"file": ("c.txt", b"metrics test", "text/plain")},
                 data={"docid": "DOC-M"})
 
     snap1 = client.get("/health/metrics").json()
     initial = snap1.get("documents_deleted_total", 0)
 
-    r = client.delete("/collections/acme/deldoc4/documents/DOC-M")
+    r = client.delete("/v1/collections/acme/deldoc4/documents/DOC-M")
     assert r.status_code == 200
 
     snap2 = client.get("/health/metrics").json()

@@ -26,7 +26,7 @@ from pave.service import (
 from pave.stores.base import BaseStore
 
 
-def build_admin_router(cfg, error, resp) -> APIRouter:
+def build_admin_router(error, resp) -> APIRouter:
     router = APIRouter()
 
     def current_store(request: Request) -> BaseStore:

@@ -7,9 +7,9 @@ import json
 
 
 def test_get_document_success(client):
-    client.post("/collections/acme/getdoc")
+    client.post("/v1/collections/acme/getdoc")
     upload = client.post(
-        "/collections/acme/getdoc/documents",
+        "/v1/collections/acme/getdoc/documents",
         files={"file": ("meta.txt", b"hello document", "text/plain")},
         data={
             "docid": "DOC-GET-1",
@@ -19,7 +19,7 @@ def test_get_document_success(client):
     assert upload.status_code == 201
     assert upload.json()["ok"] is True
 
-    r = client.get("/collections/acme/getdoc/documents/DOC-GET-1")
+    r = client.get("/v1/collections/acme/getdoc/documents/DOC-GET-1")
     assert r.status_code == 200
     data = r.json()
 
@@ -39,9 +39,9 @@ def test_get_document_success(client):
 
 
 def test_get_document_not_found(client):
-    client.post("/collections/acme/getdoc404")
+    client.post("/v1/collections/acme/getdoc404")
 
-    r = client.get("/collections/acme/getdoc404/documents/MISSING")
+    r = client.get("/v1/collections/acme/getdoc404/documents/MISSING")
 
     assert r.status_code == 404
     data = r.json()
