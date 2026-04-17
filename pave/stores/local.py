@@ -422,6 +422,41 @@ class LocalStore(BaseStore):
             except Exception:
                 pass
 
+    def list_documents(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> list[dict[str, Any]]:
+        key = (tenant, collection)
+        col_db = self._dbs.get(key)
+        if col_db is not None:
+            try:
+                return col_db.list_documents()
+            except Exception as e:
+                if not self._is_transient_db_read_error(e):
+                    raise
+                log.debug(
+                    "Transient cached documents read failure for %s/%s: %s",
+                    tenant, collection, e,
+                )
+
+        db_path = self._db_path(tenant, collection)
+        if not db_path.exists():
+            return []
+        col_db = CollectionDB()
+        try:
+            col_db.open(db_path, read_only=True)
+            return col_db.list_documents()
+        except Exception as e:
+            if self._is_transient_db_read_error(e):
+                return []
+            raise
+        finally:
+            try:
+                col_db.close()
+            except Exception:
+                pass
+
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         with self._collection_lock(tenant, collection):
             self._load_or_init(tenant, collection)

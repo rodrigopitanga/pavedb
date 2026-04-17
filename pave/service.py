@@ -277,6 +277,32 @@ def get_document(
         }
 
 
+def list_documents(
+    store,
+    tenant: str,
+    collection: str,
+) -> dict[str, Any]:
+    try:
+        docs = store.list_documents(tenant, collection)
+        return {
+            "ok": True,
+            "tenant": tenant,
+            "collection": collection,
+            "documents": docs,
+            "count": len(docs),
+        }
+    except Exception as e:
+        log.warning(
+            "list_documents failed tenant=%s coll=%s: %s",
+            tenant, collection, e,
+        )
+        return {
+            "ok": False,
+            "code": "list_documents_failed",
+            "error": str(e),
+        }
+
+
 def _default_docid(filename: str) -> str:
     # Uppercase
     base = filename.upper()

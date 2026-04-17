@@ -139,6 +139,22 @@ class GetDocumentResponse(OkResponse):
     chunk_count: int
 
 
+class DocumentSummary(BaseModel):
+    """API summary item for document listings."""
+    docid: str
+    version: int
+    ingested_at: str
+    chunk_count: int
+
+
+class ListDocumentsResponse(OkResponse):
+    """API response for document listing."""
+    tenant: str
+    collection: str
+    documents: list[DocumentSummary]
+    count: int
+
+
 class RestoreArchiveResponse(OkResponse):
     """API response for archive restore."""
 

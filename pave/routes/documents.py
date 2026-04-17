@@ -14,6 +14,7 @@ from pave.log import ops_event
 from pave.metrics import inc
 from pave.schemas import (
     DeleteDocumentResponse,
+    ListDocumentsResponse,
     GetDocumentResponse,
     IngestDocumentResponse,
 )
@@ -22,6 +23,7 @@ from pave.service import (
     delete_document as svc_delete_document,
     get_document as svc_get_document,
     ingest_document as svc_ingest_document,
+    list_documents as svc_list_documents,
 )
 from pave.stores.base import BaseStore
 
@@ -31,6 +33,36 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
 
     def current_store(request: Request) -> BaseStore:
         return request.app.state.store
+
+    @router.get(
+        "/collections/{tenant}/{collection}/documents",
+        response_model=ListDocumentsResponse,
+        responses=resp(401, 403, 429, 500),
+    )
+    @ops_event(
+        "list_docs",
+        coll="collection",
+        request_id="rid",
+    )
+    def list_documents(
+        request: Request,
+        tenant: str,
+        collection: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(tenant_rate_limit),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        result = svc_list_documents(store, tenant, collection)
+        if not result.get("ok"):
+            return error(
+                500,
+                result.get("code", "list_documents_failed"),
+                result.get("error", "failed to list documents"),
+                request=request,
+                request_id=rid,
+            )
+        return trace(result, request, request_id=rid)
 
     @router.post(
         "/collections/{tenant}/{collection}/documents",

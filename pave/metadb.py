@@ -450,6 +450,33 @@ class CollectionDB:
                 "chunk_count": len(chunk_ids),
             }
 
+    def list_documents(self) -> list[dict[str, Any]]:
+        """Return summary rows for all documents in this collection."""
+        with self._reader() as conn:
+            # Count chunks in the same query so listings avoid an N+1 scan
+            # across the chunks table for each document row.
+            cur = conn.execute(
+                "SELECT d.docid, d.version, d.ingested_at, "
+                "       COUNT(c.rid) AS chunk_count "
+                "FROM documents AS d "
+                "LEFT JOIN chunks AS c ON c.docid = d.docid "
+                "GROUP BY d.docid "
+                "ORDER BY d.rowid"
+            )
+            docs: list[dict[str, Any]] = []
+            for docid, version, ingested_at, chunk_count in cur.fetchall():
+                if isinstance(ingested_at, str) and ingested_at.endswith("+00:00"):
+                    ingested_at = ingested_at.replace("+00:00", "Z")
+                docs.append(
+                    {
+                        "docid": docid,
+                        "version": int(version or 0),
+                        "ingested_at": ingested_at,
+                        "chunk_count": int(chunk_count or 0),
+                    }
+                )
+            return docs
+
     def get_doc_chunk_counts(self) -> tuple[int, int]:
         """Return (doc_count, chunk_count) for this collection."""
         with self._reader() as conn:

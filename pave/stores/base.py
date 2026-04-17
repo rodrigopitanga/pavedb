@@ -88,6 +88,13 @@ class BaseStore(ABC):
     ) -> dict[str, Any] | None: ...
 
     @abstractmethod
+    def list_documents(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int: ...
 
     @abstractmethod

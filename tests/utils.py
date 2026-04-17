@@ -254,6 +254,28 @@ class DummyStore(BaseStore):
             "chunk_count": len(chunk_ids),
         }
 
+    def list_documents(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> list[dict[str, Any]]:
+        cat = os.path.join(self._dir(tenant, collection), "catalog.json")
+        try:
+            data = json.load(open(cat, "r", encoding="utf-8"))
+        except Exception:
+            data = {}
+        docs: list[dict[str, Any]] = []
+        for docid, chunk_ids in data.items():
+            docs.append(
+                {
+                    "docid": docid,
+                    "version": 1,
+                    "ingested_at": "1970-01-01T00:00:00Z",
+                    "chunk_count": len(chunk_ids),
+                }
+            )
+        return docs
+
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],
                       doc_meta: dict[str, Any] | None = None) -> int:
@@ -360,6 +382,14 @@ class SpyStore(BaseStore):
     ) -> dict[str, Any] | None:
         self.calls.append(("get_document", tenant, collection, docid))
         return self.impl.get_document(tenant, collection, docid)
+
+    def list_documents(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> list[dict[str, Any]]:
+        self.calls.append(("list_documents", tenant, collection))
+        return self.impl.list_documents(tenant, collection)
 
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],
