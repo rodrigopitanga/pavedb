@@ -74,10 +74,10 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-07 | Hybrid reranking | 🧱 | Exact token boost | v1.2 |
 | P1-08 | ~~Per-tenant rate limiting~~ |  | Abuse protection | v0.5.8 |
 | P1-09 | ~~Metadata store (SQLite)~~ | 🧱 | ACID + concurrency | v0.5.8 |
-| P1-11 | Global `request_id` echo | 🧩 | Traceability | v0.9 |
+| P1-11 | ~~Global `request_id` echo~~ | 🧩 | Traceability | v0.9 |
 | P1-12 | ~~Ingest timeout guidance~~ | 🧩 | Avoid client timeouts | v0.5.8 |
 | P1-13 | ~~Ingest size limits~~ | 🧩 | Fail fast on huge uploads | v0.5.8 |
-| P1-14 | Response envelope standardization | 🧱 | SDK-friendly API | v0.9 |
+| P1-14 | ~~Response envelope standardization~~ | 🧱 | SDK-friendly API | v0.9 |
 | P1-15 | Embedded/library mode | 🧱 | In-app use, adoption | v1.1 |
 | P1-16 | Batch ingest endpoint | 🧩 | Throughput, DX | v1.1 |
 | P1-17 | ~~Get document by ID~~ | 🧩 | Visibility, library mode | v0.9 |
@@ -89,24 +89,30 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-23 | Freeze search response schema | 🧩 | SDK contract | v0.9 |
 | P1-24 | Python client package | 🧱 | SDK foundation | v1.1 |
 | P1-25 | Dev vs prod config defaults | 🔧 | Safe defaults | v1.0 |
-| P1-34 | ~~Server config bootstrap~~ | 🧩 | ~~Explicit `pavecli init` + `--home` / explicit runtime paths for pip installs~~ | v1.0 |
+| P1-34 | ~~Server config bootstrap~~ | 🧩 | Explicit `pavecli init` + `--home` / explicit runtime paths for pip installs | v1.0 |
 | P1-35 | Filter pushdown parity harness | 🔧 | Speedups without semantic drift | v1.0 |
 | P1-26 | Config reference + CI doc check | 🧩 | Config clarity | v1.0 |
 | P1-27 | Admin key auto-generate + persist | 🧩 | Secure bootstrap | v1.0 |
 | P1-28 | Moving-window rate limiting per tenant | 🔧 | req/min, req/hour — needs `rate_limit_buckets` table (Phase 3) | post-SQLite |
-| P1-29 | ~~VectorBackend protocol~~ | 🔧 | ~~Initial backend seam for store split~~ | v0.5.9 |
-| P1-29b | ~~Clean protocol + Faiss path~~ | 🔧 | ~~Finish FAISS cutover~~ | v0.5.9 |
-| P1-29c | ~~CollectionDB k/v pre-filter~~ | 🔧 | ~~First pushdown stage~~ | v0.5.9 |
-| P1-36 | ~~Reject empty/colliding sanitized metadata keys~~ | 🧩 | ~~Avoid silent key drops/coalescing under current sanitization rules~~ | v0.5.9 |
-| P1-37 | ~~Pre-orchestrator cleanup~~ | 🔧 | ~~Drop txtai dep, rename store/embedder, dead code removal, filter path simplification~~ | v0.5.9 |
-| P1-30 | ~~Activate embedder factory cache (superseded by P1-29b)~~ |  | ~~Superseded by Step 2 in PLAN-STORE~~ | superseded |
-| P1-31 | ~~Store orchestrator~~ | 🧱 | ~~Orchestrate backend + meta + catalog~~ | v0.5.9 |
+| P1-29 | ~~VectorBackend protocol~~ | 🔧 | Initial backend seam for store split | v0.5.9 |
+| P1-29b | ~~Clean protocol + Faiss path~~ | 🔧 | Finish FAISS cutover | v0.5.9 |
+| P1-29c | ~~CollectionDB k/v pre-filter~~ | 🔧 | First pushdown stage | v0.5.9 |
+| P1-36 | ~~Reject empty/colliding sanitized metadata keys~~ | 🧩 | Avoid silent key drops/coalescing under current sanitization rules | v0.5.9 |
+| P1-37 | ~~Pre-orchestrator cleanup~~ | 🔧 | Drop txtai dep, rename store/embedder, dead code removal, filter path simplification | v0.5.9 |
+| P1-30 | ~~Activate embedder factory cache (superseded by P1-29b)~~ |  | Superseded by Step 2 in PLAN-STORE | superseded |
+| P1-31 | ~~Store orchestrator~~ | 🧱 | Orchestrate backend + meta + catalog | v0.5.9 |
 | P1-32 | Per-collection embeddings | 🧱 | Model per collection | v1.0 |
-| P1-33 | CatalogDB + catalog separation | 🧱 | Catalog + collection backend/embedder config source | v0.9 |
-| P1-40 | Search timing breakdown in response | 🔧 | Latency debugging: embed/search/filter/hydrate split | v0.9 |
+| P1-33 | ~~CatalogDB + catalog separation~~ | 🧱 | Catalog + collection backend/embedder config source | v0.9 |
+| P1-40 | ~~Search timing breakdown in response~~ | 🔧 | Latency debugging: embed/search/filter/hydrate split | v0.9 |
 | P1-41 | Persistent query log | 🔧 | Queryable search history (query, filters, config, result IDs) in SQLite | v0.9 |
-| P1-42 | Query replay endpoint | 🧩 | Re-execute stored query by log ID; depends on P1-41 | v0.9 |
-| P1-43 | `/v1/` route prefix | 🔧 | Versioned API base path; frozen at v1.0, additive after | v0.9 |
+| P1-42 | Query replay endpoint | 🧩 | Re-execute stored query at `POST /v1/collections/{t}/{c}/queries/{id}/replay`. Depends on P1-41. Tenant/collection-scoped only; admin shortcut ships in P1-51 | v0.9 |
+| P1-43 | ~~`/v1/` route prefix~~ | 🔧 | Versioned API base path; frozen at v1.0, additive after | v0.9 |
+| P1-51 | Admin query-home resolver + shortcut routes + CLI rework | 🧩 | Small `query_home` table in `catalog.db` mapping `query_id → tenant, collection`. Ships admin-only `GET` and `POST .../replay` at `/v1/admin/queries/{id}` that resolve via `query_home` and delegate to the P1-42 scoped handlers, plus admin CLI rework: `get-query` / `replay-query` accept a bare `<query_id>`, `list-queries` takes optional `--tenant` / `--collection` filters. No global HTTP listing | v0.9 |
+| P1-46 | Docs site — preview | 🔧 | MkDocs static site; user + developer sections; published via GitLab Pages | v0.9 |
+| P1-47 | Docs site — 1.0 | 🧱 | Full coverage: guides, core concepts, inspect/debug, operations, architecture, plugins | v1.0 |
+| P1-48 | Remove `SearchBody.request_id` | 🧩 | `X-Request-ID` becomes the only request-correlation input | v0.9 |
+| P1-49 | HTTP request metrics middleware | 🔧 | Per-endpoint request count + latency histogram, status class split, Prometheus `# HELP`/`# TYPE` metadata | v1.0 |
+| P1-50 | Product-signal metrics | 🧩 | Zero-match searches, filter usage, query-log readiness, embedder counters, sidecar drift — competitor gap | v1.0 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -129,11 +135,11 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-43 | Eval assertion API | 🧱 | Define expected results, batch run, track pass/fail | v1.2 |
 | P2-44 | Regression detection | 🔧 | Compare eval runs across versions, flag drift; depends on P2-43 | v1.2 |
 | P2-45 | Config snapshot per collection | 🧩 | Record embedder model + version + search params at ingest | v1.2 |
-| P2-28 | ~~Structured log emission~~ | 🧩 | ~~JSON lines per operation with request_id, tenant, latency~~ | v0.5.8 |
-| P2-40 | ~~Error logging at service layer~~ | 🧩 | ~~`log.warning` on every `ok: false` return site; audit codes and choose level per error class~~ | v0.5.9 |
+| P2-28 | ~~Structured log emission~~ | 🧩 | JSON lines per operation with request_id, tenant, latency | v0.5.8 |
+| P2-40 | ~~Error logging at service layer~~ | 🧩 | `log.warning` on every `ok: false` return site; audit codes and choose level per error class | v0.5.9 |
 | P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v1.2 |
-| P2-29 | ~~Public cross-language retrieval fixtures~~ | 🧩 | ~~Recall validation~~ | v0.5.9 |
-| P2-30 | ~~Benchmark CI gate + p99 SLO~~ | 🧩 | ~~Latency contract~~ | v0.5.9 |
+| P2-29 | ~~Public cross-language retrieval fixtures~~ | 🧩 | Recall validation | v0.5.9 |
+| P2-30 | ~~Benchmark CI gate + p99 SLO~~ | 🧩 | Latency contract | v0.5.9 |
 | P2-31 | Formalize collection independence | 🔧 | Portability contract | v1.5 |
 | P2-32 | `pavecli --host` remote mode | 🧩 | CLI/SDK parity | v1.3 |
 | P2-33 | JS/TS client | 🧱 | Web + Node adoption | v1.3 |
@@ -141,7 +147,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-35 | MCP server | 🧱 | AI agent integration | v1.3 |
 | P2-36 | LlamaIndex adapter | 🧱 | Framework coverage | v1.3 |
 | P2-37 | Audit logs for admin actions | 🧩 | Governance trail | v2.0 |
-| P2-41 | ~~TXT preprocessor: character offset in chunk metadata~~ | 🧩 | ~~Provenance contract (replace `chunk` key with `offset`)~~ | v0.5.9 |
+| P2-41 | ~~TXT preprocessor: character offset in chunk metadata~~ | 🧩 | Provenance contract (replace `chunk` key with `offset`) | v0.5.9 |
 
 ### P3 — Scale and long-term
 
@@ -186,6 +192,8 @@ Substantial features are specified under `docs/` before implementation.
 | [`docs/PLAN-OPS-LOG.md`](docs/PLAN-OPS-LOG.md) | P2-28 | Structured log emission — ops JSON stream |
 | [`docs/PLAN-SQLITE.md`](docs/PLAN-SQLITE.md) | P1-09 / P1-33 | Internal SQLite metadata and global catalog store |
 | [`docs/PLAN-STORE.md`](docs/PLAN-STORE.md) | P1-29/P1-29b/P1-29c/P1-31/P1-32 | Store split; P1-30 superseded by P1-29b |
+| [`docs/PLAN-OBSERVABILITY.md`](docs/PLAN-OBSERVABILITY.md) | P0-03, P1-11/14/17/23/40/41/42/43/44/45/48, P2-23/28/40/41 | Inspectability surface — request correlation, timing, query log, replay, chunk inspector |
+| [`docs/PLAN-DOCS.md`](docs/PLAN-DOCS.md) | P1-46 / P1-47 | Docs site plan (preview for v0.9, full for v1.0) |
 
 ---
 
@@ -298,25 +306,45 @@ latency on every search/ingest/delete.~~
 ### PaveDB v0.9 — Inspectability
 
 - ~~Get document by ID endpoint (P1-17).~~
-- CatalogDB + catalog separation (PLAN-SQLITE Phase 2), including
-  collection backend/embedder config wiring (P1-33).
-- Response envelope standardization (P1-14).
-- Global `request_id` echo across endpoints and responses (P1-11).
+- ~~CatalogDB + catalog separation (PLAN-SQLITE Phase 2), including
+  collection backend/embedder config wiring (P1-33).~~
+- ~~Response envelope standardization (P1-14).~~
+- ~~Global `request_id` echo across endpoints and responses (P1-11).~~
 - Freeze search response schema (`matches`, `latency_ms`,
   `match_reason`, `request_id`) (P1-23).
-- Search timing breakdown in response: embed/search/filter/hydrate
-  split alongside existing `latency_ms` (P1-40).
+- ~~Search timing breakdown in response: embed/search/filter/hydrate
+  split alongside existing `latency_ms` (P1-40).~~
 - Persistent query log: store query text, filters, config snapshot,
-  result IDs in SQLite (P1-41).
-- Query replay endpoint: re-execute stored query by log ID (P1-42).
+  and result IDs in each collection's `meta.db` (P1-41).
+- Query replay endpoint: re-execute stored query at
+  `POST /v1/collections/{t}/{c}/queries/{id}/replay` (P1-42).
+- Admin query-home resolver + shortcut routes + CLI rework:
+  small `query_home` table in `catalog.db` mapping
+  `query_id → tenant, collection`. Adds admin-only `GET` /
+  `POST .../replay` at `/v1/admin/queries/{id}` delegating
+  to P1-42 handlers after resolving the owning collection,
+  plus admin-only CLI rework (`get-query` / `replay-query`
+  accept a bare `<query_id>`; `list-queries` takes optional
+  `--tenant` / `--collection` filters). No global HTTP
+  listing (P1-51).
 - Chunk inspector + collection browser: list chunks, get chunk
   by ID (text + metadata + provenance), doc→chunk tree (P2-23).
-- Mount all routes under `/v1/` prefix; drop unversioned routes
+- ~~Mount all routes under `/v1/` prefix; drop unversioned routes
   (no compat shim pre-GA). Contract: frozen at v1.0, additive
   only after (new endpoints, optional fields). `/v2/` introduced
-  only if a `/v1/` shape must break (P1-43).
+  only if a `/v1/` shape must break (P1-43).~~
 - Rebranding phase 2: public-facing rename, env fallback removal,
   and `patchvec` → `pavedb` redirect/shim path (P3-35).
+- Remove `SearchBody.request_id`; `X-Request-ID` becomes the
+  single documented input channel for request correlation
+  (P1-48).
+- Docs site — preview: MkDocs Material static site with
+  getting-started guide, core concepts (tenants, collections,
+  chunks, metadata, filters), inspect/debug walkthrough using
+  the v0.9 endpoints (query log, replay, chunk inspector,
+  request_id correlation), and a developer section seeded from
+  `docs/PLAN-*.md`. Published via GitLab Pages at a stable URL.
+  Text-first, no marketing chrome (P1-46).
 
 ### PaveDB v1.0 — Stability
 
@@ -333,6 +361,25 @@ latency on every search/ingest/delete.~~
 - Config reference doc + CI drift check (P1-26).
 - Publish `pip freeze` snapshot as release artifact (P3-40).
 - ~~List tenants and collections via API (CLI parity) (P2-12).~~
+- Docs site — 1.0: expand the v0.9 preview to full release
+  coverage. User-facing: install, quickstart, core concepts,
+  auth, ingest, search, filters, inspect/debug, operations
+  (config, limits, metrics, health). Developer-facing:
+  architecture, service/store/embedder seams, plugin contract,
+  internals. Auto-generated API reference from OpenAPI. Search,
+  versioned URLs, dark/light theme. Seeds future language
+  translations (P1-47).
+- HTTP request metrics middleware: single middleware records
+  per-endpoint count + latency histogram labeled by method,
+  path template, and status class. Removes per-handler `inc`
+  sprawl. Adds `# HELP`/`# TYPE` metadata and standard
+  histogram buckets to `/metrics`. Prometheus parity baseline
+  (P1-49).
+- Product-signal metrics: zero-match search rate, filter-usage
+  split, common-merge count, search timeout count, query-log
+  rows + oldest-entry age, embedder counters, sidecar drift
+  gauges. Signals competitors don't expose; directly ties
+  metrics to the inspectability thesis (P1-50).
 
 ### PaveDB v1.1 — Adoption
 
@@ -583,11 +630,15 @@ regression suite (P2-29).~~
 Distributed systems require `request_id` in both request and response. This is the
 minimum contract for any service that participates in a call chain.
 
-**Current state:** `request_id` is accepted and echoed (done v0.5.7).
+**Current state:** `request_id` is accepted and echoed in
+responses. The v0.9 cleanup narrows the public input
+contract to `X-Request-ID`.
 
-**Action:** Add optional `request_id` to `SearchBody`. Echo it in response. Include it
-in structured log entries. This closes the observability gap between consumers and
-PatchVec. (done v0.5.7)
+**Action:** Remove `SearchBody.request_id`, use
+`X-Request-ID` as the request-correlation input, and keep
+echoing the resulting `request_id` in responses and
+structured log entries. This closes the observability gap
+between consumers and PatchVec.
 
 ### 8. Concurrency safety as explicit contract (not assumed)
 
