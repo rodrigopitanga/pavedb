@@ -332,6 +332,44 @@ class DummyStore(BaseStore):
                     match_reason="matched"))
         return SearchOutput(matches=hits)
 
+    def log_query(
+        self,
+        *,
+        query_id: str,
+        tenant: str,
+        collection: str,
+        query_text: str,
+        k: int,
+        filters: dict[str, Any] | None = None,
+        include_common: bool = False,
+        common_tenant: str | None = None,
+        common_collection: str | None = None,
+        result_ids: list[str] | None = None,
+        result_count: int = 0,
+        latency_ms: float | None = None,
+        timing: dict[str, float] | None = None,
+        request_id: str | None = None,
+        replay_of: str | None = None,
+    ) -> None:
+        return None
+
+    def get_query_log_entry(
+        self,
+        tenant: str,
+        collection: str,
+        query_id: str,
+    ) -> dict[str, Any] | None:
+        return None
+
+    def list_query_logs(
+        self,
+        tenant: str,
+        collection: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        return []
+
     def dump_archive(
         self,
         output_path: str | os.PathLike[str] | None = None,
@@ -439,6 +477,86 @@ class SpyStore(BaseStore):
                filters: dict[str, Any] | None = None) -> SearchOutput:
         self.calls.append(("search", tenant, collection, text, k, filters))
         return self.impl.search(tenant, collection, text, k, filters)
+
+    def log_query(
+        self,
+        *,
+        query_id: str,
+        tenant: str,
+        collection: str,
+        query_text: str,
+        k: int,
+        filters: dict[str, Any] | None = None,
+        include_common: bool = False,
+        common_tenant: str | None = None,
+        common_collection: str | None = None,
+        result_ids: list[str] | None = None,
+        result_count: int = 0,
+        latency_ms: float | None = None,
+        timing: dict[str, float] | None = None,
+        request_id: str | None = None,
+        replay_of: str | None = None,
+    ) -> None:
+        self.calls.append(
+            (
+                "log_query",
+                {
+                    "query_id": query_id,
+                    "tenant": tenant,
+                    "collection": collection,
+                    "query_text": query_text,
+                    "k": k,
+                    "filters": filters,
+                    "include_common": include_common,
+                    "common_tenant": common_tenant,
+                    "common_collection": common_collection,
+                    "result_ids": result_ids,
+                    "result_count": result_count,
+                    "latency_ms": latency_ms,
+                    "timing": timing,
+                    "request_id": request_id,
+                    "replay_of": replay_of,
+                },
+            )
+        )
+        return self.impl.log_query(
+            query_id=query_id,
+            tenant=tenant,
+            collection=collection,
+            query_text=query_text,
+            k=k,
+            filters=filters,
+            include_common=include_common,
+            common_tenant=common_tenant,
+            common_collection=common_collection,
+            result_ids=result_ids,
+            result_count=result_count,
+            latency_ms=latency_ms,
+            timing=timing,
+            request_id=request_id,
+            replay_of=replay_of,
+        )
+
+    def get_query_log_entry(
+        self,
+        tenant: str,
+        collection: str,
+        query_id: str,
+    ) -> dict[str, Any] | None:
+        self.calls.append(("get_query_log_entry", tenant, collection, query_id))
+        return self.impl.get_query_log_entry(tenant, collection, query_id)
+
+    def list_query_logs(
+        self,
+        tenant: str,
+        collection: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        self.calls.append(
+            ("list_query_logs", tenant, collection, limit, offset)
+        )
+        return self.impl.list_query_logs(tenant, collection, limit, offset)
 
     def list_tenants(self) -> list[str]:
         self.calls.append(("list_tenants",))

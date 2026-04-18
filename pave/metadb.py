@@ -91,6 +91,36 @@ _COLLECTION_MIGRATIONS: dict[int, list[str]] = {
             ON document_meta (key, value)
         """,
     ],
+    4: [
+        """
+        CREATE TABLE IF NOT EXISTS query_log (
+            query_id             TEXT PRIMARY KEY,
+            query_text           TEXT NOT NULL,
+            k                    INTEGER NOT NULL,
+            filters_json         TEXT,
+            include_common       INTEGER NOT NULL DEFAULT 0,
+            common_tenant        TEXT,
+            common_collection    TEXT,
+            result_ids_json      TEXT,
+            result_count         INTEGER NOT NULL DEFAULT 0,
+            latency_ms           REAL,
+            timing_json          TEXT,
+            request_id           TEXT,
+            replay_of            TEXT,
+            executed_at          TEXT NOT NULL DEFAULT (
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            )
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_query_log_executed_at
+            ON query_log (executed_at DESC)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_query_log_replay_of
+            ON query_log (replay_of)
+        """,
+    ],
 }
 
 _CATALOG_MIGRATIONS: dict[int, list[str]] = {
@@ -273,6 +303,22 @@ class CollectionDB:
             )
         conn.commit()
 
+    @staticmethod
+    def _dump_json(payload: dict[str, Any] | None) -> str | None:
+        if payload is None:
+            return None
+        return json.dumps(payload, ensure_ascii=False)
+
+    @staticmethod
+    def _load_json(payload: str | None) -> dict[str, Any]:
+        if not payload:
+            return {}
+        try:
+            loaded = json.loads(payload)
+        except Exception:
+            return {}
+        return loaded if isinstance(loaded, dict) else {}
+
     # ------------------------------------------------------------------
     # Write operations — serialised by _write_lock, use _wconn
     # ------------------------------------------------------------------
@@ -386,6 +432,110 @@ class CollectionDB:
             conn.execute("DELETE FROM chunks WHERE docid=?", (docid,))
             conn.execute("DELETE FROM documents WHERE docid=?", (docid,))
         return rids
+
+    def log_query(
+        self,
+        *,
+        query_id: str,
+        query_text: str,
+        k: int,
+        filters: dict[str, Any] | None = None,
+        include_common: bool = False,
+        common_tenant: str | None = None,
+        common_collection: str | None = None,
+        result_ids: list[str] | None = None,
+        result_count: int = 0,
+        latency_ms: float | None = None,
+        timing: dict[str, float] | None = None,
+        request_id: str | None = None,
+        replay_of: str | None = None,
+    ) -> None:
+        conn = self._require_wconn()
+        with self._write_lock, conn:
+            conn.execute(
+                "INSERT INTO query_log "
+                "(query_id, query_text, k, filters_json, "
+                "include_common, common_tenant, common_collection, "
+                "result_ids_json, result_count, latency_ms, timing_json, "
+                "request_id, replay_of) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    query_id,
+                    query_text,
+                    k,
+                    self._dump_json(filters),
+                    1 if include_common else 0,
+                    common_tenant,
+                    common_collection,
+                    json.dumps(result_ids, ensure_ascii=False)
+                    if result_ids else None,
+                    result_count,
+                    latency_ms,
+                    self._dump_json(timing),
+                    request_id,
+                    replay_of,
+                ),
+            )
+
+    def get_query_log_entry(
+        self,
+        query_id: str,
+    ) -> dict[str, Any] | None:
+        with self._reader() as conn:
+            row = conn.execute(
+                "SELECT query_id, query_text, k, filters_json, "
+                "include_common, common_tenant, common_collection, "
+                "result_ids_json, result_count, latency_ms, timing_json, "
+                "request_id, replay_of, executed_at "
+                "FROM query_log WHERE query_id = ?",
+                (query_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "query_id": row[0],
+            "query_text": row[1],
+            "k": row[2],
+            "filters": self._load_json(row[3]),
+            "include_common": bool(row[4]),
+            "common_tenant": row[5],
+            "common_collection": row[6],
+            "result_ids": json.loads(row[7]) if row[7] else [],
+            "result_count": row[8],
+            "latency_ms": row[9],
+            "timing": self._load_json(row[10]),
+            "request_id": row[11],
+            "replay_of": row[12],
+            "executed_at": row[13],
+        }
+
+    def list_query_logs(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        with self._reader() as conn:
+            rows = conn.execute(
+                "SELECT query_id, query_text, k, result_count, "
+                "latency_ms, request_id, replay_of, executed_at "
+                "FROM query_log "
+                "ORDER BY executed_at DESC "
+                "LIMIT ? OFFSET ?",
+                (limit, offset),
+            ).fetchall()
+        return [
+            {
+                "query_id": row[0],
+                "query_text": row[1],
+                "k": row[2],
+                "result_count": row[3],
+                "latency_ms": row[4],
+                "request_id": row[5],
+                "replay_of": row[6],
+                "executed_at": row[7],
+            }
+            for row in rows
+        ]
 
     # ------------------------------------------------------------------
     # Read operations — use _rconn, no lock needed (WAL)

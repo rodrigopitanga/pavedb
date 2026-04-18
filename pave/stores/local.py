@@ -347,6 +347,98 @@ class LocalStore(BaseStore):
     ) -> dict[str, Any] | None:
         return self._ensure_catalog().get_collection_config(tenant, collection)
 
+    def log_query(
+        self,
+        *,
+        query_id: str,
+        tenant: str,
+        collection: str,
+        query_text: str,
+        k: int,
+        filters: dict[str, Any] | None = None,
+        include_common: bool = False,
+        common_tenant: str | None = None,
+        common_collection: str | None = None,
+        result_ids: list[str] | None = None,
+        result_count: int = 0,
+        latency_ms: float | None = None,
+        timing: dict[str, float] | None = None,
+        request_id: str | None = None,
+        replay_of: str | None = None,
+    ) -> None:
+        self._load_or_init(tenant, collection)
+        self._dbs[(tenant, collection)].log_query(
+            query_id=query_id,
+            query_text=query_text,
+            k=k,
+            filters=filters,
+            include_common=include_common,
+            common_tenant=common_tenant,
+            common_collection=common_collection,
+            result_ids=result_ids,
+            result_count=result_count,
+            latency_ms=latency_ms,
+            timing=timing,
+            request_id=request_id,
+            replay_of=replay_of,
+        )
+
+    def get_query_log_entry(
+        self,
+        tenant: str,
+        collection: str,
+        query_id: str,
+    ) -> dict[str, Any] | None:
+        key = (tenant, collection)
+        col_db = self._dbs.get(key)
+        close_after = False
+        if col_db is None:
+            db_path = self._db_path(tenant, collection)
+            if not db_path.exists():
+                return None
+            col_db = CollectionDB()
+            col_db.open(db_path, read_only=True)
+            close_after = True
+        try:
+            entry = col_db.get_query_log_entry(query_id)
+            if entry is None:
+                return None
+            entry["tenant"] = tenant
+            entry["collection"] = collection
+            return entry
+        finally:
+            if close_after:
+                try:
+                    col_db.close()
+                except Exception:
+                    pass
+
+    def list_query_logs(
+        self,
+        tenant: str,
+        collection: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        key = (tenant, collection)
+        col_db = self._dbs.get(key)
+        close_after = False
+        if col_db is None:
+            db_path = self._db_path(tenant, collection)
+            if not db_path.exists():
+                return []
+            col_db = CollectionDB()
+            col_db.open(db_path, read_only=True)
+            close_after = True
+        try:
+            return col_db.list_query_logs(limit, offset)
+        finally:
+            if close_after:
+                try:
+                    col_db.close()
+                except Exception:
+                    pass
+
     def _read_doc_chunk_counts(
         self,
         tenant: str,

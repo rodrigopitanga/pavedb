@@ -116,6 +116,44 @@ class BaseStore(ABC):
         """Search for similar documents."""
         ...
 
+    @abstractmethod
+    def log_query(
+        self,
+        *,
+        query_id: str,
+        tenant: str,
+        collection: str,
+        query_text: str,
+        k: int,
+        filters: dict[str, Any] | None = None,
+        include_common: bool = False,
+        common_tenant: str | None = None,
+        common_collection: str | None = None,
+        result_ids: list[str] | None = None,
+        result_count: int = 0,
+        latency_ms: float | None = None,
+        timing: dict[str, float] | None = None,
+        request_id: str | None = None,
+        replay_of: str | None = None,
+    ) -> None: ...
+
+    @abstractmethod
+    def get_query_log_entry(
+        self,
+        tenant: str,
+        collection: str,
+        query_id: str,
+    ) -> dict[str, Any] | None: ...
+
+    @abstractmethod
+    def list_query_logs(
+        self,
+        tenant: str,
+        collection: str,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]: ...
+
     def catalog_metrics(self) -> dict[str, int]:
         """Return store-level catalog counters for admin/metrics endpoints.
 
