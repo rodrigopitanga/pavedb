@@ -66,6 +66,51 @@ class SearchBody(BaseModel):
     request_id: str | None = None
 
 
+class QueryLogEntry(BaseModel):
+    """API entry for a persisted query log row."""
+    query_id: str
+    tenant: str
+    collection: str
+    query_text: str
+    k: int
+    filters: dict[str, Any] | None = None
+    include_common: bool = False
+    common_tenant: str | None = None
+    common_collection: str | None = None
+    result_ids: list[str]
+    result_count: int
+    latency_ms: float | None = None
+    timing: dict[str, float] | None = None
+    request_id: str | None = None
+    replay_of: str | None = None
+    executed_at: str
+
+
+class QueryLogSummary(BaseModel):
+    """API summary item for query log listings."""
+    query_id: str
+    query_text: str
+    k: int
+    result_count: int
+    latency_ms: float | None = None
+    request_id: str | None = None
+    replay_of: str | None = None
+    executed_at: str
+
+
+class ListQueryLogsResponse(OkResponse):
+    """API response for query log listing."""
+    tenant: str
+    collection: str | None = None
+    queries: list[QueryLogSummary]
+    count: int
+
+
+class GetQueryLogResponse(OkResponse):
+    """API response for query log lookup."""
+    query: QueryLogEntry
+
+
 class RenameCollectionBody(BaseModel):
     """API request body for collection rename."""
     new_name: str

@@ -317,7 +317,14 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         prefix="/v1",
     )
     app.include_router(
-        build_search_router(cfg, _do_search, _resp, _get_request_id, _trace_body),
+        build_search_router(
+            cfg,
+            _do_search,
+            _error,
+            _resp,
+            _get_request_id,
+            _trace_body,
+        ),
         prefix="/v1",
     )
 

@@ -11,16 +11,105 @@ from fastapi import APIRouter, Depends, Query, Request
 from pave.auth import AuthContext, auth_ctx, tenant_rate_limit
 from pave.log import ops_event
 from pave.metrics import inc
-from pave.schemas import SearchBody, SearchResponse
-from pave.service import search as svc_search
+from pave.schemas import (
+    GetQueryLogResponse,
+    ListQueryLogsResponse,
+    SearchBody,
+    SearchResponse,
+)
+from pave.service import (
+    get_query_log_entry as svc_get_query_log_entry,
+    list_query_logs as svc_list_query_logs,
+    search as svc_search,
+)
 from pave.stores.base import BaseStore
 
 
-def build_search_router(cfg, do_search, resp, get_rid, trace) -> APIRouter:
+def build_search_router(
+    cfg,
+    do_search,
+    error,
+    resp,
+    get_rid,
+    trace,
+) -> APIRouter:
     router = APIRouter()
 
     def current_store(request: Request) -> BaseStore:
         return request.app.state.store
+
+    @router.get(
+        "/collections/{tenant}/{name}/queries",
+        response_model=ListQueryLogsResponse,
+        responses=resp(401, 403, 429, 500),
+    )
+    @ops_event(
+        "list_query_logs",
+        coll="name",
+        request_id="rid",
+    )
+    def list_query_logs_handler(
+        request: Request,
+        tenant: str,
+        name: str,
+        limit: int = Query(50, ge=1, le=500),
+        offset: int = Query(0, ge=0),
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(tenant_rate_limit),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        result = svc_list_query_logs(
+            store,
+            tenant,
+            name,
+            limit,
+            offset,
+        )
+        if not result.get("ok"):
+            return error(
+                500,
+                result.get("code", "list_query_logs_failed"),
+                result.get("error", "failed to list queries"),
+                request=request,
+                request_id=rid,
+            )
+        return trace(result, request, request_id=rid)
+
+    @router.get(
+        "/collections/{tenant}/{name}/queries/{query_id}",
+        response_model=GetQueryLogResponse,
+        responses=resp(401, 403, 404, 429, 500),
+    )
+    @ops_event(
+        "get_query_log",
+        coll="name",
+        request_id="rid",
+    )
+    def get_query_log_handler(
+        request: Request,
+        tenant: str,
+        name: str,
+        query_id: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(tenant_rate_limit),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        result = svc_get_query_log_entry(store, tenant, name, query_id)
+        if not result.get("ok"):
+            status = (
+                404 if result.get("error_type") == "not_found"
+                else 500
+            )
+            return error(
+                status,
+                result.get("code", "query_log_failed"),
+                result.get("error", "failed to fetch query"),
+                request=request,
+                request_id=rid,
+            )
+        return trace(result, request, request_id=rid)
 
     @router.post(
         "/collections/{tenant}/{name}/search",

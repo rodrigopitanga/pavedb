@@ -384,10 +384,12 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             }
 
 def search(store, tenant: str, collection: str, q: str, k: int = 5,
-              filters: dict[str, Any] | None = None, include_common: bool = False,
-              common_tenant: str | None = None, common_collection: str | None = None,
-              request_id: str | None = None
-              ) -> dict[str, Any]:
+           filters: dict[str, Any] | None = None,
+           include_common: bool = False,
+           common_tenant: str | None = None,
+           common_collection: str | None = None,
+           request_id: str | None = None,
+           _log: bool = True) -> dict[str, Any]:
     start = _time.perf_counter()
     m_inc("search_total", 1.0)
     try:
@@ -401,26 +403,12 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
             timing = _sum_timing(local.timing, common.timing)
             from heapq import nlargest
             top = nlargest(k, matches, key=lambda x: x.score)
-            m_inc("matches_total", float(len(top) or 0))
-            latency_ms = round((_time.perf_counter() - start) * 1000, 2)
-            m_record_latency("search", latency_ms)
-            _t = top[0] if top else None
-            log.info(
-                f"search tenant={tenant} coll={collection} k={k} "
-                f"hits={len(top)} ms={latency_ms:.2f}"
-                + (f" top=[{_t.id} {_t.score:.3f}] \"{(_t.text or '')[:60]}{'...' if len(_t.text or '') > 60 else ''}\"" if _t else "")
-                + (f" req={request_id}" if request_id else ""))
-            return {
-                "ok": True,
-                "matches": [r.to_dict() for r in top],
-                "latency_ms": latency_ms,
-                "timing": timing,
-                "request_id": request_id,
-            }
-        result = _normalize_search_output(
-            store.search(tenant, collection, q, k, filters=filters)
-        )
-        top = result.matches
+        else:
+            result = _normalize_search_output(
+                store.search(tenant, collection, q, k, filters=filters)
+            )
+            top = result.matches
+            timing = result.timing
         m_inc("matches_total", float(len(top) or 0))
         latency_ms = round((_time.perf_counter() - start) * 1000, 2)
         m_record_latency("search", latency_ms)
@@ -428,13 +416,36 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
         log.info(
             f"search tenant={tenant} coll={collection} k={k} "
             f"hits={len(top)} ms={latency_ms:.2f}"
-            + (f" top=[{_t.id} {_t.score:.3f}] \"{(_t.text or '')[:60]}{'...' if len(_t.text or '') > 60 else ''}\"" if _t else "")
+            + (f" top=[{_t.id} {_t.score:.3f}] "
+               f"\"{(_t.text or '')[:60]}"
+               f"{'...' if len(_t.text or '') > 60 else ''}\""
+               if _t else "")
             + (f" req={request_id}" if request_id else ""))
+        if _log:
+            try:
+                store.log_query(
+                    query_id=str(uuid.uuid4()),
+                    tenant=tenant,
+                    collection=collection,
+                    query_text=q,
+                    k=k,
+                    filters=filters,
+                    include_common=include_common,
+                    common_tenant=common_tenant,
+                    common_collection=common_collection,
+                    result_ids=[r.id for r in top],
+                    result_count=len(top),
+                    latency_ms=latency_ms,
+                    timing=timing,
+                    request_id=request_id,
+                )
+            except Exception:
+                log.warning("query log write failed", exc_info=True)
         return {
             "ok": True,
             "matches": [r.to_dict() for r in top],
             "latency_ms": latency_ms,
-            "timing": result.timing,
+            "timing": timing,
             "request_id": request_id,
         }
     except Exception as exc:
@@ -486,6 +497,54 @@ def list_collections(store, tenant: str) -> dict[str, Any]:
         return {
             "ok": False,
             "code": "list_collections_failed",
+            "error": str(e),
+        }
+
+
+def get_query_log_entry(
+    store,
+    tenant: str,
+    collection: str,
+    query_id: str,
+) -> dict[str, Any]:
+    try:
+        entry = store.get_query_log_entry(tenant, collection, query_id)
+        if entry is None:
+            return {
+                "ok": False,
+                "code": "query_not_found",
+                "error": f"query '{query_id}' not found",
+                "error_type": "not_found",
+            }
+        return {"ok": True, "query": entry}
+    except Exception as e:
+        return {
+            "ok": False,
+            "code": "query_log_failed",
+            "error": str(e),
+        }
+
+
+def list_query_logs(
+    store,
+    tenant: str,
+    collection: str,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    try:
+        logs = store.list_query_logs(tenant, collection, limit, offset)
+        return {
+            "ok": True,
+            "tenant": tenant,
+            "collection": collection,
+            "queries": logs,
+            "count": len(logs),
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "code": "list_query_logs_failed",
             "error": str(e),
         }
 
