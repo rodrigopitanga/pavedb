@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 from pave.config import get_cfg
+from pave.stores.local import LocalStore
 from utils import DummyStore, FakeEmbedder, SpyStore
 
 @pytest.fixture
@@ -22,6 +23,22 @@ def cli_env(temp_data_dir, tmp_path, monkeypatch):
         lambda: FakeEmbedder(),
         raising=True,
     )
+    pvcli.store = store
+    return pvcli, store, tmp_path
+
+
+@pytest.fixture
+def cli_query_env(temp_data_dir, tmp_path, monkeypatch):
+    from pave import cli as pvcli_mod
+
+    pvcli = importlib.reload(pvcli_mod)
+    monkeypatch.setattr(
+        pvcli,
+        "get_embedder",
+        lambda: FakeEmbedder(),
+        raising=True,
+    )
+    store = SpyStore(LocalStore(str(temp_data_dir), FakeEmbedder()))
     pvcli.store = store
     return pvcli, store, tmp_path
 
@@ -100,6 +117,66 @@ def test_cli_search_returns_matches(cli_env, tmp_path):
 
     assert any(c[0] == "search" and c[1] == tenant and c[2] == coll \
                and c[3] == "avião" and c[4] == 5 for c in store.calls)
+
+
+def test_cli_list_queries_returns_logged_searches(
+    cli_query_env,
+    capsys,
+):
+    pvcli, store, tmp_path = cli_query_env
+    tenant, coll = "acme", "qlogcli"
+    sample = tmp_path / "qlog.txt"
+    sample.write_text("hello world from cli", encoding="utf-8")
+
+    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1"])
+    pvcli.main_cli(["search", tenant, coll, "hello", "-k", "1"])
+    capsys.readouterr()
+
+    pvcli.main_cli(
+        [
+            "list-queries",
+            tenant,
+            coll,
+            "--limit",
+            "10",
+            "--offset",
+            "0",
+        ]
+    )
+
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is True
+    assert out["tenant"] == tenant
+    assert out["collection"] == coll
+    assert out["count"] == 1
+    assert out["queries"][0]["query_text"] == "hello"
+    assert out["queries"][0]["query_id"]
+    assert ("list_query_logs", tenant, coll, 10, 0) in store.calls
+
+
+def test_cli_get_query_returns_full_entry(cli_query_env, capsys):
+    pvcli, store, tmp_path = cli_query_env
+    tenant, coll = "acme", "qdetailcli"
+    sample = tmp_path / "qdetail.txt"
+    sample.write_text("captain nemo from cli", encoding="utf-8")
+
+    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1"])
+    pvcli.main_cli(["search", tenant, coll, "captain", "-k", "1"])
+    capsys.readouterr()
+
+    query_id = store.impl.list_query_logs(tenant, coll)[0]["query_id"]
+    pvcli.main_cli(["get-query", tenant, coll, query_id])
+
+    out = json.loads(capsys.readouterr().out)
+    assert out["ok"] is True
+    assert out["query"]["query_id"] == query_id
+    assert out["query"]["tenant"] == tenant
+    assert out["query"]["collection"] == coll
+    assert out["query"]["query_text"] == "captain"
+    assert out["query"]["result_ids"]
+    assert ("get_query_log_entry", tenant, coll, query_id) in store.calls
 
 
 def test_cli_dump_archive_creates_zip(cli_env, tmp_path, capsys):

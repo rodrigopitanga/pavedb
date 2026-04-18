@@ -14,9 +14,11 @@ from pave.service import (
     delete_collection as svc_delete_collection,
     rename_collection as svc_rename_collection,
     delete_document as svc_delete_document,
+    get_query_log_entry as svc_get_query_log_entry,
     ingest_document as svc_ingest_document,
     list_tenants as svc_list_tenants,
     list_collections as svc_list_collections,
+    list_query_logs as svc_list_query_logs,
     search as svc_search,
     ServiceError,
 )
@@ -157,6 +159,28 @@ def cmd_search(args):
     )
     _dump(out, pretty=not args.compact)
 
+
+def cmd_list_queries(args):
+    out = svc_list_query_logs(
+        _get_store(),
+        args.tenant,
+        args.collection,
+        args.limit,
+        args.offset,
+    )
+    _dump(out, pretty=not args.compact)
+
+
+def cmd_get_query(args):
+    out = svc_get_query_log_entry(
+        _get_store(),
+        args.tenant,
+        args.collection,
+        args.query_id,
+    )
+    _dump(out, pretty=not args.compact)
+
+
 def cmd_delete(args):
     out = svc_delete_collection(_get_store(), args.tenant, args.collection)
     _dump(out, pretty=not args.compact)
@@ -296,6 +320,19 @@ def main_cli(argv=None):
     p_search.add_argument("-k", type=int, default=5)
     p_search.add_argument("--filters", help='JSON object, e.g. {"docid":"DOC-1"}')
     p_search.set_defaults(func=cmd_search)
+
+    p_list_queries = sub.add_parser("list-queries", parents=[runtime])
+    p_list_queries.add_argument("tenant")
+    p_list_queries.add_argument("collection")
+    p_list_queries.add_argument("--limit", type=int, default=50)
+    p_list_queries.add_argument("--offset", type=int, default=0)
+    p_list_queries.set_defaults(func=cmd_list_queries)
+
+    p_get_query = sub.add_parser("get-query", parents=[runtime])
+    p_get_query.add_argument("tenant")
+    p_get_query.add_argument("collection")
+    p_get_query.add_argument("query_id")
+    p_get_query.set_defaults(func=cmd_get_query)
 
     p_delete = sub.add_parser("delete-collection", parents=[runtime])
     p_delete.add_argument("tenant")
