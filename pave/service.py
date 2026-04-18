@@ -488,3 +488,33 @@ def list_collections(store, tenant: str) -> dict[str, Any]:
             "code": "list_collections_failed",
             "error": str(e),
         }
+
+
+def get_collection_detail(
+    store,
+    tenant: str,
+    name: str,
+) -> dict[str, Any]:
+    try:
+        detail = store.get_collection_detail(tenant, name)
+        if detail is None:
+            log.info(
+                f"get_collection_detail not_found tenant={tenant} coll={name}"
+            )
+            return {
+                "ok": False,
+                "code": "collection_not_found",
+                "error": f"collection '{name}' not found",
+                "error_type": "not_found",
+            }
+        return {"ok": True, **detail}
+    except Exception as e:
+        log.warning(
+            f"get_collection_detail failed tenant={tenant} coll={name}: {e}"
+        )
+        return {
+            "ok": False,
+            "code": "get_collection_detail_failed",
+            "error": str(e),
+            "error_type": "failed",
+        }

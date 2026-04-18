@@ -112,6 +112,18 @@ class ListCollectionsResponse(OkResponse):
     count: int
 
 
+class CollectionDetailResponse(OkResponse):
+    """API response for collection detail."""
+    tenant: str
+    name: str
+    display_name: str | None = None
+    embedder_type: str | None = None
+    embed_model: str | None = None
+    created_at: str | None = None
+    doc_count: int
+    chunk_count: int
+
+
 class ListTenantsResponse(OkResponse):
     """API response for tenant listing."""
     tenants: list[str]

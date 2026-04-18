@@ -72,6 +72,13 @@ class BaseStore(ABC):
         ...
 
     @abstractmethod
+    def get_collection_detail(
+        self,
+        tenant: str,
+        name: str,
+    ) -> dict[str, Any] | None: ...
+
+    @abstractmethod
     def list_tenants(self) -> list[str]:
         """List all tenants."""
         ...

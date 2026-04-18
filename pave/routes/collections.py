@@ -9,6 +9,7 @@ from pave.auth import AuthContext, tenant_rate_limit
 from pave.log import ops_event
 from pave.metrics import inc
 from pave.schemas import (
+    CollectionDetailResponse,
     CreateCollectionBody,
     CreateCollectionResponse,
     DeleteCollectionResponse,
@@ -19,6 +20,7 @@ from pave.schemas import (
 from pave.service import (
     create_collection as svc_create_collection,
     delete_collection as svc_delete_collection,
+    get_collection_detail as svc_get_collection_detail,
     list_collections as svc_list_collections,
     rename_collection as svc_rename_collection,
 )
@@ -51,6 +53,41 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
                 500,
                 result.get("code", "list_collections_failed"),
                 result.get("error", "failed to list collections"),
+                request=request,
+                request_id=rid,
+            )
+        return trace(result, request, request_id=rid)
+
+    @router.get(
+        "/collections/{tenant}/{name}/detail",
+        response_model=CollectionDetailResponse,
+        responses=resp(401, 403, 404, 429, 500),
+    )
+    @ops_event(
+        "get_collection_detail",
+        coll="name",
+        request_id="rid",
+    )
+    def get_collection_detail(
+        request: Request,
+        tenant: str,
+        name: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(tenant_rate_limit),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        result = svc_get_collection_detail(store, tenant, name)
+        if not result.get("ok"):
+            error_type = result.get("error_type", "failed")
+            status_map = {
+                "not_found": 404,
+                "failed": 500,
+            }
+            return error(
+                status_map.get(error_type, 500),
+                result.get("code", "get_collection_detail_failed"),
+                result.get("error", "failed to get collection detail"),
                 request=request,
                 request_id=rid,
             )

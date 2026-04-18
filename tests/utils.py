@@ -209,6 +209,32 @@ class DummyStore(BaseStore):
                 tenants.append(tenant)
         return tenants
 
+    def get_collection_detail(
+        self,
+        tenant: str,
+        name: str,
+    ) -> dict[str, Any] | None:
+        coll_path = os.path.join(self._dir(tenant, name), "catalog.json")
+        if not os.path.isfile(coll_path):
+            return None
+        try:
+            data = json.load(open(coll_path, "r", encoding="utf-8"))
+        except Exception:
+            data = {}
+        cfg = get_cfg()
+        embedder_type = str(cfg.get("embedder.type")).lower()
+        embed_model = cfg.get(f"embedder.{embedder_type}.model")
+        return {
+            "tenant": tenant,
+            "name": name,
+            "display_name": None,
+            "embedder_type": embedder_type,
+            "embed_model": str(embed_model) if embed_model else None,
+            "created_at": None,
+            "doc_count": len(data),
+            "chunk_count": sum(len(chunk_ids) for chunk_ids in data.values()),
+        }
+
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         cat = os.path.join(self._dir(tenant, collection), "catalog.json")
         try:
@@ -364,6 +390,14 @@ class SpyStore(BaseStore):
     def list_collections(self, tenant: str) -> list[dict[str, Any]]:
         self.calls.append(("list_collections", tenant))
         return self.impl.list_collections(tenant)
+
+    def get_collection_detail(
+        self,
+        tenant: str,
+        name: str,
+    ) -> dict[str, Any] | None:
+        self.calls.append(("get_collection_detail", tenant, name))
+        return self.impl.get_collection_detail(tenant, name)
 
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         self.calls.append(("purge_doc", tenant, collection, docid))

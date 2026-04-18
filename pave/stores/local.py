@@ -316,6 +316,27 @@ class LocalStore(BaseStore):
     def list_collections(self, tenant: str) -> list[dict[str, Any]]:
         return self._ensure_catalog().list_collection_summaries(tenant)
 
+    def get_collection_detail(
+        self,
+        tenant: str,
+        name: str,
+    ) -> dict[str, Any] | None:
+        catalog = self._ensure_catalog()
+        cfg = catalog.get_collection_config(tenant, name)
+        if cfg is None:
+            return None
+        doc_count, chunk_count = self._read_doc_chunk_counts(tenant, name)
+        return {
+            "tenant": tenant,
+            "name": name,
+            "display_name": cfg.get("display_name"),
+            "embedder_type": cfg.get("embedder_type"),
+            "embed_model": cfg.get("embed_model"),
+            "created_at": cfg.get("created_at"),
+            "doc_count": doc_count,
+            "chunk_count": chunk_count,
+        }
+
     def list_tenants(self) -> list[str]:
         return self._ensure_catalog().list_tenants()
 
@@ -325,6 +346,43 @@ class LocalStore(BaseStore):
         collection: str,
     ) -> dict[str, Any] | None:
         return self._ensure_catalog().get_collection_config(tenant, collection)
+
+    def _read_doc_chunk_counts(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> tuple[int, int]:
+        """Return (doc_count, chunk_count) for an existing collection.
+
+        Returns (0, 0) if meta.db is missing or hits a transient
+        read error.
+        """
+        db_path = self._db_path(tenant, collection)
+        if not db_path.is_file():
+            return (0, 0)
+
+        key = (tenant, collection)
+        col_db = self._dbs.get(key)
+        if col_db is not None:
+            try:
+                return col_db.get_doc_chunk_counts()
+            except Exception as e:
+                if not self._is_transient_db_read_error(e):
+                    raise
+
+        fallback = CollectionDB()
+        try:
+            fallback.open(db_path, read_only=True)
+            return fallback.get_doc_chunk_counts()
+        except Exception as e:
+            if self._is_transient_db_read_error(e):
+                return (0, 0)
+            raise
+        finally:
+            try:
+                fallback.close()
+            except Exception:
+                pass
 
     def catalog_metrics(self) -> dict[str, int]:
         """Return tenant/collection/doc/chunk counters from store metadata."""
