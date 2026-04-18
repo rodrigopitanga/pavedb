@@ -179,6 +179,63 @@ def test_cli_get_query_returns_full_entry(cli_query_env, capsys):
     assert ("get_query_log_entry", tenant, coll, query_id) in store.calls
 
 
+def test_cli_list_documents_returns_doc_summaries(cli_env, tmp_path, capsys):
+    pvcli, store, _ = cli_env
+    tenant, coll = "acme", "clidocs"
+    sample = tmp_path / "clidocs.txt"
+    sample.write_text("alpha bravo", encoding="utf-8")
+
+    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1"])
+    capsys.readouterr()
+
+    pvcli.main_cli(["list-documents", tenant, coll])
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["ok"] is True
+    assert out["tenant"] == tenant
+    assert out["collection"] == coll
+    assert out["count"] == 1
+    assert out["documents"][0]["docid"] == "DOC1"
+    assert out["documents"][0]["version"] == 1
+    assert out["documents"][0]["chunk_count"] == 1
+    assert ("list_documents", tenant, coll) in store.calls
+
+
+def test_cli_get_document_returns_full_document(cli_env, tmp_path, capsys):
+    pvcli, store, _ = cli_env
+    tenant, coll = "acme", "cligetdoc"
+    sample = tmp_path / "cligetdoc.txt"
+    sample.write_text("hello document", encoding="utf-8")
+
+    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(
+        [
+            "ingest",
+            tenant,
+            coll,
+            str(sample),
+            "--docid",
+            "DOC-GET-1",
+            "--metadata",
+            '{"lang":"pt","source":"cli"}',
+        ]
+    )
+    capsys.readouterr()
+
+    pvcli.main_cli(["get-document", tenant, coll, "DOC-GET-1"])
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["ok"] is True
+    assert out["tenant"] == tenant
+    assert out["collection"] == coll
+    assert out["docid"] == "DOC-GET-1"
+    assert out["chunk_ids"] == ["DOC-GET-1::chunk_0"]
+    assert out["chunk_count"] == 1
+    assert out["metadata"]["docid"] == "DOC-GET-1"
+    assert ("get_document", tenant, coll, "DOC-GET-1") in store.calls
+
+
 def test_cli_dump_archive_creates_zip(cli_env, tmp_path, capsys):
     pvcli, _, _ = cli_env
     data_dir = Path(get_cfg().get("data_dir"))
@@ -230,6 +287,26 @@ def test_cli_list_tenants_accepts_home_flag(cli_env, tmp_path, capsys):
 
     assert out["ok"] is True
     assert out["tenants"] == ["alpha", "beta"]
+
+
+def test_cli_get_collection_returns_detail(cli_env, capsys):
+    pvcli, store, _ = cli_env
+    tenant, coll = "acme", "detailcli"
+
+    pvcli.main_cli(["create-collection", tenant, coll])
+    capsys.readouterr()
+
+    pvcli.main_cli(["get-collection", tenant, coll])
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["ok"] is True
+    assert out["tenant"] == tenant
+    assert out["name"] == coll
+    assert out["embedder_type"] == "sbert"
+    assert out["embed_model"] == "fake"
+    assert out["doc_count"] == 0
+    assert out["chunk_count"] == 0
+    assert ("get_collection_detail", tenant, coll) in store.calls
 
 
 def test_cli_init_writes_default_instance_files(cli_env, monkeypatch, tmp_path, capsys):

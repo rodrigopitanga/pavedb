@@ -14,10 +14,13 @@ from pave.service import (
     delete_collection as svc_delete_collection,
     rename_collection as svc_rename_collection,
     delete_document as svc_delete_document,
+    get_collection_detail as svc_get_collection_detail,
+    get_document as svc_get_document,
     get_query_log_entry as svc_get_query_log_entry,
     ingest_document as svc_ingest_document,
     list_tenants as svc_list_tenants,
     list_collections as svc_list_collections,
+    list_documents as svc_list_documents,
     list_query_logs as svc_list_query_logs,
     search as svc_search,
     ServiceError,
@@ -181,6 +184,25 @@ def cmd_get_query(args):
     _dump(out, pretty=not args.compact)
 
 
+def cmd_list_documents(args):
+    out = svc_list_documents(
+        _get_store(),
+        args.tenant,
+        args.collection,
+    )
+    _dump(out, pretty=not args.compact)
+
+
+def cmd_get_document(args):
+    out = svc_get_document(
+        _get_store(),
+        args.tenant,
+        args.collection,
+        args.docid,
+    )
+    _dump(out, pretty=not args.compact)
+
+
 def cmd_delete(args):
     out = svc_delete_collection(_get_store(), args.tenant, args.collection)
     _dump(out, pretty=not args.compact)
@@ -243,6 +265,16 @@ def cmd_list_collections(args):
             for coll in out.get("collections", [])
         ]
     _dump(out, pretty=not args.compact)
+
+
+def cmd_get_collection(args):
+    out = svc_get_collection_detail(
+        _get_store(),
+        args.tenant,
+        args.collection,
+    )
+    _dump(out, pretty=not args.compact)
+
 
 def main_cli(argv=None):
     p = argparse.ArgumentParser(prog="pavecli")
@@ -334,6 +366,17 @@ def main_cli(argv=None):
     p_get_query.add_argument("query_id")
     p_get_query.set_defaults(func=cmd_get_query)
 
+    p_list_docs = sub.add_parser("list-documents", parents=[runtime])
+    p_list_docs.add_argument("tenant")
+    p_list_docs.add_argument("collection")
+    p_list_docs.set_defaults(func=cmd_list_documents)
+
+    p_get_doc = sub.add_parser("get-document", parents=[runtime])
+    p_get_doc.add_argument("tenant")
+    p_get_doc.add_argument("collection")
+    p_get_doc.add_argument("docid")
+    p_get_doc.set_defaults(func=cmd_get_document)
+
     p_delete = sub.add_parser("delete-collection", parents=[runtime])
     p_delete.add_argument("tenant")
     p_delete.add_argument("collection")
@@ -368,6 +411,11 @@ def main_cli(argv=None):
     p_list_collections = sub.add_parser("list-collections", parents=[runtime])
     p_list_collections.add_argument("tenant")
     p_list_collections.set_defaults(func=cmd_list_collections)
+
+    p_get_collection = sub.add_parser("get-collection", parents=[runtime])
+    p_get_collection.add_argument("tenant")
+    p_get_collection.add_argument("collection")
+    p_get_collection.set_defaults(func=cmd_get_collection)
 
     args = p.parse_args(argv)
     if args.cmd != "init":
