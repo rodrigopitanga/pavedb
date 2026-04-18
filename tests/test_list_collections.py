@@ -28,7 +28,21 @@ def test_list_collections_api_sorted(client, tmp_path, monkeypatch):
     data = r.json()
     assert data["ok"] is True
     assert data["tenant"] == "acme"
-    assert data["collections"] == ["contracts", "invoices", "reports"]
+    assert [c["name"] for c in data["collections"]] == [
+        "contracts",
+        "invoices",
+        "reports",
+    ]
+    assert [c["display_name"] for c in data["collections"]] == [
+        None,
+        None,
+        None,
+    ]
+    assert [c["embedder_label"] for c in data["collections"]] == [
+        "sbert:fake",
+        "sbert:fake",
+        "sbert:fake",
+    ]
     assert data["count"] == 3
 
 
@@ -88,7 +102,14 @@ def test_list_collections_cli(tmp_path, capsys, monkeypatch):
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] is True
     assert out["tenant"] == "demo"
-    assert out["collections"] == ["articles", "books"]
+    assert [c["name"] for c in out["collections"]] == [
+        "articles",
+        "books",
+    ]
+    assert [c["embedder_label"] for c in out["collections"]] == [
+        "sbert:fake",
+        "sbert:fake",
+    ]
     assert out["count"] == 2
 
 
@@ -100,7 +121,13 @@ def test_list_collections_bootstraps_existing_collection_db(tmp_path):
     store = LocalStore(str(tmp_path), FakeEmbedder())
 
     assert store.list_tenants() == ["acme"]
-    assert store.list_collections("acme") == ["bootstrap"]
+    assert store.list_collections("acme") == [
+        {
+            "name": "bootstrap",
+            "display_name": None,
+            "embedder_label": "sbert:fake",
+        }
+    ]
 
     cfg = store.get_collection_config("acme", "bootstrap")
     assert cfg is not None

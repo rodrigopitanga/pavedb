@@ -313,8 +313,8 @@ class LocalStore(BaseStore):
             except Exception:
                 pass
 
-    def list_collections(self, tenant: str) -> list[str]:
-        return self._ensure_catalog().list_collections(tenant)
+    def list_collections(self, tenant: str) -> list[dict[str, Any]]:
+        return self._ensure_catalog().list_collection_summaries(tenant)
 
     def list_tenants(self) -> list[str]:
         return self._ensure_catalog().list_tenants()

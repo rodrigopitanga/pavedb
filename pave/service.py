@@ -471,7 +471,7 @@ def list_tenants(store) -> dict[str, Any]:
 
 def list_collections(store, tenant: str) -> dict[str, Any]:
     try:
-        collections = sorted(store.list_collections(tenant))
+        collections = store.list_collections(tenant)
         return {
             "ok": True,
             "tenant": tenant,

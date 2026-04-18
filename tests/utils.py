@@ -179,18 +179,17 @@ class DummyStore(BaseStore):
             raise ValueError(f"collection '{new_name}' already exists")
         os.rename(old_path, new_path)
 
-    def list_collections(self, tenant: str) -> list[str]:
+    def list_collections(self, tenant: str) -> list[dict[str, Any]]:
         tenant_path = os.path.join(get_cfg().get("data_dir"), tenant)
         if not os.path.isdir(tenant_path):
             return []
-        collections: list[str] = []
-        for entry in os.listdir(tenant_path):
+        collections: list[dict[str, Any]] = []
+        for entry in sorted(os.listdir(tenant_path)):
             entry_path = os.path.join(tenant_path, entry)
             if os.path.isdir(entry_path):
-                # Check for catalog.json existence
                 catalog_path = os.path.join(entry_path, "catalog.json")
                 if os.path.isfile(catalog_path):
-                    collections.append(entry)
+                    collections.append({"name": entry})
         return collections
 
     def list_tenants(self) -> list[str]:
@@ -362,7 +361,7 @@ class SpyStore(BaseStore):
         self.calls.append(("rename_collection", tenant, old_name, new_name))
         return self.impl.rename_collection(tenant, old_name, new_name)
 
-    def list_collections(self, tenant: str) -> list[str]:
+    def list_collections(self, tenant: str) -> list[dict[str, Any]]:
         self.calls.append(("list_collections", tenant))
         return self.impl.list_collections(tenant)
 

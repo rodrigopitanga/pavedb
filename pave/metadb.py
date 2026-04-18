@@ -974,6 +974,30 @@ class CatalogDB:
             )
             return [str(row[0]) for row in cur.fetchall()]
 
+    def list_collection_summaries(
+        self,
+        tenant: str,
+    ) -> list[dict[str, Any]]:
+        with self._reader() as conn:
+            cur = conn.execute(
+                "SELECT name, display_name, embedder_type, embed_model "
+                "FROM collections WHERE tenant=? ORDER BY name",
+                (tenant,),
+            )
+            out: list[dict[str, Any]] = []
+            for name, display_name, emb_type, emb_model in cur.fetchall():
+                label = None
+                if emb_type and emb_model:
+                    label = f"{emb_type}:{emb_model}"
+                out.append(
+                    {
+                        "name": name,
+                        "display_name": display_name,
+                        "embedder_label": label,
+                    }
+                )
+            return out
+
     def list_collection_refs(self) -> list[tuple[str, str]]:
         with self._reader() as conn:
             cur = conn.execute(

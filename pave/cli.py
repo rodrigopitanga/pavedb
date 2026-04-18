@@ -209,6 +209,15 @@ def cmd_list_tenants(args):
 
 def cmd_list_collections(args):
     out = svc_list_collections(_get_store(), args.tenant)
+    if out.get("ok"):
+        out["collections"] = [
+            {
+                "name": coll["name"],
+                "display_name": coll.get("display_name"),
+                "embedder_label": coll.get("embedder_label"),
+            }
+            for coll in out.get("collections", [])
+        ]
     _dump(out, pretty=not args.compact)
 
 def main_cli(argv=None):

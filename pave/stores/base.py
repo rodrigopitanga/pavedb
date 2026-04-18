@@ -67,8 +67,8 @@ class BaseStore(ABC):
         ...
 
     @abstractmethod
-    def list_collections(self, tenant: str) -> list[str]:
-        """List all collections for a tenant."""
+    def list_collections(self, tenant: str) -> list[dict[str, Any]]:
+        """List collection summaries for a tenant."""
         ...
 
     @abstractmethod

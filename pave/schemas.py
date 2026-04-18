@@ -98,10 +98,17 @@ class RenameCollectionResponse(OkResponse):
     new_name: str
 
 
+class CollectionSummary(BaseModel):
+    """API summary item for collection listings."""
+    name: str
+    display_name: str | None = None
+    embedder_label: str | None = None
+
+
 class ListCollectionsResponse(OkResponse):
     """API response for collection listing."""
     tenant: str
-    collections: list[str]
+    collections: list[CollectionSummary]
     count: int
 
 
