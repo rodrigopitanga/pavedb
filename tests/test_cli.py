@@ -160,6 +160,103 @@ def test_cli_search_returns_matches(cli_env, tmp_path):
                and c[3] == "avião" and c[4] == 5 for c in store.calls)
 
 
+def test_cli_search_does_not_merge_common_by_default(
+    cli_env,
+    tmp_path,
+    capsys,
+):
+    pvcli, store, _ = cli_env
+    cfg = get_cfg()
+    cfg.set("common_enabled", True)
+    cfg.set("common_tenant", "global")
+    cfg.set("common_collection", "common")
+    local = tmp_path / "local.txt"
+    common = tmp_path / "common.txt"
+    local.write_text("captain local", encoding="utf-8")
+    common.write_text("captain common", encoding="utf-8")
+
+    pvcli.main_cli(["create-collection", "acme", "local"])
+    pvcli.main_cli(["create-collection", "global", "common"])
+    pvcli.main_cli(["ingest", "acme", "local", str(local), "--docid", "DOC-L"])
+    pvcli.main_cli(
+        ["ingest", "global", "common", str(common), "--docid", "DOC-C"]
+    )
+    capsys.readouterr()
+
+    pvcli.main_cli(
+        [
+            "search",
+            "acme",
+            "local",
+            "captain",
+            "-k",
+            "2",
+        ]
+    )
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["ok"] is True
+    assert len(out["matches"]) == 1
+    assert not any(
+        call[:5] == ("search", "global", "common", "captain", 10)
+        for call in store.calls
+    )
+    log_calls = [call for call in store.calls if call[0] == "log_query"]
+    assert log_calls
+    payload = log_calls[-1][1]
+    assert payload["include_common"] is False
+
+
+def test_cli_search_merges_common_when_enabled(
+    cli_env,
+    tmp_path,
+    capsys,
+):
+    pvcli, store, _ = cli_env
+    cfg = get_cfg()
+    cfg.set("common_enabled", True)
+    cfg.set("common_tenant", "global")
+    cfg.set("common_collection", "common")
+    local = tmp_path / "local-merge.txt"
+    common = tmp_path / "common-merge.txt"
+    local.write_text("captain local", encoding="utf-8")
+    common.write_text("captain common", encoding="utf-8")
+
+    pvcli.main_cli(["create-collection", "acme", "localmerge"])
+    pvcli.main_cli(["create-collection", "global", "common"])
+    pvcli.main_cli(
+        ["ingest", "acme", "localmerge", str(local), "--docid", "DOC-L"]
+    )
+    pvcli.main_cli(
+        ["ingest", "global", "common", str(common), "--docid", "DOC-C"]
+    )
+    capsys.readouterr()
+
+    pvcli.main_cli(
+        [
+            "search",
+            "acme",
+            "localmerge",
+            "captain",
+            "-k",
+            "2",
+            "--merge-common=true",
+        ]
+    )
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["ok"] is True
+    assert len(out["matches"]) == 2
+    assert any(
+        call[:5] == ("search", "global", "common", "captain", 10)
+        for call in store.calls
+    )
+    log_calls = [call for call in store.calls if call[0] == "log_query"]
+    payload = log_calls[-1][1]
+    assert payload["include_common"] is True
+    assert payload["common_tenant"] == "global"
+    assert payload["common_collection"] == "common"
+
 def test_cli_list_queries_returns_logged_searches(
     cli_query_env,
     capsys,

@@ -58,6 +58,10 @@ def _read(path: str) -> bytes:
     return pathlib.Path(path).read_bytes()
 
 
+def _parse_filters_arg(raw: str | None) -> dict | None:
+    return json.loads(raw) if raw else None
+
+
 def _prepare_runtime(args) -> None:
     global store
     paths = apply_runtime_env(
@@ -157,7 +161,12 @@ def cmd_ingest(args):
     _dump(out, pretty=not args.compact)
 
 def cmd_search(args):
-    filters = json.loads(args.filters) if args.filters else None
+    cfg = get_cfg()
+    filters = _parse_filters_arg(args.filters)
+    merge_common = (
+        args.merge_common == "true"
+        and bool(cfg.common_enabled)
+    )
     out = svc_search(
         _get_store(),
         args.tenant,
@@ -165,6 +174,9 @@ def cmd_search(args):
         args.query,
         args.k,
         filters=filters,
+        include_common=merge_common,
+        common_tenant=cfg.common_tenant,
+        common_collection=cfg.common_collection,
     )
     _dump(out, pretty=not args.compact)
 
@@ -358,6 +370,11 @@ def main_cli(argv=None):
     p_search.add_argument("collection")
     p_search.add_argument("query")
     p_search.add_argument("-k", type=int, default=5)
+    p_search.add_argument(
+        "--merge-common",
+        choices=["true", "false"],
+        default="false",
+    )
     p_search.add_argument("--filters", help='JSON object, e.g. {"docid":"DOC-1"}')
     p_search.set_defaults(func=cmd_search)
 
