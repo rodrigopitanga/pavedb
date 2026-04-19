@@ -58,6 +58,47 @@ def test_cli_ingest_on_fresh_collection_with_empty_index_dir(cli_env, tmp_path):
                and c[3] == "DOC1" for c in store.calls)
 
 
+def test_cli_create_collection_accepts_embedder_args(cli_env, capsys):
+    pvcli, store, _ = cli_env
+    tenant, coll = "acme", "cfgcli"
+
+    pvcli.main_cli(
+        [
+            "create-collection",
+            tenant,
+            coll,
+            "--embedder-type",
+            "sbert",
+            "--embed-model",
+            "fake",
+        ]
+    )
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["ok"] is True
+    assert out["embedder_type"] == "sbert"
+    assert out["embed_model"] == "fake"
+    assert ("create_collection", tenant, coll) in store.calls
+
+
+def test_cli_create_collection_rejects_wrong_embed_model(cli_env, capsys):
+    pvcli, _, _ = cli_env
+
+    pvcli.main_cli(
+        [
+            "create-collection",
+            "acme",
+            "badcfgcli",
+            "--embed-model",
+            "sentence-transformers/all-MiniLM-L6-v2",
+        ]
+    )
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["ok"] is False
+    assert out["code"] == "embed_model_not_supported"
+
+
 def test_cli_ingest_passes_doc_meta_through_wrapper(cli_env, tmp_path):
     pvcli, store, _ = cli_env
     tenant, coll = "acme", "metawrap"

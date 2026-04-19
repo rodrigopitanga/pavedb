@@ -127,7 +127,13 @@ def cmd_init(args):
     _dump(out, pretty=not args.compact)
 
 def cmd_create(args):
-    out = svc_create_collection(_get_store(), args.tenant, args.collection)
+    out = svc_create_collection(
+        _get_store(),
+        args.tenant,
+        args.collection,
+        embedder_type=args.embedder_type,
+        embed_model=args.embed_model,
+    )
     _dump(out, pretty=not args.compact)
 
 def cmd_ingest(args):
@@ -322,6 +328,8 @@ def main_cli(argv=None):
     p_create = sub.add_parser("create-collection", parents=[runtime])
     p_create.add_argument("tenant")
     p_create.add_argument("collection")
+    p_create.add_argument("--embedder-type")
+    p_create.add_argument("--embed-model")
     p_create.set_defaults(func=cmd_create)
 
     p_ingest = sub.add_parser("ingest", parents=[runtime])
