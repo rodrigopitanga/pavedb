@@ -124,9 +124,7 @@ def build_search_router(
             len(json.loads(r.body).get("matches", []))
             if getattr(r, "status_code", 400) < 400 else None
         ),
-        request_id=lambda kw, r: (
-            kw["body"].request_id or kw.get("rid")
-        ),
+        request_id="rid",
     )
     async def search_post(
         request: Request,
@@ -138,9 +136,6 @@ def build_search_router(
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
-        request_id = body.request_id or rid
-        if request_id is not None:
-            request.state.request_id = request_id
         include_common = bool(cfg.common_enabled)
         return await do_search(
             functools.partial(
@@ -154,10 +149,10 @@ def build_search_router(
                 include_common=include_common,
                 common_tenant=cfg.common_tenant,
                 common_collection=cfg.common_collection,
-                request_id=request_id,
+                request_id=rid,
             ),
             request=request,
-            request_id=request_id,
+            request_id=rid,
         )
 
     @router.get(
@@ -218,9 +213,6 @@ def build_search_router(
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
-        request_id = body.request_id or rid
-        if request_id is not None:
-            request.state.request_id = request_id
         if not cfg.common_enabled:
             return trace(
                 {
@@ -234,7 +226,7 @@ def build_search_router(
                     },
                 },
                 request,
-                request_id=request_id,
+                request_id=rid,
             )
         return await do_search(
             functools.partial(
@@ -245,10 +237,10 @@ def build_search_router(
                 body.q,
                 body.k,
                 filters=body.filters,
-                request_id=request_id,
+                request_id=rid,
             ),
             request=request,
-            request_id=request_id,
+            request_id=rid,
         )
 
     @router.get(

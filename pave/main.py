@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager
 import uvicorn
 
 from fastapi import FastAPI, Request, HTTPException
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -286,7 +287,9 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                     "ok": False,
                     "code": "validation_error",
                     "error": "validation failed",
-                    "details": {"errors": exc.errors()},
+                    "details": {
+                        "errors": jsonable_encoder(exc.errors()),
+                    },
                 },
                 request_id=_get_request_id(request),
                 latency_ms=_get_latency_ms(request),

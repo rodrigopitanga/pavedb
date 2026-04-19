@@ -57,7 +57,8 @@ def test_get_query_log_entry_includes_common_merge_fields(client, cfg):
 
     response = client.post(
         "/v1/collections/acme/local/search",
-        json={"q": "captain", "k": 5, "request_id": "req-common-1"},
+        json={"q": "captain", "k": 5},
+        headers={"X-Request-ID": "req-common-1"},
     )
     assert response.status_code == 200
 

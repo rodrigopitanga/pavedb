@@ -174,6 +174,9 @@ and request id for observability:
 }
 ```
 
+Set `X-Request-ID` if you want to supply your own correlation id.
+Search request bodies do not accept `request_id`.
+
 The Swagger UI is available at `http://localhost:8086/`.
 
 Health and metrics endpoints are available at `/health` and `/health/metrics`.

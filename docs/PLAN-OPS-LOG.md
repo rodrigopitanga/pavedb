@@ -237,9 +237,9 @@ def delete_collection(tenant, name, ctx, store):
         len(json.loads(r.body).get("matches", []))
         if getattr(r, "status_code", 400) < 400 else None
     ),
-    request_id=lambda kw, r: kw["body"].request_id or kw.get("x_request_id"),
+    request_id="rid",
 )
-async def search_post(tenant, name, body, ...):
+async def search_post(tenant, name, body, rid, ...):
     ...
 ```
 

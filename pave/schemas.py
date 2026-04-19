@@ -4,7 +4,7 @@
 """Pydantic schemas for API request/response validation."""
 
 from typing import Any, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class TraceResponse(BaseModel):
@@ -63,7 +63,16 @@ class SearchBody(BaseModel):
     q: str
     k: int = 5
     filters: dict[str, Any] | None = None
-    request_id: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_request_id(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "request_id" in data:
+            raise ValueError(
+                "request_id in search body is not supported; use the "
+                "X-Request-ID header instead"
+            )
+        return data
 
 
 class QueryLogEntry(BaseModel):

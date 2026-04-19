@@ -9,20 +9,23 @@ def _assert_uuid(value: str) -> None:
     UUID(value)
 
 
-def test_request_id_from_body(client):
-    """request_id in body should be echoed in response."""
+def test_request_id_in_body_is_rejected(client):
+    """SearchBody.request_id is no longer accepted."""
     client.post("/v1/collections/acme/reqid")
     client.post("/v1/collections/acme/reqid/documents",
                 files={"file": ("a.txt", b"hello world", "text/plain")},
                 data={"docid": "D1"})
     body = {"q": "hello", "k": 5, "request_id": "req-body-123"}
     r = client.post("/v1/collections/acme/reqid/search", json=body)
-    assert r.status_code == 200
+    assert r.status_code == 422
     data = r.json()
-    assert r.headers["X-Request-ID"] == body["request_id"]
-    assert data["request_id"] == "req-body-123"
-    assert "latency_ms" in data
-    assert isinstance(data["latency_ms"], (int, float))
+    assert data["code"] == "validation_error"
+    assert data["request_id"] == r.headers["X-Request-ID"]
+    assert isinstance(data["details"]["errors"], list)
+    assert any(
+        "X-Request-ID header instead" in err["msg"]
+        for err in data["details"]["errors"]
+    )
 
 def test_request_id_from_header(client):
     """X-Request-ID header should be echoed in response."""
@@ -38,19 +41,24 @@ def test_request_id_from_header(client):
     data = r.json()
     assert data["request_id"] == "req-header-456"
 
-def test_request_id_body_takes_precedence(client):
-    """request_id in body should take precedence over header."""
+def test_request_id_in_body_is_rejected_even_with_header(client):
+    """SearchBody.request_id is rejected even if a header is present."""
     client.post("/v1/collections/acme/reqprec")
     client.post("/v1/collections/acme/reqprec/documents",
                 files={"file": ("c.txt", b"precedence test", "text/plain")},
                 data={"docid": "D3"})
     body = {"q": "precedence", "k": 5, "request_id": "body-wins"}
     r = client.post("/v1/collections/acme/reqprec/search", json=body,
-                    headers={"X-Request-ID": "header-loses"})
-    assert r.status_code == 200
-    assert r.headers["X-Request-ID"] == "body-wins"
+                    headers={"X-Request-ID": "header-wins"})
+    assert r.status_code == 422
+    assert r.headers["X-Request-ID"] == "header-wins"
     data = r.json()
-    assert data["request_id"] == "body-wins"
+    assert data["request_id"] == "header-wins"
+    assert data["code"] == "validation_error"
+    assert any(
+        "X-Request-ID header instead" in err["msg"]
+        for err in data["details"]["errors"]
+    )
 
 def test_request_id_get_endpoint(client):
     """GET search should accept X-Request-ID header."""
@@ -96,11 +104,15 @@ def test_latency_ms_in_response(client):
     assert data["latency_ms"] < 60000  # should complete in under 60s
 
 def test_common_search_request_id(client):
-    """Common collection search should also support request_id."""
+    """Common collection search should echo X-Request-ID."""
     # Common collection search returns empty matches when not enabled
     # but should still echo request_id
-    body = {"q": "test", "k": 5, "request_id": "common-req-123"}
-    r = client.post("/v1/search", json=body)
+    body = {"q": "test", "k": 5}
+    r = client.post(
+        "/v1/search",
+        json=body,
+        headers={"X-Request-ID": "common-req-123"},
+    )
     assert r.status_code == 200
     data = r.json()
     assert data["request_id"] == "common-req-123"
