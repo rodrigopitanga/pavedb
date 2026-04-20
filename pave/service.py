@@ -549,6 +549,78 @@ def list_query_logs(
         }
 
 
+def replay_query(
+    store,
+    tenant: str,
+    collection: str,
+    query_id: str,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    try:
+        entry = store.get_query_log_entry(tenant, collection, query_id)
+        if entry is None:
+            return {
+                "ok": False,
+                "code": "query_not_found",
+                "error": f"query '{query_id}' not found",
+                "error_type": "not_found",
+            }
+
+        result = search(
+            store,
+            tenant,
+            collection,
+            entry["query_text"],
+            entry["k"],
+            filters=entry.get("filters"),
+            include_common=entry.get("include_common", False),
+            common_tenant=entry.get("common_tenant"),
+            common_collection=entry.get("common_collection"),
+            request_id=request_id,
+            _log=False,
+        )
+        if not result.get("ok"):
+            return result
+
+        replay_qid = str(uuid.uuid4())
+        try:
+            store.log_query(
+                query_id=replay_qid,
+                tenant=tenant,
+                collection=collection,
+                query_text=entry["query_text"],
+                k=entry["k"],
+                filters=entry.get("filters"),
+                include_common=entry.get("include_common", False),
+                common_tenant=entry.get("common_tenant"),
+                common_collection=entry.get("common_collection"),
+                result_ids=[match["id"] for match in result["matches"]],
+                result_count=len(result["matches"]),
+                latency_ms=result.get("latency_ms"),
+                timing=result.get("timing"),
+                request_id=request_id,
+                replay_of=query_id,
+            )
+        except Exception:
+            log.warning("replay log failed", exc_info=True)
+
+        return {
+            "ok": True,
+            "original_query_id": query_id,
+            "replay_query_id": replay_qid,
+            "matches": result["matches"],
+            "timing": result.get("timing"),
+            "original_result_count": entry.get("result_count", 0),
+            "original_latency_ms": entry.get("latency_ms"),
+            "latency_ms": result.get("latency_ms"),
+            "request_id": request_id,
+        }
+    except ServiceError:
+        raise
+    except Exception as e:
+        raise ServiceError("replay_query_failed", str(e)) from e
+
+
 def get_collection_detail(
     store,
     tenant: str,

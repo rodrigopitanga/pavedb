@@ -120,6 +120,19 @@ class GetQueryLogResponse(OkResponse):
     query: QueryLogEntry
 
 
+class QueryReplayResponse(OkResponse):
+    """API response for query replay."""
+    original_query_id: str
+    replay_query_id: str
+    matches: list[SearchResult]
+    timing: SearchTiming | None = Field(
+        default=None,
+        description="Per-phase latency breakdown",
+    )
+    original_result_count: int
+    original_latency_ms: float | None = None
+
+
 class RenameCollectionBody(BaseModel):
     """API request body for collection rename."""
     new_name: str

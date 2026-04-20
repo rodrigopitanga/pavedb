@@ -14,12 +14,14 @@ from pave.metrics import inc
 from pave.schemas import (
     GetQueryLogResponse,
     ListQueryLogsResponse,
+    QueryReplayResponse,
     SearchBody,
     SearchResponse,
 )
 from pave.service import (
     get_query_log_entry as svc_get_query_log_entry,
     list_query_logs as svc_list_query_logs,
+    replay_query as svc_replay_query,
     search as svc_search,
 )
 from pave.stores.base import BaseStore
@@ -110,6 +112,39 @@ def build_search_router(
                 request_id=rid,
             )
         return trace(result, request, request_id=rid)
+
+    @router.post(
+        "/collections/{tenant}/{name}/queries/{query_id}/replay",
+        response_model=QueryReplayResponse,
+        responses=resp(401, 403, 404, 429, 500, 503),
+    )
+    @ops_event(
+        "replay_query",
+        coll="name",
+        request_id="rid",
+    )
+    async def replay_query_handler(
+        request: Request,
+        tenant: str,
+        name: str,
+        query_id: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(tenant_rate_limit),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        return await do_search(
+            functools.partial(
+                svc_replay_query,
+                store,
+                tenant,
+                name,
+                query_id,
+                request_id=rid,
+            ),
+            request=request,
+            request_id=rid,
+        )
 
     @router.post(
         "/collections/{tenant}/{name}/search",
