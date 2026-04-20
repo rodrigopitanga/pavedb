@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import time as _time
+import pave.routes.search as search_routes
 
 
 def test_search_failure_returns_code(client, app, monkeypatch):
@@ -57,3 +58,58 @@ def test_search_overloaded_returns_503(client, app, monkeypatch):
     data = r.json()
     assert data["ok"] is False
     assert data["code"] == "search_overloaded"
+
+
+def test_search_result_not_found_maps_to_404(client, monkeypatch):
+    client.post("/v1/collections/acme/nfsearch")
+
+    def fake_search(*args, **kwargs):
+        return {
+            "ok": False,
+            "code": "query_not_found",
+            "error": "query not found",
+            "error_type": "not_found",
+        }
+
+    monkeypatch.setattr(
+        search_routes,
+        "svc_search",
+        fake_search,
+        raising=True,
+    )
+
+    r = client.post(
+        "/v1/collections/acme/nfsearch/search",
+        json={"q": "x", "k": 1},
+    )
+    assert r.status_code == 404
+    data = r.json()
+    assert data["ok"] is False
+    assert data["code"] == "query_not_found"
+
+
+def test_search_result_error_maps_to_500(client, monkeypatch):
+    client.post("/v1/collections/acme/errsearch")
+
+    def fake_search(*args, **kwargs):
+        return {
+            "ok": False,
+            "code": "search_failed",
+            "error": "boom",
+        }
+
+    monkeypatch.setattr(
+        search_routes,
+        "svc_search",
+        fake_search,
+        raising=True,
+    )
+
+    r = client.post(
+        "/v1/collections/acme/errsearch/search",
+        json={"q": "x", "k": 1},
+    )
+    assert r.status_code == 500
+    data = r.json()
+    assert data["ok"] is False
+    assert data["code"] == "search_failed"

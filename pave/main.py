@@ -233,6 +233,18 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                         request,
                         request_id=request_id,
                     )
+                if isinstance(result, dict) and result.get("ok") is False:
+                    status_code = (
+                        404 if result.get("error_type") == "not_found"
+                        else 500
+                    )
+                    return _error(
+                        status_code,
+                        result.get("code", "search_failed"),
+                        result.get("error", "search failed"),
+                        request=request,
+                        request_id=request_id,
+                    )
                 return result
             except asyncio.TimeoutError:
                 # Thread keeps running; suppress its eventual result/exception.
