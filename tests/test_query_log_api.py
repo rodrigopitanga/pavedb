@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import time
 
+from fastapi.testclient import TestClient
+
 from pave.service import search as svc_search
 
 
@@ -92,6 +94,49 @@ def test_get_query_log_not_found(client):
     data = response.json()
     assert data["code"] == "query_not_found"
     assert "missing-query-id" in data["error"]
+
+
+def test_admin_get_query_log_entry_by_bare_id(app, cfg):
+    open_client = svc_client = None
+    try:
+        open_client = TestClient(app)
+        collection = "adminqlog"
+        open_client.post(f"/v1/collections/acme/{collection}")
+        open_client.post(
+            f"/v1/collections/acme/{collection}/documents",
+            files={"file": ("a.txt", b"hello world", "text/plain")},
+            data={"docid": "DOC-1"},
+        )
+        open_client.post(
+            f"/v1/collections/acme/{collection}/search",
+            json={"q": "hello", "k": 5},
+        )
+        logs = open_client.get(f"/v1/collections/acme/{collection}/queries")
+        query_id = logs.json()["queries"][0]["query_id"]
+
+        cfg.set("auth.mode", "static")
+        cfg.set("auth.global_key", "adminkey")
+        cfg.set("auth.api_keys", {"acme": "acmekey"})
+
+        svc_client = TestClient(app)
+        unauthorized = svc_client.get(f"/v1/admin/queries/{query_id}")
+        assert unauthorized.status_code == 401
+
+        response = svc_client.get(
+            f"/v1/admin/queries/{query_id}",
+            headers={"Authorization": "Bearer adminkey"},
+        )
+        assert response.status_code == 200
+        data = response.json()["query"]
+        assert data["query_id"] == query_id
+        assert data["tenant"] == "acme"
+        assert data["collection"] == collection
+        assert data["query_text"] == "hello"
+    finally:
+        if svc_client is not None:
+            svc_client.close()
+        if open_client is not None:
+            open_client.close()
 
 
 def test_list_query_logs_pagination(client):

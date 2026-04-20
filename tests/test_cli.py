@@ -62,7 +62,7 @@ def test_cli_create_collection_accepts_embedder_args(cli_env, capsys):
     pvcli, store, _ = cli_env
     tenant, coll = "acme", "cfgcli"
 
-    pvcli.main_cli(
+    rc = pvcli.main_cli(
         [
             "create-collection",
             tenant,
@@ -75,6 +75,7 @@ def test_cli_create_collection_accepts_embedder_args(cli_env, capsys):
     )
     out = json.loads(capsys.readouterr().out)
 
+    assert rc == 0
     assert out["ok"] is True
     assert out["embedder_type"] == "sbert"
     assert out["embed_model"] == "fake"
@@ -84,7 +85,7 @@ def test_cli_create_collection_accepts_embedder_args(cli_env, capsys):
 def test_cli_create_collection_rejects_wrong_embed_model(cli_env, capsys):
     pvcli, _, _ = cli_env
 
-    pvcli.main_cli(
+    rc = pvcli.main_cli(
         [
             "create-collection",
             "acme",
@@ -95,6 +96,7 @@ def test_cli_create_collection_rejects_wrong_embed_model(cli_env, capsys):
     )
     out = json.loads(capsys.readouterr().out)
 
+    assert rc == 1
     assert out["ok"] is False
     assert out["code"] == "embed_model_not_supported"
 
@@ -265,16 +267,23 @@ def test_cli_list_queries_returns_logged_searches(
     tenant, coll = "acme", "qlogcli"
     sample = tmp_path / "qlog.txt"
     sample.write_text("hello world from cli", encoding="utf-8")
+    other = tmp_path / "qlog-other.txt"
+    other.write_text("other tenant query", encoding="utf-8")
 
     pvcli.main_cli(["create-collection", tenant, coll])
     pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1"])
     pvcli.main_cli(["search", tenant, coll, "hello", "-k", "1"])
+    pvcli.main_cli(["create-collection", "beta", "other"])
+    pvcli.main_cli(["ingest", "beta", "other", str(other), "--docid", "DOC2"])
+    pvcli.main_cli(["search", "beta", "other", "other", "-k", "1"])
     capsys.readouterr()
 
-    pvcli.main_cli(
+    rc = pvcli.main_cli(
         [
             "list-queries",
+            "--tenant",
             tenant,
+            "--collection",
             coll,
             "--limit",
             "10",
@@ -284,13 +293,28 @@ def test_cli_list_queries_returns_logged_searches(
     )
 
     out = json.loads(capsys.readouterr().out)
+    assert rc == 0
     assert out["ok"] is True
     assert out["tenant"] == tenant
     assert out["collection"] == coll
     assert out["count"] == 1
-    assert out["queries"][0]["query_text"] == "hello"
     assert out["queries"][0]["query_id"]
-    assert ("list_query_logs", tenant, coll, 10, 0) in store.calls
+    assert out["queries"][0]["tenant"] == tenant
+    assert out["queries"][0]["collection"] == coll
+    assert out["queries"][0]["created_at"].endswith("Z")
+    assert ("list_query_homes", tenant, coll, 10, 0) in store.calls
+
+    rc = pvcli.main_cli(["list-queries", "--limit", "10", "--offset", "0"])
+    out = json.loads(capsys.readouterr().out)
+    assert rc == 0
+    assert out["tenant"] is None
+    assert out["collection"] is None
+    assert out["count"] >= 2
+    rows = {
+        (row["tenant"], row["collection"])
+        for row in out["queries"]
+    }
+    assert {("acme", "qlogcli"), ("beta", "other")}.issubset(rows)
 
 
 def test_cli_get_query_returns_full_entry(cli_query_env, capsys):
@@ -305,16 +329,118 @@ def test_cli_get_query_returns_full_entry(cli_query_env, capsys):
     capsys.readouterr()
 
     query_id = store.impl.list_query_logs(tenant, coll)[0]["query_id"]
-    pvcli.main_cli(["get-query", tenant, coll, query_id])
+    rc = pvcli.main_cli(["get-query", query_id])
 
     out = json.loads(capsys.readouterr().out)
+    assert rc == 0
     assert out["ok"] is True
     assert out["query"]["query_id"] == query_id
     assert out["query"]["tenant"] == tenant
     assert out["query"]["collection"] == coll
     assert out["query"]["query_text"] == "captain"
     assert out["query"]["result_ids"]
+    assert ("resolve_query_home", query_id) in store.calls
     assert ("get_query_log_entry", tenant, coll, query_id) in store.calls
+
+
+def test_cli_get_query_missing_returns_exit_code_1(cli_query_env, capsys):
+    pvcli, _, _ = cli_query_env
+
+    rc = pvcli.main_cli(["get-query", "missing-query-id"])
+    out = json.loads(capsys.readouterr().out)
+
+    assert rc == 1
+    assert out["ok"] is False
+    assert out["code"] == "query_not_found"
+
+
+def test_cli_replay_query_returns_fresh_results_and_logs_replay(
+    cli_query_env,
+    capsys,
+):
+    pvcli, store, tmp_path = cli_query_env
+    tenant, coll = "acme", "qreplaycli"
+    first = tmp_path / "qreplay-1.txt"
+    second = tmp_path / "qreplay-2.txt"
+    first.write_text("hello world from cli", encoding="utf-8")
+    second.write_text("hello again from cli", encoding="utf-8")
+
+    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(["ingest", tenant, coll, str(first), "--docid", "DOC1"])
+    pvcli.main_cli(["search", tenant, coll, "hello", "-k", "5"])
+    capsys.readouterr()
+
+    original_query_id = store.impl.list_query_logs(tenant, coll)[0]["query_id"]
+    pvcli.main_cli(["ingest", tenant, coll, str(second), "--docid", "DOC2"])
+    capsys.readouterr()
+    store.calls.clear()
+
+    rc = pvcli.main_cli(["replay-query", original_query_id])
+    out = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert out["ok"] is True
+    assert out["original_query_id"] == original_query_id
+    assert out["replay_query_id"] != original_query_id
+    assert {match["meta"]["docid"] for match in out["matches"]} == {
+        "DOC1",
+        "DOC2",
+    }
+    assert ("resolve_query_home", original_query_id) in store.calls
+    assert ("get_query_log_entry", tenant, coll, original_query_id) in store.calls
+    log_calls = [call for call in store.calls if call[0] == "log_query"]
+    assert len(log_calls) == 1
+    assert log_calls[0][1]["replay_of"] == original_query_id
+
+    logs = store.impl.list_query_logs(tenant, coll)
+    assert len(logs) == 2
+    replay_entry = next(
+        row for row in logs if row["query_id"] == out["replay_query_id"]
+    )
+    assert replay_entry["replay_of"] == original_query_id
+
+
+def test_cli_replay_query_missing_returns_exit_code_1(
+    cli_query_env,
+    capsys,
+):
+    pvcli, _, _ = cli_query_env
+
+    rc = pvcli.main_cli(["replay-query", "missing-query-id"])
+    out = json.loads(capsys.readouterr().out)
+
+    assert rc == 1
+    assert out["ok"] is False
+    assert out["code"] == "query_not_found"
+
+
+def test_cli_list_queries_collection_filter_without_tenant_works(
+    cli_query_env,
+    capsys,
+):
+    pvcli, _, tmp_path = cli_query_env
+    collection = "sharedfiltercli"
+    first = tmp_path / "filter-first.txt"
+    second = tmp_path / "filter-second.txt"
+    first.write_text("same collection one", encoding="utf-8")
+    second.write_text("same collection two", encoding="utf-8")
+
+    pvcli.main_cli(["create-collection", "acme", collection])
+    pvcli.main_cli(["create-collection", "beta", collection])
+    pvcli.main_cli(["ingest", "acme", collection, str(first), "--docid", "DOC1"])
+    pvcli.main_cli(["ingest", "beta", collection, str(second), "--docid", "DOC2"])
+    pvcli.main_cli(["search", "acme", collection, "same", "-k", "1"])
+    pvcli.main_cli(["search", "beta", collection, "same", "-k", "1"])
+    capsys.readouterr()
+
+    rc = pvcli.main_cli(["list-queries", "--collection", collection])
+    out = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert out["tenant"] is None
+    assert out["collection"] == collection
+    assert out["count"] == 2
+    assert {row["tenant"] for row in out["queries"]} == {"acme", "beta"}
 
 
 def test_cli_list_documents_returns_doc_summaries(cli_env, tmp_path, capsys):

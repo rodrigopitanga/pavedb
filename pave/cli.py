@@ -21,7 +21,8 @@ from pave.service import (
     list_tenants as svc_list_tenants,
     list_collections as svc_list_collections,
     list_documents as svc_list_documents,
-    list_query_logs as svc_list_query_logs,
+    list_query_homes as svc_list_query_homes,
+    replay_query as svc_replay_query,
     search as svc_search,
     ServiceError,
 )
@@ -53,6 +54,13 @@ def _dump(out, pretty: bool = True):
         print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True))
     else:
         print(json.dumps(out, ensure_ascii=False))
+
+
+def _exit_code_for_result(out) -> int:
+    if isinstance(out, dict) and out.get("ok") is False:
+        return 1
+    return 0
+
 
 def _read(path: str) -> bytes:
     return pathlib.Path(path).read_bytes()
@@ -128,17 +136,16 @@ def cmd_init(args):
         "written": written,
         "skipped": skipped,
     }
-    _dump(out, pretty=not args.compact)
+    return out
 
 def cmd_create(args):
-    out = svc_create_collection(
+    return svc_create_collection(
         _get_store(),
         args.tenant,
         args.collection,
         embedder_type=args.embedder_type,
         embed_model=args.embed_model,
     )
-    _dump(out, pretty=not args.compact)
 
 def cmd_ingest(args):
     baseid = args.docid or str(uuid.uuid4())
@@ -154,11 +161,10 @@ def cmd_ingest(args):
             "include_cols": args.csv_include_cols or "", # "nameA,2,5"
         }
 
-    out = svc_ingest_document(
+    return svc_ingest_document(
         _get_store(), args.tenant, args.collection, args.file, content,
         baseid if args.docid else None, meta, csv_options=csv_opts
     )
-    _dump(out, pretty=not args.compact)
 
 def cmd_search(args):
     cfg = get_cfg()
@@ -167,7 +173,7 @@ def cmd_search(args):
         args.merge_common == "true"
         and bool(cfg.common_enabled)
     )
-    out = svc_search(
+    return svc_search(
         _get_store(),
         args.tenant,
         args.collection,
@@ -178,70 +184,67 @@ def cmd_search(args):
         common_tenant=cfg.common_tenant,
         common_collection=cfg.common_collection,
     )
-    _dump(out, pretty=not args.compact)
 
 
 def cmd_list_queries(args):
-    out = svc_list_query_logs(
+    return svc_list_query_homes(
         _get_store(),
-        args.tenant,
-        args.collection,
-        args.limit,
-        args.offset,
+        tenant=args.tenant,
+        collection=args.collection,
+        limit=args.limit,
+        offset=args.offset,
     )
-    _dump(out, pretty=not args.compact)
 
 
 def cmd_get_query(args):
-    out = svc_get_query_log_entry(
+    return svc_get_query_log_entry(
         _get_store(),
-        args.tenant,
-        args.collection,
         args.query_id,
     )
-    _dump(out, pretty=not args.compact)
+
+
+def cmd_replay_query(args):
+    return svc_replay_query(
+        _get_store(),
+        args.query_id,
+    )
 
 
 def cmd_list_documents(args):
-    out = svc_list_documents(
+    return svc_list_documents(
         _get_store(),
         args.tenant,
         args.collection,
     )
-    _dump(out, pretty=not args.compact)
 
 
 def cmd_get_document(args):
-    out = svc_get_document(
+    return svc_get_document(
         _get_store(),
         args.tenant,
         args.collection,
         args.docid,
     )
-    _dump(out, pretty=not args.compact)
 
 
 def cmd_delete(args):
-    out = svc_delete_collection(_get_store(), args.tenant, args.collection)
-    _dump(out, pretty=not args.compact)
+    return svc_delete_collection(_get_store(), args.tenant, args.collection)
 
 def cmd_rename(args):
-    out = svc_rename_collection(
+    return svc_rename_collection(
         _get_store(),
         args.tenant,
         args.old_name,
         args.new_name,
     )
-    _dump(out, pretty=not args.compact)
 
 def cmd_delete_document(args):
-    out = svc_delete_document(
+    return svc_delete_document(
         _get_store(),
         args.tenant,
         args.collection,
         args.docid,
     )
-    _dump(out, pretty=not args.compact)
 
 def cmd_dump_archive(args):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -252,24 +255,21 @@ def cmd_dump_archive(args):
         "archive": archive_path,
         "source": str(get_cfg().get("data_dir")),
     }
-    _dump(out, pretty=not args.compact)
+    return out
 
 def cmd_restore_archive(args):
     content = _read(args.file)
-    out = svc_restore_archive(_get_store(), content)
-    _dump(out, pretty=not args.compact)
+    return svc_restore_archive(_get_store(), content)
 
 def cmd_reset_metrics(args):
     cfg = get_cfg()
     data_dir = cfg.get("data_dir")
     if data_dir:
         metrics.set_data_dir(data_dir)
-    out = metrics.reset()
-    _dump(out, pretty=not args.compact)
+    return metrics.reset()
 
 def cmd_list_tenants(args):
-    out = svc_list_tenants(_get_store())
-    _dump(out, pretty=not args.compact)
+    return svc_list_tenants(_get_store())
 
 def cmd_list_collections(args):
     out = svc_list_collections(_get_store(), args.tenant)
@@ -282,16 +282,15 @@ def cmd_list_collections(args):
             }
             for coll in out.get("collections", [])
         ]
-    _dump(out, pretty=not args.compact)
+    return out
 
 
 def cmd_get_collection(args):
-    out = svc_get_collection_detail(
+    return svc_get_collection_detail(
         _get_store(),
         args.tenant,
         args.collection,
     )
-    _dump(out, pretty=not args.compact)
 
 
 def main_cli(argv=None):
@@ -379,17 +378,19 @@ def main_cli(argv=None):
     p_search.set_defaults(func=cmd_search)
 
     p_list_queries = sub.add_parser("list-queries", parents=[runtime])
-    p_list_queries.add_argument("tenant")
-    p_list_queries.add_argument("collection")
+    p_list_queries.add_argument("--tenant")
+    p_list_queries.add_argument("--collection")
     p_list_queries.add_argument("--limit", type=int, default=50)
     p_list_queries.add_argument("--offset", type=int, default=0)
     p_list_queries.set_defaults(func=cmd_list_queries)
 
     p_get_query = sub.add_parser("get-query", parents=[runtime])
-    p_get_query.add_argument("tenant")
-    p_get_query.add_argument("collection")
     p_get_query.add_argument("query_id")
     p_get_query.set_defaults(func=cmd_get_query)
+
+    p_replay_query = sub.add_parser("replay-query", parents=[runtime])
+    p_replay_query.add_argument("query_id")
+    p_replay_query.set_defaults(func=cmd_replay_query)
 
     p_list_docs = sub.add_parser("list-documents", parents=[runtime])
     p_list_docs.add_argument("tenant")
@@ -446,11 +447,11 @@ def main_cli(argv=None):
     if args.cmd != "init":
         _prepare_runtime(args)
     try:
-        return args.func(args)
+        out = args.func(args)
     except ServiceError as exc:
         out = {"ok": False, "code": exc.code, "error": exc.message}
-        _dump(out, pretty=not args.compact)
-        return 1
+    _dump(out, pretty=not args.compact)
+    return _exit_code_for_result(out)
 
 if __name__ == "__main__":
     raise SystemExit(main_cli())

@@ -261,6 +261,27 @@ def test_replay_allowed_for_admin_across_tenants(app, cfg):
     assert r.json()["ok"] is True
 
 
+def test_admin_replay_query_by_bare_id(app, cfg):
+    open_client = TestClient(app)
+    collection = "adminbareidreplay"
+    qid = _seed_query(open_client, "acme", collection)
+
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", "adminkey")
+    cfg.set("auth.api_keys", {"other": "otherkey"})
+
+    c = TestClient(app)
+    r = c.post(
+        f"/v1/admin/queries/{qid}/replay",
+        headers={"Authorization": "Bearer adminkey"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["original_query_id"] == qid
+    assert data["replay_query_id"] != qid
+
+
 def test_replay_honours_tenant_rate_limit(app, cfg, monkeypatch):
     open_client = TestClient(app)
     collection = "ratelimitreplay"
@@ -276,6 +297,27 @@ def test_replay_honours_tenant_rate_limit(app, cfg, monkeypatch):
     r = c.post(
         f"/v1/collections/acme/{collection}/queries/{qid}/replay",
         headers={"Authorization": "Bearer acmekey"},
+    )
+    assert r.status_code == 429
+    assert r.json()["code"] == "tenant_rate_limited"
+    assert r.headers.get("Retry-After") == "1"
+
+
+def test_admin_replay_honours_owner_tenant_rate_limit(app, cfg, monkeypatch):
+    open_client = TestClient(app)
+    collection = "adminratelimitreplay"
+    qid = _seed_query(open_client, "acme", collection)
+
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", "adminkey")
+    cfg.set("auth.api_keys", {"other": "otherkey"})
+    monkeypatch.setitem(app.state.tenant_limits, "acme", 1)
+    monkeypatch.setitem(app.state.tenant_active, "acme", 1)
+
+    c = TestClient(app)
+    r = c.post(
+        f"/v1/admin/queries/{qid}/replay",
+        headers={"Authorization": "Bearer adminkey"},
     )
     assert r.status_code == 429
     assert r.json()["code"] == "tenant_rate_limited"

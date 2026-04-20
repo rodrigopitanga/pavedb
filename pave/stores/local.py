@@ -204,7 +204,9 @@ class LocalStore(BaseStore):
             if path.exists() or path.is_symlink():
                 self._remove_path(path)
         if tenant != "_system":
-            self._ensure_catalog().unregister_collection(tenant, collection)
+            catalog = self._ensure_catalog()
+            catalog.unregister_collection(tenant, collection)
+            catalog.purge_query_homes_for_collection(tenant, collection)
 
     def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
         if old_name == new_name:
@@ -252,7 +254,13 @@ class LocalStore(BaseStore):
 
         if tenant != "_system":
             self._register_catalog_collection(tenant, old_name)
-            self._ensure_catalog().rename_collection(tenant, old_name, new_name)
+            catalog = self._ensure_catalog()
+            catalog.rename_collection(tenant, old_name, new_name)
+            catalog.rename_query_homes_for_collection(
+                tenant,
+                old_name,
+                new_name,
+            )
 
     @staticmethod
     def _is_transient_db_read_error(exc: Exception) -> bool:
@@ -382,6 +390,10 @@ class LocalStore(BaseStore):
             request_id=request_id,
             replay_of=replay_of,
         )
+        try:
+            self.put_query_home(query_id, tenant, collection)
+        except Exception:
+            log.warning("query_home upsert failed", exc_info=True)
 
     def get_query_log_entry(
         self,
@@ -438,6 +450,44 @@ class LocalStore(BaseStore):
                     col_db.close()
                 except Exception:
                     pass
+
+    def put_query_home(
+        self,
+        query_id: str,
+        tenant: str,
+        collection: str,
+    ) -> None:
+        self._ensure_catalog().put_query_home(query_id, tenant, collection)
+
+    def resolve_query_home(
+        self,
+        query_id: str,
+    ) -> tuple[str, str] | None:
+        return self._ensure_catalog().resolve_query_home(query_id)
+
+    def purge_query_homes_for_collection(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> None:
+        self._ensure_catalog().purge_query_homes_for_collection(
+            tenant,
+            collection,
+        )
+
+    def list_query_homes(
+        self,
+        tenant: str | None = None,
+        collection: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        return self._ensure_catalog().list_query_homes(
+            tenant=tenant,
+            collection=collection,
+            limit=limit,
+            offset=offset,
+        )
 
     def _read_doc_chunk_counts(
         self,

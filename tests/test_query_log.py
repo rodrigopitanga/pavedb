@@ -6,11 +6,17 @@ from __future__ import annotations
 import re
 import time
 
-from pave.metadb import CollectionDB
+from pave.metadb import CatalogDB, CollectionDB
+from pave.stores.local import LocalStore
+from utils import FakeEmbedder
 
 
 def _meta_db(tmp_path):
     return tmp_path / "meta.db"
+
+
+def _catalog_db(tmp_path):
+    return tmp_path / "catalog.db"
 
 
 def test_collection_db_query_log_roundtrip(tmp_path):
@@ -141,3 +147,101 @@ def test_collection_db_query_log_executed_at_auto_generated(tmp_path):
         entry["executed_at"],
     )
     db.close()
+
+
+def test_catalog_db_query_home_roundtrip_and_filters(tmp_path):
+    db = CatalogDB()
+    db.open(_catalog_db(tmp_path))
+
+    db.put_query_home("qid-1", "acme", "docs")
+    time.sleep(0.005)
+    db.put_query_home("qid-2", "acme", "books")
+    time.sleep(0.005)
+    db.put_query_home("qid-3", "beta", "docs")
+
+    assert db.resolve_query_home("qid-1") == ("acme", "docs")
+    assert db.resolve_query_home("missing") is None
+
+    all_rows = db.list_query_homes(limit=10, offset=0)
+    acme_rows = db.list_query_homes(tenant="acme", limit=10, offset=0)
+    docs_rows = db.list_query_homes(collection="docs", limit=10, offset=0)
+
+    assert [row["query_id"] for row in all_rows] == [
+        "qid-3",
+        "qid-2",
+        "qid-1",
+    ]
+    assert [row["query_id"] for row in acme_rows] == ["qid-2", "qid-1"]
+    assert [row["query_id"] for row in docs_rows] == ["qid-3", "qid-1"]
+    assert all(row["created_at"].endswith("Z") for row in all_rows)
+    db.close()
+
+
+def test_local_store_query_home_purged_on_delete_collection(tmp_path):
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "docs")
+    store.log_query(
+        query_id="qid-1",
+        tenant="acme",
+        collection="docs",
+        query_text="alpha",
+        k=1,
+        result_count=1,
+    )
+
+    assert store.resolve_query_home("qid-1") == ("acme", "docs")
+
+    store.delete_collection("acme", "docs")
+
+    assert store.resolve_query_home("qid-1") is None
+
+
+def test_local_store_query_home_follows_collection_rename(tmp_path):
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "docs")
+    store.log_query(
+        query_id="qid-rename",
+        tenant="acme",
+        collection="docs",
+        query_text="alpha",
+        k=1,
+        result_count=1,
+    )
+
+    store.rename_collection("acme", "docs", "renamed")
+
+    assert store.resolve_query_home("qid-rename") == ("acme", "renamed")
+    entry = store.get_query_log_entry("acme", "renamed", "qid-rename")
+    assert entry is not None
+    assert entry["collection"] == "renamed"
+
+
+def test_local_store_query_home_upsert_failure_keeps_collection_log(
+    tmp_path,
+    monkeypatch,
+    caplog,
+):
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "docs")
+    catalog = store._ensure_catalog()
+
+    def fail_put(*_args, **_kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(catalog, "put_query_home", fail_put)
+
+    with caplog.at_level("WARNING"):
+        store.log_query(
+            query_id="qid-fail",
+            tenant="acme",
+            collection="docs",
+            query_text="alpha",
+            k=1,
+            result_count=1,
+        )
+
+    assert "query_home upsert failed" in caplog.text
+    entry = store.get_query_log_entry("acme", "docs", "qid-fail")
+    assert entry is not None
+    assert entry["query_id"] == "qid-fail"
+    assert store.resolve_query_home("qid-fail") is None

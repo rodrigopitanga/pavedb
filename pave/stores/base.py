@@ -154,6 +154,36 @@ class BaseStore(ABC):
         offset: int = 0,
     ) -> list[dict[str, Any]]: ...
 
+    @abstractmethod
+    def put_query_home(
+        self,
+        query_id: str,
+        tenant: str,
+        collection: str,
+    ) -> None: ...
+
+    @abstractmethod
+    def resolve_query_home(
+        self,
+        query_id: str,
+    ) -> tuple[str, str] | None: ...
+
+    @abstractmethod
+    def purge_query_homes_for_collection(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> None: ...
+
+    @abstractmethod
+    def list_query_homes(
+        self,
+        tenant: str | None = None,
+        collection: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]: ...
+
     def catalog_metrics(self) -> dict[str, int]:
         """Return store-level catalog counters for admin/metrics endpoints.
 

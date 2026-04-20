@@ -370,6 +370,36 @@ class DummyStore(BaseStore):
     ) -> list[dict[str, Any]]:
         return []
 
+    def put_query_home(
+        self,
+        query_id: str,
+        tenant: str,
+        collection: str,
+    ) -> None:
+        return None
+
+    def resolve_query_home(
+        self,
+        query_id: str,
+    ) -> tuple[str, str] | None:
+        return None
+
+    def purge_query_homes_for_collection(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> None:
+        return None
+
+    def list_query_homes(
+        self,
+        tenant: str | None = None,
+        collection: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        return []
+
     def dump_archive(
         self,
         output_path: str | os.PathLike[str] | None = None,
@@ -557,6 +587,52 @@ class SpyStore(BaseStore):
             ("list_query_logs", tenant, collection, limit, offset)
         )
         return self.impl.list_query_logs(tenant, collection, limit, offset)
+
+    def put_query_home(
+        self,
+        query_id: str,
+        tenant: str,
+        collection: str,
+    ) -> None:
+        self.calls.append(("put_query_home", query_id, tenant, collection))
+        return self.impl.put_query_home(query_id, tenant, collection)
+
+    def resolve_query_home(
+        self,
+        query_id: str,
+    ) -> tuple[str, str] | None:
+        self.calls.append(("resolve_query_home", query_id))
+        return self.impl.resolve_query_home(query_id)
+
+    def purge_query_homes_for_collection(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> None:
+        self.calls.append(
+            ("purge_query_homes_for_collection", tenant, collection)
+        )
+        return self.impl.purge_query_homes_for_collection(
+            tenant,
+            collection,
+        )
+
+    def list_query_homes(
+        self,
+        tenant: str | None = None,
+        collection: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        self.calls.append(
+            ("list_query_homes", tenant, collection, limit, offset)
+        )
+        return self.impl.list_query_homes(
+            tenant=tenant,
+            collection=collection,
+            limit=limit,
+            offset=offset,
+        )
 
     def list_tenants(self) -> list[str]:
         self.calls.append(("list_tenants",))

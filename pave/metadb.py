@@ -149,6 +149,26 @@ _CATALOG_MIGRATIONS: dict[int, list[str]] = {
         )
         """,
     ],
+    2: [
+        """
+        CREATE TABLE IF NOT EXISTS query_home (
+            query_id    TEXT PRIMARY KEY,
+            tenant      TEXT NOT NULL,
+            collection  TEXT NOT NULL,
+            created_at  TEXT NOT NULL DEFAULT (
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            )
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_query_home_tenant_coll
+            ON query_home (tenant, collection)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_query_home_created_at
+            ON query_home (created_at DESC)
+        """,
+    ],
 }
 
 
@@ -1108,6 +1128,109 @@ class CatalogDB:
                 raise ValueError(
                     f"catalog row missing for collection '{tenant}/{old}'"
                 )
+
+    def put_query_home(
+        self,
+        query_id: str,
+        tenant: str,
+        collection: str,
+    ) -> None:
+        conn = self._require_wconn()
+        with self._write_lock, conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO query_home (
+                    query_id,
+                    tenant,
+                    collection
+                ) VALUES (?, ?, ?)
+                """,
+                (query_id, tenant, collection),
+            )
+
+    def resolve_query_home(
+        self,
+        query_id: str,
+    ) -> tuple[str, str] | None:
+        with self._reader() as conn:
+            row = conn.execute(
+                """
+                SELECT tenant, collection
+                FROM query_home
+                WHERE query_id=?
+                """,
+                (query_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        return (str(row[0]), str(row[1]))
+
+    def purge_query_homes_for_collection(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> None:
+        conn = self._require_wconn()
+        with self._write_lock, conn:
+            conn.execute(
+                """
+                DELETE FROM query_home
+                WHERE tenant=? AND collection=?
+                """,
+                (tenant, collection),
+            )
+
+    def rename_query_homes_for_collection(
+        self,
+        tenant: str,
+        old: str,
+        new: str,
+    ) -> None:
+        conn = self._require_wconn()
+        with self._write_lock, conn:
+            conn.execute(
+                """
+                UPDATE query_home
+                SET collection=?
+                WHERE tenant=? AND collection=?
+                """,
+                (new, tenant, old),
+            )
+
+    def list_query_homes(
+        self,
+        tenant: str | None = None,
+        collection: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        where: list[str] = []
+        params: list[Any] = []
+        if tenant is not None:
+            where.append("tenant=?")
+            params.append(tenant)
+        if collection is not None:
+            where.append("collection=?")
+            params.append(collection)
+        query = (
+            "SELECT query_id, tenant, collection, created_at "
+            "FROM query_home"
+        )
+        if where:
+            query += " WHERE " + " AND ".join(where)
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        with self._reader() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [
+            {
+                "query_id": str(row[0]),
+                "tenant": str(row[1]),
+                "collection": str(row[2]),
+                "created_at": str(row[3]),
+            }
+            for row in rows
+        ]
 
     def list_tenants(self) -> list[str]:
         with self._reader() as conn:

@@ -501,7 +501,23 @@ def list_collections(store, tenant: str) -> dict[str, Any]:
         }
 
 
-def get_query_log_entry(
+def _query_not_found(query_id: str) -> dict[str, Any]:
+    return {
+        "ok": False,
+        "code": "query_not_found",
+        "error": f"query '{query_id}' not found",
+        "error_type": "not_found",
+    }
+
+
+def resolve_query_home(
+    store,
+    query_id: str,
+) -> tuple[str, str] | None:
+    return store.resolve_query_home(query_id)
+
+
+def get_query_log_entry_scoped(
     store,
     tenant: str,
     collection: str,
@@ -510,13 +526,31 @@ def get_query_log_entry(
     try:
         entry = store.get_query_log_entry(tenant, collection, query_id)
         if entry is None:
-            return {
-                "ok": False,
-                "code": "query_not_found",
-                "error": f"query '{query_id}' not found",
-                "error_type": "not_found",
-            }
+            return _query_not_found(query_id)
         return {"ok": True, "query": entry}
+    except Exception as e:
+        return {
+            "ok": False,
+            "code": "query_log_failed",
+            "error": str(e),
+        }
+
+
+def get_query_log_entry(
+    store,
+    query_id: str,
+) -> dict[str, Any]:
+    try:
+        home = resolve_query_home(store, query_id)
+        if home is None:
+            return _query_not_found(query_id)
+        tenant, collection = home
+        return get_query_log_entry_scoped(
+            store,
+            tenant,
+            collection,
+            query_id,
+        )
     except Exception as e:
         return {
             "ok": False,
@@ -549,23 +583,44 @@ def list_query_logs(
         }
 
 
-def replay_query(
+def list_query_homes(
     store,
-    tenant: str,
-    collection: str,
-    query_id: str,
-    request_id: str | None = None,
+    tenant: str | None = None,
+    collection: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
 ) -> dict[str, Any]:
     try:
-        entry = store.get_query_log_entry(tenant, collection, query_id)
-        if entry is None:
-            return {
-                "ok": False,
-                "code": "query_not_found",
-                "error": f"query '{query_id}' not found",
-                "error_type": "not_found",
-            }
+        logs = store.list_query_homes(
+            tenant=tenant,
+            collection=collection,
+            limit=limit,
+            offset=offset,
+        )
+        return {
+            "ok": True,
+            "tenant": tenant,
+            "collection": collection,
+            "queries": logs,
+            "count": len(logs),
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "code": "list_query_homes_failed",
+            "error": str(e),
+        }
 
+
+def execute_replay(
+    store,
+    entry: dict[str, Any],
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    query_id = str(entry["query_id"])
+    tenant = str(entry["tenant"])
+    collection = str(entry["collection"])
+    try:
         result = search(
             store,
             tenant,
@@ -615,6 +670,44 @@ def replay_query(
             "latency_ms": result.get("latency_ms"),
             "request_id": request_id,
         }
+    except ServiceError:
+        raise
+    except Exception as e:
+        raise ServiceError("replay_query_failed", str(e)) from e
+
+
+def replay_query_scoped(
+    store,
+    tenant: str,
+    collection: str,
+    query_id: str,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    try:
+        entry = store.get_query_log_entry(tenant, collection, query_id)
+        if entry is None:
+            return _query_not_found(query_id)
+        return execute_replay(store, entry, request_id=request_id)
+    except ServiceError:
+        raise
+    except Exception as e:
+        raise ServiceError("replay_query_failed", str(e)) from e
+
+
+def replay_query(
+    store,
+    query_id: str,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    try:
+        home = resolve_query_home(store, query_id)
+        if home is None:
+            return _query_not_found(query_id)
+        tenant, collection = home
+        entry = store.get_query_log_entry(tenant, collection, query_id)
+        if entry is None:
+            return _query_not_found(query_id)
+        return execute_replay(store, entry, request_id=request_id)
     except ServiceError:
         raise
     except Exception as e:

@@ -19,9 +19,9 @@ from pave.schemas import (
     SearchResponse,
 )
 from pave.service import (
-    get_query_log_entry as svc_get_query_log_entry,
+    get_query_log_entry_scoped as svc_get_query_log_entry_scoped,
     list_query_logs as svc_list_query_logs,
-    replay_query as svc_replay_query,
+    replay_query_scoped as svc_replay_query_scoped,
     search as svc_search,
 )
 from pave.stores.base import BaseStore
@@ -98,7 +98,12 @@ def build_search_router(
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
-        result = svc_get_query_log_entry(store, tenant, name, query_id)
+        result = svc_get_query_log_entry_scoped(
+            store,
+            tenant,
+            name,
+            query_id,
+        )
         if not result.get("ok"):
             status = (
                 404 if result.get("error_type") == "not_found"
@@ -135,7 +140,7 @@ def build_search_router(
         inc("requests_total")
         return await do_search(
             functools.partial(
-                svc_replay_query,
+                svc_replay_query_scoped,
                 store,
                 tenant,
                 name,

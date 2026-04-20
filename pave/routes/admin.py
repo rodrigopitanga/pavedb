@@ -5,29 +5,35 @@ from __future__ import annotations
 
 import os
 import shutil
+import functools
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
-from pave.auth import AuthContext, auth_ctx
+from pave.auth import AuthContext, auth_ctx, tenant_limit_gate
 from pave.log import ops_event
 from pave.metrics import inc, reset as metrics_reset
 from pave.schemas import (
+    GetQueryLogResponse,
+    QueryReplayResponse,
     ListTenantsResponse,
     ResetMetricsResponse,
     RestoreArchiveResponse,
 )
 from pave.service import (
     dump_archive as svc_dump_archive,
+    get_query_log_entry_scoped as svc_get_query_log_entry_scoped,
     list_tenants as svc_list_tenants,
+    replay_query_scoped as svc_replay_query_scoped,
+    resolve_query_home as svc_resolve_query_home,
     restore_archive as svc_restore_archive,
 )
 from pave.stores.base import BaseStore
 
 
-def build_admin_router(error, resp, get_rid, trace) -> APIRouter:
+def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
     router = APIRouter()
 
     def current_store(request: Request) -> BaseStore:
@@ -190,5 +196,103 @@ def build_admin_router(error, resp, get_rid, trace) -> APIRouter:
                 request_id=rid,
             )
         return trace(result, request, request_id=rid)
+
+    @router.get(
+        "/admin/queries/{query_id}",
+        response_model=GetQueryLogResponse,
+        responses=resp(401, 403, 404, 500),
+    )
+    @ops_event("get_query_log", coll=None, request_id="rid")
+    def get_query_log(
+        request: Request,
+        query_id: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        if not ctx.is_admin:
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
+
+        home = svc_resolve_query_home(store, query_id)
+        if home is None:
+            return error(
+                404,
+                "query_not_found",
+                f"query '{query_id}' not found",
+                request=request,
+                request_id=rid,
+            )
+        tenant, collection = home
+        result = svc_get_query_log_entry_scoped(
+            store,
+            tenant,
+            collection,
+            query_id,
+        )
+        if not result.get("ok"):
+            status = 404 if result.get("error_type") == "not_found" else 500
+            return error(
+                status,
+                result.get("code", "query_log_failed"),
+                result.get("error", "failed to fetch query"),
+                request=request,
+                request_id=rid,
+            )
+        return trace(result, request, request_id=rid)
+
+    @router.post(
+        "/admin/queries/{query_id}/replay",
+        response_model=QueryReplayResponse,
+        responses=resp(401, 403, 404, 429, 500, 503),
+    )
+    @ops_event("replay_query", coll=None, request_id="rid")
+    async def replay_query(
+        request: Request,
+        response: Response,
+        query_id: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        if not ctx.is_admin:
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
+
+        home = svc_resolve_query_home(store, query_id)
+        if home is None:
+            return error(
+                404,
+                "query_not_found",
+                f"query '{query_id}' not found",
+                request=request,
+                request_id=rid,
+            )
+        tenant, collection = home
+        async with tenant_limit_gate(request, response, tenant):
+            return await do_search(
+                functools.partial(
+                    svc_replay_query_scoped,
+                    store,
+                    tenant,
+                    collection,
+                    query_id,
+                    request_id=rid,
+                ),
+                request=request,
+                request_id=rid,
+            )
 
     return router

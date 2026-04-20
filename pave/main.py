@@ -319,7 +319,13 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         prefix="",
     )
     app.include_router(
-        build_admin_router(_error, _resp, _get_request_id, _trace_body),
+        build_admin_router(
+            _error,
+            _resp,
+            _get_request_id,
+            _trace_body,
+            _do_search,
+        ),
         prefix="/v1",
     )
     app.include_router(
