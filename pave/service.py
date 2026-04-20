@@ -517,6 +517,16 @@ def resolve_query_home(
     return store.resolve_query_home(query_id)
 
 
+def _scoped_query_home_mismatch(
+    store,
+    tenant: str,
+    collection: str,
+    query_id: str,
+) -> bool:
+    home = resolve_query_home(store, query_id)
+    return home is not None and home != (tenant, collection)
+
+
 def get_query_log_entry_scoped(
     store,
     tenant: str,
@@ -524,6 +534,8 @@ def get_query_log_entry_scoped(
     query_id: str,
 ) -> dict[str, Any]:
     try:
+        if _scoped_query_home_mismatch(store, tenant, collection, query_id):
+            return _query_not_found(query_id)
         entry = store.get_query_log_entry(tenant, collection, query_id)
         if entry is None:
             return _query_not_found(query_id)
@@ -684,6 +696,8 @@ def replay_query_scoped(
     request_id: str | None = None,
 ) -> dict[str, Any]:
     try:
+        if _scoped_query_home_mismatch(store, tenant, collection, query_id):
+            return _query_not_found(query_id)
         entry = store.get_query_log_entry(tenant, collection, query_id)
         if entry is None:
             return _query_not_found(query_id)

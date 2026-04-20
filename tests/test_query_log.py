@@ -7,6 +7,10 @@ import re
 import time
 
 from pave.metadb import CatalogDB, CollectionDB
+from pave.service import (
+    get_query_log_entry_scoped as svc_get_query_log_entry_scoped,
+    replay_query_scoped as svc_replay_query_scoped,
+)
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
@@ -245,3 +249,81 @@ def test_local_store_query_home_upsert_failure_keeps_collection_log(
     assert entry is not None
     assert entry["query_id"] == "qid-fail"
     assert store.resolve_query_home("qid-fail") is None
+
+
+def test_scoped_query_lookup_returns_not_found_on_query_home_mismatch(
+    tmp_path,
+):
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "docs")
+    store.create_collection("acme", "other")
+    store.log_query(
+        query_id="qid-scope",
+        tenant="acme",
+        collection="docs",
+        query_text="alpha",
+        k=1,
+        result_count=1,
+    )
+
+    result = svc_get_query_log_entry_scoped(
+        store,
+        "acme",
+        "other",
+        "qid-scope",
+    )
+
+    assert result["ok"] is False
+    assert result["code"] == "query_not_found"
+
+
+def test_scoped_replay_returns_not_found_on_query_home_mismatch(tmp_path):
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "docs")
+    store.create_collection("acme", "other")
+    store.log_query(
+        query_id="qid-replay-scope",
+        tenant="acme",
+        collection="docs",
+        query_text="alpha",
+        k=1,
+        result_count=1,
+    )
+
+    result = svc_replay_query_scoped(
+        store,
+        "acme",
+        "other",
+        "qid-replay-scope",
+    )
+
+    assert result["ok"] is False
+    assert result["code"] == "query_not_found"
+
+
+def test_scoped_query_lookup_still_works_when_query_home_is_missing(
+    tmp_path,
+    monkeypatch,
+):
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "docs")
+    store.log_query(
+        query_id="qid-no-home",
+        tenant="acme",
+        collection="docs",
+        query_text="alpha",
+        k=1,
+        result_count=1,
+    )
+
+    monkeypatch.setattr(store, "resolve_query_home", lambda _qid: None)
+
+    result = svc_get_query_log_entry_scoped(
+        store,
+        "acme",
+        "docs",
+        "qid-no-home",
+    )
+
+    assert result["ok"] is True
+    assert result["query"]["query_id"] == "qid-no-home"
