@@ -245,6 +245,17 @@ def build_search_router(
         response_model=SearchResponse,
         responses=resp(401, 403, 500, 503),
     )
+    @ops_event(
+        "search_common",
+        tenant=lambda kw, r: cfg.common_tenant,
+        coll=lambda kw, r: cfg.common_collection,
+        k=lambda kw, r: kw["body"].k,
+        hits=lambda kw, r: (
+            len(json.loads(r.body).get("matches", []))
+            if getattr(r, "status_code", 400) < 400 else None
+        ),
+        request_id="rid",
+    )
     async def search_common_post(
         request: Request,
         body: SearchBody,
@@ -287,6 +298,17 @@ def build_search_router(
         "/search",
         response_model=SearchResponse,
         responses=resp(401, 403, 500, 503),
+    )
+    @ops_event(
+        "search_common",
+        tenant=lambda kw, r: cfg.common_tenant,
+        coll=lambda kw, r: cfg.common_collection,
+        k="k",
+        hits=lambda kw, r: (
+            len(json.loads(r.body).get("matches", []))
+            if getattr(r, "status_code", 400) < 400 else None
+        ),
+        request_id="rid",
     )
     async def search_common_get(
         request: Request,

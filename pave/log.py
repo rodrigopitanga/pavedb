@@ -180,7 +180,8 @@ def _result_status(result: Any) -> tuple[str, str | None]:
 def ops_event(
     op: str,
     *,
-    coll: str | None = "name",
+    tenant: Any = "tenant",
+    coll: Any = "name",
     **extra_keys,
 ):
     """
@@ -191,19 +192,33 @@ def ops_event(
     ----------
     op:
         Operation name emitted in the ``op`` field (e.g. ``"search"``).
+    tenant:
+        Source for the tenant field.
+        - str value  → resolved as ``kwargs[value]``
+        - callable   → called as ``fn(kwargs, result)`` after the handler returns
+        - ``None``   → omit the ``tenant`` field
     coll:
-        Name of the kwargs key that holds the collection path parameter.
-        ``None`` to omit the ``collection`` field (e.g. for list_collections).
+        Source for the collection field.
+        - str value  → resolved as ``kwargs[value]``
+        - callable   → called as ``fn(kwargs, result)`` after the handler returns
+        - ``None``   → omit the ``collection`` field (e.g. for list_collections).
     **extra_keys:
         Additional event fields.
         - str value  → resolved as ``kwargs[value]``
         - callable   → called as ``fn(kwargs, result)`` after the handler returns
     """
+    def _resolve(src: Any, kwargs: dict, result: Any) -> Any:
+        if src is None:
+            return None
+        if callable(src):
+            return src(kwargs, result)
+        return kwargs.get(src)
+
     def _extras(kwargs: dict, result: Any) -> dict:
         out: dict = {}
         for field, src in extra_keys.items():
             try:
-                out[field] = src(kwargs, result) if callable(src) else kwargs.get(src)
+                out[field] = _resolve(src, kwargs, result)
             except Exception:
                 out[field] = None
         return out
@@ -222,8 +237,8 @@ def ops_event(
                 finally:
                     emit(
                         op=op,
-                        tenant=kwargs.get("tenant"),
-                        collection=kwargs.get(coll) if coll else None,
+                        tenant=_resolve(tenant, kwargs, result),
+                        collection=_resolve(coll, kwargs, result),
                         latency_ms=round((time.perf_counter() - _t0) * 1000, 2),
                         status=_s, error_code=_c,
                         **_extras(kwargs, result),
@@ -242,8 +257,8 @@ def ops_event(
                 finally:
                     emit(
                         op=op,
-                        tenant=kwargs.get("tenant"),
-                        collection=kwargs.get(coll) if coll else None,
+                        tenant=_resolve(tenant, kwargs, result),
+                        collection=_resolve(coll, kwargs, result),
                         latency_ms=round((time.perf_counter() - _t0) * 1000, 2),
                         status=_s, error_code=_c,
                         **_extras(kwargs, result),

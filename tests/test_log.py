@@ -1,6 +1,7 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import asyncio
 import json
 import pytest
 import pave.log as ops_log
@@ -116,3 +117,26 @@ def test_reconfigure_closes_previous_file(tmp_path):
     ops_log.close()
     assert len(p1.read_text().strip().splitlines()) == 1
     assert len(p2.read_text().strip().splitlines()) == 1
+
+
+def test_ops_event_supports_callable_tenant_and_collection(capsys):
+    ops_log.configure("stdout")
+
+    @ops_log.ops_event(
+        "search_common",
+        tenant=lambda kw, r: "global",
+        coll=lambda kw, r: "common",
+        k="k",
+        request_id="rid",
+    )
+    async def handler(*, k, rid):
+        return {"ok": True}
+
+    asyncio.run(handler(k=7, rid="req-1"))
+    data = json.loads(capsys.readouterr().out.strip())
+    assert data["op"] == "search_common"
+    assert data["tenant"] == "global"
+    assert data["collection"] == "common"
+    assert data["k"] == 7
+    assert data["request_id"] == "req-1"
+    assert data["status"] == "ok"
