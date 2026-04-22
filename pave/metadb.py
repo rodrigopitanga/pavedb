@@ -121,6 +121,40 @@ _COLLECTION_MIGRATIONS: dict[int, list[str]] = {
             ON query_log (replay_of)
         """,
     ],
+    5: [
+        "DROP TABLE IF EXISTS query_log",
+        """
+        CREATE TABLE IF NOT EXISTS query_log (
+            query_id             TEXT PRIMARY KEY,
+            tenant               TEXT NOT NULL,
+            collection           TEXT NOT NULL,
+            actor                TEXT NOT NULL,
+            query_text           TEXT NOT NULL,
+            k                    INTEGER NOT NULL,
+            filters_json         TEXT,
+            include_common       INTEGER NOT NULL DEFAULT 0,
+            common_tenant        TEXT,
+            common_collection    TEXT,
+            result_ids_json      TEXT,
+            result_count         INTEGER NOT NULL DEFAULT 0,
+            latency_ms           REAL,
+            timing_json          TEXT,
+            request_id           TEXT,
+            replay_of            TEXT,
+            executed_at          TEXT NOT NULL DEFAULT (
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            )
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_query_log_executed_at
+            ON query_log (executed_at DESC)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_query_log_replay_of
+            ON query_log (replay_of)
+        """,
+    ],
 }
 
 _CATALOG_MIGRATIONS: dict[int, list[str]] = {
@@ -457,6 +491,9 @@ class CollectionDB:
         self,
         *,
         query_id: str,
+        tenant: str,
+        collection: str,
+        actor: str,
         query_text: str,
         k: int,
         filters: dict[str, Any] | None = None,
@@ -474,13 +511,16 @@ class CollectionDB:
         with self._write_lock, conn:
             conn.execute(
                 "INSERT INTO query_log "
-                "(query_id, query_text, k, filters_json, "
+                "(query_id, tenant, collection, actor, query_text, k, filters_json, "
                 "include_common, common_tenant, common_collection, "
                 "result_ids_json, result_count, latency_ms, timing_json, "
                 "request_id, replay_of) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     query_id,
+                    tenant,
+                    collection,
+                    actor,
                     query_text,
                     k,
                     self._dump_json(filters),
@@ -503,7 +543,7 @@ class CollectionDB:
     ) -> dict[str, Any] | None:
         with self._reader() as conn:
             row = conn.execute(
-                "SELECT query_id, query_text, k, filters_json, "
+                "SELECT query_id, tenant, collection, actor, query_text, k, filters_json, "
                 "include_common, common_tenant, common_collection, "
                 "result_ids_json, result_count, latency_ms, timing_json, "
                 "request_id, replay_of, executed_at "
@@ -514,19 +554,22 @@ class CollectionDB:
             return None
         return {
             "query_id": row[0],
-            "query_text": row[1],
-            "k": row[2],
-            "filters": self._load_json(row[3]),
-            "include_common": bool(row[4]),
-            "common_tenant": row[5],
-            "common_collection": row[6],
-            "result_ids": json.loads(row[7]) if row[7] else [],
-            "result_count": row[8],
-            "latency_ms": row[9],
-            "timing": self._load_json(row[10]),
-            "request_id": row[11],
-            "replay_of": row[12],
-            "executed_at": row[13],
+            "tenant": row[1],
+            "collection": row[2],
+            "actor": row[3],
+            "query_text": row[4],
+            "k": row[5],
+            "filters": self._load_json(row[6]),
+            "include_common": bool(row[7]),
+            "common_tenant": row[8],
+            "common_collection": row[9],
+            "result_ids": json.loads(row[10]) if row[10] else [],
+            "result_count": row[11],
+            "latency_ms": row[12],
+            "timing": self._load_json(row[13]),
+            "request_id": row[14],
+            "replay_of": row[15],
+            "executed_at": row[16],
         }
 
     def list_query_logs(

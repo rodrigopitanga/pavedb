@@ -8,7 +8,7 @@ import json
 
 from fastapi import APIRouter, Depends, Query, Request
 
-from pave.auth import AuthContext, auth_ctx, tenant_rate_limit
+from pave.auth import AuthContext, actor_of, auth_ctx, tenant_rate_limit
 from pave.log import ops_event
 from pave.metrics import inc
 from pave.schemas import (
@@ -146,6 +146,7 @@ def build_search_router(
                 name,
                 query_id,
                 request_id=rid,
+                actor=actor_of(ctx),
             ),
             request=request,
             request_id=rid,
@@ -190,6 +191,7 @@ def build_search_router(
                 common_tenant=cfg.common_tenant,
                 common_collection=cfg.common_collection,
                 request_id=rid,
+                actor=actor_of(ctx),
             ),
             request=request,
             request_id=rid,
@@ -235,6 +237,7 @@ def build_search_router(
                 common_tenant=cfg.common_tenant,
                 common_collection=cfg.common_collection,
                 request_id=rid,
+                actor=actor_of(ctx),
             ),
             request=request,
             request_id=rid,
@@ -289,6 +292,7 @@ def build_search_router(
                 body.k,
                 filters=body.filters,
                 request_id=rid,
+                actor=actor_of(ctx),
             ),
             request=request,
             request_id=rid,
@@ -344,6 +348,7 @@ def build_search_router(
                 k,
                 filters=None,
                 request_id=rid,
+                actor=actor_of(ctx),
             ),
             request=request,
             request_id=rid,

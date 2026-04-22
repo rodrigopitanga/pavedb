@@ -72,6 +72,7 @@ def test_get_query_log_entry_includes_common_merge_fields(client, cfg):
     assert entry.status_code == 200
     data = entry.json()["query"]
     assert data["query_id"] == query_id
+    assert data["actor"] == "admin"
     assert data["include_common"] is True
     assert data["common_tenant"] == "global"
     assert data["common_collection"] == "common"
@@ -131,6 +132,7 @@ def test_admin_get_query_log_entry_by_bare_id(app, cfg):
         assert data["query_id"] == query_id
         assert data["tenant"] == "acme"
         assert data["collection"] == collection
+        assert data["actor"] == "admin"
         assert data["query_text"] == "hello"
     finally:
         if svc_client is not None:
@@ -241,7 +243,7 @@ def test_query_log_moves_with_collection_rename(client):
     assert new_logs.json()["count"] == 1
     assert new_logs.json()["queries"][0]["query_id"] == query_id
     assert entry.status_code == 200
-    assert entry.json()["query"]["collection"] == "qrenamed"
+    assert entry.json()["query"]["collection"] == "qrename"
 
 
 def test_service_search_with_log_false_skips_query_log(app):
@@ -262,6 +264,7 @@ def test_service_search_with_log_false_skips_query_log(app):
         "nolog",
         "hello",
         k=5,
+        actor="admin",
         _log=False,
     )
 

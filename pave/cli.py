@@ -183,6 +183,7 @@ def cmd_search(args):
         include_common=merge_common,
         common_tenant=cfg.common_tenant,
         common_collection=cfg.common_collection,
+        actor="admin",
     )
 
 
@@ -207,6 +208,7 @@ def cmd_replay_query(args):
     return svc_replay_query(
         _get_store(),
         args.query_id,
+        actor="admin",
     )
 
 

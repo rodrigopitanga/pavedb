@@ -29,6 +29,9 @@ def test_collection_db_query_log_roundtrip(tmp_path):
 
     db.log_query(
         query_id="qid-1",
+        tenant="acme",
+        collection="docs",
+        actor="tenant:acme",
         query_text="captain nemo",
         k=3,
         filters={"lang": "en"},
@@ -51,6 +54,9 @@ def test_collection_db_query_log_roundtrip(tmp_path):
 
     assert entry is not None
     assert entry["query_id"] == "qid-1"
+    assert entry["tenant"] == "acme"
+    assert entry["collection"] == "docs"
+    assert entry["actor"] == "tenant:acme"
     assert entry["query_text"] == "captain nemo"
     assert entry["k"] == 3
     assert entry["filters"] == {"lang": "en"}
@@ -78,6 +84,9 @@ def test_collection_db_list_query_logs_pagination(tmp_path):
 
     db.log_query(
         query_id="qid-1",
+        tenant="acme",
+        collection="docs",
+        actor="admin",
         query_text="first",
         k=1,
         result_count=1,
@@ -85,6 +94,9 @@ def test_collection_db_list_query_logs_pagination(tmp_path):
     time.sleep(0.005)
     db.log_query(
         query_id="qid-2",
+        tenant="acme",
+        collection="docs",
+        actor="admin",
         query_text="second",
         k=2,
         result_count=2,
@@ -92,6 +104,9 @@ def test_collection_db_list_query_logs_pagination(tmp_path):
     time.sleep(0.005)
     db.log_query(
         query_id="qid-3",
+        tenant="acme",
+        collection="docs",
+        actor="admin",
         query_text="third",
         k=3,
         result_count=3,
@@ -113,12 +128,18 @@ def test_collection_db_list_query_logs_replay_marker(tmp_path):
 
     db.log_query(
         query_id="qid-docs",
+        tenant="acme",
+        collection="docs",
+        actor="admin",
         query_text="alpha",
         k=1,
         result_count=1,
     )
     db.log_query(
         query_id="qid-books",
+        tenant="acme",
+        collection="docs",
+        actor="admin",
         query_text="beta",
         k=1,
         result_count=1,
@@ -139,6 +160,9 @@ def test_collection_db_query_log_executed_at_auto_generated(tmp_path):
 
     db.log_query(
         query_id="qid-1",
+        tenant="acme",
+        collection="docs",
+        actor="admin",
         query_text="alpha",
         k=1,
     )
@@ -146,6 +170,9 @@ def test_collection_db_query_log_executed_at_auto_generated(tmp_path):
     entry = db.get_query_log_entry("qid-1")
 
     assert entry is not None
+    assert entry["tenant"] == "acme"
+    assert entry["collection"] == "docs"
+    assert entry["actor"] == "admin"
     assert re.fullmatch(
         r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z",
         entry["executed_at"],
@@ -188,6 +215,7 @@ def test_local_store_query_home_purged_on_delete_collection(tmp_path):
         query_id="qid-1",
         tenant="acme",
         collection="docs",
+        actor="admin",
         query_text="alpha",
         k=1,
         result_count=1,
@@ -207,6 +235,7 @@ def test_local_store_query_home_follows_collection_rename(tmp_path):
         query_id="qid-rename",
         tenant="acme",
         collection="docs",
+        actor="admin",
         query_text="alpha",
         k=1,
         result_count=1,
@@ -217,7 +246,9 @@ def test_local_store_query_home_follows_collection_rename(tmp_path):
     assert store.resolve_query_home("qid-rename") == ("acme", "renamed")
     entry = store.get_query_log_entry("acme", "renamed", "qid-rename")
     assert entry is not None
-    assert entry["collection"] == "renamed"
+    assert entry["tenant"] == "acme"
+    assert entry["collection"] == "docs"
+    assert entry["actor"] == "admin"
 
 
 def test_local_store_query_home_upsert_failure_keeps_collection_log(
@@ -239,6 +270,7 @@ def test_local_store_query_home_upsert_failure_keeps_collection_log(
             query_id="qid-fail",
             tenant="acme",
             collection="docs",
+            actor="admin",
             query_text="alpha",
             k=1,
             result_count=1,
@@ -261,6 +293,7 @@ def test_scoped_query_lookup_returns_not_found_on_query_home_mismatch(
         query_id="qid-scope",
         tenant="acme",
         collection="docs",
+        actor="admin",
         query_text="alpha",
         k=1,
         result_count=1,
@@ -285,6 +318,7 @@ def test_scoped_replay_returns_not_found_on_query_home_mismatch(tmp_path):
         query_id="qid-replay-scope",
         tenant="acme",
         collection="docs",
+        actor="admin",
         query_text="alpha",
         k=1,
         result_count=1,
@@ -295,6 +329,7 @@ def test_scoped_replay_returns_not_found_on_query_home_mismatch(tmp_path):
         "acme",
         "other",
         "qid-replay-scope",
+        actor="admin",
     )
 
     assert result["ok"] is False
@@ -311,6 +346,7 @@ def test_scoped_query_lookup_still_works_when_query_home_is_missing(
         query_id="qid-no-home",
         tenant="acme",
         collection="docs",
+        actor="admin",
         query_text="alpha",
         k=1,
         result_count=1,
@@ -327,3 +363,53 @@ def test_scoped_query_lookup_still_works_when_query_home_is_missing(
 
     assert result["ok"] is True
     assert result["query"]["query_id"] == "qid-no-home"
+
+
+def test_replay_after_collection_rename_uses_current_home_but_keeps_history(tmp_path):
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "docs")
+    store.index_records(
+        "acme",
+        "docs",
+        "DOC-1",
+        [("DOC-1::chunk_0", "alpha renamed", {"docid": "DOC-1"})],
+        doc_meta={"docid": "DOC-1"},
+    )
+    store.log_query(
+        query_id="qid-rename",
+        tenant="acme",
+        collection="docs",
+        actor="tenant:acme",
+        query_text="alpha",
+        k=1,
+        result_ids=["DOC-1::chunk_0"],
+        result_count=1,
+    )
+
+    store.rename_collection("acme", "docs", "renamed")
+
+    result = svc_replay_query_scoped(
+        store,
+        "acme",
+        "renamed",
+        "qid-rename",
+        actor="admin",
+    )
+
+    assert result["ok"] is True
+    assert result["original_query_id"] == "qid-rename"
+    assert result["replay_query_id"] != "qid-rename"
+
+    original = store.get_query_log_entry("acme", "renamed", "qid-rename")
+    replay = store.get_query_log_entry(
+        "acme",
+        "renamed",
+        result["replay_query_id"],
+    )
+    assert original is not None
+    assert replay is not None
+    assert original["collection"] == "docs"
+    assert original["actor"] == "tenant:acme"
+    assert replay["collection"] == "renamed"
+    assert replay["actor"] == "admin"
+    assert replay["replay_of"] == "qid-rename"

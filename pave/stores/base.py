@@ -123,6 +123,7 @@ class BaseStore(ABC):
         query_id: str,
         tenant: str,
         collection: str,
+        actor: str,
         query_text: str,
         k: int,
         filters: dict[str, Any] | None = None,

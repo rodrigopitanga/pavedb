@@ -337,6 +337,7 @@ def test_cli_get_query_returns_full_entry(cli_query_env, capsys):
     assert out["query"]["query_id"] == query_id
     assert out["query"]["tenant"] == tenant
     assert out["query"]["collection"] == coll
+    assert out["query"]["actor"] == "admin"
     assert out["query"]["query_text"] == "captain"
     assert out["query"]["result_ids"]
     assert ("resolve_query_home", query_id) in store.calls
@@ -390,6 +391,7 @@ def test_cli_replay_query_returns_fresh_results_and_logs_replay(
     assert ("get_query_log_entry", tenant, coll, original_query_id) in store.calls
     log_calls = [call for call in store.calls if call[0] == "log_query"]
     assert len(log_calls) == 1
+    assert log_calls[0][1]["actor"] == "admin"
     assert log_calls[0][1]["replay_of"] == original_query_id
 
     logs = store.impl.list_query_logs(tenant, coll)

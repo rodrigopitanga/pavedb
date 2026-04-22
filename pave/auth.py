@@ -18,6 +18,14 @@ class AuthContext:
     tenant: str | None
     is_admin: bool
 
+
+def actor_of(ctx: AuthContext) -> str:
+    if ctx.is_admin:
+        return "admin"
+    if ctx.tenant:
+        return f"tenant:{ctx.tenant}"
+    return "admin"
+
 def _raise_401():
     raise HTTPException(
         status_code=401,

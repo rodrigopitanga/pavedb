@@ -94,6 +94,7 @@ def test_common_search_merge_sums_phase_timing():
         common_tenant="global",
         common_collection="common",
         request_id="req-1",
+        actor="admin",
     )
 
     assert result["ok"] is True

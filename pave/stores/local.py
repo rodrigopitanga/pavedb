@@ -361,6 +361,7 @@ class LocalStore(BaseStore):
         query_id: str,
         tenant: str,
         collection: str,
+        actor: str,
         query_text: str,
         k: int,
         filters: dict[str, Any] | None = None,
@@ -377,6 +378,9 @@ class LocalStore(BaseStore):
         self._load_or_init(tenant, collection)
         self._dbs[(tenant, collection)].log_query(
             query_id=query_id,
+            tenant=tenant,
+            collection=collection,
+            actor=actor,
             query_text=query_text,
             k=k,
             filters=filters,
@@ -413,10 +417,6 @@ class LocalStore(BaseStore):
             close_after = True
         try:
             entry = col_db.get_query_log_entry(query_id)
-            if entry is None:
-                return None
-            entry["tenant"] = tenant
-            entry["collection"] = collection
             return entry
         finally:
             if close_after:

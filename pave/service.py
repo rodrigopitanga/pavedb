@@ -388,7 +388,9 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
            include_common: bool = False,
            common_tenant: str | None = None,
            common_collection: str | None = None,
+           *,
            request_id: str | None = None,
+           actor: str,
            _log: bool = True) -> dict[str, Any]:
     start = _time.perf_counter()
     m_inc("search_total", 1.0)
@@ -427,6 +429,7 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
                     query_id=str(uuid.uuid4()),
                     tenant=tenant,
                     collection=collection,
+                    actor=actor,
                     query_text=q,
                     k=k,
                     filters=filters,
@@ -627,11 +630,13 @@ def list_query_homes(
 def execute_replay(
     store,
     entry: dict[str, Any],
+    tenant: str,
+    collection: str,
+    *,
     request_id: str | None = None,
+    actor: str,
 ) -> dict[str, Any]:
     query_id = str(entry["query_id"])
-    tenant = str(entry["tenant"])
-    collection = str(entry["collection"])
     try:
         result = search(
             store,
@@ -644,6 +649,7 @@ def execute_replay(
             common_tenant=entry.get("common_tenant"),
             common_collection=entry.get("common_collection"),
             request_id=request_id,
+            actor=actor,
             _log=False,
         )
         if not result.get("ok"):
@@ -655,6 +661,7 @@ def execute_replay(
                 query_id=replay_qid,
                 tenant=tenant,
                 collection=collection,
+                actor=actor,
                 query_text=entry["query_text"],
                 k=entry["k"],
                 filters=entry.get("filters"),
@@ -693,7 +700,9 @@ def replay_query_scoped(
     tenant: str,
     collection: str,
     query_id: str,
+    *,
     request_id: str | None = None,
+    actor: str,
 ) -> dict[str, Any]:
     try:
         if _scoped_query_home_mismatch(store, tenant, collection, query_id):
@@ -701,7 +710,14 @@ def replay_query_scoped(
         entry = store.get_query_log_entry(tenant, collection, query_id)
         if entry is None:
             return _query_not_found(query_id)
-        return execute_replay(store, entry, request_id=request_id)
+        return execute_replay(
+            store,
+            entry,
+            tenant,
+            collection,
+            request_id=request_id,
+            actor=actor,
+        )
     except ServiceError:
         raise
     except Exception as e:
@@ -711,7 +727,9 @@ def replay_query_scoped(
 def replay_query(
     store,
     query_id: str,
+    *,
     request_id: str | None = None,
+    actor: str,
 ) -> dict[str, Any]:
     try:
         home = resolve_query_home(store, query_id)
@@ -721,7 +739,14 @@ def replay_query(
         entry = store.get_query_log_entry(tenant, collection, query_id)
         if entry is None:
             return _query_not_found(query_id)
-        return execute_replay(store, entry, request_id=request_id)
+        return execute_replay(
+            store,
+            entry,
+            tenant,
+            collection,
+            request_id=request_id,
+            actor=actor,
+        )
     except ServiceError:
         raise
     except Exception as e:

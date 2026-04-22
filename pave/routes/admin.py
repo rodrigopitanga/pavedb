@@ -12,7 +12,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
-from pave.auth import AuthContext, auth_ctx, tenant_limit_gate
+from pave.auth import AuthContext, actor_of, auth_ctx, tenant_limit_gate
 from pave.log import ops_event
 from pave.metrics import inc, reset as metrics_reset
 from pave.schemas import (
@@ -290,6 +290,7 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
                     collection,
                     query_id,
                     request_id=rid,
+                    actor=actor_of(ctx),
                 ),
                 request=request,
                 request_id=rid,
