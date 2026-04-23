@@ -10,6 +10,7 @@ from typing import Any
 _dest: str | None = None
 _handle = None
 _lock = threading.Lock()
+_AUTO_ACTOR = object()
 
 
 def configure(dest: str | None) -> None:
@@ -182,6 +183,7 @@ def ops_event(
     *,
     tenant: Any = "tenant",
     coll: Any = "name",
+    actor: Any = _AUTO_ACTOR,
     **extra_keys,
 ):
     """
@@ -202,6 +204,12 @@ def ops_event(
         - str value  → resolved as ``kwargs[value]``
         - callable   → called as ``fn(kwargs, result)`` after the handler returns
         - ``None``   → omit the ``collection`` field (e.g. for list_collections).
+    actor:
+        Source for the actor field.
+        - omitted    → auto-resolve from ``kwargs["ctx"]`` when present
+        - str value  → resolved as ``kwargs[value]``
+        - callable   → called as ``fn(kwargs, result)`` after the handler returns
+        - ``None``   → omit the ``actor`` field
     **extra_keys:
         Additional event fields.
         - str value  → resolved as ``kwargs[value]``
@@ -213,6 +221,18 @@ def ops_event(
         if callable(src):
             return src(kwargs, result)
         return kwargs.get(src)
+
+    def _resolve_actor(src: Any, kwargs: dict, result: Any) -> Any:
+        if src is _AUTO_ACTOR:
+            ctx = kwargs.get("ctx")
+            if ctx is None:
+                return None
+            try:
+                from pave.auth import actor_of
+                return actor_of(ctx)
+            except Exception:
+                return None
+        return _resolve(src, kwargs, result)
 
     def _extras(kwargs: dict, result: Any) -> dict:
         out: dict = {}
@@ -239,6 +259,7 @@ def ops_event(
                         op=op,
                         tenant=_resolve(tenant, kwargs, result),
                         collection=_resolve(coll, kwargs, result),
+                        actor=_resolve_actor(actor, kwargs, result),
                         latency_ms=round((time.perf_counter() - _t0) * 1000, 2),
                         status=_s, error_code=_c,
                         **_extras(kwargs, result),
@@ -259,6 +280,7 @@ def ops_event(
                         op=op,
                         tenant=_resolve(tenant, kwargs, result),
                         collection=_resolve(coll, kwargs, result),
+                        actor=_resolve_actor(actor, kwargs, result),
                         latency_ms=round((time.perf_counter() - _t0) * 1000, 2),
                         status=_s, error_code=_c,
                         **_extras(kwargs, result),

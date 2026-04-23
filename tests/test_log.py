@@ -5,6 +5,7 @@ import asyncio
 import json
 import pytest
 import pave.log as ops_log
+from pave.auth import AuthContext
 
 
 @pytest.fixture(autouse=True)
@@ -140,3 +141,24 @@ def test_ops_event_supports_callable_tenant_and_collection(capsys):
     assert data["k"] == 7
     assert data["request_id"] == "req-1"
     assert data["status"] == "ok"
+
+
+def test_ops_event_infers_actor_from_ctx(capsys):
+    ops_log.configure("stdout")
+
+    @ops_log.ops_event("search", request_id="rid")
+    async def handler(*, tenant, name, rid, ctx):
+        return {"ok": True}
+
+    asyncio.run(
+        handler(
+            tenant="acme",
+            name="docs",
+            rid="req-2",
+            ctx=AuthContext(tenant="acme", is_admin=False),
+        )
+    )
+    data = json.loads(capsys.readouterr().out.strip())
+    assert data["actor"] == "tenant:acme"
+    assert data["tenant"] == "acme"
+    assert data["collection"] == "docs"
