@@ -7,7 +7,7 @@ import asyncio
 import functools
 import json
 
-from fastapi import APIRouter, Depends, File, Form, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile
 
 from pave.auth import AuthContext, tenant_rate_limit
 from pave.log import ops_event
@@ -17,12 +17,17 @@ from pave.schemas import (
     ListDocumentsResponse,
     GetDocumentResponse,
     IngestDocumentResponse,
+    GetChunkResponse,
+    ListChunksResponse,
 )
 from pave.service import (
     ServiceError,
     delete_document as svc_delete_document,
+    get_chunk as svc_get_chunk,
+    get_chunk_content as svc_get_chunk_content,
     get_document as svc_get_document,
     ingest_document as svc_ingest_document,
+    list_chunks as svc_list_chunks,
     list_documents as svc_list_documents,
 )
 from pave.stores.base import BaseStore
@@ -223,6 +228,37 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         return trace(result, request, request_id=rid)
 
     @router.get(
+        "/collections/{tenant}/{collection}/documents/{docid}/chunks",
+        response_model=ListChunksResponse,
+        responses=resp(401, 403, 429, 500),
+    )
+    @ops_event(
+        "list_chunks",
+        coll="collection",
+        request_id="rid",
+    )
+    def list_chunks_handler(
+        request: Request,
+        tenant: str,
+        collection: str,
+        docid: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(tenant_rate_limit),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        result = svc_list_chunks(store, tenant, collection, docid)
+        if not result.get("ok"):
+            return error(
+                500,
+                result.get("code", "list_chunks_failed"),
+                result.get("error", "failed to list chunks"),
+                request=request,
+                request_id=rid,
+            )
+        return trace(result, request, request_id=rid)
+
+    @router.get(
         "/collections/{tenant}/{collection}/documents/{docid}",
         response_model=GetDocumentResponse,
         responses=resp(401, 403, 404, 429, 500),
@@ -258,5 +294,72 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                 request_id=rid,
             )
         return trace(result, request, request_id=rid)
+
+    @router.get(
+        "/collections/{tenant}/{collection}/chunks/{rid}",
+        response_model=GetChunkResponse,
+        responses=resp(401, 403, 404, 429, 500),
+    )
+    @ops_event(
+        "get_chunk",
+        coll="collection",
+        request_id="rid_header",
+    )
+    def get_chunk_handler(
+        request: Request,
+        tenant: str,
+        collection: str,
+        rid: str,
+        rid_header: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(tenant_rate_limit),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        result = svc_get_chunk(store, tenant, collection, rid)
+        if not result.get("ok"):
+            status = 404 if result.get("error_type") == "not_found" else 500
+            return error(
+                status,
+                result.get("code", "get_chunk_failed"),
+                result.get("error", "failed to fetch chunk"),
+                request=request,
+                request_id=rid_header,
+            )
+        return trace(result, request, request_id=rid_header)
+
+    @router.get(
+        "/collections/{tenant}/{collection}/chunks/{rid}/content",
+        response_class=Response,
+        responses=resp(401, 403, 404, 429, 500),
+    )
+    @ops_event(
+        "get_chunk_content",
+        coll="collection",
+        request_id="rid_header",
+    )
+    def get_chunk_content_handler(
+        request: Request,
+        tenant: str,
+        collection: str,
+        rid: str,
+        rid_header: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(tenant_rate_limit),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        result = svc_get_chunk_content(store, tenant, collection, rid)
+        if not result.get("ok"):
+            status = 404 if result.get("error_type") == "not_found" else 500
+            return error(
+                status,
+                result.get("code", "get_chunk_content_failed"),
+                result.get("error", "failed to fetch chunk content"),
+                request=request,
+                request_id=rid_header,
+            )
+        return Response(
+            content=result["content"],
+            media_type=result["content_type"],
+        )
 
     return router

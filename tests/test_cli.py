@@ -502,6 +502,99 @@ def test_cli_get_document_returns_full_document(cli_env, tmp_path, capsys):
     assert ("get_document", tenant, coll, "DOC-GET-1") in store.calls
 
 
+def test_cli_list_chunks_returns_chunk_summaries(
+    cli_query_env,
+    tmp_path,
+    capsys,
+):
+    pvcli, store, _ = cli_query_env
+    tenant, coll = "acme", "clichunks"
+    sample = tmp_path / "clichunks.txt"
+    sample.write_text("hello chunk cli", encoding="utf-8")
+
+    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1"])
+    capsys.readouterr()
+
+    rc = pvcli.main_cli(["list-chunks", tenant, coll, "DOC1"])
+    out = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert out["ok"] is True
+    assert out["tenant"] == tenant
+    assert out["collection"] == coll
+    assert out["docid"] == "DOC1"
+    assert out["count"] == 1
+    assert out["chunks"][0]["rid"] == "DOC1::chunk_0"
+    assert out["chunks"][0]["ingested_at"].endswith("Z")
+    assert ("list_chunks", tenant, coll, "DOC1") in store.calls
+
+
+def test_cli_get_chunk_returns_metadata_without_text(
+    cli_query_env,
+    tmp_path,
+    capsys,
+):
+    pvcli, store, _ = cli_query_env
+    tenant, coll = "acme", "cligetchunk"
+    sample = tmp_path / "cligetchunk.txt"
+    sample.write_text("hello chunk metadata", encoding="utf-8")
+
+    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1"])
+    capsys.readouterr()
+
+    rc = pvcli.main_cli(["get-chunk", tenant, coll, "DOC1::chunk_0"])
+    out = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert out["ok"] is True
+    assert out["tenant"] == tenant
+    assert out["collection"] == coll
+    assert out["docid"] == "DOC1"
+    assert out["rid"] == "DOC1::chunk_0"
+    assert "text" not in out
+    assert ("get_chunk", tenant, coll, "DOC1::chunk_0") in store.calls
+
+
+def test_cli_get_chunk_content_writes_raw_bytes(
+    cli_query_env,
+    tmp_path,
+    capsysbinary,
+):
+    pvcli, store, _ = cli_query_env
+    tenant, coll = "acme", "cligetchunkcontent"
+    sample = tmp_path / "cligetchunkcontent.txt"
+    sample.write_text("hello chunk content", encoding="utf-8")
+
+    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1"])
+    capsysbinary.readouterr()
+
+    rc = pvcli.main_cli(
+        ["get-chunk-content", tenant, coll, "DOC1::chunk_0"]
+    )
+    out = capsysbinary.readouterr().out
+
+    assert rc == 0
+    assert out == b"hello chunk content"
+    assert ("get_chunk_content", tenant, coll, "DOC1::chunk_0") in store.calls
+
+
+def test_cli_get_chunk_content_missing_returns_exit_code_1(
+    cli_query_env,
+    capsys,
+):
+    pvcli, _, _ = cli_query_env
+
+    rc = pvcli.main_cli(["get-chunk-content", "acme", "docs", "missing"])
+    out = json.loads(capsys.readouterr().out)
+
+    assert rc == 1
+    assert out["ok"] is False
+    assert out["code"] == "chunk_content_not_found"
+
+
 def test_cli_dump_archive_creates_zip(cli_env, tmp_path, capsys):
     pvcli, _, _ = cli_env
     data_dir = Path(get_cfg().get("data_dir"))

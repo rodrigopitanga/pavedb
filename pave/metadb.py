@@ -373,6 +373,12 @@ class CollectionDB:
             return {}
         return loaded if isinstance(loaded, dict) else {}
 
+    @staticmethod
+    def _normalize_utc_timestamp(ts: str | None) -> str | None:
+        if isinstance(ts, str) and ts.endswith("+00:00"):
+            return ts.replace("+00:00", "Z")
+        return ts
+
     # ------------------------------------------------------------------
     # Write operations — serialised by _write_lock, use _wconn
     # ------------------------------------------------------------------
@@ -543,7 +549,8 @@ class CollectionDB:
     ) -> dict[str, Any] | None:
         with self._reader() as conn:
             row = conn.execute(
-                "SELECT query_id, tenant, collection, actor, query_text, k, filters_json, "
+                "SELECT query_id, tenant, collection, actor, "
+                "query_text, k, filters_json, "
                 "include_common, common_tenant, common_collection, "
                 "result_ids_json, result_count, latency_ms, timing_json, "
                 "request_id, replay_of, executed_at "
@@ -639,8 +646,7 @@ class CollectionDB:
             if row is None:
                 return None
             version, ingested_at, meta_json = row
-            if isinstance(ingested_at, str) and ingested_at.endswith("+00:00"):
-                ingested_at = ingested_at.replace("+00:00", "Z")
+            ingested_at = self._normalize_utc_timestamp(ingested_at)
             metadata: dict[str, Any] = {}
             try:
                 loaded = json.loads(meta_json) if meta_json else {}
@@ -663,6 +669,41 @@ class CollectionDB:
                 "chunk_count": len(chunk_ids),
             }
 
+    def list_chunks(self, docid: str) -> list[dict[str, Any]]:
+        with self._reader() as conn:
+            rows = conn.execute(
+                "SELECT rid, chunk_path, meta_json, ingested_at "
+                "FROM chunks WHERE docid=? "
+                "ORDER BY rowid",
+                (docid,),
+            ).fetchall()
+        return [
+            {
+                "rid": row[0],
+                "chunk_path": row[1],
+                "meta": self._load_json(row[2]),
+                "ingested_at": self._normalize_utc_timestamp(row[3]),
+            }
+            for row in rows
+        ]
+
+    def get_chunk(self, rid: str) -> dict[str, Any] | None:
+        with self._reader() as conn:
+            row = conn.execute(
+                "SELECT docid, rid, chunk_path, meta_json, ingested_at "
+                "FROM chunks WHERE rid=?",
+                (rid,),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "docid": row[0],
+            "rid": row[1],
+            "chunk_path": row[2],
+            "meta": self._load_json(row[3]),
+            "ingested_at": self._normalize_utc_timestamp(row[4]),
+        }
+
     def list_documents(self) -> list[dict[str, Any]]:
         """Return summary rows for all documents in this collection."""
         with self._reader() as conn:
@@ -678,8 +719,7 @@ class CollectionDB:
             )
             docs: list[dict[str, Any]] = []
             for docid, version, ingested_at, chunk_count in cur.fetchall():
-                if isinstance(ingested_at, str) and ingested_at.endswith("+00:00"):
-                    ingested_at = ingested_at.replace("+00:00", "Z")
+                ingested_at = self._normalize_utc_timestamp(ingested_at)
                 docs.append(
                     {
                         "docid": docid,

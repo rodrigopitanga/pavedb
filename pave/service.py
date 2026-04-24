@@ -277,6 +277,100 @@ def get_document(
         }
 
 
+def list_chunks(
+    store,
+    tenant: str,
+    collection: str,
+    docid: str,
+) -> dict[str, Any]:
+    try:
+        chunks = store.list_chunks(tenant, collection, docid)
+        return {
+            "ok": True,
+            "tenant": tenant,
+            "collection": collection,
+            "docid": docid,
+            "chunks": chunks,
+            "count": len(chunks),
+        }
+    except Exception as e:
+        log.warning(
+            "list_chunks failed tenant=%s coll=%s docid=%s: %s",
+            tenant, collection, docid, e,
+        )
+        return {
+            "ok": False,
+            "code": "list_chunks_failed",
+            "error": str(e),
+        }
+
+
+def get_chunk(
+    store,
+    tenant: str,
+    collection: str,
+    rid: str,
+) -> dict[str, Any]:
+    try:
+        chunk = store.get_chunk(tenant, collection, rid)
+        if chunk is None:
+            log.info(
+                "get_chunk not_found tenant=%s coll=%s rid=%s",
+                tenant, collection, rid,
+            )
+            return {
+                "ok": False,
+                "code": "chunk_not_found",
+                "error": f"chunk '{rid}' not found",
+                "error_type": "not_found",
+            }
+        return {"ok": True, **chunk}
+    except Exception as e:
+        log.warning(
+            "get_chunk failed tenant=%s coll=%s rid=%s: %s",
+            tenant, collection, rid, e,
+        )
+        return {
+            "ok": False,
+            "code": "get_chunk_failed",
+            "error": str(e),
+            "error_type": "failed",
+        }
+
+
+def get_chunk_content(
+    store,
+    tenant: str,
+    collection: str,
+    rid: str,
+) -> dict[str, Any]:
+    try:
+        content = store.get_chunk_content(tenant, collection, rid)
+        if content is None:
+            log.info(
+                "get_chunk_content not_found tenant=%s coll=%s rid=%s",
+                tenant, collection, rid,
+            )
+            return {
+                "ok": False,
+                "code": "chunk_content_not_found",
+                "error": f"chunk '{rid}' content not found",
+                "error_type": "not_found",
+            }
+        return {"ok": True, **content}
+    except Exception as e:
+        log.warning(
+            "get_chunk_content failed tenant=%s coll=%s rid=%s: %s",
+            tenant, collection, rid, e,
+        )
+        return {
+            "ok": False,
+            "code": "get_chunk_content_failed",
+            "error": str(e),
+            "error_type": "failed",
+        }
+
+
 def list_documents(
     store,
     tenant: str,

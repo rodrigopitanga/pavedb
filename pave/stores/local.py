@@ -622,6 +622,104 @@ class LocalStore(BaseStore):
             except Exception:
                 pass
 
+    def list_chunks(
+        self,
+        tenant: str,
+        collection: str,
+        docid: str,
+    ) -> list[dict[str, Any]]:
+        key = (tenant, collection)
+        col_db = self._dbs.get(key)
+        if col_db is not None:
+            try:
+                return col_db.list_chunks(docid)
+            except Exception as e:
+                if not self._is_transient_db_read_error(e):
+                    raise
+                log.debug(
+                    "Transient cached chunks read failure for %s/%s/%s: %s",
+                    tenant, collection, docid, e,
+                )
+
+        db_path = self._db_path(tenant, collection)
+        if not db_path.exists():
+            return []
+        col_db = CollectionDB()
+        try:
+            col_db.open(db_path, read_only=True)
+            return col_db.list_chunks(docid)
+        except Exception as e:
+            if self._is_transient_db_read_error(e):
+                return []
+            raise
+        finally:
+            try:
+                col_db.close()
+            except Exception:
+                pass
+
+    def get_chunk(
+        self,
+        tenant: str,
+        collection: str,
+        rid: str,
+    ) -> dict[str, Any] | None:
+        key = (tenant, collection)
+        col_db = self._dbs.get(key)
+        chunk = None
+        if col_db is not None:
+            try:
+                chunk = col_db.get_chunk(rid)
+            except Exception as e:
+                if not self._is_transient_db_read_error(e):
+                    raise
+                log.debug(
+                    "Transient cached chunk read failure for %s/%s/%s: %s",
+                    tenant, collection, rid, e,
+                )
+                col_db = None
+
+        db_path = self._db_path(tenant, collection)
+        if col_db is None:
+            if not db_path.exists():
+                return None
+            col_db = CollectionDB()
+            try:
+                col_db.open(db_path, read_only=True)
+                chunk = col_db.get_chunk(rid)
+            except Exception as e:
+                if self._is_transient_db_read_error(e):
+                    return None
+                raise
+            finally:
+                try:
+                    col_db.close()
+                except Exception:
+                    pass
+
+        if chunk is None:
+            return None
+        chunk["tenant"] = tenant
+        chunk["collection"] = collection
+        return chunk
+
+    def get_chunk_content(
+        self,
+        tenant: str,
+        collection: str,
+        rid: str,
+    ) -> dict[str, Any] | None:
+        chunk = self.get_chunk(tenant, collection, rid)
+        if chunk is None:
+            return None
+        text = self._load_chunk_text(tenant, collection, rid)
+        if text is None:
+            return None
+        return {
+            "content": text.encode("utf-8"),
+            "content_type": "text/plain; charset=utf-8",
+        }
+
     def list_documents(
         self,
         tenant: str,

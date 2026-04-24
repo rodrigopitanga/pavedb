@@ -301,6 +301,30 @@ class DummyStore(BaseStore):
             )
         return docs
 
+    def list_chunks(
+        self,
+        tenant: str,
+        collection: str,
+        docid: str,
+    ) -> list[dict[str, Any]]:
+        return []
+
+    def get_chunk(
+        self,
+        tenant: str,
+        collection: str,
+        rid: str,
+    ) -> dict[str, Any] | None:
+        return None
+
+    def get_chunk_content(
+        self,
+        tenant: str,
+        collection: str,
+        rid: str,
+    ) -> dict[str, Any] | None:
+        return None
+
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],
                       doc_meta: dict[str, Any] | None = None) -> int:
@@ -492,6 +516,33 @@ class SpyStore(BaseStore):
     ) -> list[dict[str, Any]]:
         self.calls.append(("list_documents", tenant, collection))
         return self.impl.list_documents(tenant, collection)
+
+    def list_chunks(
+        self,
+        tenant: str,
+        collection: str,
+        docid: str,
+    ) -> list[dict[str, Any]]:
+        self.calls.append(("list_chunks", tenant, collection, docid))
+        return self.impl.list_chunks(tenant, collection, docid)
+
+    def get_chunk(
+        self,
+        tenant: str,
+        collection: str,
+        rid: str,
+    ) -> dict[str, Any] | None:
+        self.calls.append(("get_chunk", tenant, collection, rid))
+        return self.impl.get_chunk(tenant, collection, rid)
+
+    def get_chunk_content(
+        self,
+        tenant: str,
+        collection: str,
+        rid: str,
+    ) -> dict[str, Any] | None:
+        self.calls.append(("get_chunk_content", tenant, collection, rid))
+        return self.impl.get_chunk_content(tenant, collection, rid)
 
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],

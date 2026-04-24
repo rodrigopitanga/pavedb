@@ -226,6 +226,14 @@ class GetDocumentResponse(OkResponse):
     chunk_count: int
 
 
+class ChunkSummary(BaseModel):
+    """API summary item for document chunk listings."""
+    rid: str
+    chunk_path: str | None = None
+    meta: dict[str, Any]
+    ingested_at: str
+
+
 class DocumentSummary(BaseModel):
     """API summary item for document listings."""
     docid: str
@@ -240,6 +248,26 @@ class ListDocumentsResponse(OkResponse):
     collection: str
     documents: list[DocumentSummary]
     count: int
+
+
+class ListChunksResponse(OkResponse):
+    """API response for document chunk listing."""
+    tenant: str
+    collection: str
+    docid: str
+    chunks: list[ChunkSummary]
+    count: int
+
+
+class GetChunkResponse(OkResponse):
+    """API response for chunk lookup."""
+    tenant: str
+    collection: str
+    docid: str
+    rid: str
+    chunk_path: str | None = None
+    meta: dict[str, Any]
+    ingested_at: str
 
 
 class RestoreArchiveResponse(OkResponse):

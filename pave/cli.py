@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 from __future__ import annotations
-import argparse, json, uuid, pathlib
+import argparse, json, pathlib, sys, uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pave.embedders import get_embedder
 from pave.stores.base import BaseStore
@@ -14,10 +15,13 @@ from pave.service import (
     delete_collection as svc_delete_collection,
     rename_collection as svc_rename_collection,
     delete_document as svc_delete_document,
+    get_chunk as svc_get_chunk,
+    get_chunk_content as svc_get_chunk_content,
     get_collection_detail as svc_get_collection_detail,
     get_document as svc_get_document,
     get_query_log_entry as svc_get_query_log_entry,
     ingest_document as svc_ingest_document,
+    list_chunks as svc_list_chunks,
     list_tenants as svc_list_tenants,
     list_collections as svc_list_collections,
     list_documents as svc_list_documents,
@@ -37,6 +41,11 @@ from pave.runtime_paths import (
 )
 
 store: BaseStore | None = None
+
+
+@dataclass
+class RawCLIOutput:
+    content: bytes
 
 
 def _get_store() -> BaseStore:
@@ -229,6 +238,36 @@ def cmd_get_document(args):
     )
 
 
+def cmd_list_chunks(args):
+    return svc_list_chunks(
+        _get_store(),
+        args.tenant,
+        args.collection,
+        args.docid,
+    )
+
+
+def cmd_get_chunk(args):
+    return svc_get_chunk(
+        _get_store(),
+        args.tenant,
+        args.collection,
+        args.rid,
+    )
+
+
+def cmd_get_chunk_content(args):
+    out = svc_get_chunk_content(
+        _get_store(),
+        args.tenant,
+        args.collection,
+        args.rid,
+    )
+    if out.get("ok") is False:
+        return out
+    return RawCLIOutput(content=out["content"])
+
+
 def cmd_delete(args):
     return svc_delete_collection(_get_store(), args.tenant, args.collection)
 
@@ -405,6 +444,24 @@ def main_cli(argv=None):
     p_get_doc.add_argument("docid")
     p_get_doc.set_defaults(func=cmd_get_document)
 
+    p_list_chunks = sub.add_parser("list-chunks", parents=[runtime])
+    p_list_chunks.add_argument("tenant")
+    p_list_chunks.add_argument("collection")
+    p_list_chunks.add_argument("docid")
+    p_list_chunks.set_defaults(func=cmd_list_chunks)
+
+    p_get_chunk = sub.add_parser("get-chunk", parents=[runtime])
+    p_get_chunk.add_argument("tenant")
+    p_get_chunk.add_argument("collection")
+    p_get_chunk.add_argument("rid")
+    p_get_chunk.set_defaults(func=cmd_get_chunk)
+
+    p_get_chunk_content = sub.add_parser("get-chunk-content", parents=[runtime])
+    p_get_chunk_content.add_argument("tenant")
+    p_get_chunk_content.add_argument("collection")
+    p_get_chunk_content.add_argument("rid")
+    p_get_chunk_content.set_defaults(func=cmd_get_chunk_content)
+
     p_delete = sub.add_parser("delete-collection", parents=[runtime])
     p_delete.add_argument("tenant")
     p_delete.add_argument("collection")
@@ -452,6 +509,9 @@ def main_cli(argv=None):
         out = args.func(args)
     except ServiceError as exc:
         out = {"ok": False, "code": exc.code, "error": exc.message}
+    if isinstance(out, RawCLIOutput):
+        sys.stdout.buffer.write(out.content)
+        return 0
     _dump(out, pretty=not args.compact)
     return _exit_code_for_result(out)
 

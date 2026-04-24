@@ -202,6 +202,44 @@ def test_get_document_returns_doc_metadata_and_chunk_ids(tmp_path):
     db.close()
 
 
+def test_list_chunks_and_get_chunk_return_chunk_metadata(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    db.upsert_chunks(
+        "doc6",
+        [
+            ("doc6::chunk_0", "chunks/doc6__chunk_0.txt", {"offset": 0}),
+            ("doc6::chunk_1", "chunks/doc6__chunk_1.txt", {"offset": 50}),
+        ],
+        doc_meta={
+            "docid": "doc6",
+            "filename": "doc6.txt",
+            "ingested_at": "2026-04-04T00:00:00Z",
+        },
+    )
+
+    chunks = db.list_chunks("doc6")
+    chunk = db.get_chunk("doc6::chunk_1")
+
+    assert [entry["rid"] for entry in chunks] == [
+        "doc6::chunk_0",
+        "doc6::chunk_1",
+    ]
+    assert chunks[0]["chunk_path"] == "chunks/doc6__chunk_0.txt"
+    assert chunks[0]["meta"] == {"offset": 0}
+    assert chunks[0]["ingested_at"].endswith("Z")
+    assert chunk == {
+        "docid": "doc6",
+        "rid": "doc6::chunk_1",
+        "chunk_path": "chunks/doc6__chunk_1.txt",
+        "meta": {"offset": 50},
+        "ingested_at": chunks[1]["ingested_at"],
+    }
+    assert db.list_chunks("missing") == []
+    assert db.get_chunk("missing::chunk_0") is None
+    db.close()
+
+
 def test_catalog_db_bootstrap_seeds_and_prunes_orphans(tmp_path):
     existing = CollectionDB()
     existing.open(tmp_path / "t_acme" / "c_docs" / "meta.db")

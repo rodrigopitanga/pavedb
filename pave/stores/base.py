@@ -102,6 +102,30 @@ class BaseStore(ABC):
     ) -> list[dict[str, Any]]: ...
 
     @abstractmethod
+    def list_chunks(
+        self,
+        tenant: str,
+        collection: str,
+        docid: str,
+    ) -> list[dict[str, Any]]: ...
+
+    @abstractmethod
+    def get_chunk(
+        self,
+        tenant: str,
+        collection: str,
+        rid: str,
+    ) -> dict[str, Any] | None: ...
+
+    @abstractmethod
+    def get_chunk_content(
+        self,
+        tenant: str,
+        collection: str,
+        rid: str,
+    ) -> dict[str, Any] | None: ...
+
+    @abstractmethod
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int: ...
 
     @abstractmethod
