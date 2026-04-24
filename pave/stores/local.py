@@ -141,39 +141,41 @@ class LocalStore(BaseStore):
 
     def _load_or_init(self, tenant: str, collection: str) -> None:
         key = (tenant, collection)
-        if key in self._emb:
+        if key in self._emb and key in self._dbs:
             return
 
         base = self._base_path(tenant, collection)
         os.makedirs(base, exist_ok=True)
 
-        idx_dir = Path(os.path.join(base, "index"))
-        backend = FaissBackend(
-            self._embedder.dim,
-            storage_dir=idx_dir,
-        )
-
-        try:
-            backend.initialize()
-        except Exception:
-            log.warning(
-                "Corrupt index at %s for %s/%s, starting fresh",
-                idx_dir,
-                tenant,
-                collection,
-            )
+        backend = self._emb.get(key)
+        if backend is None:
+            idx_dir = Path(os.path.join(base, "index"))
             backend = FaissBackend(
                 self._embedder.dim,
                 storage_dir=idx_dir,
             )
 
-        self._emb[key] = backend
+            try:
+                backend.initialize()
+            except Exception:
+                log.warning(
+                    "Corrupt index at %s for %s/%s, starting fresh",
+                    idx_dir,
+                    tenant,
+                    collection,
+                )
+                backend = FaissBackend(
+                    self._embedder.dim,
+                    storage_dir=idx_dir,
+                )
 
-        # Open CollectionDB if not already open
-        if key not in self._dbs:
+        col_db = self._dbs.get(key)
+        if col_db is None:
             col_db = CollectionDB()
             col_db.open(self._db_path(tenant, collection))
-            self._dbs[key] = col_db
+
+        self._emb[key] = backend
+        self._dbs[key] = col_db
 
     def _save(self, tenant: str, collection: str) -> None:
         key = (tenant, collection)
@@ -271,6 +273,7 @@ class LocalStore(BaseStore):
             return (
                 "unable to open database file" in msg
                 or "database is locked" in msg
+                or "no such table:" in msg
             )
         if isinstance(exc, RuntimeError):
             return (
@@ -280,46 +283,68 @@ class LocalStore(BaseStore):
             )
         return False
 
-    def _read_meta_batch_safe(
-        self, tenant: str, collection: str, rids: list[str]
-    ) -> dict[str, dict[str, Any]]:
-        if not rids:
-            return {}
-
+    def _read_collection_db(
+        self,
+        tenant: str,
+        collection: str,
+        *,
+        op_name: str,
+        default: Any,
+        reader,
+    ) -> Any:
         key = (tenant, collection)
-        cached = self._dbs.get(key)
-        if cached is not None:
+        col_db = self._dbs.get(key)
+        if col_db is not None:
             try:
-                return cached.get_meta_batch(rids)
+                return reader(col_db)
             except Exception as e:
                 if not self._is_transient_db_read_error(e):
                     raise
                 log.debug(
-                    "Transient cached meta read failure for %s/%s: %s",
-                    tenant, collection, e,
+                    "Transient cached %s read failure for %s/%s: %s",
+                    op_name,
+                    tenant,
+                    collection,
+                    e,
                 )
 
         db_path = self._db_path(tenant, collection)
         if not db_path.exists():
-            return {}
+            return default
 
         fallback = CollectionDB()
         try:
             fallback.open(db_path, read_only=True)
-            return fallback.get_meta_batch(rids)
+            return reader(fallback)
         except Exception as e:
             if not self._is_transient_db_read_error(e):
                 raise
             log.debug(
-                "Transient fallback meta read failure for %s/%s: %s",
-                tenant, collection, e,
+                "Transient fallback %s read failure for %s/%s: %s",
+                op_name,
+                tenant,
+                collection,
+                e,
             )
-            return {}
+            return default
         finally:
             try:
                 fallback.close()
             except Exception:
                 pass
+
+    def _read_meta_batch_safe(
+        self, tenant: str, collection: str, rids: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        if not rids:
+            return {}
+        return self._read_collection_db(
+            tenant,
+            collection,
+            op_name="meta_batch",
+            default={},
+            reader=lambda db: db.get_meta_batch(rids),
+        )
 
     def list_collections(self, tenant: str) -> list[dict[str, Any]]:
         return self._ensure_catalog().list_collection_summaries(tenant)
@@ -375,25 +400,26 @@ class LocalStore(BaseStore):
         request_id: str | None = None,
         replay_of: str | None = None,
     ) -> None:
-        self._load_or_init(tenant, collection)
-        self._dbs[(tenant, collection)].log_query(
-            query_id=query_id,
-            tenant=tenant,
-            collection=collection,
-            actor=actor,
-            query_text=query_text,
-            k=k,
-            filters=filters,
-            include_common=include_common,
-            common_tenant=common_tenant,
-            common_collection=common_collection,
-            result_ids=result_ids,
-            result_count=result_count,
-            latency_ms=latency_ms,
-            timing=timing,
-            request_id=request_id,
-            replay_of=replay_of,
-        )
+        with self._collection_lock(tenant, collection):
+            self._load_or_init(tenant, collection)
+            self._dbs[(tenant, collection)].log_query(
+                query_id=query_id,
+                tenant=tenant,
+                collection=collection,
+                actor=actor,
+                query_text=query_text,
+                k=k,
+                filters=filters,
+                include_common=include_common,
+                common_tenant=common_tenant,
+                common_collection=common_collection,
+                result_ids=result_ids,
+                result_count=result_count,
+                latency_ms=latency_ms,
+                timing=timing,
+                request_id=request_id,
+                replay_of=replay_of,
+            )
         try:
             self.put_query_home(query_id, tenant, collection)
         except Exception:
@@ -405,25 +431,13 @@ class LocalStore(BaseStore):
         collection: str,
         query_id: str,
     ) -> dict[str, Any] | None:
-        key = (tenant, collection)
-        col_db = self._dbs.get(key)
-        close_after = False
-        if col_db is None:
-            db_path = self._db_path(tenant, collection)
-            if not db_path.exists():
-                return None
-            col_db = CollectionDB()
-            col_db.open(db_path, read_only=True)
-            close_after = True
-        try:
-            entry = col_db.get_query_log_entry(query_id)
-            return entry
-        finally:
-            if close_after:
-                try:
-                    col_db.close()
-                except Exception:
-                    pass
+        return self._read_collection_db(
+            tenant,
+            collection,
+            op_name="query_log_entry",
+            default=None,
+            reader=lambda db: db.get_query_log_entry(query_id),
+        )
 
     def list_query_logs(
         self,
@@ -432,24 +446,13 @@ class LocalStore(BaseStore):
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
-        key = (tenant, collection)
-        col_db = self._dbs.get(key)
-        close_after = False
-        if col_db is None:
-            db_path = self._db_path(tenant, collection)
-            if not db_path.exists():
-                return []
-            col_db = CollectionDB()
-            col_db.open(db_path, read_only=True)
-            close_after = True
-        try:
-            return col_db.list_query_logs(limit, offset)
-        finally:
-            if close_after:
-                try:
-                    col_db.close()
-                except Exception:
-                    pass
+        return self._read_collection_db(
+            tenant,
+            collection,
+            op_name="query_logs",
+            default=[],
+            reader=lambda db: db.list_query_logs(limit, offset),
+        )
 
     def put_query_home(
         self,
@@ -499,32 +502,13 @@ class LocalStore(BaseStore):
         Returns (0, 0) if meta.db is missing or hits a transient
         read error.
         """
-        db_path = self._db_path(tenant, collection)
-        if not db_path.is_file():
-            return (0, 0)
-
-        key = (tenant, collection)
-        col_db = self._dbs.get(key)
-        if col_db is not None:
-            try:
-                return col_db.get_doc_chunk_counts()
-            except Exception as e:
-                if not self._is_transient_db_read_error(e):
-                    raise
-
-        fallback = CollectionDB()
-        try:
-            fallback.open(db_path, read_only=True)
-            return fallback.get_doc_chunk_counts()
-        except Exception as e:
-            if self._is_transient_db_read_error(e):
-                return (0, 0)
-            raise
-        finally:
-            try:
-                fallback.close()
-            except Exception:
-                pass
+        return self._read_collection_db(
+            tenant,
+            collection,
+            op_name="doc_chunk_counts",
+            default=(0, 0),
+            reader=lambda db: db.get_doc_chunk_counts(),
+        )
 
     def catalog_metrics(self) -> dict[str, int]:
         """Return tenant/collection/doc/chunk counters from store metadata."""
@@ -533,24 +517,9 @@ class LocalStore(BaseStore):
         chunk_count = 0
 
         for tenant, collection in catalog.list_collection_refs():
-            db_path = self._db_path(tenant, collection)
-            if not db_path.is_file():
-                continue
-
-            key = (tenant, collection)
-            col_db = self._dbs.get(key)
-            close_after = False
-            if col_db is None:
-                col_db = CollectionDB()
-                col_db.open(db_path, read_only=True)
-                close_after = True
-            try:
-                docs, chunks = col_db.get_doc_chunk_counts()
-                doc_count += docs
-                chunk_count += chunks
-            finally:
-                if close_after:
-                    col_db.close()
+            docs, chunks = self._read_doc_chunk_counts(tenant, collection)
+            doc_count += docs
+            chunk_count += chunks
 
         return {
             "tenant_count": catalog.tenant_count(),
@@ -560,31 +529,13 @@ class LocalStore(BaseStore):
         }
 
     def has_doc(self, tenant: str, collection: str, docid: str) -> bool:
-        key = (tenant, collection)
-        col_db = self._dbs.get(key)
-        if col_db is not None:
-            try:
-                return col_db.has_doc(docid)
-            except Exception as e:
-                if not self._is_transient_db_read_error(e):
-                    raise
-        # Fallback: open DB read-only (no wconn, no migrations)
-        db_path = self._db_path(tenant, collection)
-        if not db_path.exists():
-            return False
-        col_db = CollectionDB()
-        try:
-            col_db.open(db_path, read_only=True)
-            return col_db.has_doc(docid)
-        except Exception as e:
-            if self._is_transient_db_read_error(e):
-                return False
-            raise
-        finally:
-            try:
-                col_db.close()
-            except Exception:
-                pass
+        return self._read_collection_db(
+            tenant,
+            collection,
+            op_name="has_doc",
+            default=False,
+            reader=lambda db: db.has_doc(docid),
+        )
 
     def get_document(
         self,
@@ -592,35 +543,13 @@ class LocalStore(BaseStore):
         collection: str,
         docid: str,
     ) -> dict[str, Any] | None:
-        key = (tenant, collection)
-        col_db = self._dbs.get(key)
-        if col_db is not None:
-            try:
-                return col_db.get_document(docid)
-            except Exception as e:
-                if not self._is_transient_db_read_error(e):
-                    raise
-                log.debug(
-                    "Transient cached document read failure for %s/%s/%s: %s",
-                    tenant, collection, docid, e,
-                )
-
-        db_path = self._db_path(tenant, collection)
-        if not db_path.exists():
-            return None
-        col_db = CollectionDB()
-        try:
-            col_db.open(db_path, read_only=True)
-            return col_db.get_document(docid)
-        except Exception as e:
-            if self._is_transient_db_read_error(e):
-                return None
-            raise
-        finally:
-            try:
-                col_db.close()
-            except Exception:
-                pass
+        return self._read_collection_db(
+            tenant,
+            collection,
+            op_name="document",
+            default=None,
+            reader=lambda db: db.get_document(docid),
+        )
 
     def list_chunks(
         self,
@@ -628,35 +557,13 @@ class LocalStore(BaseStore):
         collection: str,
         docid: str,
     ) -> list[dict[str, Any]]:
-        key = (tenant, collection)
-        col_db = self._dbs.get(key)
-        if col_db is not None:
-            try:
-                return col_db.list_chunks(docid)
-            except Exception as e:
-                if not self._is_transient_db_read_error(e):
-                    raise
-                log.debug(
-                    "Transient cached chunks read failure for %s/%s/%s: %s",
-                    tenant, collection, docid, e,
-                )
-
-        db_path = self._db_path(tenant, collection)
-        if not db_path.exists():
-            return []
-        col_db = CollectionDB()
-        try:
-            col_db.open(db_path, read_only=True)
-            return col_db.list_chunks(docid)
-        except Exception as e:
-            if self._is_transient_db_read_error(e):
-                return []
-            raise
-        finally:
-            try:
-                col_db.close()
-            except Exception:
-                pass
+        return self._read_collection_db(
+            tenant,
+            collection,
+            op_name="chunks",
+            default=[],
+            reader=lambda db: db.list_chunks(docid),
+        )
 
     def get_chunk(
         self,
@@ -664,39 +571,13 @@ class LocalStore(BaseStore):
         collection: str,
         rid: str,
     ) -> dict[str, Any] | None:
-        key = (tenant, collection)
-        col_db = self._dbs.get(key)
-        chunk = None
-        if col_db is not None:
-            try:
-                chunk = col_db.get_chunk(rid)
-            except Exception as e:
-                if not self._is_transient_db_read_error(e):
-                    raise
-                log.debug(
-                    "Transient cached chunk read failure for %s/%s/%s: %s",
-                    tenant, collection, rid, e,
-                )
-                col_db = None
-
-        db_path = self._db_path(tenant, collection)
-        if col_db is None:
-            if not db_path.exists():
-                return None
-            col_db = CollectionDB()
-            try:
-                col_db.open(db_path, read_only=True)
-                chunk = col_db.get_chunk(rid)
-            except Exception as e:
-                if self._is_transient_db_read_error(e):
-                    return None
-                raise
-            finally:
-                try:
-                    col_db.close()
-                except Exception:
-                    pass
-
+        chunk = self._read_collection_db(
+            tenant,
+            collection,
+            op_name="chunk",
+            default=None,
+            reader=lambda db: db.get_chunk(rid),
+        )
         if chunk is None:
             return None
         chunk["tenant"] = tenant
@@ -725,35 +606,13 @@ class LocalStore(BaseStore):
         tenant: str,
         collection: str,
     ) -> list[dict[str, Any]]:
-        key = (tenant, collection)
-        col_db = self._dbs.get(key)
-        if col_db is not None:
-            try:
-                return col_db.list_documents()
-            except Exception as e:
-                if not self._is_transient_db_read_error(e):
-                    raise
-                log.debug(
-                    "Transient cached documents read failure for %s/%s: %s",
-                    tenant, collection, e,
-                )
-
-        db_path = self._db_path(tenant, collection)
-        if not db_path.exists():
-            return []
-        col_db = CollectionDB()
-        try:
-            col_db.open(db_path, read_only=True)
-            return col_db.list_documents()
-        except Exception as e:
-            if self._is_transient_db_read_error(e):
-                return []
-            raise
-        finally:
-            try:
-                col_db.close()
-            except Exception:
-                pass
+        return self._read_collection_db(
+            tenant,
+            collection,
+            op_name="documents",
+            default=[],
+            reader=lambda db: db.list_documents(),
+        )
 
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         with self._collection_lock(tenant, collection):

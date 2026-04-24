@@ -3,8 +3,10 @@
 
 from __future__ import annotations
 
+import threading
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from pave.metadb import CatalogDB, CollectionDB
 from pave.service import (
@@ -249,6 +251,73 @@ def test_local_store_query_home_follows_collection_rename(tmp_path):
     assert entry["tenant"] == "acme"
     assert entry["collection"] == "docs"
     assert entry["actor"] == "admin"
+
+
+def test_load_or_init_does_not_publish_half_initialized_cache(
+    tmp_path,
+    monkeypatch,
+):
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    real_open = CollectionDB.open
+
+    def fail_open(self, path, *, read_only=False):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(CollectionDB, "open", fail_open)
+
+    try:
+        try:
+            store.create_collection("acme", "docs")
+        except RuntimeError as exc:
+            assert str(exc) == "boom"
+        else:
+            raise AssertionError("create_collection should fail")
+    finally:
+        monkeypatch.setattr(CollectionDB, "open", real_open)
+
+    assert ("acme", "docs") not in store._emb
+    assert ("acme", "docs") not in store._dbs
+
+
+def test_local_store_log_query_reopen_is_serialized(tmp_path, monkeypatch):
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "docs")
+    store._flush_caches(async_close=False)
+
+    real_open = CollectionDB.open
+    gate = threading.Lock()
+    inflight = {"current": 0, "max": 0}
+
+    def tracked_open(self, path, *, read_only=False):
+        with gate:
+            inflight["current"] += 1
+            inflight["max"] = max(inflight["max"], inflight["current"])
+        try:
+            time.sleep(0.02)
+            return real_open(self, path, read_only=read_only)
+        finally:
+            with gate:
+                inflight["current"] -= 1
+
+    monkeypatch.setattr(CollectionDB, "open", tracked_open)
+
+    def write_query(i: int) -> None:
+        store.log_query(
+            query_id=f"qid-{i}",
+            tenant="acme",
+            collection="docs",
+            actor="admin",
+            query_text=f"q{i}",
+            k=1,
+            result_count=0,
+        )
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(write_query, range(8)))
+
+    assert inflight["max"] == 1
+    rows = store.list_query_logs("acme", "docs")
+    assert len(rows) == 8
 
 
 def test_local_store_query_home_upsert_failure_keeps_collection_log(

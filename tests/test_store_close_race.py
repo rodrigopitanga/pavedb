@@ -3,6 +3,7 @@
 
 import errno
 import shutil
+import time
 from pathlib import Path
 
 from unittest.mock import patch
@@ -144,6 +145,80 @@ def test_has_doc_fallback_handles_db_removed_before_read_only_open():
     assert result is False
     assert len(opened) == 1
     assert not db_path.exists()
+
+
+def test_get_query_log_entry_recovers_from_closed_cached_db():
+    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+    tenant, collection = "acme", "race_query_log"
+    store.create_collection(tenant, collection)
+    store.log_query(
+        query_id="qid-1",
+        tenant=tenant,
+        collection=collection,
+        actor="admin",
+        query_text="captain nemo",
+        k=1,
+        result_count=1,
+    )
+
+    store._dbs[(tenant, collection)].close()
+
+    entry = store.get_query_log_entry(tenant, collection, "qid-1")
+
+    assert entry is not None
+    assert entry["query_id"] == "qid-1"
+    assert entry["query_text"] == "captain nemo"
+
+
+def test_list_query_logs_recovers_from_closed_cached_db():
+    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+    tenant, collection = "acme", "race_query_logs"
+    store.create_collection(tenant, collection)
+    store.log_query(
+        query_id="qid-1",
+        tenant=tenant,
+        collection=collection,
+        actor="admin",
+        query_text="first",
+        k=1,
+        result_count=1,
+    )
+    time.sleep(0.005)
+    store.log_query(
+        query_id="qid-2",
+        tenant=tenant,
+        collection=collection,
+        actor="admin",
+        query_text="second",
+        k=1,
+        result_count=1,
+    )
+
+    store._dbs[(tenant, collection)].close()
+
+    rows = store.list_query_logs(tenant, collection, limit=10, offset=0)
+
+    assert [row["query_id"] for row in rows] == ["qid-2", "qid-1"]
+
+
+def test_catalog_metrics_recovers_from_closed_cached_db():
+    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+    tenant, collection, docid = "acme", "race_metrics", "DOC-1"
+    store.index_records(
+        tenant,
+        collection,
+        docid,
+        [("0", "metrics probe", {"lang": "en"})],
+    )
+
+    store._dbs[(tenant, collection)].close()
+
+    metrics = store.catalog_metrics()
+
+    assert metrics["tenant_count"] >= 1
+    assert metrics["collection_count"] >= 1
+    assert metrics["doc_count"] >= 1
+    assert metrics["chunk_count"] >= 1
 
 
 def test_delete_collection_retries_transient_dir_not_empty(monkeypatch):
