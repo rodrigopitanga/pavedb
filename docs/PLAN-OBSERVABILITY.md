@@ -70,7 +70,7 @@ Pipeline steps and their inspection surface:
 | Service-layer errors | `log.warning` on every `ok: false` site | ✓ P2-40 |
 | Search timing breakdown | `timing.{embed,search,filter,hydrate}_ms` | ✓ P1-40 |
 | Versioned API path | `/v1/` prefix, additive-only contract | ✓ P1-43 |
-| Chunk inspection | list chunks + get chunk by RID | v0.9 (P2-23) |
+| Chunk inspection | list chunks + get chunk metadata + get chunk content | v0.9 (P2-23) |
 | Query history | per-collection `query_log` + read endpoints | v0.9 planned (P1-41) |
 | Admin bare-id resolver | `query_home` table in `catalog.db` | v0.9 planned (P1-51) |
 | Query replay | `POST /v1/collections/{t}/{c}/queries/{id}/replay` | v0.9 planned (P1-42) |
@@ -187,8 +187,9 @@ unversioned (they are operational, not contract surface).
 The v0.9 cycle closes the minimum viable inspectability
 surface: P1-41 (persistent query log), P1-42 (replay),
 P1-44/P1-45 (read-side browsing), P1-48 (request-correlation
-input cleanup), P1-51 (admin query-home resolver), P2-23
-(chunk inspector), and P1-23 (pre-freeze).
+input cleanup), P1-51 (admin query-home resolver), P2-46
+(query_log + ops_log enrichment — shipped alongside P1-51),
+P2-23 (chunk inspector), and P1-23 (pre-freeze).
 
 ### P1-41 — Persistent query log (2 commits)
 
@@ -365,18 +366,32 @@ JSON out via `_dump`).
 no duplicated query data, no summaries, no hot-path reads.
 Anything heavier belongs in the per-collection `query_log`.
 
-### P2-23 — Chunk inspector + collection browser (2 commits)
+### P2-23 — Chunk inspector (1 commit)
+
+Three endpoints, metadata split from content so chunks stay
+content-type-agnostic (forward-compat with non-text chunks:
+transcripts, OCR, page renders):
 
 - `GET /v1/collections/{t}/{c}/documents/{docid}/chunks` —
   summaries only (RID, chunk_path, meta, ingested_at). No
   text preview: loading previews would be O(N) sidecar-file
   reads per request, the same N+1 class of bug avoided in
-  P1-44/P1-45. Clients that want text call the next endpoint
-  per RID.
-- `GET /v1/collections/{t}/{c}/chunks/{rid}` — full chunk
-  detail (text, meta, provenance).
+  P1-44/P1-45.
+- `GET /v1/collections/{t}/{c}/chunks/{rid}` — single chunk
+  metadata (rid, docid, chunk_path, meta, ingested_at). No
+  `text` field.
+- `GET /v1/collections/{t}/{c}/chunks/{rid}/content` — raw
+  bytes. v0.9 hardcodes `Content-Type: text/plain; charset=utf-8`;
+  returns `Response`, not `OkResponse` (the only v0.9 endpoint
+  that opts out of the envelope — P1-14 doesn't fit binary
+  payloads).
 
 Same transient-read-error fallback shape as `get_document`.
+
+Document content retrieval (`GET /documents/{docid}/content`)
+and source-file retention at ingest are deferred to P3-30
+(retain originals opt-in + content inspector), grouped with
+multimodal retrieval work.
 
 ### P1-23 — Pre-freeze: contract tests + field descriptions (1 commit)
 

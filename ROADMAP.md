@@ -104,13 +104,13 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-32 | Per-collection embeddings | 🧱 | Model per collection | v1.0 |
 | P1-33 | ~~CatalogDB + catalog separation~~ | 🧱 | Catalog + collection backend/embedder config source | v0.9 |
 | P1-40 | ~~Search timing breakdown in response~~ | 🔧 | Latency debugging: embed/search/filter/hydrate split | v0.9 |
-| P1-41 | Persistent query log | 🔧 | Queryable search history (query, filters, config, result IDs) in SQLite | v0.9 |
-| P1-42 | Query replay endpoint | 🧩 | Re-execute stored query at `POST /v1/collections/{t}/{c}/queries/{id}/replay`. Depends on P1-41. Tenant/collection-scoped only; admin shortcut ships in P1-51 | v0.9 |
+| P1-41 | ~~Persistent query log~~ | 🔧 | Queryable search history (query, filters, config, result IDs) in SQLite | v0.9 |
+| P1-42 | ~~Query replay endpoint~~ | 🧩 | Re-execute stored query; depends on P1-41 | v0.9 |
 | P1-43 | ~~`/v1/` route prefix~~ | 🔧 | Versioned API base path; frozen at v1.0, additive after | v0.9 |
-| P1-51 | Admin query-home resolver + shortcut routes + CLI rework | 🧩 | Small `query_home` table in `catalog.db` mapping `query_id → tenant, collection`. Ships admin-only `GET` and `POST .../replay` at `/v1/admin/queries/{id}` that resolve via `query_home` and delegate to the P1-42 scoped handlers, plus admin CLI rework: `get-query` / `replay-query` accept a bare `<query_id>`, `list-queries` takes optional `--tenant` / `--collection` filters. No global HTTP listing | v0.9 |
+| P1-51 | ~~Admin query-home resolver + shortcut routes + CLI rework~~ | 🧩 | Bare-`query_id` lookup/replay for admin via `query_home` table in `catalog.db` | v0.9 |
 | P1-46 | Docs site — preview | 🔧 | MkDocs static site; user + developer sections; published via GitLab Pages | v0.9 |
 | P1-47 | Docs site — 1.0 | 🧱 | Full coverage: guides, core concepts, inspect/debug, operations, architecture, plugins | v1.0 |
-| P1-48 | Remove `SearchBody.request_id` | 🧩 | `X-Request-ID` becomes the only request-correlation input | v0.9 |
+| P1-48 | ~~Remove `SearchBody.request_id`~~ | 🧩 | `X-Request-ID` becomes the only request-correlation input | v0.9 |
 | P1-49 | HTTP request metrics middleware | 🔧 | Per-endpoint request count + latency histogram, status class split, Prometheus `# HELP`/`# TYPE` metadata | v1.0 |
 | P1-50 | Product-signal metrics | 🧩 | Zero-match searches, filter usage, query-log readiness, embedder counters, sidecar drift — competitor gap | v1.0 |
 
@@ -126,6 +126,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-38 | Tenant key management API | 🔧 | Generate/revoke keys, YAML seed → SQL | v1.6 |
 | P2-20 | Collection limit / tenant | 🧩 | Cap growth | v1.5 |
 | P2-21 | Storage limit / tenant | 🧩 | Cap storage | v1.5 |
+| P2-47 | Per-collection storage accounting | 🔧 | Separate document/chunk/index/meta bytes; expose `document_bytes` for quotas, keep `chunk_bytes` admin-only | v1.5 |
 | P2-22 | Usage stats to mothership |  | Capacity planning | v1.4 |
 | P2-23 | Chunk inspector + collection browser | 🔧 | List chunks, get chunk by ID, browse doc→chunk tree | v0.9 |
 | P2-24 | Delete by ID list / by query | 🧩 | Bulk ops, DX | v1.6 |
@@ -135,6 +136,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-43 | Eval assertion API | 🧱 | Define expected results, batch run, track pass/fail | v1.2 |
 | P2-44 | Regression detection | 🔧 | Compare eval runs across versions, flag drift; depends on P2-43 | v1.2 |
 | P2-45 | Config snapshot per collection | 🧩 | Record embedder model + version + search params at ingest | v1.2 |
+| P2-46 | ~~query_log + ops_log enrichment~~ | 🧩 | Historical `tenant` / `collection` / `actor` columns; `actor` field in ops_log | v0.9 |
 | P2-28 | ~~Structured log emission~~ | 🧩 | JSON lines per operation with request_id, tenant, latency | v0.5.8 |
 | P2-40 | ~~Error logging at service layer~~ | 🧩 | `log.warning` on every `ok: false` return site; audit codes and choose level per error class | v0.5.9 |
 | P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v1.2 |
@@ -162,7 +164,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-25 | Multilingual UI/errors/docs | 🧱 | v1.4 |
 | P3-26 | Embedder/store contract | 🧱 | v1.0 |
 | P3-28 | Extensible ingest plugin architecture | 🧱 | v1.6 |
-| P3-30 | Retain original uploaded files (opt-in) | 🧱 | v1.8 |
+| P3-30 | Retain original uploaded files (opt-in) + content inspector | 🧱 | v1.8 |
 | P3-31 | Async ingest jobs + job status API | 🧱 | v1.8 |
 | P3-32 | Per-tenant parallel ingest limits | 🧱 | v1.8 |
 | P3-34 | ~~Relicensing (AGPLv3 candidate)~~ | 🧱 | v0.5.9 |
@@ -314,11 +316,11 @@ latency on every search/ingest/delete.~~
   `match_reason`, `request_id`) (P1-23).
 - ~~Search timing breakdown in response: embed/search/filter/hydrate
   split alongside existing `latency_ms` (P1-40).~~
-- Persistent query log: store query text, filters, config snapshot,
-  and result IDs in each collection's `meta.db` (P1-41).
-- Query replay endpoint: re-execute stored query at
-  `POST /v1/collections/{t}/{c}/queries/{id}/replay` (P1-42).
-- Admin query-home resolver + shortcut routes + CLI rework:
+- ~~Persistent query log: store query text, filters, config snapshot,
+  and result IDs in each collection's `meta.db` (P1-41).~~
+- ~~Query replay endpoint: re-execute stored query at
+  `POST /v1/collections/{t}/{c}/queries/{id}/replay` (P1-42).~~
+- ~~Admin query-home resolver + shortcut routes + CLI rework:
   small `query_home` table in `catalog.db` mapping
   `query_id → tenant, collection`. Adds admin-only `GET` /
   `POST .../replay` at `/v1/admin/queries/{id}` delegating
@@ -326,7 +328,11 @@ latency on every search/ingest/delete.~~
   plus admin-only CLI rework (`get-query` / `replay-query`
   accept a bare `<query_id>`; `list-queries` takes optional
   `--tenant` / `--collection` filters). No global HTTP
-  listing (P1-51).
+  listing (P1-51).~~
+- ~~query_log + ops_log enrichment: `query_log` gains
+  historical `tenant` / `collection` / `actor` columns
+  (audit + portability); `ops_log` events gain `actor`
+  (P2-46).~~
 - Chunk inspector + collection browser: list chunks, get chunk
   by ID (text + metadata + provenance), doc→chunk tree (P2-23).
 - ~~Mount all routes under `/v1/` prefix; drop unversioned routes
@@ -335,9 +341,9 @@ latency on every search/ingest/delete.~~
   only if a `/v1/` shape must break (P1-43).~~
 - Rebranding phase 2: public-facing rename, env fallback removal,
   and `patchvec` → `pavedb` redirect/shim path (P3-35).
-- Remove `SearchBody.request_id`; `X-Request-ID` becomes the
+- ~~Remove `SearchBody.request_id`; `X-Request-ID` becomes the
   single documented input channel for request correlation
-  (P1-48).
+  (P1-48).~~
 - Docs site — preview: MkDocs Material static site with
   getting-started guide, core concepts (tenants, collections,
   chunks, metadata, filters), inspect/debug walkthrough using
@@ -434,6 +440,8 @@ latency on every search/ingest/delete.~~
 - Tenant admin infrastructure (P2-19).
 - Per-tenant collection count limit (P2-20).
 - Per-tenant storage limit (P2-21).
+- Per-collection storage accounting: `document_bytes` exposed for
+  quota surfaces; `chunk_bytes` admin-only (P2-47).
 - Collection version tagging (P2-25).
 - Formalize collection independence from tenant (P2-31).
 

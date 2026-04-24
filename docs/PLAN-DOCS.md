@@ -122,7 +122,7 @@ detailed operations guide. Those land in P1-47.
 ### Build and publish
 
 - **Local preview:** `mkdocs serve` → localhost:8000.
-- **CI job:** new `docs` stage in `.gitlab-ci.yml`:
+- **CI job:** new `docs` stage in `gitlab-ci.yml`:
   - Runs on default branch and tags.
   - `pip install -r docs/site/requirements.txt`.
   - `mkdocs build --strict` (fails on broken links).
@@ -139,7 +139,7 @@ detailed operations guide. Those land in P1-47.
 3. Auto-API page wired from OpenAPI at build time.
 4. `docs/site/requirements.txt` pinning `mkdocs` and
    `mkdocs-material`.
-5. `.gitlab-ci.yml` `docs` stage with Pages deploy.
+5. `gitlab-ci.yml` `docs` stage with Pages deploy.
 6. `README.md` gains a "Docs: <url>" line near the top.
 7. `make docs-serve` target for local preview.
 8. AGPL header in every new source file (yaml, md).

@@ -19,7 +19,7 @@ and stress errors (which indicate locking/concurrency bugs)
 block the pipeline equally.
 
 Disabled by default locally (`0` = off). CI sets non-zero
-defaults via the `.gitlab-ci.yml` job definition.
+defaults via the `gitlab-ci.yml` job definition.
 
 ## Usage
 
