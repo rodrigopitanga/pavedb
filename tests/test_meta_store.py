@@ -8,7 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from pave.metadb import CatalogDB, CollectionDB, LegacyMetadataError
+from pave.metadb import (
+    CatalogDB,
+    CollectionDB,
+    LegacyMetadataError,
+    UnsupportedSchemaVersionError,
+)
 
 
 def _meta_db(tmp_path: Path) -> Path:
@@ -29,7 +34,7 @@ def test_open_creates_schema(tmp_path):
         "SELECT name FROM sqlite_master WHERE type='table' "
         "AND name IN "
         "('schema_migrations', 'documents', 'chunks', "
-        "'chunk_meta', 'document_meta')"
+        "'chunk_meta', 'document_meta', 'query_log')"
     )
     names = {row[0] for row in cur.fetchall()}
     assert {
@@ -38,7 +43,10 @@ def test_open_creates_schema(tmp_path):
         "chunks",
         "chunk_meta",
         "document_meta",
+        "query_log",
     } <= names
+    version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
+    assert version == (6,)
     db.close()
 
 
@@ -49,10 +57,12 @@ def test_catalog_db_open_creates_schema(tmp_path):
     assert conn is not None
     cur = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' "
-        "AND name IN ('schema_migrations', 'collections')"
+        "AND name IN ('schema_migrations', 'collections', 'query_home')"
     )
     names = {row[0] for row in cur.fetchall()}
-    assert {"schema_migrations", "collections"} <= names
+    assert {"schema_migrations", "collections", "query_home"} <= names
+    version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
+    assert version == (3,)
     db.close()
 
 
@@ -145,6 +155,43 @@ def test_open_read_only_missing_file_does_not_create_db(tmp_path):
         db.open(db_path, read_only=True)
 
     assert not db_path.exists()
+
+
+def test_open_rejects_older_collection_schema_version(tmp_path):
+    db_path = _meta_db(tmp_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE schema_migrations ("
+        "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO schema_migrations (version, applied_at) VALUES (5, 'old')"
+    )
+    conn.commit()
+    conn.close()
+
+    db = CollectionDB()
+    with pytest.raises(UnsupportedSchemaVersionError):
+        db.open(db_path)
+
+
+def test_catalog_db_open_rejects_older_schema_version(tmp_path):
+    db_path = _catalog_db(tmp_path)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        "CREATE TABLE schema_migrations ("
+        "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO schema_migrations (version, applied_at) VALUES (2, 'old')"
+    )
+    conn.commit()
+    conn.close()
+
+    db = CatalogDB()
+    with pytest.raises(UnsupportedSchemaVersionError):
+        db.open(db_path)
 
 
 def test_get_doc_chunk_counts(tmp_path):

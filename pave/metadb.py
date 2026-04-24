@@ -26,184 +26,136 @@ class LegacyMetadataError(RuntimeError):
     pass
 
 
-_COLLECTION_MIGRATIONS: dict[int, list[str]] = {
-    1: [
-        """
-        CREATE TABLE IF NOT EXISTS schema_migrations (
-            version    INTEGER PRIMARY KEY,
-            applied_at TEXT NOT NULL
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS documents (
-            docid       TEXT PRIMARY KEY,
-            version     INTEGER NOT NULL DEFAULT 1,
-            ingested_at TEXT NOT NULL DEFAULT (
-                strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-            ),
-            meta_json   TEXT
-        )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS chunks (
-            docid       TEXT NOT NULL,
-            rid         TEXT PRIMARY KEY,
-            chunk_path  TEXT,
-            meta_json   TEXT NOT NULL DEFAULT '{}',
-            ingested_at TEXT NOT NULL DEFAULT (
-                strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-            )
-        )
-        """,
-        "CREATE INDEX IF NOT EXISTS chunks_docid ON chunks (docid)",
-    ],
-    2: [
-        """
-        CREATE TABLE IF NOT EXISTS chunk_meta (
-            rid   TEXT NOT NULL,
-            key   TEXT NOT NULL,
-            value TEXT NOT NULL
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS chunk_meta_rid
-            ON chunk_meta (rid)
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS chunk_meta_kv
-            ON chunk_meta (key, value)
-        """,
-    ],
-    3: [
-        """
-        CREATE TABLE IF NOT EXISTS document_meta (
-            docid TEXT NOT NULL,
-            key   TEXT NOT NULL,
-            value TEXT NOT NULL
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS document_meta_docid
-            ON document_meta (docid)
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS document_meta_kv
-            ON document_meta (key, value)
-        """,
-    ],
-    4: [
-        """
-        CREATE TABLE IF NOT EXISTS query_log (
-            query_id             TEXT PRIMARY KEY,
-            query_text           TEXT NOT NULL,
-            k                    INTEGER NOT NULL,
-            filters_json         TEXT,
-            include_common       INTEGER NOT NULL DEFAULT 0,
-            common_tenant        TEXT,
-            common_collection    TEXT,
-            result_ids_json      TEXT,
-            result_count         INTEGER NOT NULL DEFAULT 0,
-            latency_ms           REAL,
-            timing_json          TEXT,
-            request_id           TEXT,
-            replay_of            TEXT,
-            executed_at          TEXT NOT NULL DEFAULT (
-                strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            )
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_query_log_executed_at
-            ON query_log (executed_at DESC)
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_query_log_replay_of
-            ON query_log (replay_of)
-        """,
-    ],
-    5: [
-        "DROP TABLE IF EXISTS query_log",
-        """
-        CREATE TABLE IF NOT EXISTS query_log (
-            query_id             TEXT PRIMARY KEY,
-            tenant               TEXT NOT NULL,
-            collection           TEXT NOT NULL,
-            actor                TEXT NOT NULL,
-            query_text           TEXT NOT NULL,
-            k                    INTEGER NOT NULL,
-            filters_json         TEXT,
-            include_common       INTEGER NOT NULL DEFAULT 0,
-            common_tenant        TEXT,
-            common_collection    TEXT,
-            result_ids_json      TEXT,
-            result_count         INTEGER NOT NULL DEFAULT 0,
-            latency_ms           REAL,
-            timing_json          TEXT,
-            request_id           TEXT,
-            replay_of            TEXT,
-            executed_at          TEXT NOT NULL DEFAULT (
-                strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            )
-        )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_query_log_executed_at
-            ON query_log (executed_at DESC)
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_query_log_replay_of
-            ON query_log (replay_of)
-        """,
-    ],
-}
+class UnsupportedSchemaVersionError(RuntimeError):
+    pass
 
-_CATALOG_MIGRATIONS: dict[int, list[str]] = {
-    1: [
-        """
-        CREATE TABLE IF NOT EXISTS schema_migrations (
-            version    INTEGER PRIMARY KEY,
-            applied_at TEXT NOT NULL
+
+_COLLECTION_SCHEMA_VERSION = 6
+_CATALOG_SCHEMA_VERSION = 3
+
+_COLLECTION_SCHEMA_SQL: list[str] = [
+    """
+    CREATE TABLE IF NOT EXISTS documents (
+        docid       TEXT PRIMARY KEY,
+        version     INTEGER NOT NULL DEFAULT 1,
+        ingested_at TEXT NOT NULL DEFAULT (
+            strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+        ),
+        meta_json   TEXT
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS chunks (
+        docid       TEXT NOT NULL,
+        rid         TEXT PRIMARY KEY,
+        chunk_path  TEXT,
+        meta_json   TEXT NOT NULL DEFAULT '{}',
+        ingested_at TEXT NOT NULL DEFAULT (
+            strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
         )
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS collections (
-            tenant              TEXT NOT NULL,
-            name                TEXT NOT NULL,
-            display_name        TEXT,
-            meta_json           TEXT,
-            backend_type        TEXT,
-            backend_config_json TEXT,
-            embedder_type       TEXT,
-            embed_model         TEXT,
-            embed_config_json   TEXT,
-            created_at          TEXT NOT NULL DEFAULT (
-                strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-            ),
-            PRIMARY KEY (tenant, name)
+    )
+    """,
+    "CREATE INDEX IF NOT EXISTS chunks_docid ON chunks (docid)",
+    """
+    CREATE TABLE IF NOT EXISTS chunk_meta (
+        rid   TEXT NOT NULL,
+        key   TEXT NOT NULL,
+        value TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS chunk_meta_rid
+        ON chunk_meta (rid)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS chunk_meta_kv
+        ON chunk_meta (key, value)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS document_meta (
+        docid TEXT NOT NULL,
+        key   TEXT NOT NULL,
+        value TEXT NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS document_meta_docid
+        ON document_meta (docid)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS document_meta_kv
+        ON document_meta (key, value)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS query_log (
+        query_id             TEXT PRIMARY KEY,
+        tenant               TEXT NOT NULL,
+        collection           TEXT NOT NULL,
+        actor                TEXT NOT NULL,
+        query_text           TEXT NOT NULL,
+        k                    INTEGER NOT NULL,
+        filters_json         TEXT,
+        include_common       INTEGER NOT NULL DEFAULT 0,
+        common_tenant        TEXT,
+        common_collection    TEXT,
+        result_ids_json      TEXT,
+        result_count         INTEGER NOT NULL DEFAULT 0,
+        latency_ms           REAL,
+        timing_json          TEXT,
+        request_id           TEXT,
+        replay_of            TEXT,
+        executed_at          TEXT NOT NULL DEFAULT (
+            strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         )
-        """,
-    ],
-    2: [
-        """
-        CREATE TABLE IF NOT EXISTS query_home (
-            query_id    TEXT PRIMARY KEY,
-            tenant      TEXT NOT NULL,
-            collection  TEXT NOT NULL,
-            created_at  TEXT NOT NULL DEFAULT (
-                strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
-            )
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_query_log_executed_at
+        ON query_log (executed_at DESC)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_query_log_replay_of
+        ON query_log (replay_of)
+    """,
+]
+
+_CATALOG_SCHEMA_SQL: list[str] = [
+    """
+    CREATE TABLE IF NOT EXISTS collections (
+        tenant              TEXT NOT NULL,
+        name                TEXT NOT NULL,
+        display_name        TEXT,
+        meta_json           TEXT,
+        backend_type        TEXT,
+        backend_config_json TEXT,
+        embedder_type       TEXT,
+        embed_model         TEXT,
+        embed_config_json   TEXT,
+        created_at          TEXT NOT NULL DEFAULT (
+            strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
+        ),
+        PRIMARY KEY (tenant, name)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS query_home (
+        query_id    TEXT PRIMARY KEY,
+        tenant      TEXT NOT NULL,
+        collection  TEXT NOT NULL,
+        created_at  TEXT NOT NULL DEFAULT (
+            strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
         )
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_query_home_tenant_coll
-            ON query_home (tenant, collection)
-        """,
-        """
-        CREATE INDEX IF NOT EXISTS idx_query_home_created_at
-            ON query_home (created_at DESC)
-        """,
-    ],
-}
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_query_home_tenant_coll
+        ON query_home (tenant, collection)
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_query_home_created_at
+        ON query_home (created_at DESC)
+    """,
+]
 
 
 class CollectionDB:
@@ -276,8 +228,19 @@ class CollectionDB:
                 self._wconn = self._open_conn(path)
             self._active_readers = 0
             self._closing = False
-        if not read_only:
-            self._apply_migrations()
+        try:
+            if read_only:
+                current = self._schema_version(self._require_rconn())
+                if current != _COLLECTION_SCHEMA_VERSION:
+                    raise UnsupportedSchemaVersionError(
+                        "unsupported pre-1.0 collection schema version "
+                        f"{current}; recreate the data dir"
+                    )
+            else:
+                self._apply_migrations()
+        except Exception:
+            self.close()
+            raise
 
     def close(self) -> None:
         with self._state_cv:
@@ -337,25 +300,40 @@ class CollectionDB:
 
     def _apply_migrations(self) -> None:
         conn = self._require_wconn()
+        current = self._schema_version(conn)
+        if current == _COLLECTION_SCHEMA_VERSION:
+            return
+        if current != 0:
+            raise UnsupportedSchemaVersionError(
+                "unsupported pre-1.0 collection schema version "
+                f"{current}; recreate the data dir"
+            )
         conn.execute(
             "CREATE TABLE IF NOT EXISTS schema_migrations ("
             "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
         )
-        cur = conn.execute("SELECT MAX(version) FROM schema_migrations")
-        row = cur.fetchone()
-        current = int(row[0] or 0)
-        for version in sorted(_COLLECTION_MIGRATIONS):
-            if version <= current:
-                continue
-            for stmt in _COLLECTION_MIGRATIONS[version]:
-                conn.execute(stmt)
-            now = datetime.now(tz.utc).isoformat(timespec="seconds")
-            conn.execute(
-                "INSERT INTO schema_migrations (version, applied_at) "
-                "VALUES (?, ?)",
-                (version, now),
-            )
+        for stmt in _COLLECTION_SCHEMA_SQL:
+            conn.execute(stmt)
+        now = datetime.now(tz.utc).isoformat(timespec="seconds")
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) "
+            "VALUES (?, ?)",
+            (_COLLECTION_SCHEMA_VERSION, now),
+        )
         conn.commit()
+
+    @staticmethod
+    def _schema_version(conn: sqlite3.Connection) -> int:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name='schema_migrations'"
+        ).fetchone()
+        if row is None:
+            return 0
+        version_row = conn.execute(
+            "SELECT MAX(version) FROM schema_migrations"
+        ).fetchone()
+        return int(version_row[0] or 0)
 
     @staticmethod
     def _dump_json(payload: dict[str, Any] | None) -> str | None:
@@ -976,7 +954,11 @@ class CatalogDB:
             self._wconn = self._open_conn(path)
             self._active_readers = 0
             self._closing = False
-        self._apply_migrations()
+        try:
+            self._apply_migrations()
+        except Exception:
+            self.close()
+            raise
 
     def close(self) -> None:
         with self._state_cv:
@@ -1032,25 +1014,40 @@ class CatalogDB:
 
     def _apply_migrations(self) -> None:
         conn = self._require_wconn()
+        current = self._schema_version(conn)
+        if current == _CATALOG_SCHEMA_VERSION:
+            return
+        if current != 0:
+            raise UnsupportedSchemaVersionError(
+                "unsupported pre-1.0 catalog schema version "
+                f"{current}; recreate the data dir"
+            )
         conn.execute(
             "CREATE TABLE IF NOT EXISTS schema_migrations ("
             "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
         )
-        cur = conn.execute("SELECT MAX(version) FROM schema_migrations")
-        row = cur.fetchone()
-        current = int(row[0] or 0)
-        for version in sorted(_CATALOG_MIGRATIONS):
-            if version <= current:
-                continue
-            for stmt in _CATALOG_MIGRATIONS[version]:
-                conn.execute(stmt)
-            now = datetime.now(tz.utc).isoformat(timespec="seconds")
-            conn.execute(
-                "INSERT INTO schema_migrations (version, applied_at) "
-                "VALUES (?, ?)",
-                (version, now),
-            )
+        for stmt in _CATALOG_SCHEMA_SQL:
+            conn.execute(stmt)
+        now = datetime.now(tz.utc).isoformat(timespec="seconds")
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) "
+            "VALUES (?, ?)",
+            (_CATALOG_SCHEMA_VERSION, now),
+        )
         conn.commit()
+
+    @staticmethod
+    def _schema_version(conn: sqlite3.Connection) -> int:
+        row = conn.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name='schema_migrations'"
+        ).fetchone()
+        if row is None:
+            return 0
+        version_row = conn.execute(
+            "SELECT MAX(version) FROM schema_migrations"
+        ).fetchone()
+        return int(version_row[0] or 0)
 
     @staticmethod
     def _dump_json(payload: dict[str, Any] | None) -> str | None:
