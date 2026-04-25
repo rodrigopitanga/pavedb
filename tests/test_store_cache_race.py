@@ -1,13 +1,12 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-from pave.config import get_cfg
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
 
-def test_has_doc_uses_atomic_cache_lookup_under_flush_race():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_has_doc_uses_atomic_cache_lookup_under_flush_race(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
     tenant, collection, docid = "acme", "race", "DOC-1"
     records = [("0", "cache race probe", {"lang": "en"})]
     store.index_records(tenant, collection, docid, records)

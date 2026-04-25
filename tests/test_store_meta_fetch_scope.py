@@ -3,7 +3,6 @@
 
 from typing import Any
 
-from pave.config import get_cfg
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
@@ -15,8 +14,10 @@ def _seed_records(count: int) -> list[tuple[str, str, dict]]:
     ]
 
 
-def test_search_fetches_meta_for_all_candidates_without_post_filters():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_search_fetches_meta_for_all_candidates_without_post_filters(
+    temp_data_dir,
+):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
     tenant, collection = "tenant", "meta_scope_plain"
     store.index_records(tenant, collection, "doc", _seed_records(12))
 
@@ -36,8 +37,8 @@ def test_search_fetches_meta_for_all_candidates_without_post_filters():
     assert len(seen_batches[0]) > 5
 
 
-def test_search_fetches_extended_meta_batch_with_post_filters():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_search_fetches_extended_meta_batch_with_post_filters(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
     tenant, collection = "tenant", "meta_scope_post"
     store.index_records(tenant, collection, "doc", _seed_records(12))
 
@@ -63,8 +64,8 @@ def test_search_fetches_extended_meta_batch_with_post_filters():
     assert len(seen_batches[0]) > 5
 
 
-def test_search_pushdown_receives_full_normed_filters():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_search_pushdown_receives_full_normed_filters(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
     tenant, collection = "tenant", "meta_scope_pushdown_mix"
     store.index_records(
         tenant,
@@ -121,8 +122,8 @@ def test_search_pushdown_receives_full_normed_filters():
     assert [hit.id.split("::")[-1] for hit in hits] == ["r2"]
 
 
-def test_search_calls_pushdown_for_postfilter_only_conditions():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_search_calls_pushdown_for_postfilter_only_conditions(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
     tenant, collection = "tenant", "meta_scope_post_only"
     store.index_records(tenant, collection, "doc", _seed_records(6))
 

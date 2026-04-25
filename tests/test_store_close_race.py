@@ -9,13 +9,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 from pave.metadb import CollectionDB
-from pave.config import get_cfg
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
 
-def test_has_doc_recovers_from_closed_cached_db():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def _store(temp_data_dir):
+    return LocalStore(str(temp_data_dir), FakeEmbedder())
+
+
+def test_has_doc_recovers_from_closed_cached_db(temp_data_dir):
+    store = _store(temp_data_dir)
     tenant, collection, docid = "acme", "race_has_doc", "DOC-1"
     store.index_records(
         tenant,
@@ -31,8 +34,8 @@ def test_has_doc_recovers_from_closed_cached_db():
     assert store.has_doc(tenant, collection, docid) is True
 
 
-def test_search_recovers_from_closed_cached_db():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_search_recovers_from_closed_cached_db(temp_data_dir):
+    store = _store(temp_data_dir)
     tenant, collection, docid = "acme", "race_search", "DOC-2"
     store.index_records(
         tenant,
@@ -49,8 +52,8 @@ def test_search_recovers_from_closed_cached_db():
     assert hits[0].meta.get("docid") == docid
 
 
-def test_delete_collection_evicts_cache_before_close():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_delete_collection_evicts_cache_before_close(temp_data_dir):
+    store = _store(temp_data_dir)
     tenant, collection = "acme", "delete_order"
     store._load_or_init(tenant, collection)
     key = (tenant, collection)
@@ -69,8 +72,8 @@ def test_delete_collection_evicts_cache_before_close():
     assert seen.get("present_during_close") is False
 
 
-def test_rename_collection_evicts_old_cache_before_close():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_rename_collection_evicts_old_cache_before_close(temp_data_dir):
+    store = _store(temp_data_dir)
     tenant, old_name, new_name = "acme", "old_order", "new_order"
     store._load_or_init(tenant, old_name)
     old_key = (tenant, old_name)
@@ -89,9 +92,9 @@ def test_rename_collection_evicts_old_cache_before_close():
     assert seen.get("present_during_close") is False
 
 
-def test_has_doc_fallback_opens_read_only():
+def test_has_doc_fallback_opens_read_only(temp_data_dir):
     """Fallback CollectionDB opens read-only (no _wconn)."""
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+    store = _store(temp_data_dir)
     tenant, collection = "acme", "ro_fallback"
     docid = "DOC-RO"
     store.index_records(
@@ -118,8 +121,10 @@ def test_has_doc_fallback_opens_read_only():
     assert opened[0]._wconn is None
 
 
-def test_has_doc_fallback_handles_db_removed_before_read_only_open():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_has_doc_fallback_handles_db_removed_before_read_only_open(
+    temp_data_dir,
+):
+    store = _store(temp_data_dir)
     tenant, collection = "acme", "ro_disappears"
     docid = "DOC-GONE"
     store.index_records(
@@ -147,8 +152,8 @@ def test_has_doc_fallback_handles_db_removed_before_read_only_open():
     assert not db_path.exists()
 
 
-def test_get_query_log_entry_recovers_from_closed_cached_db():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_get_query_log_entry_recovers_from_closed_cached_db(temp_data_dir):
+    store = _store(temp_data_dir)
     tenant, collection = "acme", "race_query_log"
     store.create_collection(tenant, collection)
     store.log_query(
@@ -170,8 +175,8 @@ def test_get_query_log_entry_recovers_from_closed_cached_db():
     assert entry["query_text"] == "captain nemo"
 
 
-def test_list_query_logs_recovers_from_closed_cached_db():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_list_query_logs_recovers_from_closed_cached_db(temp_data_dir):
+    store = _store(temp_data_dir)
     tenant, collection = "acme", "race_query_logs"
     store.create_collection(tenant, collection)
     store.log_query(
@@ -201,8 +206,8 @@ def test_list_query_logs_recovers_from_closed_cached_db():
     assert [row["query_id"] for row in rows] == ["qid-2", "qid-1"]
 
 
-def test_catalog_metrics_recovers_from_closed_cached_db():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_catalog_metrics_recovers_from_closed_cached_db(temp_data_dir):
+    store = _store(temp_data_dir)
     tenant, collection, docid = "acme", "race_metrics", "DOC-1"
     store.index_records(
         tenant,
@@ -221,8 +226,11 @@ def test_catalog_metrics_recovers_from_closed_cached_db():
     assert metrics["chunk_count"] >= 1
 
 
-def test_delete_collection_retries_transient_dir_not_empty(monkeypatch):
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_delete_collection_retries_transient_dir_not_empty(
+    monkeypatch,
+    temp_data_dir,
+):
+    store = _store(temp_data_dir)
     tenant, collection, docid = "acme", "retry_delete", "DOC-DEL"
     store.index_records(
         tenant, collection, docid,

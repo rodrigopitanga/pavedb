@@ -75,8 +75,8 @@ def test_lock_indexes_blocks_new_collection_lock(temp_data_dir):
     assert acquired.is_set()
 
 
-def test_create_collection_uses_collection_lock(monkeypatch):
-    store = LocalStore("data", FakeEmbedder())
+def test_create_collection_uses_collection_lock(monkeypatch, temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
     events: list[tuple[str, str, str]] = []
 
     class _SpyLock:
@@ -107,8 +107,8 @@ def test_create_collection_uses_collection_lock(monkeypatch):
     assert ("exit", "acme", "locked") in events
 
 
-def test_flush_store_caches_closes_old_dbs_sync():
-    store = LocalStore("data", FakeEmbedder())
+def test_flush_store_caches_closes_old_dbs_sync(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
     store.index_records(
         "acme",
         "flush_test",

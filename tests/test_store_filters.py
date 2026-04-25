@@ -9,12 +9,11 @@ import pytest
 pytestmark = pytest.mark.slow
 
 from pave.embedders import get_embedder
-from pave.config import get_cfg
 from pave.stores.local import LocalStore
 
 @pytest.fixture()
-def store(request):
-    s = LocalStore(str(get_cfg().get("data_dir")), get_embedder())
+def store(request, temp_data_dir):
+    s = LocalStore(str(temp_data_dir), get_embedder())
     # Use unique collection per test to avoid conflicts
     tenant, coll = "t1", f"c_{request.node.name}"
     s.create_collection(tenant, coll)
@@ -126,9 +125,9 @@ def test_negation_combined_with_exact(store):
 
 
 @pytest.fixture()
-def multilingual_store(request):
+def multilingual_store(request, temp_data_dir):
     """Store with multilingual content for testing non-English retrieval."""
-    s = LocalStore(str(get_cfg().get("data_dir")), get_embedder())
+    s = LocalStore(str(temp_data_dir), get_embedder())
     tenant, coll = "t1", f"ml_{request.node.name}"
     s.create_collection(tenant, coll)
 

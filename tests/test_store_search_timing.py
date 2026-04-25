@@ -1,13 +1,12 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-from pave.config import get_cfg
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
 
-def test_search_returns_phase_timing_and_list_like_matches():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_search_returns_phase_timing_and_list_like_matches(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
     tenant, collection = "acme", "timed"
     store.create_collection(tenant, collection)
     store.index_records(
@@ -34,8 +33,8 @@ def test_search_returns_phase_timing_and_list_like_matches():
     assert all(value >= 0.0 for value in result.timing.values())
 
 
-def test_search_filter_timing_is_exposed_with_filters():
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_search_filter_timing_is_exposed_with_filters(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
     tenant, collection = "acme", "timed_filters"
     store.create_collection(tenant, collection)
     store.index_records(

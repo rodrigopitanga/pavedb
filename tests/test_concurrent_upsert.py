@@ -5,15 +5,14 @@ import time
 import json
 from concurrent.futures import ThreadPoolExecutor
 
-from pave.config import get_cfg
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
 REC0 = ("doc::0", "texto A", "{}")
 REC1 = ("doc::1", "texto B", "{}")
 
-def test_concurrent_upsert_with_manual_lock(cfg):
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_concurrent_upsert_with_manual_lock(cfg, temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
     tenant, coll = "tenantY", "collSafe"
     store._load_or_init(tenant, coll)
     backend = store._emb[(tenant, coll)]
@@ -43,8 +42,8 @@ def test_concurrent_upsert_with_manual_lock(cfg):
         assert "texto A" in texts and "texto B" in texts,\
             "Inconsistent state detected despite locking (manual test)"
 
-def test_concurrent_upsert_with_lock_always_consistent(cfg):
-    store = LocalStore(str(get_cfg().get("data_dir")), FakeEmbedder())
+def test_concurrent_upsert_with_lock_always_consistent(cfg, temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
     tenant, coll = "tenantZ", "collSafe"
     store._load_or_init(tenant, coll)
     emb = store._emb[(tenant, coll)]
