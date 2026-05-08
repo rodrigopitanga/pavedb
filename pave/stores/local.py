@@ -25,7 +25,7 @@ sqlite3.register_adapter(datetime, datetime.isoformat)
 from pave.backends import FaissBackend, VectorBackend
 from pave.embedders import Embedder
 from pave.filters import lookup_meta, matches_filters, sanit_field, sanit_meta_dict
-from pave.metadb import CatalogDB, CollectionDB
+from pave.metadb import CatalogDB, CollectionDB, UnsupportedSchemaVersionError
 from pave.stores.base import (
     BaseStore,
     MetadataValidationError,
@@ -48,7 +48,8 @@ class LocalStore(BaseStore):
         self._embedder = embedder
         self._emb: dict[tuple[str, str], VectorBackend] = {}
         self._dbs: dict[tuple[str, str], CollectionDB] = {}
-        self._catalog = cat_db or CatalogDB()
+        self._catalog_factory = cat_db.__class__ if cat_db is not None else CatalogDB
+        self._catalog = cat_db or self._catalog_factory()
         self._catalog_path: Path | None = None
         self._catalog_guard = Lock()
         self._locks: dict[str, Lock] = {}
@@ -93,10 +94,56 @@ class LocalStore(BaseStore):
             "embedder_config": {},
         }
 
+    @staticmethod
+    def _is_transient_catalog_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        if isinstance(exc, sqlite3.ProgrammingError):
+            return "closed database" in msg
+        if isinstance(exc, sqlite3.OperationalError):
+            return (
+                "unable to open database file" in msg
+                or "database is locked" in msg
+                or "no such table:" in msg
+            )
+        if isinstance(exc, RuntimeError):
+            return (
+                "catalogdb not opened" in msg
+                or "catalogdb is closing" in msg
+                or "not opened" in msg
+                or "closing" in msg
+                or "closed" in msg
+            )
+        return False
+
+    def _with_catalog_retry(self, op_name: str, fn):
+        last_exc: Exception | None = None
+        for attempt in range(2):
+            catalog = self._ensure_catalog()
+            try:
+                return fn(catalog)
+            except Exception as e:
+                if not self._is_transient_catalog_error(e):
+                    raise
+                last_exc = e
+                log.debug(
+                    "Transient catalog %s failure (attempt %s/2): %s",
+                    op_name,
+                    attempt + 1,
+                    e,
+                )
+        assert last_exc is not None
+        raise last_exc
+
     def _ensure_catalog(self) -> CatalogDB:
+        catalog_path = self._catalog_db_path()
+        cat = self._catalog
+        if self._catalog_path == catalog_path and cat._conn is not None:
+            return cat
         with self._catalog_guard:
-            catalog_path = self._catalog_db_path()
-            if self._catalog_path == catalog_path and self._catalog._conn is not None:
+            if (
+                self._catalog_path == catalog_path
+                and self._catalog._conn is not None
+            ):
                 return self._catalog
 
             if self._catalog._conn is not None:
@@ -129,14 +176,17 @@ class LocalStore(BaseStore):
         if tenant == "_system":
             return
         defaults = self._default_collection_config()
-        self._ensure_catalog().register_collection(
-            tenant,
-            name,
-            backend_type=defaults["backend_type"],
-            backend_config=defaults["backend_config"],
-            embedder_type=defaults["embedder_type"],
-            embed_model=defaults["embed_model"],
-            embed_config=defaults["embedder_config"],
+        self._with_catalog_retry(
+            "register_collection",
+            lambda catalog: catalog.register_collection(
+                tenant,
+                name,
+                backend_type=defaults["backend_type"],
+                backend_config=defaults["backend_config"],
+                embedder_type=defaults["embedder_type"],
+                embed_model=defaults["embed_model"],
+                embed_config=defaults["embedder_config"],
+            ),
         )
 
     def _load_or_init(self, tenant: str, collection: str) -> None:
@@ -206,9 +256,17 @@ class LocalStore(BaseStore):
             if path.exists() or path.is_symlink():
                 self._remove_path(path)
         if tenant != "_system":
-            catalog = self._ensure_catalog()
-            catalog.unregister_collection(tenant, collection)
-            catalog.purge_query_homes_for_collection(tenant, collection)
+            self._with_catalog_retry(
+                "unregister_collection",
+                lambda catalog: catalog.unregister_collection(tenant, collection),
+            )
+            self._with_catalog_retry(
+                "purge_query_homes_for_collection",
+                lambda catalog: catalog.purge_query_homes_for_collection(
+                    tenant,
+                    collection,
+                ),
+            )
 
     def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
         if old_name == new_name:
@@ -256,17 +314,28 @@ class LocalStore(BaseStore):
 
         if tenant != "_system":
             self._register_catalog_collection(tenant, old_name)
-            catalog = self._ensure_catalog()
-            catalog.rename_collection(tenant, old_name, new_name)
-            catalog.rename_query_homes_for_collection(
-                tenant,
-                old_name,
-                new_name,
+            self._with_catalog_retry(
+                "rename_collection",
+                lambda catalog: catalog.rename_collection(
+                    tenant,
+                    old_name,
+                    new_name,
+                ),
+            )
+            self._with_catalog_retry(
+                "rename_query_homes_for_collection",
+                lambda catalog: catalog.rename_query_homes_for_collection(
+                    tenant,
+                    old_name,
+                    new_name,
+                ),
             )
 
     @staticmethod
     def _is_transient_db_read_error(exc: Exception) -> bool:
         msg = str(exc).lower()
+        if isinstance(exc, UnsupportedSchemaVersionError):
+            return "collection schema version 0" in msg
         if isinstance(exc, sqlite3.ProgrammingError):
             return "closed database" in msg
         if isinstance(exc, sqlite3.OperationalError):
@@ -347,15 +416,20 @@ class LocalStore(BaseStore):
         )
 
     def list_collections(self, tenant: str) -> list[dict[str, Any]]:
-        return self._ensure_catalog().list_collection_summaries(tenant)
+        return self._with_catalog_retry(
+            "list_collection_summaries",
+            lambda catalog: catalog.list_collection_summaries(tenant),
+        )
 
     def get_collection_detail(
         self,
         tenant: str,
         name: str,
     ) -> dict[str, Any] | None:
-        catalog = self._ensure_catalog()
-        cfg = catalog.get_collection_config(tenant, name)
+        cfg = self._with_catalog_retry(
+            "get_collection_config",
+            lambda catalog: catalog.get_collection_config(tenant, name),
+        )
         if cfg is None:
             return None
         doc_count, chunk_count = self._read_doc_chunk_counts(tenant, name)
@@ -371,14 +445,20 @@ class LocalStore(BaseStore):
         }
 
     def list_tenants(self) -> list[str]:
-        return self._ensure_catalog().list_tenants()
+        return self._with_catalog_retry(
+            "list_tenants",
+            lambda catalog: catalog.list_tenants(),
+        )
 
     def get_collection_config(
         self,
         tenant: str,
         collection: str,
     ) -> dict[str, Any] | None:
-        return self._ensure_catalog().get_collection_config(tenant, collection)
+        return self._with_catalog_retry(
+            "get_collection_config",
+            lambda catalog: catalog.get_collection_config(tenant, collection),
+        )
 
     def log_query(
         self,
@@ -460,22 +540,31 @@ class LocalStore(BaseStore):
         tenant: str,
         collection: str,
     ) -> None:
-        self._ensure_catalog().put_query_home(query_id, tenant, collection)
+        self._with_catalog_retry(
+            "put_query_home",
+            lambda catalog: catalog.put_query_home(query_id, tenant, collection),
+        )
 
     def resolve_query_home(
         self,
         query_id: str,
     ) -> tuple[str, str] | None:
-        return self._ensure_catalog().resolve_query_home(query_id)
+        return self._with_catalog_retry(
+            "resolve_query_home",
+            lambda catalog: catalog.resolve_query_home(query_id),
+        )
 
     def purge_query_homes_for_collection(
         self,
         tenant: str,
         collection: str,
     ) -> None:
-        self._ensure_catalog().purge_query_homes_for_collection(
-            tenant,
-            collection,
+        self._with_catalog_retry(
+            "purge_query_homes_for_collection",
+            lambda catalog: catalog.purge_query_homes_for_collection(
+                tenant,
+                collection,
+            ),
         )
 
     def list_query_homes(
@@ -485,11 +574,14 @@ class LocalStore(BaseStore):
         limit: int = 50,
         offset: int = 0,
     ) -> list[dict[str, Any]]:
-        return self._ensure_catalog().list_query_homes(
-            tenant=tenant,
-            collection=collection,
-            limit=limit,
-            offset=offset,
+        return self._with_catalog_retry(
+            "list_query_homes",
+            lambda catalog: catalog.list_query_homes(
+                tenant=tenant,
+                collection=collection,
+                limit=limit,
+                offset=offset,
+            ),
         )
 
     def _read_doc_chunk_counts(
@@ -512,18 +604,27 @@ class LocalStore(BaseStore):
 
     def catalog_metrics(self) -> dict[str, int]:
         """Return tenant/collection/doc/chunk counters from store metadata."""
-        catalog = self._ensure_catalog()
         doc_count = 0
         chunk_count = 0
 
-        for tenant, collection in catalog.list_collection_refs():
+        refs = self._with_catalog_retry(
+            "list_collection_refs",
+            lambda catalog: catalog.list_collection_refs(),
+        )
+        for tenant, collection in refs:
             docs, chunks = self._read_doc_chunk_counts(tenant, collection)
             doc_count += docs
             chunk_count += chunks
 
         return {
-            "tenant_count": catalog.tenant_count(),
-            "collection_count": catalog.collection_count(),
+            "tenant_count": self._with_catalog_retry(
+                "tenant_count",
+                lambda catalog: catalog.tenant_count(),
+            ),
+            "collection_count": self._with_catalog_retry(
+                "collection_count",
+                lambda catalog: catalog.collection_count(),
+            ),
             "doc_count": doc_count,
             "chunk_count": chunk_count,
         }
@@ -916,12 +1017,13 @@ class LocalStore(BaseStore):
         old_dbs = list(self._dbs.values())
         old_backends = list(self._emb.values())
         with self._catalog_guard:
-            old_catalog = self._catalog if self._catalog._conn is not None else None
+            old_catalog = self._catalog
+            self._catalog = self._catalog_factory()
             self._catalog_path = None
         self._dbs.clear()
         self._emb.clear()
 
-        if old_catalog is not None:
+        if old_catalog._conn is not None:
             try:
                 old_catalog.close()
             except Exception:

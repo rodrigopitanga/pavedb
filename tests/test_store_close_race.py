@@ -8,7 +8,7 @@ from pathlib import Path
 
 from unittest.mock import patch
 
-from pave.metadb import CollectionDB
+from pave.metadb import CatalogDB, CollectionDB
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
@@ -152,6 +152,16 @@ def test_has_doc_fallback_handles_db_removed_before_read_only_open(
     assert not db_path.exists()
 
 
+def test_has_doc_fallback_treats_empty_meta_db_as_transient(temp_data_dir):
+    store = _store(temp_data_dir)
+    tenant, collection, docid = "acme", "ro_empty_schema", "DOC-EMPTY"
+    db_path = store._db_path(tenant, collection)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_path.touch()
+
+    assert store.has_doc(tenant, collection, docid) is False
+
+
 def test_get_query_log_entry_recovers_from_closed_cached_db(temp_data_dir):
     store = _store(temp_data_dir)
     tenant, collection = "acme", "race_query_log"
@@ -224,6 +234,87 @@ def test_catalog_metrics_recovers_from_closed_cached_db(temp_data_dir):
     assert metrics["collection_count"] >= 1
     assert metrics["doc_count"] >= 1
     assert metrics["chunk_count"] >= 1
+
+
+def test_flush_caches_replaces_catalog_handle_before_close(temp_data_dir):
+    store = _store(temp_data_dir)
+    old_catalog = store._catalog
+
+    store._flush_caches(async_close=False)
+
+    assert store._catalog is not old_catalog
+    assert old_catalog._conn is None
+    assert store._catalog._conn is None
+
+
+def test_catalog_metrics_retries_after_transient_catalog_close(
+    monkeypatch,
+    temp_data_dir,
+):
+    store = _store(temp_data_dir)
+    tenant, collection, docid = "acme", "race_cat_metrics", "DOC-1"
+    store.index_records(
+        tenant,
+        collection,
+        docid,
+        [("0", "catalog metrics retry probe", {"lang": "en"})],
+    )
+
+    closed_catalog = CatalogDB()
+    closed_catalog.open(store._catalog_db_path())
+    closed_catalog.close()
+    real_ensure_catalog = store._ensure_catalog
+    attempts = {"count": 0}
+
+    def flaky_ensure_catalog():
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            return closed_catalog
+        return real_ensure_catalog()
+
+    monkeypatch.setattr(store, "_ensure_catalog", flaky_ensure_catalog)
+
+    metrics = store.catalog_metrics()
+
+    assert attempts["count"] >= 2
+    assert metrics["tenant_count"] >= 1
+    assert metrics["collection_count"] >= 1
+    assert metrics["doc_count"] >= 1
+    assert metrics["chunk_count"] >= 1
+
+
+def test_delete_collection_retries_after_transient_catalog_close(
+    monkeypatch,
+    temp_data_dir,
+):
+    store = _store(temp_data_dir)
+    tenant, collection, docid = "acme", "retry_cat_delete", "DOC-1"
+    store.index_records(
+        tenant,
+        collection,
+        docid,
+        [("0", "catalog delete retry probe", {"lang": "en"})],
+    )
+
+    closed_catalog = CatalogDB()
+    closed_catalog.open(store._catalog_db_path())
+    closed_catalog.close()
+    real_ensure_catalog = store._ensure_catalog
+    attempts = {"count": 0}
+
+    def flaky_ensure_catalog():
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            return closed_catalog
+        return real_ensure_catalog()
+
+    monkeypatch.setattr(store, "_ensure_catalog", flaky_ensure_catalog)
+
+    store.delete_collection(tenant, collection)
+
+    assert attempts["count"] >= 2
+    assert not Path(store._base_path(tenant, collection)).exists()
+    assert store.get_collection_config(tenant, collection) is None
 
 
 def test_delete_collection_retries_transient_dir_not_empty(

@@ -342,6 +342,24 @@ def test_catalog_db_get_collection_config(tmp_path):
     db.close()
 
 
+def test_catalog_db_rename_collection_is_retry_safe(tmp_path):
+    db = CatalogDB()
+    db.open(_catalog_db(tmp_path))
+    db.register_collection(
+        "acme",
+        "docs",
+        backend_type="faiss",
+        embedder_type="sbert",
+        embed_model="fake",
+    )
+
+    db.rename_collection("acme", "docs", "docs-v2")
+    db.rename_collection("acme", "docs", "docs-v2")
+
+    assert db.list_collections("acme") == ["docs-v2"]
+    db.close()
+
+
 def test_chunk_meta_populated_on_upsert(tmp_path):
     db = CollectionDB()
     db.open(_meta_db(tmp_path))

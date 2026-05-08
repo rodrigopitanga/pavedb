@@ -1205,6 +1205,18 @@ class CatalogDB:
                 (new, tenant, old),
             )
             if cur.rowcount <= 0:
+                existing = conn.execute(
+                    """
+                    SELECT 1
+                    FROM collections
+                    WHERE tenant=? AND name=?
+                    """,
+                    (tenant, new),
+                ).fetchone()
+                if existing is not None:
+                    # Retry-safe: the rename may already have been applied on
+                    # a prior catalog handle before a transient close.
+                    return
                 raise ValueError(
                     f"catalog row missing for collection '{tenant}/{old}'"
                 )
