@@ -619,9 +619,20 @@ async def run_stress(
         seen_ops = {r.op for r in stats.results}
         missed = [(op, name) for op, name, _ in OPERATIONS if name not in seen_ops]
         if missed:
-            print(f"Coverage pass ({len(missed)} op(s) not seen)...")
-            for op, _ in missed:
+            missed_names = ", ".join(name for _op, name in missed)
+            print(
+                f"Coverage pass ({len(missed)} op(s) not seen): "
+                f"{missed_names}"
+            )
+            for op, name in missed:
+                before = len(stats.results)
+                t_cov = time.perf_counter()
+                print(f"  -> coverage op: {name}")
                 await op(client, world, stats)
+                cov_ms = (time.perf_counter() - t_cov) * 1000
+                recorded = len(stats.results) > before
+                status = "recorded" if recorded else "no-result"
+                print(f"  <- coverage op: {name} [{status}] {cov_ms:.1f}ms")
 
         # Cleanup: delete all test collections
         print("Cleaning up...")

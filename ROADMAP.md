@@ -142,6 +142,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v1.2 |
 | P2-29 | ~~Public cross-language retrieval fixtures~~ | 🧩 | Recall validation | v0.5.9 |
 | P2-30 | ~~Benchmark CI gate + p99 SLO~~ | 🧩 | Latency contract | v0.5.9 |
+| P2-48 | `bench-stress-full` profile | 🔧 | Off-by-default stress run covering every public endpoint; full-surface regression profile | v1.0 |
 | P2-31 | Formalize collection independence | 🔧 | Portability contract | v1.5 |
 | P2-32 | `pavecli --host` remote mode | 🧩 | CLI/SDK parity | v1.3 |
 | P2-33 | JS/TS client | 🧱 | Web + Node adoption | v1.3 |
@@ -431,6 +432,8 @@ latency on every search/ingest/delete.~~
 - Collection-level structured log export for analytics.
 - Alive test in CI pipeline (post-deploy health check).
 - Docs website (public docs, API reference).
+- Full-surface stress profile for every public endpoint,
+  off by default (P2-48).
 - Revamp UI.
 - Multilingual UI/errors/docs.
 - Usage stats to mothership (opt-in/anon).
