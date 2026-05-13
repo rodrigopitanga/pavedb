@@ -872,6 +872,8 @@ _bench-with-server:
 	data_dir=""; \
 	log_file=""; \
 	srv_pid=""; \
+	keep_data_dir=0; \
+	bench_status=0; \
 	if [ -n "$(BENCH_SERVER_URL)" ]; then \
 	  bench_url="$(BENCH_SERVER_URL)"; \
 	  if ! curl -fsS "$$bench_url/health/live" >/dev/null 2>&1; then \
@@ -914,9 +916,22 @@ _bench-with-server:
 	fi; \
 	cleanup() { \
 	  if [ "$$managed" = "1" ]; then \
-	    kill "$$srv_pid" >/dev/null 2>&1 || true; \
-	    wait "$$srv_pid" >/dev/null 2>&1 || true; \
-	    rm -rf "$$data_dir"; \
+	    if kill -0 "$$srv_pid" >/dev/null 2>&1; then \
+	      kill "$$srv_pid" >/dev/null 2>&1 || true; \
+	      wait "$$srv_pid" >/dev/null 2>&1 || true; \
+	    else \
+	      srv_status=0; \
+	      wait "$$srv_pid" >/dev/null 2>&1 || srv_status=$$?; \
+	      if [ "$$srv_status" != "0" ]; then \
+	        keep_data_dir=1; \
+	      fi; \
+	    fi; \
+	    if [ "$$keep_data_dir" = "1" ]; then \
+	      echo "==> Preserving ephemeral server state at $$data_dir"; \
+	      echo "==> Server log: $$log_file"; \
+	    else \
+	      rm -rf "$$data_dir"; \
+	    fi; \
 	  fi; \
 	}; \
 	trap cleanup EXIT INT TERM; \
@@ -929,12 +944,18 @@ _bench-with-server:
 	    sleep 1; \
 	  done; \
 	  if [ "$${ready:-0}" != "1" ]; then \
+	    keep_data_dir=1; \
 	    echo "ERROR: benchmark server did not become ready in $(_startup_timeout_s)s."; \
 	    tail -n 80 "$$log_file" || true; \
 	    exit 1; \
 	  fi; \
 	fi; \
-	$(MAKE) -o install-dev _url="$$bench_url" _ts="$(_ts)" $(_run_target)
+	$(MAKE) -o install-dev _url="$$bench_url" _ts="$(_ts)" $(_run_target) || \
+	  bench_status=$$?; \
+	if [ "$$bench_status" != "0" ]; then \
+	  keep_data_dir=1; \
+	  exit "$$bench_status"; \
+	fi
 
 .PHONY: bench-latency bench-latency-run
 bench-latency: install-dev
