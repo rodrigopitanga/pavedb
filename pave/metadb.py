@@ -163,7 +163,7 @@ class CollectionDB:
 
     Two persistent connections with check_same_thread=False:
       _rconn: used for all reads (WAL, no lock, fully concurrent)
-      _wconn: used for all writes (protected by _write_lock)
+      _wconn: used for all writes (protected by _write_lock and _writer)
     """
 
     def __init__(self) -> None:
@@ -173,6 +173,7 @@ class CollectionDB:
         self._write_lock = threading.Lock()
         self._state_cv = threading.Condition()
         self._active_readers = 0
+        self._active_writers = 0
         self._closing = False
 
     def _open_conn(
@@ -227,6 +228,7 @@ class CollectionDB:
             if not read_only:
                 self._wconn = self._open_conn(path)
             self._active_readers = 0
+            self._active_writers = 0
             self._closing = False
         try:
             if read_only:
@@ -248,7 +250,7 @@ class CollectionDB:
                 self._closing = False
                 return
             self._closing = True
-            while self._active_readers > 0:
+            while self._active_readers > 0 or self._active_writers > 0:
                 self._state_cv.wait(timeout=0.05)
             rconn = self._rconn
             wconn = self._wconn
@@ -298,29 +300,56 @@ class CollectionDB:
                 if self._closing and self._active_readers == 0:
                     self._state_cv.notify_all()
 
+    @contextmanager
+    def _writer(self) -> Iterator[sqlite3.Connection]:
+        self._write_lock.acquire()
+        try:
+            with self._state_cv:
+                if self._wconn is None:
+                    raise RuntimeError(
+                        "CollectionDB not opened; call open() first."
+                    )
+                if self._closing:
+                    raise RuntimeError("CollectionDB is closing.")
+                self._active_writers += 1
+                conn = self._wconn
+            try:
+                yield conn
+            finally:
+                with self._state_cv:
+                    if self._active_writers > 0:
+                        self._active_writers -= 1
+                    if (
+                        self._closing
+                        and self._active_readers == 0
+                        and self._active_writers == 0
+                    ):
+                        self._state_cv.notify_all()
+        finally:
+            self._write_lock.release()
+
     def _apply_migrations(self) -> None:
-        conn = self._require_wconn()
-        current = self._schema_version(conn)
-        if current == _COLLECTION_SCHEMA_VERSION:
-            return
-        if current != 0:
-            raise UnsupportedSchemaVersionError(
-                "unsupported pre-1.0 collection schema version "
-                f"{current}; recreate the data dir"
+        with self._writer() as conn, conn:
+            current = self._schema_version(conn)
+            if current == _COLLECTION_SCHEMA_VERSION:
+                return
+            if current != 0:
+                raise UnsupportedSchemaVersionError(
+                    "unsupported pre-1.0 collection schema version "
+                    f"{current}; recreate the data dir"
+                )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations ("
+                "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
             )
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS schema_migrations ("
-            "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-        )
-        for stmt in _COLLECTION_SCHEMA_SQL:
-            conn.execute(stmt)
-        now = datetime.now(tz.utc).isoformat(timespec="seconds")
-        conn.execute(
-            "INSERT INTO schema_migrations (version, applied_at) "
-            "VALUES (?, ?)",
-            (_COLLECTION_SCHEMA_VERSION, now),
-        )
-        conn.commit()
+            for stmt in _COLLECTION_SCHEMA_SQL:
+                conn.execute(stmt)
+            now = datetime.now(tz.utc).isoformat(timespec="seconds")
+            conn.execute(
+                "INSERT INTO schema_migrations (version, applied_at) "
+                "VALUES (?, ?)",
+                (_COLLECTION_SCHEMA_VERSION, now),
+            )
 
     @staticmethod
     def _schema_version(conn: sqlite3.Connection) -> int:
@@ -372,7 +401,6 @@ class CollectionDB:
         All writes happen in a single transaction.
         Must be called inside collection_lock.
         """
-        conn = self._require_wconn()
         doc_meta_dict = doc_meta or {}
         doc_meta_json = json.dumps(doc_meta_dict, ensure_ascii=False)
         now = datetime.now(tz.utc).isoformat(timespec="seconds")
@@ -380,7 +408,7 @@ class CollectionDB:
         for rid, chunk_path, meta in chunks:
             meta_json = json.dumps(meta, ensure_ascii=False)
             rows.append((docid, rid, chunk_path, meta_json, now))
-        with self._write_lock, conn:
+        with self._writer() as conn, conn:
             conn.execute(
                 """
                 INSERT INTO documents (docid, version, ingested_at, meta_json)
@@ -455,8 +483,7 @@ class CollectionDB:
             )
             rids = [row[0] for row in cur.fetchall()]
         # Write using _wconn
-        conn = self._require_wconn()
-        with self._write_lock, conn:
+        with self._writer() as conn, conn:
             if rids:
                 for i in range(0, len(rids), 999):
                     batch = rids[i : i + 999]
@@ -491,8 +518,7 @@ class CollectionDB:
         request_id: str | None = None,
         replay_of: str | None = None,
     ) -> None:
-        conn = self._require_wconn()
-        with self._write_lock, conn:
+        with self._writer() as conn, conn:
             conn.execute(
                 "INSERT INTO query_log "
                 "(query_id, tenant, collection, actor, query_text, k, filters_json, "
@@ -935,6 +961,7 @@ class CatalogDB:
         self._write_lock = threading.Lock()
         self._state_cv = threading.Condition()
         self._active_readers = 0
+        self._active_writers = 0
         self._closing = False
 
     def _open_conn(self, path: Path) -> sqlite3.Connection:
@@ -953,6 +980,7 @@ class CatalogDB:
             self._rconn = self._open_conn(path)
             self._wconn = self._open_conn(path)
             self._active_readers = 0
+            self._active_writers = 0
             self._closing = False
         try:
             self._apply_migrations()
@@ -966,7 +994,7 @@ class CatalogDB:
                 self._closing = False
                 return
             self._closing = True
-            while self._active_readers > 0:
+            while self._active_readers > 0 or self._active_writers > 0:
                 self._state_cv.wait(timeout=0.05)
             rconn = self._rconn
             wconn = self._wconn
@@ -1012,29 +1040,56 @@ class CatalogDB:
                 if self._closing and self._active_readers == 0:
                     self._state_cv.notify_all()
 
+    @contextmanager
+    def _writer(self) -> Iterator[sqlite3.Connection]:
+        self._write_lock.acquire()
+        try:
+            with self._state_cv:
+                if self._wconn is None:
+                    raise RuntimeError(
+                        "CatalogDB not opened; call open() first."
+                    )
+                if self._closing:
+                    raise RuntimeError("CatalogDB is closing.")
+                self._active_writers += 1
+                conn = self._wconn
+            try:
+                yield conn
+            finally:
+                with self._state_cv:
+                    if self._active_writers > 0:
+                        self._active_writers -= 1
+                    if (
+                        self._closing
+                        and self._active_readers == 0
+                        and self._active_writers == 0
+                    ):
+                        self._state_cv.notify_all()
+        finally:
+            self._write_lock.release()
+
     def _apply_migrations(self) -> None:
-        conn = self._require_wconn()
-        current = self._schema_version(conn)
-        if current == _CATALOG_SCHEMA_VERSION:
-            return
-        if current != 0:
-            raise UnsupportedSchemaVersionError(
-                "unsupported pre-1.0 catalog schema version "
-                f"{current}; recreate the data dir"
+        with self._writer() as conn, conn:
+            current = self._schema_version(conn)
+            if current == _CATALOG_SCHEMA_VERSION:
+                return
+            if current != 0:
+                raise UnsupportedSchemaVersionError(
+                    "unsupported pre-1.0 catalog schema version "
+                    f"{current}; recreate the data dir"
+                )
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS schema_migrations ("
+                "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
             )
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS schema_migrations ("
-            "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-        )
-        for stmt in _CATALOG_SCHEMA_SQL:
-            conn.execute(stmt)
-        now = datetime.now(tz.utc).isoformat(timespec="seconds")
-        conn.execute(
-            "INSERT INTO schema_migrations (version, applied_at) "
-            "VALUES (?, ?)",
-            (_CATALOG_SCHEMA_VERSION, now),
-        )
-        conn.commit()
+            for stmt in _CATALOG_SCHEMA_SQL:
+                conn.execute(stmt)
+            now = datetime.now(tz.utc).isoformat(timespec="seconds")
+            conn.execute(
+                "INSERT INTO schema_migrations (version, applied_at) "
+                "VALUES (?, ?)",
+                (_CATALOG_SCHEMA_VERSION, now),
+            )
 
     @staticmethod
     def _schema_version(conn: sqlite3.Connection) -> int:
@@ -1096,10 +1151,9 @@ class CatalogDB:
                 if (coll_dir / "meta.db").is_file():
                     discovered.add((tenant, name))
 
-        conn = self._require_wconn()
         seeded = 0
         removed = 0
-        with self._write_lock, conn:
+        with self._writer() as conn, conn:
             rows = conn.execute(
                 "SELECT tenant, name FROM collections"
             ).fetchall()
@@ -1160,8 +1214,7 @@ class CatalogDB:
         embed_model: str | None = None,
         embed_config: dict[str, Any] | None = None,
     ) -> None:
-        conn = self._require_wconn()
-        with self._write_lock, conn:
+        with self._writer() as conn, conn:
             conn.execute(
                 """
                 INSERT OR IGNORE INTO collections (
@@ -1190,16 +1243,14 @@ class CatalogDB:
             )
 
     def unregister_collection(self, tenant: str, name: str) -> None:
-        conn = self._require_wconn()
-        with self._write_lock, conn:
+        with self._writer() as conn, conn:
             conn.execute(
                 "DELETE FROM collections WHERE tenant=? AND name=?",
                 (tenant, name),
             )
 
     def rename_collection(self, tenant: str, old: str, new: str) -> None:
-        conn = self._require_wconn()
-        with self._write_lock, conn:
+        with self._writer() as conn, conn:
             cur = conn.execute(
                 "UPDATE collections SET name=? WHERE tenant=? AND name=?",
                 (new, tenant, old),
@@ -1227,8 +1278,7 @@ class CatalogDB:
         tenant: str,
         collection: str,
     ) -> None:
-        conn = self._require_wconn()
-        with self._write_lock, conn:
+        with self._writer() as conn, conn:
             conn.execute(
                 """
                 INSERT OR REPLACE INTO query_home (
@@ -1262,8 +1312,7 @@ class CatalogDB:
         tenant: str,
         collection: str,
     ) -> None:
-        conn = self._require_wconn()
-        with self._write_lock, conn:
+        with self._writer() as conn, conn:
             conn.execute(
                 """
                 DELETE FROM query_home
@@ -1278,8 +1327,7 @@ class CatalogDB:
         old: str,
         new: str,
     ) -> None:
-        conn = self._require_wconn()
-        with self._write_lock, conn:
+        with self._writer() as conn, conn:
             conn.execute(
                 """
                 UPDATE query_home

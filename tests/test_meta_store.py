@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -64,6 +66,56 @@ def test_catalog_db_open_creates_schema(tmp_path):
     version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
     assert version == (3,)
     db.close()
+
+
+@pytest.mark.parametrize(
+    ("db_cls", "path_fn"),
+    [
+        (CollectionDB, _meta_db),
+        (CatalogDB, _catalog_db),
+    ],
+)
+def test_close_waits_for_inflight_writer(tmp_path, db_cls, path_fn):
+    db = db_cls()
+    db.open(path_fn(tmp_path))
+
+    writer_entered = threading.Event()
+    release_writer = threading.Event()
+    close_done = threading.Event()
+    close_errors: list[Exception] = []
+
+    def _writer() -> None:
+        with db._writer() as conn, conn:
+            conn.execute("SELECT 1")
+            writer_entered.set()
+            assert release_writer.wait(timeout=1.0)
+
+    def _closer() -> None:
+        try:
+            db.close()
+        except Exception as exc:  # pragma: no cover - regression capture
+            close_errors.append(exc)
+        finally:
+            close_done.set()
+
+    writer_thread = threading.Thread(target=_writer)
+    writer_thread.start()
+    assert writer_entered.wait(timeout=1.0)
+
+    closer_thread = threading.Thread(target=_closer)
+    closer_thread.start()
+    time.sleep(0.05)
+
+    assert close_done.is_set() is False
+
+    release_writer.set()
+    writer_thread.join(timeout=1.0)
+    closer_thread.join(timeout=1.0)
+
+    assert not close_errors
+    assert close_done.is_set() is True
+    assert db._conn is None
+    assert db._wconn is None
 
 
 @pytest.mark.parametrize("legacy_name", ["catalog.json", "meta.json"])
