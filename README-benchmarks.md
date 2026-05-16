@@ -3,7 +3,7 @@
 
 # Benchmarks
 
-Performance benchmarks for PatchVec.
+Performance benchmarks for PaveDB.
 
 ## Quick start
 
@@ -56,7 +56,7 @@ python benchmarks/search_latency.py --url http://localhost:8086 \
 
 ### Options
 
-* `--url` - PatchVec base URL (default: http://localhost:8086)
+* `--url` - PaveDB base URL (default: http://localhost:8086)
 * `--queries` - Number of queries to run (default: 100)
 * `--concurrency` - Concurrent requests (default: 10)
 * `--debug` - Print stack traces for setup failures
@@ -98,7 +98,7 @@ python benchmarks/stress.py --url http://localhost:8086 --duration 90 \
 
 ### Options
 
-* `--url` - PatchVec base URL (default: http://localhost:8086)
+* `--url` - PaveDB base URL (default: http://localhost:8086)
 * `--duration` - Test duration in seconds (default: 20)
 * `--concurrency` - Max concurrent operations (default: 8)
 * `--debug` - Print stack traces for setup failures

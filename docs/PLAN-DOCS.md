@@ -24,7 +24,7 @@ docs set (P1-47).
   newsletter CTAs, no "edit this page" widgets that require
   a GitHub account. One banner for version, one for search,
   done.
-- **Docs live in-repo.** Source markdown under `patchvec/docs/`.
+- **Docs live in-repo.** Source markdown under `pavedb/docs/`.
   Published via CI. No separate docs repo until there's a
   reason.
 - **AGPL headers on every source file.** Same policy as code.
@@ -56,7 +56,7 @@ Alternatives considered:
 ## Repository Layout
 
 ```
-patchvec/
+pavedb/
   docs/
     PLAN-*.md              # design plans (existing, untouched)
     site/                  # new — published site source
@@ -128,7 +128,7 @@ detailed operations guide. Those land in P1-47.
   - `mkdocs build --strict` (fails on broken links).
   - Publishes to GitLab Pages.
 - **URL:** GitLab Pages default
-  (`flowlexi-labs.gitlab.io/patchvec`) for v0.9. Custom domain
+  (`flowlexi-labs.gitlab.io/pavedb`) for v0.9. Custom domain
   deferred to P1-47.
 
 ### Deliverables checklist (P1-46)

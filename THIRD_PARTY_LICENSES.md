@@ -7,7 +7,7 @@ This document is generated from the current local environment and is for depende
 
 - Generated at (UTC): `2026-03-08 01:58:26Z`
 - Source inventory: `pip freeze` from `.venv-pave` (96 packages)
-- Project license: `AGPL-3.0-or-later` (PatchVec)
+- Project license: `AGPL-3.0-or-later` (PaveDB)
 - Note: This is an engineering audit, not legal advice.
 
 ## Summary

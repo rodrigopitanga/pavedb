@@ -16,7 +16,7 @@ def read_long_description():
 long_description, long_type = read_long_description()
 
 setup(
-    name="patchvec",                       # external name
+    name="pavedb",                        # external name
     version="0.5.9",
     description="PaveDB — A lightweight, pluggable vector search microservice.",
     long_description=long_description,
@@ -71,8 +71,8 @@ setup(
         "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     ],
     project_urls={
-        "Homepage": "https://github.com/rodrigopitanga/patchvec/?tab=readme-ov-file#readme-ov-file",
-        "Source": "https://github.com/rodrigopitanga/patchvec",
-        "Tracker": "https://github.com/rodrigopitanga/patchvec/issues",
+        "Homepage": "https://github.com/rodrigopitanga/pavedb",
+        "Source": "https://github.com/rodrigopitanga/pavedb",
+        "Tracker": "https://github.com/rodrigopitanga/pavedb/issues",
     },
 )

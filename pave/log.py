@@ -152,7 +152,7 @@ _LOGGER_SINGLETON = _init_logger()
 
 
 def get_logger() -> logging.Logger:
-    """Returns the global PatchVec logger."""
+    """Returns the global PaveDB logger."""
     return _LOGGER_SINGLETON
 
 

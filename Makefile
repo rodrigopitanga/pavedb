@@ -7,9 +7,10 @@
 # Base deps by default. Set USE_CPU=1 to install CPU deps instead.
 # All dependency versions live in setup.py (single source of truth).
 
-PKG_NAME        := patchvec
-PKG_ICON	:= 🍰
-PKG_LONGNAME    := $(PKG_ICON) PaveDB
+PKG_NAME        := pavedb
+PYPI_DIST_NAME  ?= pavedb
+PKG_ICON	:= 🛣️
+PKG_LONGNAME    := $(PKG_ICON)  PaveDB
 PKG_INTERNAL   	:= pave
 REGISTRY_HOST	?= registry.gitlab.com
 REGISTRY_GROUP	?= flowlexi
@@ -186,7 +187,7 @@ test-relevance: install-dev
 
 .PHONY: serve
 serve: install
-	@echo "Starting 🍰 server on $(HOST):$(PORT) [auth.mode=$(AUTH_MODE)]"
+	@echo "Starting server on $(HOST):$(PORT) [auth.mode=$(AUTH_MODE)]"
 	cfg_env=(); \
 	if [ -n "$(CONFIG)" ]; then \
 	  cfg_env+=(PAVEDB_CONFIG="$(CONFIG)"); \
@@ -323,7 +324,7 @@ dist-clean:
 
 .PHONY: data-clean
 data-clean:
-	-@rm -rf data/ var/lib/patchvec/data 2>/dev/null || true
+	-@rm -rf data/ var/lib/pavedb/data 2>/dev/null || true
 	@echo "Cleaned data/indexes."
 
 .PHONY: clean
@@ -432,12 +433,12 @@ release:
 	    echo "Publishing package(s) to TestPyPI..."; \
 	    $(MAKE) pypitest-push; \
 	    PKG_PUBLISHED="yes"; \
-	    PKG_WHERE="TestPyPI (https://test.pypi.org/project/$(PKG_NAME)/)"; \
+	    PKG_WHERE="TestPyPI (https://test.pypi.org/project/$(PYPI_DIST_NAME)/)"; \
 	  else \
 	    echo "Publishing package(s) to PyPI..."; \
 	    $(MAKE) pypi-push; \
 	    PKG_PUBLISHED="yes"; \
-	    PKG_WHERE="PyPI (https://pypi.org/project/$(PKG_NAME)/)"; \
+	    PKG_WHERE="PyPI (https://pypi.org/project/$(PYPI_DIST_NAME)/)"; \
 	  fi; \
 	fi; \
 	if [ "$(SKIP_DOCKER_BUILD)" != "1" ] && [ "$(SKIP_DOCKER_PUSH)" != "1" ]; then \

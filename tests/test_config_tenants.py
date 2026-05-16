@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from pave.config import Config, reload_cfg
+from pave.config import Config
 
 
 def _write(path: Path, text: str) -> None:
@@ -179,38 +179,6 @@ def test_env_tenant_values_override_inline_and_sidecar(monkeypatch, tmp_path):
 
     assert cfg.get("auth.api_keys.acme") == "env-key"
     assert cfg.get("tenants.acme.max_concurrent") == 3
-
-
-def test_legacy_patchvec_env_still_works_and_logs_warning(
-    monkeypatch, tmp_path, caplog
-):
-    legacy_data_dir = tmp_path / "legacy-data"
-    monkeypatch.setenv("PATCHVEC_DATA_DIR", str(legacy_data_dir))
-    caplog.set_level("WARNING", logger="pave")
-
-    cfg = reload_cfg()
-
-    assert cfg.get("data_dir") == str(legacy_data_dir)
-    warnings = [
-        record.getMessage()
-        for record in caplog.records
-        if "PATCHVEC_" in record.getMessage()
-    ]
-    assert len(warnings) == 1
-    assert "PATCHVEC_DATA_DIR" in warnings[0]
-
-
-def test_pavedb_env_takes_precedence_over_patchvec_without_warning(
-    monkeypatch, tmp_path, caplog
-):
-    monkeypatch.setenv("PATCHVEC_DATA_DIR", str(tmp_path / "legacy-data"))
-    monkeypatch.setenv("PAVEDB_DATA_DIR", str(tmp_path / "new-data"))
-    caplog.set_level("WARNING", logger="pave")
-
-    cfg = reload_cfg()
-
-    assert cfg.get("data_dir") == str(tmp_path / "new-data")
-    assert not any("PATCHVEC_" in record.getMessage() for record in caplog.records)
 
 
 def test_tenants_sidecar_only_overlays_tenant_keys(tmp_path):

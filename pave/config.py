@@ -4,7 +4,6 @@
 from __future__ import annotations
 from copy import deepcopy
 import json
-import logging
 import os, re, threading
 from pathlib import Path
 from typing import Any
@@ -41,43 +40,6 @@ except ModuleNotFoundError:  # pragma: no cover
 load_dotenv()
 
 _ENV_PREFIX = "PAVEDB_"
-_LEGACY_ENV_PREFIX = "PATCHVEC_"
-_LEGACY_EXACT = {
-    "CONFIG",
-    "DEV",
-    "DATA_DIR",
-    "AUTH__TENANTS_FILE",
-}
-_LEGACY_PREFIXES = (
-    "AUTH__",
-    "LOG__",
-    "SERVER__",
-    "EMBEDDER__",
-    "VECTOR_STORE__",
-    "TENANTS__",
-)
-
-
-def _is_supported_legacy_suffix(suffix: str) -> bool:
-    return suffix in _LEGACY_EXACT or any(
-        suffix.startswith(prefix) for prefix in _LEGACY_PREFIXES
-    )
-
-
-def _normalize_legacy_env() -> tuple[str, ...]:
-    seen: list[str] = []
-    for key, value in tuple(os.environ.items()):
-        if not key.startswith(_LEGACY_ENV_PREFIX):
-            continue
-        suffix = key[len(_LEGACY_ENV_PREFIX):]
-        if not _is_supported_legacy_suffix(suffix):
-            continue
-        new_key = _ENV_PREFIX + suffix
-        if new_key in os.environ:
-            continue
-        os.environ[new_key] = value
-        seen.append(key)
-    return tuple(sorted(set(seen)))
 
 
 def _env_flag(name: str) -> bool:
@@ -203,9 +165,7 @@ class Config:
             data: dict[str, Any] | None = None,
             path: str | Path | None = None):
         self._lock = threading.RLock()
-        self._legacy_env_vars: tuple[str, ...] = ()
         if data is None:
-            self._legacy_env_vars = _normalize_legacy_env()
             if path is None:
                 path = _default_config_path()
             data = self._load_dict(path)
@@ -299,10 +259,6 @@ class Config:
             self._cfg.clear()
             self._cfg.update(fresh._cfg)
             self._data = self._cfg  # keep the back-compat alias valid
-            self._legacy_env_vars = fresh._legacy_env_vars
-
-    def legacy_env_vars(self) -> tuple[str, ...]:
-        return self._legacy_env_vars
 
     # attribute sugar (cfg.instance_name, cfg.auth, ...)
     def __getattr__(self, item):
@@ -325,14 +281,6 @@ def get_cfg() -> Config:
 def reload_cfg(path: str | None = None) -> Config:
     # hard reload from disk/env; keep the same object for back-compat
     _CFG_SINGLETON.replace(path=path)
-    legacy_vars = _CFG_SINGLETON.legacy_env_vars()
-    if legacy_vars:
-        logging.getLogger("pave").warning(
-            "Detected legacy PATCHVEC_* env vars. They still work in v0.5.9 by "
-            "mapping to PAVEDB_* when the new names are unset, but v0.6 will "
-            "ignore them. Rename them now: %s",
-            ", ".join(legacy_vars),
-        )
     return _CFG_SINGLETON
 
 CFG = _CFG_SINGLETON

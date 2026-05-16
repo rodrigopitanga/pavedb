@@ -26,7 +26,7 @@ _FALLBACK_TMPL = """<!doctype html>
   <iframe id="search" class="frame active" src="/ui/search" title="Search"></iframe>
   <iframe id="ingest" class="frame" src="/ui/ingest" title="Ingest"></iframe>
   <div class="footer">
-    <span>patchvec v__VERSION__</span>
+    <span>🛣️ PaveDB v__VERSION__</span>
   </div>
 <script>
   const tabs = document.querySelectorAll('.tab');
@@ -49,7 +49,7 @@ def attach_ui(app: FastAPI):
     version = app.state.version
 
     # footer links
-    repo_url = "https://gitlab.com/flowlexi/patchvec"
+    repo_url = "https://gitlab.com/flowlexi/pavedb"
     license_name = "AGPL-3.0-or-later"
     license_url = "https://www.gnu.org/licenses/agpl-3.0-standalone.html"
 
@@ -65,7 +65,7 @@ def attach_ui(app: FastAPI):
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon():
         return FileResponse(
-            str((Path(__file__).parent / "assets" / "patchvec_icon_192.png")\
+            str((Path(__file__).parent / "assets" / "pavedb_icon_192.png")\
                 .resolve()),
             media_type="image/png",
         )
@@ -132,7 +132,7 @@ def attach_ui(app: FastAPI):
 
     @app.get("/ui/search", include_in_schema=False)
     def ui_search():
-        inst_name = cfg.get("instance.name")
+        inst_name = cfg.get("instance.name", "PaveDB")
         return get_swagger_ui_html(
             openapi_url="/openapi-search.json",
             title=f"{inst_name} • Search",
@@ -141,7 +141,7 @@ def attach_ui(app: FastAPI):
 
     @app.get("/ui/ingest", include_in_schema=False)
     def ui_ingest():
-        inst_name = cfg.get("instance.name")
+        inst_name = cfg.get("instance.name", "PaveDB")
         return get_swagger_ui_html(
             openapi_url="/openapi-ingest.json",
             title=f"{inst_name} • Ingest",
@@ -154,8 +154,8 @@ def attach_ui(app: FastAPI):
     @app.get("/ui", include_in_schema=False)
     def ui_home():
         # instance strings
-        inst_name = cfg.get("instance.name")
-        inst_desc = cfg.get("instance.desc")
+        inst_name = cfg.get("instance.name", "PaveDB")
+        inst_desc = cfg.get("instance.desc", "Vector Search Microservice")
         try:
             html = tmpl_path.read_text(encoding="utf-8")
         except Exception:

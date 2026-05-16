@@ -1,17 +1,17 @@
 <!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-# 👾 Contributing to PatchVec
+# 👾 Contributing to PaveDB
 
-Patchvec accepts code and docs from people who ship patches. Follow the steps below and
+PaveDB accepts code and docs from people who ship patches. Follow the steps below and
 keep PRs focused.
 
 ## Environment setup
 
 ```bash
 # clone and enter the repo first
-git clone https://github.com/patchvec/patchvec.git
-cd patchvec
+git clone https://github.com/rodrigopitanga/pavedb.git
+cd pavedb
 
 # GPU deps by default; add USE_CPU=1 if you want CPU-only torch wheels
 make install-dev
@@ -26,7 +26,7 @@ explicitly, for example `CONFIG=./config.yml make serve` or
 `./pavesrv.sh --config ./config.yml --tenants ./tenants.yml`.
 
 The packaged entrypoints now also accept explicit instance paths:
-`pavesrv --home ~/patchvec-staging` and `pavecli list-tenants --home ~/patchvec-staging`.
+`pavesrv --home ~/pavedb-staging` and `pavecli list-tenants --home ~/pavedb-staging`.
 
 Run the test suite before pushing (`USE_CPU=1` if you installed CPU wheels):
 
@@ -38,7 +38,7 @@ make test
 Need to inspect behaviour without reloads? Run
 `DEV=0 AUTH_MODE=static GLOBAL_KEY=<your-secret> make serve` for an almost
 production-like stack, or call the wrapper script directly:
-`PATCHVEC_AUTH__GLOBAL_KEY=<your-secret> ./pavesrv.sh --config ./config.yml --tenants ./tenants.yml`.
+`PAVEDB_AUTH__GLOBAL_KEY=<your-secret> ./pavesrv.sh --config ./config.yml --tenants ./tenants.yml`.
 
 ## Workflow
 
@@ -315,7 +315,7 @@ Run `make help` for the full list and flags. Key targets:
 Release defaults expect a GitLab remote. One-time setup:
 
 ```bash
-git remote add gitlab git@gitlab.com:flowlexi/patchvec.git
+git remote add gitlab git@gitlab.com:flowlexi/pavedb.git
 git remote -v
 ```
 

@@ -86,8 +86,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 _exec.shutdown(wait=False)
 
     app = FastAPI(
-        title=cfg.get("instance.name","Patchvec"),
-        description=cfg.get("instance.desc","Vector Search Microservice"),
+        title=cfg.get("instance.name", "PaveDB"),
+        description=cfg.get("instance.desc", "PaveDB Vector Search Microservice"),
         lifespan=lifespan,
     )
 
@@ -356,7 +356,10 @@ def main_srv(argv=None):
     HTTP server entrypoint.
     Precedence: CFG (reads env first) > defaults.
     """
-    p = argparse.ArgumentParser(prog="pavesrv")
+    p = argparse.ArgumentParser(
+        prog="pavesrv",
+        description="Run the PaveDB HTTP server",
+    )
     p.add_argument(
         "--home",
         help="Use an instance home dir",
@@ -375,9 +378,6 @@ def main_srv(argv=None):
         os.environ.get("PAVEDB_CONFIG"),
         os.environ.get("PAVEDB_AUTH__TENANTS_FILE"),
         os.environ.get("PAVEDB_DATA_DIR"),
-        os.environ.get("PATCHVEC_CONFIG"),
-        os.environ.get("PATCHVEC_AUTH__TENANTS_FILE"),
-        os.environ.get("PATCHVEC_DATA_DIR"),
     ))
 
     apply_runtime_env(
@@ -428,7 +428,7 @@ def main_srv(argv=None):
     )
     _ops_dest = cfg.get("log.ops_log") or "null"
     _acc_dest = cfg.get("log.access_log")
-    log.info(f"┌─ Welcome to PatchVEC 🍰 v{VERSION}")
+    log.info(f"┌─ Welcome to 🛣️  PaveDB v{VERSION}")
     log.info(
         f"│  auth={cfg.get('auth.mode','none')} "
         f"store={cfg.get('vector_store.type','faiss')} "

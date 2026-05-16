@@ -8,10 +8,6 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 VENV_PY="$ROOT/.venv-pave/bin/python"
 
-# defaults are resolved in code via CFG; only pass overrides via env
-: "${PATCHVEC_SERVER_HOST:=0.0.0.0}"
-: "${PATCHVEC_SERVER_PORT:=8086}"
-
 if [ -x "$VENV_PY" ]; then
   exec "$VENV_PY" -m pave.main "$@"
 fi

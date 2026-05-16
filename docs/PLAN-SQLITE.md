@@ -3,7 +3,7 @@
 
 # PLAN-SQLITE — Internal SQLite Store Roadmap
 
-PatchVec replaces ad-hoc JSON/filesystem metadata with a layered SQLite store.
+PaveDB replaces ad-hoc JSON/filesystem metadata with a layered SQLite store.
 Each phase adds a new layer; earlier phases are prerequisites for later ones.
 
 Runtime store is `LocalStore` (`pave/stores/local.py`) with
@@ -556,7 +556,7 @@ tenants.yml (now)  →  SQL key store (Phase 3)  →  + OIDC/JWT opt-in (P3-17, 
 
 API keys (`api_keys` table) are a permanent first-class auth method — simple
 deployments never need anything else. OIDC/JWT is additive: if
-`auth.oidc.issuer` is configured, PatchVec accepts either a valid API key or a
+`auth.oidc.issuer` is configured, PaveDB accepts either a valid API key or a
 valid JWT on any request. JWT validation is stateless (signature check against
 IdP public key); no new table needed for it. See ROADMAP P3-17.
 
@@ -591,7 +591,7 @@ CREATE INDEX IF NOT EXISTS api_keys_tenant ON api_keys (tenant);
 ```
 
 One tenant → many keys. Rotation: issue new key, revoke old row. No restart
-needed. The global bootstrap key (`PATCHVEC_GLOBAL_KEY` env var) stays outside
+needed. The global bootstrap key (`PAVEDB_GLOBAL_KEY` env var) stays outside
 SQL permanently — it is the credential used to access the system before any
 tenant is provisioned.
 
@@ -603,7 +603,7 @@ tenant is provisioned.
 ### What gets persisted
 
 **Tenant profiles** — resource limits and tier config. Seeds from `tenants.yml`
-on first boot; SQL is source of truth thereafter. PatchVec enforces limits;
+on first boot; SQL is source of truth thereafter. PaveDB enforces limits;
 billing/onboarding are out of scope.
 
 ```sql
@@ -677,7 +677,7 @@ ALTER TABLE collections ADD COLUMN embed_config_json TEXT;
 
 ### Collection versioning
 
-Every collection records the PatchVec version and schema version it was written
+Every collection records the PaveDB version and schema version it was written
 with. Incompatible reads fail loudly with actionable guidance.
 
 ```sql

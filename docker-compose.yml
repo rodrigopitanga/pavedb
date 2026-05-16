@@ -2,10 +2,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 services:
-  patchvec:
-    image: patchvec:0.5.9
+  pavedb:
+    image: pavedb:0.5.9
     build: .
-    container_name: patchvec
+    container_name: pavedb
     ports:
       - "8086:8086"
     volumes:

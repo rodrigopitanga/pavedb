@@ -1,7 +1,7 @@
 <!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-# PatchVec — A lightweight, pluggable vector search microservice.
+# PaveDB — A lightweight, pluggable vector search microservice.
 
 Upload → chunk → index (with metadata) → search via REST and CLI.
 
@@ -21,12 +21,12 @@ Upload → chunk → index (with metadata) → search via REST and CLI.
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install patchvec
+pip install pavedb
 ```
 
 CPU-only deployments can use the PyTorch CPU wheel index:
 ```bash
-pip install "patchvec[cpu]" \
+pip install "pavedb[cpu]" \
   --index-url https://download.pytorch.org/whl/cpu \
   --extra-index-url https://pypi.org/simple
 ```
@@ -42,13 +42,13 @@ uvicorn pave.main:app --host 0.0.0.0 --port 8086
 
 Auth defaults to `none` only for dev. For production, set static auth:
 ```bash
-export PATCHVEC_AUTH__MODE=static
-export PATCHVEC_AUTH__GLOBAL_KEY="your-secret"
+export PAVEDB_AUTH__MODE=static
+export PAVEDB_AUTH__GLOBAL_KEY="your-secret"
 ```
 
 ## Minimal config (optional)
-By default PatchVec runs with sensible local defaults. For a user install,
-customize `~/patchvec/config.yml`:
+By default PaveDB runs with sensible local defaults. For a user install,
+customize `~/pavedb/config.yml`:
 ```yaml
 vector_store:
   type: faiss
@@ -56,15 +56,15 @@ embedder:
   type: sbert
 auth:
   mode: static
-  global_key: ${PATCHVEC_GLOBAL_KEY}
+  global_key: ${PAVEDB_GLOBAL_KEY}
 ```
 Then export:
 ```bash
-export PATCHVEC_GLOBAL_KEY="your-secret"
+export PAVEDB_GLOBAL_KEY="your-secret"
 ```
 If you keep the file elsewhere, point the runtime at it explicitly:
 ```bash
-export PATCHVEC_CONFIG=/path/to/config.yml
+export PAVEDB_CONFIG=/path/to/config.yml
 ```
 
 ## CLI example

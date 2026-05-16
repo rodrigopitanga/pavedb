@@ -1,4 +1,4 @@
-# PatchVec sample configuration
+# PaveDB sample configuration
 # Copy to config.yml and adjust.
 # Secrets (API keys) should live in a separate untracked file — see tenants.yml.example.
 #
@@ -27,8 +27,6 @@
 # All keys can also be overridden inline via environment variables:
 #   PAVEDB_<KEY>=value          (top-level, e.g. PAVEDB_DATA_DIR)
 #   PAVEDB_<SECTION>__<KEY>=val (nested,    e.g. PAVEDB_LOG__LEVEL=debug)
-# Legacy PATCHVEC_* vars still work in v0.5.9 but will be removed in v0.6.
-#
 # `auth.tenants_file` is optional. If unset, its default is `None` and no
 # tenants sidecar file is loaded.
 # If set, PaveDB loads that sidecar first. Then inline tenant config is
@@ -220,5 +218,5 @@ log:
 # ---------------------------------------------------------------------------
 
 instance:
-  name: PatchVec
+  name: PaveDB
   desc: Vector Search Microservice (pluggable, functional)

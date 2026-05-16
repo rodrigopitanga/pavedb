@@ -1,6 +1,18 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
+## 0.9.0 — TBD
+
+### Core
+- Complete the public rebrand to PaveDB
+
+### Breaking changes
+- `PATCHVEC_*` env vars are no longer recognized; use `PAVEDB_*`
+- Default instance home is `~/pavedb/` instead of `~/patchvec/`
+- Docker image renamed to `pavedb`
+- Published registry path is now
+  `registry.gitlab.com/flowlexi/pavedb/pavedb:*`
+
 ## 0.5.9 — 2026-04-03
 
 ### Store

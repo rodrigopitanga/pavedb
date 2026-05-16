@@ -7,7 +7,7 @@ tl;dr: This roadmap tracks production readiness and integration milestones. To c
 task, open an issue titled `claim: <task ID>` and link your branch or PR.
 Detailed design plans live under `docs/` and are indexed after the task tables.
 
-> PatchVec is a general-purpose vector search engine. The roadmap that follows is
+> PaveDB is a general-purpose vector search engine. The roadmap that follows is
 > driven by production readiness for its first downstream consumer — an application
 > that maps natural-language queries to structured codes via semantic search in a
 > non-English language. The core product metric is **time saved to reach the correct
@@ -35,7 +35,7 @@ These are non-negotiable constraints that apply across all versions.
   for org-level quotas or shared collections), it is expressed as a lightweight
   syndicate
   — an opt-in overlay, not a mandatory hierarchy. No boilerplate orgs/workspaces.
-- **Server and library are the same thing.** PatchVec must run equally well as an HTTP
+- **Server and library are the same thing.** PaveDB must run equally well as an HTTP
   microservice and as an in-process Python library (embedded, single-tenant, no
   uvicorn).
   The service layer is the API; HTTP is just one transport.
@@ -43,12 +43,12 @@ These are non-negotiable constraints that apply across all versions.
   media type (images, audio, video, and beyond) is added through a stable ingest plugin
   interface without touching the core. The plugin contract must be stable before any
   specific media type ships.
-- **Collections are version-safe.** Every collection records the PatchVec and schema
+- **Collections are version-safe.** Every collection records the PaveDB version and schema
   version it was written with. Incompatible reads must fail loudly with actionable
   guidance, not silently corrupt. Migration tooling ships alongside breaking changes.
-- **PatchVec enforces limits; it does not govern business logic.** Resource limits,
+- **PaveDB enforces limits; it does not govern business logic.** Resource limits,
   quotas, and tier profiles are read from a manifest and applied at runtime. Billing,
-  onboarding, and payment are outside PatchVec's scope — it just reads a file.
+  onboarding, and payment are outside PaveDB's scope — it just reads a file.
 
 ---
 
@@ -169,7 +169,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-31 | Async ingest jobs + job status API | 🧱 | v1.8 |
 | P3-32 | Per-tenant parallel ingest limits | 🧱 | v1.8 |
 | P3-34 | ~~Relicensing (AGPLv3 candidate)~~ | 🧱 | v0.5.9 |
-| P3-35 | ~~Rebranding phase 1 (PaveDB candidate)~~; phase 2 pending | 🧱 | v0.5.9–v0.9 |
+| P3-35 | ~~Rebranding phase 1 (PaveDB candidate); phase 2~~ | 🧱 | v0.5.9–v0.9 |
 | P3-36 | Multimodal collections (cross-modal search) | 🧱 | post-1.0 |
 | P3-37 | Collection migration tooling (version compat) | 🧱 | v1.7 |
 | P3-40 | Publish pip freeze snapshot | 🧩 | v1.0 |
@@ -340,8 +340,8 @@ latency on every search/ingest/delete.~~
   (no compat shim pre-GA). Contract: frozen at v1.0, additive
   only after (new endpoints, optional fields). `/v2/` introduced
   only if a `/v1/` shape must break (P1-43).~~
-- Rebranding phase 2: public-facing rename, env fallback removal,
-  and `patchvec` → `pavedb` redirect/shim path (P3-35).
+- ~~Rebranding phase 2: public-facing rename, env fallback removal,
+  and `patchvec` → `pavedb` redirect/shim path (P3-35).~~
 - ~~Remove `SearchBody.request_id`; `X-Request-ID` becomes the
   single documented input channel for request correlation
   (P1-48).~~
@@ -554,17 +554,17 @@ P1-31)~~
 
 ## Market Practices (extracted from real-time decisioning benchmarks)
 
-> PatchVec serves downstream consumers the same way a geo-bidding engine
+> PaveDB serves downstream consumers the same way a geo-bidding engine
 > serves ad campaigns: both are real-time decisioning systems that must
 > return the right answer fast under concurrent load. The patterns below
 > are table-stakes in that domain.
 
 ### 1. Return `latency_ms` in every search response
 
-Real-time decisioning APIs mandate `latency_ms` in every response body. PatchVec now
+Real-time decisioning APIs mandate `latency_ms` in every response body. PaveDB now
 returns `latency_ms` (done v0.5.7).
 
-**Why it matters:** The core metric for consumers is time saved. If PatchVec returns
+**Why it matters:** The core metric for consumers is time saved. If PaveDB returns
 `latency_ms`, consumers can log it alongside every request, giving operators concrete
 data to prove and monitor value.
 
@@ -582,7 +582,7 @@ data to prove and monitor value.
 
 ### 3. Hot-reload data and configuration without restart
 
-Production APIs require hot-reloading configuration without downtime. PatchVec's
+Production APIs require hot-reloading configuration without downtime. PaveDB's
 equivalent: updating indexed data or swapping embedding models without restarting the
 server.
 
@@ -627,9 +627,9 @@ rate limiting (P1-08).~~
 Performance benchmarks are not optional documentation — they are proof of performance
 claims and regression gates.
 
-**Why it matters:** When optimizing PatchVec, you need a regression baseline. When
+**Why it matters:** When optimizing PaveDB, you need a regression baseline. When
 choosing between embedding models, you need comparable latency/recall numbers. When
-consumers evaluate PatchVec against alternatives, benchmarks are the first thing they
+consumers evaluate PaveDB against alternatives, benchmarks are the first thing they
 look for.
 
 ~~**Status:** Done (v0.5.9). `benchmarks/search_latency.py` and
@@ -649,7 +649,7 @@ contract to `X-Request-ID`.
 `X-Request-ID` as the request-correlation input, and keep
 echoing the resulting `request_id` in responses and
 structured log entries. This closes the observability gap
-between consumers and PatchVec.
+between consumers and PaveDB.
 
 ### 8. Concurrency safety as explicit contract (not assumed)
 
@@ -662,7 +662,7 @@ v0.5.9).~~
 
 ### Summary: What the market expects from a real-time decisioning API
 
-| Practice | Geo-bidding benchmark | PatchVec | Status |
+| Practice | Geo-bidding benchmark | PaveDB | Status |
 |----------|----------------------|----------|--------|
 | Latency in response body | `latency_ms` | Returned by search | **DONE** |
 | Latency SLO + benchmarks | p99 <50ms | CI gate + SLO exit (P2-30) | **DONE** |
@@ -677,7 +677,7 @@ One of eight practices is still partial (hot-reload / model swap).
 
 ---
 
-## Pluggability: PatchVec as a General-Purpose Vector Search Microservice
+## Pluggability: PaveDB as a General-Purpose Vector Search Microservice
 
 > Secondary priority — after the first consumer reaches GA. But
 > architectural decisions made in v0.5.7–v1.0 determine whether this
@@ -708,7 +708,7 @@ SDK needed on the agent side.
 (Assistants/Retrieval). NOT a standard others implement. Implementing compatibility
 would be cargo-culting with no adoption benefit.
 
-### What PatchVec has today (v0.5.9)
+### What PaveDB has today (v0.5.9)
 
 | Surface | Status | Notes |
 |---------|--------|-------|
@@ -723,7 +723,7 @@ would be cargo-culting with no adoption benefit.
 | LlamaIndex adapter | **Planned** | v1.3 — `VectorStore` implementation. |
 | MCP server | **Planned** | v1.3 — tool exposure for AI agents. |
 
-### What PatchVec does NOT need
+### What PaveDB does NOT need
 
 - **OpenAI-compatible API** — There is no "OpenAI vector store standard"
 that third parties implement. OpenAI's Vector Store API is platform-locked. Skip.
@@ -733,11 +733,11 @@ gRPC matters at >10k req/s with sub-5ms budgets. Not the current reality.
 
 - **GraphQL** — No vector store uses it. No framework expects it. Skip.
 
-### What PatchVec needs (in priority order)
+### What PaveDB needs (in priority order)
 
 #### 1. Python SDK — `pave` client package (~150 lines)
 
-A thin HTTP wrapper that maps PatchVec's REST API to Python method calls.
+A thin HTTP wrapper that maps PaveDB's REST API to Python method calls.
 This is the foundation everything else wraps.
 
 ```python
@@ -749,7 +749,7 @@ client.ingest("tenant", "my_collection", file_path="data.csv")
 results = client.search("tenant", "my_collection", "example query", k=5)
 ```
 
-**Why:** Every vector DB ships a client SDK. Without one, PatchVec integration requires
+**Why:** Every vector DB ships a client SDK. Without one, PaveDB integration requires
 raw `httpx`/`requests` calls, which nobody does in 2026. This is table-stakes.
 
 **Effort:** Low. ~150 lines wrapping the existing REST endpoints.
@@ -788,7 +788,7 @@ frameworks.
 
 #### 3. MCP server (~300 lines)
 
-Expose PatchVec operations as MCP tools:
+Expose PaveDB operations as MCP tools:
 - `search_collection(tenant, collection, query, k, filters)` → search
 - `ingest_document(tenant, collection, file_path)` → upload
 - `list_collections(tenant)` → list (~~needs P2-12 first~~ done)
@@ -796,7 +796,7 @@ Expose PatchVec operations as MCP tools:
 ```json
 {
   "name": "search_collection",
-  "description": "Search a PatchVec collection using semantic similarity",
+  "description": "Search a PaveDB collection using semantic similarity",
   "parameters": {
     "tenant": "string",
     "collection": "string",
@@ -807,8 +807,8 @@ Expose PatchVec operations as MCP tools:
 ```
 
 **Why:** MCP is the standard protocol for AI agent ↔ tool communication. Qdrant,
-Pinecone, MindsDB already ship MCP servers. Without one, PatchVec is invisible to the
-fastest-growing integration channel. An MCP server backed by PatchVec lets any MCP-
+Pinecone, MindsDB already ship MCP servers. Without one, PaveDB is invisible to the
+fastest-growing integration channel. An MCP server backed by PaveDB lets any MCP-
 compatible AI assistant search indexed data directly.
 
 **Effort:** ~300 lines. MCP Python SDK is well-documented.
@@ -827,15 +827,15 @@ the coverage.
 
 **When:** v1.3.
 
-### PatchVec's positioning in the vector DB landscape
+### PaveDB's positioning in the vector DB landscape
 
-PatchVec is not Qdrant or Pinecone. It does not compete on billion-vector scale or sub-
+PaveDB is not Qdrant or Pinecone. It does not compete on billion-vector scale or sub-
 millisecond latency. Its niche is:
 
 **"The SQLite of vector search"** — embed it, no cluster, no cloud, good enough for most
 workloads under 10M vectors.
 
-| | PatchVec | ChromaDB | Qdrant | Pinecone |
+| | PaveDB | ChromaDB | Qdrant | Pinecone |
 |---|--------|----------|--------|----------|
 | Deployment | Single-process | Single-process | Docker/K8s | Managed |
 | Multi-tenancy | Built-in | No | Namespaces | Namespaces |
@@ -863,7 +863,7 @@ Freeze the response shape in v0.5.7. Add new fields (`latency_ms`, `match_reason
 requires this. Without it, the LangChain adapter ships incomplete.
 
 3. **Per-collection embedding config** (v1.0) — LangChain's `from_texts()`
-passes an `embedding` parameter. PatchVec must be able to accept external
+passes an `embedding` parameter. PaveDB must be able to accept external
 embeddings OR let the caller specify which model to use per collection.
 Embedder factory (v0.5.9) provides the foundation; per-collection config
 wiring lands in v1.0 (P1-32).

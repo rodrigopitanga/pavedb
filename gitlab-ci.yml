@@ -114,7 +114,7 @@ publish-docker-rc:
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
   script:
     - export VERSION="${CI_COMMIT_TAG#v}"
-    - export IMAGE_BASE="$CI_REGISTRY_IMAGE/patchvec"
+    - export IMAGE_BASE="$CI_REGISTRY_IMAGE/pavedb"
     - export IMAGE_TAG="$VERSION-cpu"
     - export LATEST_TAG="latest-cpu"
     - export BUILD_ID="${CI_PIPELINE_ID:-0}-${CI_COMMIT_SHORT_SHA:-dev}-cpu"
@@ -137,7 +137,7 @@ publish-docker:
     - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
   script:
     - export VERSION="${CI_COMMIT_TAG#v}"
-    - export IMAGE_BASE="$CI_REGISTRY_IMAGE/patchvec"
+    - export IMAGE_BASE="$CI_REGISTRY_IMAGE/pavedb"
     - export BUILD_ID_GPU="${CI_PIPELINE_ID:-0}-${CI_COMMIT_SHORT_SHA:-dev}-gpu"
     - export BUILD_ID_CPU="${CI_PIPELINE_ID:-0}-${CI_COMMIT_SHORT_SHA:-dev}-cpu"
     - docker build --progress=plain --build-arg USE_CPU=0 --build-arg BUILD_ID="$BUILD_ID_GPU" -t "$IMAGE_BASE:$VERSION-gpu" -f Dockerfile .

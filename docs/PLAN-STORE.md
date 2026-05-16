@@ -3,7 +3,7 @@
 
 # STORE-PLAN — Store Layer Separation
 
-PatchVec's store architecture was designed from day one as a
+PaveDB's store architecture was designed from day one as a
 layered system: embedder, vector index, metadata store, and
 service logic are independent concerns with typed contracts
 between them. The codebase already reflects this — `BaseStore`
@@ -14,7 +14,7 @@ incrementally as the product matured.
 
 What this plan addresses is the final step: replacing the txtai
 dependency — which was the right bootstrapping choice — with
-PatchVec's own FAISS backend and activating the embedder layer
+PaveDB's own FAISS backend and activating the embedder layer
 that has been waiting in the wings. The seams are already cut.
 This plan connects them.
 
@@ -36,10 +36,10 @@ This plan connects them.
    `_config()` reads global model from config. No per-collection
    model support.
 
-PatchVec already re-implements most of what txtai provides on top
+PaveDB already re-implements most of what txtai provides on top
 of txtai:
 
-| Concern | txtai owns | PatchVec re-owns |
+| Concern | txtai owns | PaveDB re-owns |
 |---------|-----------|-----------------|
 | Metadata store | internal SQLite | CollectionDB |
 | Chunk text | content store | sidecars |
@@ -50,7 +50,7 @@ of txtai:
 txtai adds ~150 MB of install weight for what is effectively a FAISS
 `index.search(vector, k)` call. Replacing txtai with raw FAISS +
 `sentence-transformers` (both already transitive deps of txtai)
-eliminates the duplication and gives PatchVec full ownership of the
+eliminates the duplication and gives PaveDB full ownership of the
 stack.
 
 `BaseStore` ABC forces any new vector backend to re-implement all
@@ -76,7 +76,7 @@ pre-computed vectors.
 
 ## Layer contracts
 
-Five interfaces define PatchVec's store stack. Each layer has a
+Five interfaces define PaveDB's store stack. Each layer has a
 single responsibility and communicates with its neighbours through
 a typed contract. No layer bypasses another.
 
@@ -915,7 +915,7 @@ With the orchestrator (Step 4) and `CatalogDB` (Step 5) in place:
 Existing indexes are in txtai's format (FAISS index + txtai
 internal SQLite). Two migration paths:
 
-**A) Re-index from chunk text sidecars (recommended).** PatchVec
+**A) Re-index from chunk text sidecars (recommended).** PaveDB
 already persists chunk text as sidecar `.txt` files. A migration
 tool reads sidecars + `CollectionDB` metadata, encodes via
 `SentenceTransformerEmbedder`, writes to `FaissBackend`. No data
@@ -1012,12 +1012,12 @@ Existing items affected:
 ## Retrospective: from txtai scaffold to owned stack
 
 txtai was the right bootstrap choice. A single dependency gave
-PatchVec a FAISS vector index, sentence-transformers embeddings, a
+PaveDB a FAISS vector index, sentence-transformers embeddings, a
 content store, SQL-based filtering, and an ID mapping layer. The
 project shipped its first five versions (v0.1–v0.5.6) on txtai
 without writing any of those subsystems.
 
-The cost became clear as PatchVec matured: txtai's internal SQLite
+The cost became clear as PaveDB matured: txtai's internal SQLite
 conflicted with CollectionDB, its content store conflicted with
 chunk text sidecars, its SQL filtering was opaque and
 non-extensible, and its model caching was incompatible with

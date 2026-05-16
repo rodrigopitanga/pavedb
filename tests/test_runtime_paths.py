@@ -56,9 +56,6 @@ def test_apply_runtime_env_sets_pavedb_vars(monkeypatch, tmp_path):
         "PAVEDB_CONFIG",
         "PAVEDB_AUTH__TENANTS_FILE",
         "PAVEDB_DATA_DIR",
-        "PATCHVEC_CONFIG",
-        "PATCHVEC_AUTH__TENANTS_FILE",
-        "PATCHVEC_DATA_DIR",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -68,9 +65,6 @@ def test_apply_runtime_env_sets_pavedb_vars(monkeypatch, tmp_path):
     assert os.environ["PAVEDB_CONFIG"] == str(home / "config.yml")
     assert os.environ["PAVEDB_AUTH__TENANTS_FILE"] == str(home / "tenants.yml")
     assert os.environ["PAVEDB_DATA_DIR"] == str(home / "data")
-    assert "PATCHVEC_CONFIG" not in os.environ
-    assert "PATCHVEC_AUTH__TENANTS_FILE" not in os.environ
-    assert "PATCHVEC_DATA_DIR" not in os.environ
     assert paths.config == str(home / "config.yml")
 
 

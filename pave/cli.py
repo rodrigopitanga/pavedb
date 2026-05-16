@@ -335,7 +335,10 @@ def cmd_get_collection(args):
 
 
 def main_cli(argv=None):
-    p = argparse.ArgumentParser(prog="pavecli")
+    p = argparse.ArgumentParser(
+        prog="pavecli",
+        description="PaveDB CLI",
+    )
     p.add_argument(
         "--compact",
         action="store_true",

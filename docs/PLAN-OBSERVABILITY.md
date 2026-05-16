@@ -340,7 +340,7 @@ collection)` than the scoped path, they return the normal
   via ops_log; fan-out across every collection's `meta.db`
   isn't worth the cost.
 
-**Admin CLI rework (`pave/cli.py`).** PatchVec's CLI is an
+**Admin CLI rework (`pave/cli.py`).** PaveDB's CLI is an
 admin-local tool — no per-tenant CLI persona — so every
 query-log subcommand operates at admin scope.
 Tenant/collection are filters at most, never required
