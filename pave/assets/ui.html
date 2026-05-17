@@ -12,31 +12,42 @@
 <link rel="icon" href="/favicon.ico" />
 <title>__INST_NAME__ • Search</title>
 <style>
-  /* paleta */
-  :root{ --bg:#f6e6d9; --panel:#fffaf6; --text:#2b1e11; --muted:#6b5b53; --accent:#c9463d; --border:#ead7c7; --link:#0f2e4d; --link-accent:#14b8a6; }
-  @media (prefers-color-scheme: dark){
-    :root{ --bg:#1a1410; --panel:#221a14; --text:#f1e9e4; --muted:#b7a9a1; --accent:#ef6b62; --border:#3a2c22; --link:#9dd9d3; --link-accent:#34d399; }
+  /* Flowlexi docs palette with restrained PaveDB accents */
+  :root{
+    --bg:#F4F2ED; --panel:#FFFFFF; --text:#1E1E1E; --muted:#4B5563;
+    --accent:#2ECC71; --border:#E5E7EB; --link:#11957D;
+    --link-accent:#0B7769;
   }
 
   *{ box-sizing:border-box }
   html,body{ height:100% }
   body{
     min-height:100vh; display:flex; flex-direction:column; overflow:hidden;
-    margin:0; font:16px/1.45 system-ui,Segoe UI,Roboto,Inter,Arial; background:var(--bg); color:var(--text);
+    margin:0; font:16px/1.45 system-ui,Segoe UI,Roboto,Inter,Arial;
+    background:var(--bg); color:var(--text);
   }
 
   .bar{
     flex:0 0 auto; display:flex; gap:10px; align-items:center;
-    padding:12px; border-bottom:1px solid var(--border); background:var(--panel);
+    padding:12px; border-bottom:1px solid var(--border); background:var(--bg);
   }
   .left{ display:flex; gap:8px; align-items:center }
-  .right{ margin-left:auto; color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .right{
+    margin-left:auto; color:var(--muted); white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis;
+  }
 
   .tab{
     padding:8px 12px; border-radius:10px; border:1px solid var(--border);
-    cursor:pointer; background:transparent; color:var(--text);
+    cursor:pointer; background:var(--panel); color:var(--text);
   }
-  .tab.active{ background:var(--link-accent); color:#041318; border-color:var(--link-accent) }
+  .tab:hover{
+    background:#F1F3F4; color:var(--link-accent);
+  }
+  .tab.active{
+    background:#D9E3E2; color:var(--link-accent);
+    border-color:var(--link-accent);
+  }
 
   .frames{ flex:1 1 auto; min-height:0; background:var(--bg) }
   .frame{ display:none; width:100%; height:100%; border:0; background:var(--bg) }
@@ -45,7 +56,8 @@
   .footer{
     flex:0 0 auto; position:sticky; bottom:0;
     display:flex; gap:12px; align-items:center; justify-content:center;
-    padding:10px; color:var(--muted); border-top:1px solid var(--border); background:var(--panel);
+    padding:10px; color:var(--muted); border-top:1px solid var(--border);
+    background:var(--bg);
   }
   .footer a{ color:var(--link); text-decoration:none }
   .footer a:hover{ color:var(--link-accent) }
@@ -54,10 +66,14 @@
 <body>
   <div class="bar">
     <div class="left">
-      <button class="tab active" data-target="search" data-title="__INST_NAME__ • Search">Search</button>
-      <button class="tab" data-target="ingest" data-title="__INST_NAME__ • Ingest">Ingest</button>
+      <button class="tab active" data-target="search"
+              data-title="__INST_NAME__ • Search">Search</button>
+      <button class="tab" data-target="ingest"
+              data-title="__INST_NAME__ • Ingest">Ingest</button>
     </div>
-    <div class="right"><strong>__INST_NAME__</strong> — <small>__INST_DESC__</small></div>
+    <div class="right">
+      <strong>__INST_NAME__</strong> — <small>__INST_DESC__</small>
+    </div>
   </div>
 
   <div class="frames">
@@ -66,8 +82,11 @@
   </div>
 
   <div class="footer">
-    © 2025, 2026 <a href="https://flowlexi.com" target="_blank" rel="noopener">Flowlexi</a> •
-    <a href="__REPO_URL__" target="_blank" rel="noopener">🛣️ PaveDB __VERSION__</a> •
+    © 2025, 2026
+    <a href="https://flowlexi.com" target="_blank"
+       rel="noopener">Flowlexi</a> •
+    <a href="__REPO_URL__" target="_blank"
+       rel="noopener">🛣️ PaveDB __VERSION__</a> •
     <a href="__LICENSE_URL__" target="_blank" rel="noopener">__LICENSE_NAME__</a>
   </div>
 <script>
@@ -88,18 +107,186 @@
       const s = doc.createElement('style');
       s.id = STYLE_ID;
       s.textContent = `
+        :root{
+          --bg:#F4F2ED; --panel:#FFFFFF; --text:#1E1E1E;
+          --muted:#4B5563; --accent:#2ECC71; --border:#E5E7EB;
+          --link:#11957D; --link-accent:#0B7769;
+        }
         #operations-tag-default,
         .swagger-ui .topbar,
         .swagger-ui .download-url-wrapper,
         .swagger-ui .information-container,
         .swagger-ui .info,
         .swagger-ui .servers { display:none !important; }
-        .swagger-ui .wrapper { margin:0 !important; padding:0 0 8px !important; }
-        html, body { background:transparent !important; }
-        /* auth icon */
-        .swagger-ui .auth-wrapper .authorize:hover { border-color: rgba(20,184,166,.8); }
-        .swagger-ui .btn.authorize { background: white }
-        .swagger-ui .scheme-container { width:100%; height:; margin: 8px 0 0 0; padding: 0 0; background:transparent; border-color: transparent; box-shadow:0 0 0 0 rgba(0,0,0,0)}
+        html, body {
+          background: var(--bg) !important;
+          color: var(--text) !important;
+        }
+        .swagger-ui {
+          color: var(--text) !important;
+        }
+        .swagger-ui .wrapper {
+          margin:0 !important; padding:0 0 8px !important;
+          max-width:none !important;
+        }
+        .swagger-ui a,
+        .swagger-ui .opblock-summary-path,
+        .swagger-ui .link {
+          color: var(--link) !important;
+        }
+        .swagger-ui a:hover,
+        .swagger-ui .opblock-summary-path:hover,
+        .swagger-ui .link:hover {
+          color: var(--link-accent) !important;
+        }
+        .swagger-ui .scheme-container,
+        .swagger-ui section.models,
+        .swagger-ui .model-box {
+          background: var(--panel) !important;
+          border:1px solid var(--border) !important;
+          box-shadow:none !important;
+        }
+        .swagger-ui .scheme-container {
+          margin:8px 0 0 !important; padding:12px 16px !important;
+        }
+        .swagger-ui .opblock {
+          background: var(--panel) !important;
+          border:1px solid var(--border) !important;
+          box-shadow:none !important;
+        }
+        .swagger-ui .opblock .opblock-summary,
+        .swagger-ui .responses-inner,
+        .swagger-ui table tbody tr td,
+        .swagger-ui .parameters-col_description input,
+        .swagger-ui .parameters-col_description textarea,
+        .swagger-ui .model-example {
+          border-color: var(--border) !important;
+        }
+        .swagger-ui .opblock-tag,
+        .swagger-ui .opblock-summary-description,
+        .swagger-ui .response-col_description__inner p,
+        .swagger-ui .parameter__type,
+        .swagger-ui .parameter__name,
+        .swagger-ui .responses-inner h4,
+        .swagger-ui .responses-inner h5,
+        .swagger-ui .model-title,
+        .swagger-ui label,
+        .swagger-ui .prop-name {
+          color: var(--text) !important;
+        }
+        .swagger-ui .opblock-description-wrapper p,
+        .swagger-ui .response-col_links,
+        .swagger-ui .responses-inner .markdown p,
+        .swagger-ui .renderedMarkdown p,
+        .swagger-ui .parameter__deprecated,
+        .swagger-ui .tab li,
+        .swagger-ui .model-title small,
+        .swagger-ui .prop-type {
+          color: var(--muted) !important;
+        }
+        .swagger-ui .copy-to-clipboard,
+        .swagger-ui .model-hint {
+          color: #6B7280 !important;
+        }
+        .swagger-ui .opblock-body pre.microlight,
+        .swagger-ui .highlight-code,
+        .swagger-ui textarea,
+        .swagger-ui input[type=text],
+        .swagger-ui input[type=password],
+        .swagger-ui select {
+          background: #F1F3F4 !important;
+          border:1px solid var(--border) !important;
+          color: var(--text) !important;
+          box-shadow:none !important;
+        }
+        .swagger-ui textarea:focus,
+        .swagger-ui input[type=text]:focus,
+        .swagger-ui input[type=password]:focus,
+        .swagger-ui select:focus {
+          border-color: var(--link) !important;
+          outline:none !important;
+        }
+        .swagger-ui .tab li.active {
+          background: #D9E3E2 !important;
+          color: var(--text) !important;
+        }
+        .swagger-ui .btn {
+          border-radius:8px !important;
+          box-shadow:none !important;
+        }
+        .swagger-ui .btn.authorize,
+        .swagger-ui .btn.execute,
+        .swagger-ui .btn.try-out__btn {
+          background: var(--link) !important;
+          border-color: var(--link) !important;
+          color: #FFFFFF !important;
+        }
+        .swagger-ui .btn.authorize:hover,
+        .swagger-ui .btn.execute:hover,
+        .swagger-ui .btn.try-out__btn:hover,
+        .swagger-ui .btn.authorize:focus,
+        .swagger-ui .btn.execute:focus,
+        .swagger-ui .btn.try-out__btn:focus {
+          background: var(--link-accent) !important;
+          border-color: var(--link-accent) !important;
+          color: #FFFFFF !important;
+        }
+        .swagger-ui .btn.cancel {
+          background: var(--panel) !important;
+          border-color: var(--border) !important;
+          color: var(--muted) !important;
+        }
+        .swagger-ui .btn.cancel:hover,
+        .swagger-ui .btn.cancel:focus {
+          background: #F1F3F4 !important;
+          color: var(--text) !important;
+        }
+        .swagger-ui .btn.authorize svg,
+        .swagger-ui .btn.execute svg {
+          fill: currentColor !important;
+        }
+        .swagger-ui .opblock.opblock-get .opblock-summary {
+          background: rgba(91,141,184,.08) !important;
+        }
+        .swagger-ui .opblock.opblock-post .opblock-summary {
+          background: rgba(17,149,125,.08) !important;
+        }
+        .swagger-ui .opblock.opblock-put .opblock-summary {
+          background: rgba(201,130,58,.08) !important;
+        }
+        .swagger-ui .opblock.opblock-patch .opblock-summary {
+          background: rgba(68,191,152,.08) !important;
+        }
+        .swagger-ui .opblock.opblock-delete .opblock-summary {
+          background: rgba(176,82,74,.08) !important;
+        }
+        .swagger-ui .opblock.opblock-head .opblock-summary {
+          background: rgba(122,107,152,.08) !important;
+        }
+        .swagger-ui .opblock.opblock-options .opblock-summary {
+          background: rgba(79,111,143,.08) !important;
+        }
+        .swagger-ui .opblock.opblock-get .opblock-summary-method {
+          background:#5B8DB8 !important;
+        }
+        .swagger-ui .opblock.opblock-post .opblock-summary-method {
+          background:#11957D !important;
+        }
+        .swagger-ui .opblock.opblock-put .opblock-summary-method {
+          background:#C9823A !important;
+        }
+        .swagger-ui .opblock.opblock-patch .opblock-summary-method {
+          background:#44BF98 !important;
+        }
+        .swagger-ui .opblock.opblock-delete .opblock-summary-method {
+          background:#B0524A !important;
+        }
+        .swagger-ui .opblock.opblock-head .opblock-summary-method {
+          background:#7A6B98 !important;
+        }
+        .swagger-ui .opblock.opblock-options .opblock-summary-method {
+          background:#4F6F8F !important;
+        }
       `;
       doc.head.appendChild(s);
     }
