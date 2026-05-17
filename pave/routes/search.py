@@ -44,6 +44,7 @@ def build_search_router(
         "/collections/{tenant}/{name}/queries",
         response_model=ListQueryLogsResponse,
         responses=resp(401, 403, 429, 500),
+        tags=["Query Inspection"],
     )
     @ops_event(
         "list_query_logs",
@@ -82,6 +83,7 @@ def build_search_router(
         "/collections/{tenant}/{name}/queries/{query_id}",
         response_model=GetQueryLogResponse,
         responses=resp(401, 403, 404, 429, 500),
+        tags=["Query Inspection"],
     )
     @ops_event(
         "get_query_log",
@@ -122,6 +124,7 @@ def build_search_router(
         "/collections/{tenant}/{name}/queries/{query_id}/replay",
         response_model=QueryReplayResponse,
         responses=resp(401, 403, 404, 429, 500, 503),
+        tags=["Query Inspection"],
     )
     @ops_event(
         "replay_query",
@@ -156,6 +159,7 @@ def build_search_router(
         "/collections/{tenant}/{name}/search",
         response_model=SearchResponse,
         responses=resp(401, 403, 429, 500, 503),
+        tags=["Scoped Search"],
     )
     @ops_event(
         "search",
@@ -201,6 +205,7 @@ def build_search_router(
         "/collections/{tenant}/{name}/search",
         response_model=SearchResponse,
         responses=resp(401, 403, 429, 500, 503),
+        tags=["Scoped Search"],
     )
     @ops_event(
         "search",
@@ -247,6 +252,7 @@ def build_search_router(
         "/search",
         response_model=SearchResponse,
         responses=resp(401, 403, 500, 503),
+        tags=["Global Search"],
     )
     @ops_event(
         "search_common",
@@ -302,6 +308,7 @@ def build_search_router(
         "/search",
         response_model=SearchResponse,
         responses=resp(401, 403, 500, 503),
+        tags=["Global Search"],
     )
     @ops_event(
         "search_common",

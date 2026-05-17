@@ -43,6 +43,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         "/collections/{tenant}/{collection}/documents",
         response_model=ListDocumentsResponse,
         responses=resp(401, 403, 429, 500),
+        tags=["Documents"],
     )
     @ops_event(
         "list_docs",
@@ -74,6 +75,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         status_code=201,
         response_model=IngestDocumentResponse,
         responses=resp(400, 401, 403, 413, 429, 500, 503),
+        tags=["Documents"],
     )
     @ops_event(
         "ingest",
@@ -199,6 +201,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         "/collections/{tenant}/{collection}/documents/{docid}",
         response_model=DeleteDocumentResponse,
         responses=resp(401, 403, 429, 500),
+        tags=["Documents"],
     )
     @ops_event(
         "delete_doc",
@@ -231,6 +234,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         "/collections/{tenant}/{collection}/documents/{docid}/chunks",
         response_model=ListChunksResponse,
         responses=resp(401, 403, 429, 500),
+        tags=["Chunk Inspection"],
     )
     @ops_event(
         "list_chunks",
@@ -262,6 +266,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         "/collections/{tenant}/{collection}/documents/{docid}",
         response_model=GetDocumentResponse,
         responses=resp(401, 403, 404, 429, 500),
+        tags=["Documents"],
     )
     @ops_event(
         "get_doc",
@@ -299,6 +304,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         "/collections/{tenant}/{collection}/chunks/{rid}",
         response_model=GetChunkResponse,
         responses=resp(401, 403, 404, 429, 500),
+        tags=["Chunk Inspection"],
     )
     @ops_event(
         "get_chunk",
@@ -331,6 +337,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         "/collections/{tenant}/{collection}/chunks/{rid}/content",
         response_class=Response,
         responses=resp(401, 403, 404, 429, 500),
+        tags=["Chunk Inspection"],
     )
     @ops_event(
         "get_chunk_content",

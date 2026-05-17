@@ -37,6 +37,7 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         "/collections/{tenant}",
         response_model=ListCollectionsResponse,
         responses=resp(401, 403, 429, 500),
+        tags=["Collection Catalog"],
     )
     @ops_event("list_collections", coll=None, request_id="rid")
     def list_collections(
@@ -62,6 +63,7 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         "/collections/{tenant}/{name}/detail",
         response_model=CollectionDetailResponse,
         responses=resp(401, 403, 404, 429, 500),
+        tags=["Collection Catalog"],
     )
     @ops_event(
         "get_collection_detail",
@@ -98,6 +100,7 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         status_code=201,
         response_model=CreateCollectionResponse,
         responses=resp(400, 401, 403, 429, 500),
+        tags=["Collection Catalog"],
     )
     @ops_event("create_collection", request_id="rid")
     def create_collection(
@@ -136,6 +139,7 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         "/collections/{tenant}/{name}",
         response_model=DeleteCollectionResponse,
         responses=resp(401, 403, 429, 500),
+        tags=["Collection Catalog"],
     )
     @ops_event("delete_collection", request_id="rid")
     def delete_collection(
@@ -162,6 +166,7 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         "/collections/{tenant}/{name}",
         response_model=RenameCollectionResponse,
         responses=resp(400, 401, 403, 404, 409, 429, 500),
+        tags=["Collection Catalog"],
     )
     @ops_event(
         "rename_collection",

@@ -10,21 +10,74 @@ from starlette.staticfiles import StaticFiles
 from pathlib import Path
 import copy
 
+_UI_TAGS = {
+    "Scoped Search": {
+        "name": "Scoped Search",
+        "description": "Tenant and collection-scoped search routes.",
+    },
+    "Global Search": {
+        "name": "Global Search",
+        "description": "Global/common search routes.",
+    },
+    "Documents": {
+        "name": "Documents",
+        "description": "Document ingest, fetch, and deletion routes.",
+    },
+    "Chunk Inspection": {
+        "name": "Chunk Inspection",
+        "description": "Chunk inspection and content routes.",
+    },
+    "Collection Catalog": {
+        "name": "Collection Catalog",
+        "description": "Collection lifecycle and detail routes.",
+    },
+    "Query Inspection": {
+        "name": "Query Inspection",
+        "description": "Tenant and collection-scoped query history and replay.",
+    },
+    "Instance Admin": {
+        "name": "Instance Admin",
+        "description": "Archive, metrics, and tenant admin routes.",
+    },
+    "Query Admin": {
+        "name": "Query Admin",
+        "description": "Bare query-id admin lookup and replay shortcuts.",
+    },
+}
+
+_HTTP_METHODS = (
+    "get",
+    "post",
+    "put",
+    "delete",
+    "patch",
+    "head",
+    "options",
+    "trace",
+)
+
 # ultra-simple fallback template (no f-string; plain string -> safe braces)
 _FALLBACK_TMPL = """<!doctype html>
 <html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <link rel="icon" href="/favicon.ico" />
 <title>__INST_NAME__ • Search</title>
 </head>
 <body>
   <div class="tabs">
-    <button class="tab active" data-target="search" data-title="__INST_NAME__ • Search">Search</button>
-    <button class="tab" data-target="ingest" data-title="__INST_NAME__ • Ingest">Ingest</button>
+    <button class="tab active" data-target="search"
+            data-title="__INST_NAME__ • Search">Search</button>
+    <button class="tab" data-target="data"
+            data-title="__INST_NAME__ • Data">Data</button>
+    <button class="tab" data-target="admin"
+            data-title="__INST_NAME__ • Admin">Admin</button>
     <div class="desc">__INST_DESC__</div>
   </div>
-  <iframe id="search" class="frame active" src="/ui/search" title="Search"></iframe>
-  <iframe id="ingest" class="frame" src="/ui/ingest" title="Ingest"></iframe>
+  <iframe id="search" class="frame active" src="/ui/search"
+          title="Search"></iframe>
+  <iframe id="data" class="frame" src="/ui/data" title="Data"></iframe>
+  <iframe id="admin" class="frame" src="/ui/admin" title="Admin"></iframe>
   <div class="footer">
     <span>🛣️ PaveDB v__VERSION__</span>
   </div>
@@ -96,32 +149,124 @@ def attach_ui(app: FastAPI):
 
     def _filter(schema: dict, pred):
         s = copy.deepcopy(schema)
+        used_tags = set()
+        selected_ops = []
         for path in list(s.get("paths", {}).keys()):
             methods = s["paths"][path]
             for m in list(methods.keys()):
                 if not pred(path, methods[m]):
                     methods.pop(m, None)
+                    continue
+                op = methods[m]
+                _retitle_ui_ops(path, m, op)
+                selected_ops.append((path, m, op))
+                for tag in op.get("tags", []):
+                    used_tags.add(tag)
             if not methods:
                 s["paths"].pop(path, None)
-        s.pop("tags", None)
+        ordered_paths = {}
+        for path, method, op in sorted(selected_ops, key=_ui_op_sort_key):
+            ordered_paths.setdefault(path, {})
+            ordered_paths[path][method] = op
+        s["paths"] = ordered_paths
+        if used_tags:
+            s["tags"] = [
+                meta for tag, meta in _UI_TAGS.items()
+                if tag in used_tags
+            ]
+        else:
+            s.pop("tags", None)
         return s
 
-    def _is_search(path: str, _op: dict) -> bool:
-        return "/search" in path
+    def _op_count(schema: dict) -> int:
+        count = 0
+        for methods in schema.get("paths", {}).values():
+            for method in methods:
+                if method.lower() in _HTTP_METHODS:
+                    count += 1
+        return count
 
-    def _is_ingest(path: str, _op: dict) -> bool:
+    def _retitle_ui_ops(path: str, method: str, op: dict) -> None:
+        if path == "/v1/admin/metrics" and method.lower() == "delete":
+            op["summary"] = "Reset metrics"
+
+    def _ui_op_sort_key(item):
+        path, method, op = item
+        tag = op.get("tags", [""])[0]
+        tag_rank = list(_UI_TAGS).index(tag) if tag in _UI_TAGS else 999
+        local_rank = _ui_op_rank(tag, path, method)
+        return (tag_rank, local_rank, path, method)
+
+    def _ui_op_rank(tag: str, path: str, method: str) -> int:
+        key = (method.lower(), path)
+        ranks = {
+            "Documents": {
+                ("post", "/v1/collections/{tenant}/{collection}/documents"): 0,
+                ("get", "/v1/collections/{tenant}/{collection}/documents"): 1,
+                (
+                    "get",
+                    "/v1/collections/{tenant}/{collection}/documents/{docid}",
+                ): 2,
+                (
+                    "delete",
+                    "/v1/collections/{tenant}/{collection}/documents/{docid}",
+                ): 3,
+            },
+            "Chunk Inspection": {
+                (
+                    "get",
+                    "/v1/collections/{tenant}/{collection}/documents/"
+                    "{docid}/chunks",
+                ): 0,
+                ("get", "/v1/collections/{tenant}/{collection}/chunks/{rid}"): 1,
+                (
+                    "get",
+                    "/v1/collections/{tenant}/{collection}/chunks/{rid}/content",
+                ): 2,
+            },
+            "Collection Catalog": {
+                ("get", "/v1/collections/{tenant}"): 0,
+                ("get", "/v1/collections/{tenant}/{name}/detail"): 1,
+                ("post", "/v1/collections/{tenant}/{name}"): 2,
+                ("put", "/v1/collections/{tenant}/{name}"): 3,
+                ("delete", "/v1/collections/{tenant}/{name}"): 4,
+            },
+            "Instance Admin": {
+                ("get", "/v1/admin/archive"): 0,
+                ("put", "/v1/admin/archive"): 1,
+                ("get", "/v1/admin/tenants"): 2,
+                ("delete", "/v1/admin/metrics"): 3,
+            },
+        }
+        return ranks.get(tag, {}).get(key, 100)
+
+    def _is_v1(path: str) -> bool:
+        return path.startswith("/v1/")
+
+    def _is_search(path: str, _op: dict) -> bool:
         p = path.lower()
-        return ("/documents" in p) or \
-            ("/collections" in p and "/search" not in p) or \
-            p.endswith("/collections")
+        return _is_v1(path) and "/search" in p
+
+    def _is_admin(path: str, _op: dict) -> bool:
+        p = path.lower()
+        return _is_v1(path) and ("/admin/" in p or "/queries" in p)
+
+    def _is_data(path: str, _op: dict) -> bool:
+        return _is_v1(path) and not _is_search(path, _op) and not _is_admin(
+            path, _op
+        )
 
     @app.get("/openapi-search.json", include_in_schema=False)
     def openapi_search_only():
         return _filter(_openapi_full(), _is_search)
 
-    @app.get("/openapi-ingest.json", include_in_schema=False)
-    def openapi_ingest_only():
-        return _filter(_openapi_full(), _is_ingest)
+    @app.get("/openapi-data.json", include_in_schema=False)
+    def openapi_data_only():
+        return _filter(_openapi_full(), _is_data)
+
+    @app.get("/openapi-admin.json", include_in_schema=False)
+    def openapi_admin_only():
+        return _filter(_openapi_full(), _is_admin)
 
     _swui_params = {
             "defaultModelsExpandDepth": -1,
@@ -139,12 +284,21 @@ def attach_ui(app: FastAPI):
             swagger_ui_parameters=_swui_params
         )
 
-    @app.get("/ui/ingest", include_in_schema=False)
-    def ui_ingest():
+    @app.get("/ui/data", include_in_schema=False)
+    def ui_data():
         inst_name = cfg.get("instance.name", "PaveDB")
         return get_swagger_ui_html(
-            openapi_url="/openapi-ingest.json",
-            title=f"{inst_name} • Ingest",
+            openapi_url="/openapi-data.json",
+            title=f"{inst_name} • Data",
+            swagger_ui_parameters=_swui_params
+        )
+
+    @app.get("/ui/admin", include_in_schema=False)
+    def ui_admin():
+        inst_name = cfg.get("instance.name", "PaveDB")
+        return get_swagger_ui_html(
+            openapi_url="/openapi-admin.json",
+            title=f"{inst_name} • Admin",
             swagger_ui_parameters=_swui_params
         )
 

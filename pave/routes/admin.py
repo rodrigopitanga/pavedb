@@ -43,6 +43,7 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         "/admin/archive",
         response_class=FileResponse,
         responses=resp(401, 403, 404, 500),
+        tags=["Instance Admin"],
     )
     @ops_event("dump_archive", coll=None, request_id="rid")
     async def dump_archive(
@@ -101,6 +102,7 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         "/admin/archive",
         response_model=RestoreArchiveResponse,
         responses=resp(400, 401, 403, 500),
+        tags=["Instance Admin"],
     )
     @ops_event("restore_archive", coll=None, request_id="rid")
     async def restore_archive(
@@ -147,6 +149,7 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         "/admin/metrics",
         response_model=ResetMetricsResponse,
         responses=resp(401, 403),
+        tags=["Instance Admin"],
     )
     @ops_event("delete_metrics", coll=None, request_id="rid")
     def delete_metrics(
@@ -169,6 +172,7 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         "/admin/tenants",
         response_model=ListTenantsResponse,
         responses=resp(401, 403, 500),
+        tags=["Instance Admin"],
     )
     @ops_event("list_tenants", coll=None, request_id="rid")
     def list_tenants(
@@ -201,6 +205,7 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         "/admin/queries/{query_id}",
         response_model=GetQueryLogResponse,
         responses=resp(401, 403, 404, 500),
+        tags=["Query Admin"],
     )
     @ops_event("get_query_log", coll=None, request_id="rid")
     def get_query_log(
@@ -251,6 +256,7 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         "/admin/queries/{query_id}/replay",
         response_model=QueryReplayResponse,
         responses=resp(401, 403, 404, 429, 500, 503),
+        tags=["Query Admin"],
     )
     @ops_event("replay_query", coll=None, request_id="rid")
     async def replay_query(
