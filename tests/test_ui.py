@@ -107,6 +107,13 @@ def test_ui_home_has_search_data_admin_tabs(client):
     assert 'data-target="data"' in r.text
     assert 'data-target="admin"' in r.text
 
+def test_ui_home_persists_tab_state(client):
+    r = client.get("/ui")
+    assert r.status_code == 200
+    assert "pavedb.ui.tab" in r.text
+    assert "searchParams.set('tab', name)" in r.text
+    assert "window.localStorage.getItem(TAB_KEY)" in r.text
+
 def test_favicon_status(client):
     r = client.get("/favicon.ico")
     assert r.status_code == 200

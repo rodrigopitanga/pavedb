@@ -82,17 +82,49 @@ _FALLBACK_TMPL = """<!doctype html>
     <span>🛣️ PaveDB v__VERSION__</span>
   </div>
 <script>
+  const TAB_KEY = 'pavedb.ui.tab';
   const tabs = document.querySelectorAll('.tab');
   const frames = document.querySelectorAll('.frame');
+  function tabNames(){
+    return Array.from(tabs).map(function(tab){ return tab.dataset.target; });
+  }
+  function tabFromLocation(){
+    const qs = new URLSearchParams(window.location.search);
+    const queryTab = qs.get('tab');
+    if(queryTab) return queryTab;
+    const hash = window.location.hash.replace(/^#\\/?/, '');
+    return hash || '';
+  }
+  function rememberedTab(){
+    try { return window.localStorage.getItem(TAB_KEY) || ''; }
+    catch (_err) { return ''; }
+  }
+  function writeTab(name){
+    try { window.localStorage.setItem(TAB_KEY, name); }
+    catch (_err) {}
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', name);
+    url.hash = '/' + name;
+    window.history.replaceState(null, '', url);
+  }
+  function activateTab(name, updateUrl){
+    if(tabNames().indexOf(name) === -1) name = 'search';
+    tabs.forEach(function(t){ t.classList.remove('active'); });
+    frames.forEach(function(f){ f.classList.remove('active'); });
+    const tab = document.querySelector('.tab[data-target="' + name + '"]');
+    const frame = document.getElementById(name);
+    if(tab) tab.classList.add('active');
+    if(frame) frame.classList.add('active');
+    if(tab && tab.dataset.title) document.title = tab.dataset.title;
+    if(updateUrl) writeTab(name);
+  }
   tabs.forEach(function(tab){
     tab.addEventListener('click', function(){
-      tabs.forEach(function(t){ t.classList.remove('active'); });
-      frames.forEach(function(f){ f.classList.remove('active'); });
-      tab.classList.add('active');
-      document.getElementById(tab.dataset.target).classList.add('active');
-      document.title = tab.dataset.title || document.title;
+      activateTab(tab.dataset.target, true);
     });
   });
+  const initialTab = tabFromLocation() || rememberedTab() || 'search';
+  activateTab(initialTab, false);
 </script>
 </body></html>
 """
