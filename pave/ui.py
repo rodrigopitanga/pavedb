@@ -45,17 +45,6 @@ _UI_TAGS = {
     },
 }
 
-_HTTP_METHODS = (
-    "get",
-    "post",
-    "put",
-    "delete",
-    "patch",
-    "head",
-    "options",
-    "trace",
-)
-
 # ultra-simple fallback template (no f-string; plain string -> safe braces)
 _FALLBACK_TMPL = """<!doctype html>
 <html lang="en"><head>
@@ -67,13 +56,17 @@ _FALLBACK_TMPL = """<!doctype html>
 <body>
   <div class="tabs">
     <button class="tab active" data-target="search"
+            data-hint="Run scoped and global searches."
             data-title="__INST_NAME__ • Search">Search</button>
     <button class="tab" data-target="data"
+            data-hint="Ingest documents and inspect chunks and collections."
             data-title="__INST_NAME__ • Data">Data</button>
     <button class="tab" data-target="admin"
+            data-hint="Inspect query history and use instance controls."
             data-title="__INST_NAME__ • Admin">Admin</button>
     <div class="desc">__INST_DESC__</div>
   </div>
+  <div id="tab-hint">Run scoped and global searches.</div>
   <iframe id="search" class="frame active" src="/ui/search"
           title="Search"></iframe>
   <iframe id="data" class="frame" src="/ui/data" title="Data"></iframe>
@@ -113,9 +106,11 @@ _FALLBACK_TMPL = """<!doctype html>
     frames.forEach(function(f){ f.classList.remove('active'); });
     const tab = document.querySelector('.tab[data-target="' + name + '"]');
     const frame = document.getElementById(name);
+    const hint = document.getElementById('tab-hint');
     if(tab) tab.classList.add('active');
     if(frame) frame.classList.add('active');
     if(tab && tab.dataset.title) document.title = tab.dataset.title;
+    if(hint && tab && tab.dataset.hint) hint.textContent = tab.dataset.hint;
     if(updateUrl) writeTab(name);
   }
   tabs.forEach(function(tab){
@@ -209,14 +204,6 @@ def attach_ui(app: FastAPI):
         else:
             s.pop("tags", None)
         return s
-
-    def _op_count(schema: dict) -> int:
-        count = 0
-        for methods in schema.get("paths", {}).values():
-            for method in methods:
-                if method.lower() in _HTTP_METHODS:
-                    count += 1
-        return count
 
     def _retitle_ui_ops(path: str, method: str, op: dict) -> None:
         if path == "/v1/admin/metrics" and method.lower() == "delete":

@@ -114,6 +114,13 @@ def test_ui_home_persists_tab_state(client):
     assert "searchParams.set('tab', name)" in r.text
     assert "window.localStorage.getItem(TAB_KEY)" in r.text
 
+def test_ui_home_has_tab_microcopy(client):
+    r = client.get("/ui")
+    assert r.status_code == 200
+    assert 'id="tab-hint"' in r.text
+    assert "Run scoped and global searches." in r.text
+    assert "Ingest documents and inspect chunks and collections." in r.text
+    assert "Inspect query history and use instance controls." in r.text
 def test_favicon_status(client):
     r = client.get("/favicon.ico")
     assert r.status_code == 200
