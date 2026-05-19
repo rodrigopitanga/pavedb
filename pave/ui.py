@@ -13,35 +13,35 @@ import copy
 _UI_TAGS = {
     "Scoped Search": {
         "name": "Scoped Search",
-        "description": "Tenant and collection-scoped search routes.",
+        "description": "Search within a specific tenant and collection.",
     },
     "Global Search": {
         "name": "Global Search",
-        "description": "Global/common search routes.",
+        "description": "Search across shared and cross-collection scopes.",
     },
     "Documents": {
         "name": "Documents",
-        "description": "Document ingest, fetch, and deletion routes.",
+        "description": "Add, review, and remove source documents.",
     },
     "Chunk Inspection": {
         "name": "Chunk Inspection",
-        "description": "Chunk inspection and content routes.",
+        "description": "Inspect extracted chunks and their stored content.",
     },
     "Collection Catalog": {
         "name": "Collection Catalog",
-        "description": "Collection lifecycle and detail routes.",
+        "description": "Create, review, update, and retire collections.",
     },
     "Query Inspection": {
         "name": "Query Inspection",
-        "description": "Tenant and collection-scoped query history and replay.",
+        "description": "Review query history and rerun saved queries.",
     },
     "Instance Admin": {
         "name": "Instance Admin",
-        "description": "Archive, metrics, and tenant admin routes.",
+        "description": "Manage archives, tenants, and metrics.",
     },
     "Query Admin": {
         "name": "Query Admin",
-        "description": "Bare query-id admin lookup and replay shortcuts.",
+        "description": "Open or rerun any query by ID.",
     },
 }
 
@@ -50,23 +50,19 @@ _FALLBACK_TMPL = """<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" href="/favicon.ico" />
+<link rel="icon" href="/favicon.ico?v=__VERSION__" />
 <title>__INST_NAME__ • Search</title>
 </head>
 <body>
   <div class="tabs">
     <button class="tab active" data-target="search"
-            data-hint="Run scoped and global searches."
             data-title="__INST_NAME__ • Search">Search</button>
     <button class="tab" data-target="data"
-            data-hint="Ingest documents and inspect chunks and collections."
             data-title="__INST_NAME__ • Data">Data</button>
     <button class="tab" data-target="admin"
-            data-hint="Inspect query history and use instance controls."
             data-title="__INST_NAME__ • Admin">Admin</button>
     <div class="desc">__INST_DESC__</div>
   </div>
-  <div id="tab-hint">Run scoped and global searches.</div>
   <iframe id="search" class="frame active" src="/ui/search"
           title="Search"></iframe>
   <iframe id="data" class="frame" src="/ui/data" title="Data"></iframe>
@@ -106,11 +102,9 @@ _FALLBACK_TMPL = """<!doctype html>
     frames.forEach(function(f){ f.classList.remove('active'); });
     const tab = document.querySelector('.tab[data-target="' + name + '"]');
     const frame = document.getElementById(name);
-    const hint = document.getElementById('tab-hint');
     if(tab) tab.classList.add('active');
     if(frame) frame.classList.add('active');
     if(tab && tab.dataset.title) document.title = tab.dataset.title;
-    if(hint && tab && tab.dataset.hint) hint.textContent = tab.dataset.hint;
     if(updateUrl) writeTab(name);
   }
   tabs.forEach(function(tab){
@@ -145,9 +139,8 @@ def attach_ui(app: FastAPI):
     @app.get("/favicon.ico", include_in_schema=False)
     def favicon():
         return FileResponse(
-            str((Path(__file__).parent / "assets" / "pavedb_icon_192.png")\
-                .resolve()),
-            media_type="image/png",
+            str((Path(__file__).parent / "assets" / "favicon.ico").resolve()),
+            media_type="image/x-icon",
         )
 
     # openapi (bearer + repo/license)

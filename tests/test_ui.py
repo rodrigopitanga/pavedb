@@ -46,8 +46,20 @@ def test_openapi_split_covers_all_v1_paths(client):
     data_paths = set(data.json().get("paths", {}))
     admin_paths = set(admin.json().get("paths", {}))
     search_tags = [tag["name"] for tag in search.json().get("tags", [])]
+    search_desc = {
+        tag["name"]: tag.get("description", "")
+        for tag in search.json().get("tags", [])
+    }
     data_tags = [tag["name"] for tag in data.json().get("tags", [])]
+    data_desc = {
+        tag["name"]: tag.get("description", "")
+        for tag in data.json().get("tags", [])
+    }
     admin_tags = [tag["name"] for tag in admin.json().get("tags", [])]
+    admin_desc = {
+        tag["name"]: tag.get("description", "")
+        for tag in admin.json().get("tags", [])
+    }
     v1_paths = {
         path for path in full_paths
         if path.startswith("/v1/")
@@ -67,16 +79,38 @@ def test_openapi_split_covers_all_v1_paths(client):
     )
     assert "/v1/collections/{tenant}/{collection}/chunks/{rid}" in data_paths
     assert search_tags == ["Scoped Search", "Global Search"]
+    assert search_desc["Scoped Search"] == (
+        "Search within a specific tenant and collection."
+    )
+    assert search_desc["Global Search"] == (
+        "Search across shared and cross-collection scopes."
+    )
     assert data_tags == [
         "Documents",
         "Chunk Inspection",
         "Collection Catalog",
     ]
+    assert data_desc["Documents"] == (
+        "Add, review, and remove source documents."
+    )
+    assert data_desc["Chunk Inspection"] == (
+        "Inspect extracted chunks and their stored content."
+    )
+    assert data_desc["Collection Catalog"] == (
+        "Create, review, update, and retire collections."
+    )
     assert admin_tags == [
         "Query Inspection",
         "Instance Admin",
         "Query Admin",
     ]
+    assert admin_desc["Query Inspection"] == (
+        "Review query history and rerun saved queries."
+    )
+    assert admin_desc["Instance Admin"] == (
+        "Manage archives, tenants, and metrics."
+    )
+    assert admin_desc["Query Admin"] == "Open or rerun any query by ID."
     admin_doc = admin.json()
     assert (
         admin_doc["paths"]["/v1/admin/metrics"]["delete"]["summary"]
@@ -114,13 +148,11 @@ def test_ui_home_persists_tab_state(client):
     assert "searchParams.set('tab', name)" in r.text
     assert "window.localStorage.getItem(TAB_KEY)" in r.text
 
-def test_ui_home_has_tab_microcopy(client):
+def test_ui_home_has_no_tab_hint_row(client):
     r = client.get("/ui")
     assert r.status_code == 200
-    assert 'id="tab-hint"' in r.text
-    assert "Run scoped and global searches." in r.text
-    assert "Ingest documents and inspect chunks and collections." in r.text
-    assert "Inspect query history and use instance controls." in r.text
+    assert 'id="tab-hint"' not in r.text
+
 def test_favicon_status(client):
     r = client.get("/favicon.ico")
     assert r.status_code == 200

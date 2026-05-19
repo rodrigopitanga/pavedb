@@ -7,9 +7,11 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <!-- favicon robusto -->
-<link rel="icon" type="image/png" sizes="32x32" href="/assets/pavedb_icon_192.png" />
-<link rel="icon" type="image/png" sizes="192x192" href="/assets/pavedb_icon_192.png" />
-<link rel="icon" href="/favicon.ico" />
+<link rel="icon" type="image/png" sizes="32x32"
+      href="/assets/pavedb_icon_192.png?v=__VERSION__" />
+<link rel="icon" type="image/png" sizes="192x192"
+      href="/assets/pavedb_icon_192.png?v=__VERSION__" />
+<link rel="icon" href="/favicon.ico?v=__VERSION__" />
 <title>__INST_NAME__ • Search</title>
 <style>
   /* Flowlexi docs palette with restrained PaveDB accents */
@@ -52,10 +54,6 @@
   .frames{ flex:1 1 auto; min-height:0; background:var(--bg) }
   .frame{ display:none; width:100%; height:100%; border:0; background:var(--bg) }
   .frame.active{ display:block }
-  .subbar{
-    padding:8px 12px; color:var(--muted); background:var(--bg);
-    border-bottom:1px solid var(--border); font-size:14px;
-  }
 
   .footer{
     flex:0 0 auto; position:sticky; bottom:0;
@@ -71,21 +69,15 @@
   <div class="bar">
     <div class="left">
       <button class="tab active" data-target="search"
-              data-hint="Run scoped and global searches."
               data-title="__INST_NAME__ • Search">Search</button>
       <button class="tab" data-target="data"
-              data-hint="Ingest documents and inspect chunks and collections."
               data-title="__INST_NAME__ • Data">Data</button>
       <button class="tab" data-target="admin"
-              data-hint="Inspect query history and use instance controls."
               data-title="__INST_NAME__ • Admin">Admin</button>
     </div>
     <div class="right">
       <strong>__INST_NAME__</strong> — <small>__INST_DESC__</small>
     </div>
-  </div>
-  <div class="subbar">
-    <span id="tab-hint">Run scoped and global searches.</span>
   </div>
 
   <div class="frames">
@@ -152,7 +144,6 @@
         .swagger-ui .link:hover {
           color: var(--link-accent) !important;
         }
-        .swagger-ui .scheme-container,
         .swagger-ui section.models,
         .swagger-ui .model-box {
           background: var(--panel) !important;
@@ -160,7 +151,17 @@
           box-shadow:none !important;
         }
         .swagger-ui .scheme-container {
-          margin:8px 0 0 !important; padding:12px 16px !important;
+          margin:8px 0 0 !important;
+          padding:0 16px 8px !important;
+          background: transparent !important;
+          border:0 !important;
+          box-shadow:none !important;
+        }
+        .swagger-ui .scheme-container .schemes,
+        .swagger-ui .scheme-container .auth-wrapper {
+          background: transparent !important;
+          border:0 !important;
+          box-shadow:none !important;
         }
         .swagger-ui .opblock {
           background: var(--panel) !important;
@@ -341,11 +342,9 @@
     frames.forEach(function(frame){ frame.classList.remove('active'); });
     const tab = document.querySelector('.tab[data-target="' + name + '"]');
     const frame = document.getElementById(name);
-    const hint = document.getElementById('tab-hint');
     if(tab) tab.classList.add('active');
     if(frame) frame.classList.add('active');
     if(tab && tab.dataset.title) document.title = tab.dataset.title;
-    if(hint && tab && tab.dataset.hint) hint.textContent = tab.dataset.hint;
     if(frame) scrubSwagger(frame);
     if(updateUrl) writeTab(name);
   }
