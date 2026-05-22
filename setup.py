@@ -17,7 +17,7 @@ long_description, long_type = read_long_description()
 
 setup(
     name="pavedb",                        # external name
-    version="0.5.9",
+    version="0.9.0rc0",
     description="PaveDB — A lightweight, pluggable vector search microservice.",
     long_description=long_description,
     long_description_content_type="text/markdown",

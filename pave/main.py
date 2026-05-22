@@ -32,7 +32,7 @@ from pave.ui import attach_ui
 from pave.runtime_paths import DEFAULT_HOME, apply_runtime_env
 import pave.log as ops_log
 
-VERSION = "0.5.9"
+VERSION = "0.9.0rc0"
 
 
 def _hw_info() -> dict:

@@ -1,6 +1,78 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
+## 0.9.0rc0 — 2026-05-22
+
+### API
+- Get document by ID endpoint (P1-17)
+- Per-collection embedder params in create-collection (P1-32 prep)
+- Add ok field to search response (P1-14)
+- Add response models for CRUD endpoints (P1-14)
+- Mount API routes under /v1/ prefix (P1-43)
+- Expose timing breakdown in search response (P1-40)
+- Add X-Request-ID middleware (P1-11)
+- Echo request_id and latency_ms in all JSON response bodies (P1-11)
+- List documents endpoint (P1-44)
+- Enrich list collections response (P1-45)
+- Get collection detail endpoint (P1-45)
+- Log search queries + collection-scoped query log endpoints (P1-41)
+- Reject search-body request_id; use X-Request-ID (P1-48)
+- Query replay endpoint (P1-42)
+- Admin query-home resolver + shortcut routes + CLI rework (P1-51)
+- [fix] make global searches go through the ops_event annotation and generate o...
+- Add actor field to ops_log events (P2-46)
+- [cli] Add chunk inspector endpoints and commands (P2-23)
+
+### Store
+- Add CatalogDB catalog store (P1-33)
+- Wire CatalogDB into LocalStore (P1-33)
+- Return SearchOutput with per-phase timing (P1-40)
+- Persist query logs in per-collection meta.db (P1-41)
+- Enrich query_log with historical scope and actor (P2-46)
+- Consolidate pre-1.0 SQLite schemas
+- [fix] Avoid collection reopen races after cache flush
+- [fix] Avoid CatalogDB reopen races after cache flush
+- [fix] Wait for SQLite writers before closing DB handles
+
+### UI
+- Align docs UI with PaveDB theme
+- Regroup API browser tabs and tag groups
+- Add API browser tab deep links
+- Add contextual hints to API browser tabs
+- Simplify API browser wording and chrome
+
+### CLI
+- Add query log inspection commands (P1-41)
+- Add collection and document inspection commands (P1-44 P1-45)
+- Add collection config args to create-collection (P1-45)
+- Add explicit common-merge search flag
+
+### Testing
+- CatalogDB integration + upgrade tests (P1-33)
+- Make LocalStore tests use temp_data_dir explicitly
+- Consolidate collection API tests into one file
+
+### Core
+- [fix] Normalize _do_search error results
+- [fix] Cross-check scoped query lookup against query_home
+
+### Performance
+- [fix] Disambiguate bench-stress coverage-pass misses
+- [fix] Preserve ephemeral server logs on benchmark failure
+
+### Build
+- Defer release commit until local validation passes
+
+### Documentation
+- Update roadmap and plan docs
+
+### Infrastructure
+- Rename GitLab CI config file
+
+### Packaging
+- Finalize PaveDB rebrand (P3-35)
+
+---
 ## 0.9 series — Rebrand to PaveDB
 
 ### Breaking changes
