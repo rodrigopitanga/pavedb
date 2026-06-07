@@ -109,6 +109,7 @@ embedder:
 
   # Used by type=sbert.
   sbert:
+    runtime: auto   # auto | process | direct
     model: sentence-transformers/all-MiniLM-L6-v2
     batch_size: 64
     device: auto   # cpu | cuda | mps | auto

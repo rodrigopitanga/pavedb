@@ -33,11 +33,14 @@ def _reset_cfg_between_tests(monkeypatch, temp_data_dir, request):
     cfg.set("data_dir", str(temp_data_dir))
     cfg.set("auth.mode", "none")
     cfg.set("embedder.type", "sbert")
+    cfg.set("embedder.sbert.runtime", "auto")
     cfg.set("common_enabled", False)
     is_slow = request.node.get_closest_marker("slow") is not None
     if is_slow:
         # Real embeddings for end-to-end pipeline tests; small fast model.
         cfg.set("embedder.sbert.model", _FAST_MODEL)
+        monkeypatch.setenv("HF_HUB_OFFLINE", "1")
+        monkeypatch.setenv("TRANSFORMERS_OFFLINE", "1")
     else:
         # Fast path: deterministic fake embedder, no model load.
         cfg.set("embedder.sbert.model", "fake")

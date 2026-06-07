@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import sys
+
 from .base import Embedder
 from ..config import CFG
 
@@ -11,6 +13,28 @@ def get_embedder(cfg: CFG = CFG) -> Embedder:
     etype = (cfg.get("embedder.type", "sbert") or "sbert").lower()
     match etype:
         case "sbert":
+            runtime = str(
+                cfg.get(
+                    "embedder.sbert.runtime",
+                    cfg.get("embedder.sbert.mode", "auto"),
+                )
+                or "auto"
+            ).lower()
+            backend_type = str(cfg.get("vector_store.type", "faiss")).lower()
+            if runtime == "process":
+                from .sbert_worker import ProcessSbertEmbedder
+
+                return ProcessSbertEmbedder()
+            if runtime in {"direct", "none"}:
+                from .sbert import SbertEmbedder
+
+                return SbertEmbedder()
+            if runtime != "auto":
+                raise RuntimeError(f"Unknown embedder.sbert.runtime: {runtime}")
+            if sys.platform == "darwin" and backend_type == "faiss":
+                from .sbert_worker import ProcessSbertEmbedder
+
+                return ProcessSbertEmbedder()
             from .sbert import SbertEmbedder
 
             return SbertEmbedder()
