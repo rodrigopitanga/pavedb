@@ -41,40 +41,6 @@ def test_dump_archive_returns_zip(temp_data_dir):
             assert f.read().decode("utf-8") == "hello endpoint"
 
 
-def test_lock_indexes_blocks_new_collection_lock(temp_data_dir):
-    tenant_dir = Path(temp_data_dir) / "t_acme"
-    collection_dir = tenant_dir / "c_invoices"
-    collection_dir.mkdir(parents=True, exist_ok=True)
-
-    store = LocalStore(str(temp_data_dir), FakeEmbedder())
-    start = threading.Event()
-    release = threading.Event()
-    acquired = threading.Event()
-
-    def hold_all_locks() -> None:
-        with store._lock_all():
-            start.set()
-            release.wait(timeout=2.0)
-
-    def try_new_lock() -> None:
-        with store._collection_lock("acme", "new_collection"):
-            acquired.set()
-
-    holder = threading.Thread(target=hold_all_locks, daemon=True)
-    holder.start()
-    assert start.wait(timeout=1.0)
-
-    contender = threading.Thread(target=try_new_lock, daemon=True)
-    contender.start()
-    time.sleep(0.1)
-    assert not acquired.is_set()
-
-    release.set()
-    holder.join(timeout=2.0)
-    contender.join(timeout=2.0)
-    assert acquired.is_set()
-
-
 def test_create_collection_uses_collection_lock(monkeypatch, temp_data_dir):
     store = LocalStore(str(temp_data_dir), FakeEmbedder())
     events: list[tuple[str, str, str]] = []
@@ -171,3 +137,89 @@ def test_restore_archive_replaces_data_dir(temp_data_dir):
     assert sample.exists()
     assert sample.read_text(encoding="utf-8") == "restore me"
     assert not other.exists()
+
+
+def test_restore_archive_waits_for_active_collection_operation(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("restored.txt", "ok")
+
+    entered = threading.Event()
+    release = threading.Event()
+    restored = threading.Event()
+
+    def hold_collection() -> None:
+        with store._collection_lock("acme", "busy"):
+            entered.set()
+            release.wait(timeout=2.0)
+
+    def restore() -> None:
+        store.restore_archive(archive.getvalue())
+        restored.set()
+
+    holder = threading.Thread(target=hold_collection, daemon=True)
+    holder.start()
+    assert entered.wait(timeout=1.0)
+
+    restorer = threading.Thread(target=restore, daemon=True)
+    restorer.start()
+    time.sleep(0.1)
+    assert not restored.is_set()
+
+    release.set()
+    holder.join(timeout=2.0)
+    restorer.join(timeout=2.0)
+
+    assert restored.is_set()
+    assert (Path(temp_data_dir) / "restored.txt").read_text(
+        encoding="utf-8"
+    ) == "ok"
+
+
+def test_dump_archive_waits_for_active_collection_operation(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    store.index_records(
+        "acme",
+        "busy",
+        "doc1",
+        [("0", "archive consistency probe", {"kind": "test"})],
+    )
+
+    entered = threading.Event()
+    release = threading.Event()
+    dumped = threading.Event()
+    archive_path: list[str] = []
+    tmp_dir: list[str | None] = []
+
+    def hold_collection() -> None:
+        with store._collection_lock("acme", "busy"):
+            entered.set()
+            release.wait(timeout=2.0)
+
+    def dump() -> None:
+        path, tmp = store.dump_archive()
+        archive_path.append(path)
+        tmp_dir.append(tmp)
+        dumped.set()
+
+    holder = threading.Thread(target=hold_collection, daemon=True)
+    holder.start()
+    assert entered.wait(timeout=1.0)
+
+    dumper = threading.Thread(target=dump, daemon=True)
+    dumper.start()
+    time.sleep(0.1)
+    assert not dumped.is_set()
+
+    release.set()
+    holder.join(timeout=2.0)
+    dumper.join(timeout=2.0)
+
+    try:
+        assert dumped.is_set()
+        with zipfile.ZipFile(archive_path[0]) as zf:
+            assert "t_acme/c_busy/meta.db" in set(zf.namelist())
+    finally:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir[0], ignore_errors=True)

@@ -13,7 +13,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from datetime import datetime, date, timezone as tz
 from pathlib import Path
-from threading import Lock
+from threading import Condition, Lock, get_ident
 from typing import Any
 import time as _time
 
@@ -37,6 +37,74 @@ from pave.config import get_cfg, get_logger
 
 log = get_logger()
 
+
+class _StoreStateLock:
+    """Reentrant reader/writer lock for whole-data-dir replacement.
+
+    Read-to-write upgrade is not supported: a thread holding read_lock that
+    calls write_lock will deadlock waiting for itself to release.
+    """
+
+    def __init__(self) -> None:
+        self._cond = Condition(Lock())
+        self._readers: dict[int, int] = {}
+        self._writer: int | None = None
+        self._write_depth = 0
+        self._pending_writers = 0
+
+    @contextmanager
+    def read_lock(self) -> Iterator[None]:
+        tid = get_ident()
+        with self._cond:
+            while (
+                (self._writer is not None and self._writer != tid)
+                or (
+                    self._pending_writers > 0
+                    and self._writer != tid
+                    and tid not in self._readers
+                )
+            ):
+                self._cond.wait()
+            self._readers[tid] = self._readers.get(tid, 0) + 1
+        try:
+            yield
+        finally:
+            with self._cond:
+                depth = self._readers[tid] - 1
+                if depth:
+                    self._readers[tid] = depth
+                else:
+                    self._readers.pop(tid, None)
+                if not self._readers:
+                    self._cond.notify_all()
+
+    @contextmanager
+    def write_lock(self) -> Iterator[None]:
+        tid = get_ident()
+        with self._cond:
+            if self._writer == tid:
+                self._write_depth += 1
+            else:
+                self._pending_writers += 1
+                try:
+                    while self._writer is not None or self._readers:
+                        self._cond.wait()
+                    self._writer = tid
+                    self._write_depth = 1
+                finally:
+                    self._pending_writers -= 1
+        try:
+            yield
+        finally:
+            with self._cond:
+                if self._writer != tid:
+                    raise RuntimeError("state write lock released by non-owner")
+                self._write_depth -= 1
+                if self._write_depth == 0:
+                    self._writer = None
+                    self._cond.notify_all()
+
+
 class LocalStore(BaseStore):
     def __init__(
         self,
@@ -54,6 +122,7 @@ class LocalStore(BaseStore):
         self._catalog_guard = Lock()
         self._locks: dict[str, Lock] = {}
         self._locks_guard = Lock()
+        self._state_lock = _StoreStateLock()
         self._ensure_catalog()
 
     def _get_lock(self, key: str) -> Lock:
@@ -65,12 +134,13 @@ class LocalStore(BaseStore):
 
     @contextmanager
     def _collection_lock(self, tenant: str, collection: str) -> Iterator[None]:
-        lock = self._get_lock(f"t_{tenant}:c_{collection}")
-        lock.acquire()
-        try:
-            yield
-        finally:
-            lock.release()
+        with self._state_lock.read_lock():
+            lock = self._get_lock(f"t_{tenant}:c_{collection}")
+            lock.acquire()
+            try:
+                yield
+            finally:
+                lock.release()
 
     def _base_path(self, tenant: str, collection: str) -> str:
         return os.path.join(self._data_dir, f"t_{tenant}", f"c_{collection}")
@@ -116,23 +186,24 @@ class LocalStore(BaseStore):
         return False
 
     def _with_catalog_retry(self, op_name: str, fn):
-        last_exc: Exception | None = None
-        for attempt in range(2):
-            catalog = self._ensure_catalog()
-            try:
-                return fn(catalog)
-            except Exception as e:
-                if not self._is_transient_catalog_error(e):
-                    raise
-                last_exc = e
-                log.debug(
-                    "Transient catalog %s failure (attempt %s/2): %s",
-                    op_name,
-                    attempt + 1,
-                    e,
-                )
-        assert last_exc is not None
-        raise last_exc
+        with self._state_lock.read_lock():
+            last_exc: Exception | None = None
+            for attempt in range(2):
+                catalog = self._ensure_catalog()
+                try:
+                    return fn(catalog)
+                except Exception as e:
+                    if not self._is_transient_catalog_error(e):
+                        raise
+                    last_exc = e
+                    log.debug(
+                        "Transient catalog %s failure (attempt %s/2): %s",
+                        op_name,
+                        attempt + 1,
+                        e,
+                    )
+            assert last_exc is not None
+            raise last_exc
 
     def _ensure_catalog(self) -> CatalogDB:
         catalog_path = self._catalog_db_path()
@@ -361,46 +432,47 @@ class LocalStore(BaseStore):
         default: Any,
         reader,
     ) -> Any:
-        key = (tenant, collection)
-        col_db = self._dbs.get(key)
-        if col_db is not None:
+        with self._state_lock.read_lock():
+            key = (tenant, collection)
+            col_db = self._dbs.get(key)
+            if col_db is not None:
+                try:
+                    return reader(col_db)
+                except Exception as e:
+                    if not self._is_transient_db_read_error(e):
+                        raise
+                    log.debug(
+                        "Transient cached %s read failure for %s/%s: %s",
+                        op_name,
+                        tenant,
+                        collection,
+                        e,
+                    )
+
+            db_path = self._db_path(tenant, collection)
+            if not db_path.exists():
+                return default
+
+            fallback = CollectionDB()
             try:
-                return reader(col_db)
+                fallback.open(db_path, read_only=True)
+                return reader(fallback)
             except Exception as e:
                 if not self._is_transient_db_read_error(e):
                     raise
                 log.debug(
-                    "Transient cached %s read failure for %s/%s: %s",
+                    "Transient fallback %s read failure for %s/%s: %s",
                     op_name,
                     tenant,
                     collection,
                     e,
                 )
-
-        db_path = self._db_path(tenant, collection)
-        if not db_path.exists():
-            return default
-
-        fallback = CollectionDB()
-        try:
-            fallback.open(db_path, read_only=True)
-            return reader(fallback)
-        except Exception as e:
-            if not self._is_transient_db_read_error(e):
-                raise
-            log.debug(
-                "Transient fallback %s read failure for %s/%s: %s",
-                op_name,
-                tenant,
-                collection,
-                e,
-            )
-            return default
-        finally:
-            try:
-                fallback.close()
-            except Exception:
-                pass
+                return default
+            finally:
+                try:
+                    fallback.close()
+                except Exception:
+                    pass
 
     def _read_meta_batch_safe(
         self, tenant: str, collection: str, rids: list[str]
@@ -1051,42 +1123,6 @@ class LocalStore(BaseStore):
         else:
             _close_all()
 
-    def _iter_lock_keys(self) -> Iterator[str]:
-        data_dir_path = Path(self._data_dir).resolve()
-        if not data_dir_path.is_dir():
-            return
-        for tenant_dir in data_dir_path.iterdir():
-            if not tenant_dir.is_dir() or not tenant_dir.name.startswith("t_"):
-                continue
-            tenant = tenant_dir.name[2:]
-            if not tenant:
-                continue
-            for coll_dir in tenant_dir.iterdir():
-                if not coll_dir.is_dir() or not coll_dir.name.startswith("c_"):
-                    continue
-                collection = coll_dir.name[2:]
-                if collection:
-                    yield f"t_{tenant}:c_{collection}"
-
-    @contextmanager
-    def _lock_all(self) -> Iterator[None]:
-        locks: list[Lock] = []
-        self._locks_guard.acquire()
-        try:
-            keys = set(self._iter_lock_keys())
-            keys.update(self._locks.keys())
-            for key in sorted(keys):
-                if key not in self._locks:
-                    self._locks[key] = Lock()
-                lock = self._locks[key]
-                lock.acquire()
-                locks.append(lock)
-            yield
-        finally:
-            for lock in reversed(locks):
-                lock.release()
-            self._locks_guard.release()
-
     def _write_zip(self, source_dir: Path, target_path: Path) -> None:
         source_dir = source_dir.resolve()
         target_path = target_path.resolve()
@@ -1114,6 +1150,12 @@ class LocalStore(BaseStore):
                     continue
 
                 for filename in files:
+                    # SQLite WAL/SHM sidecars are tied to the live connection;
+                    # bundling them risks a restored .db-wal/.db-shm pointing at
+                    # state the main .db no longer matches, which surfaces as
+                    # "disk I/O error" / "file is not a database" on next open.
+                    if filename.endswith(("-wal", "-shm")):
+                        continue
                     file_path = root_path / filename
                     rel_name = file_path.relative_to(source_dir)
                     try:
@@ -1164,39 +1206,41 @@ class LocalStore(BaseStore):
         self,
         output_path: str | os.PathLike[str] | None = None,
     ) -> tuple[str, str | None]:
-        data_dir_path = Path(self._data_dir).resolve()
-        if not data_dir_path.is_dir():
-            raise FileNotFoundError(f"data directory not found: {data_dir_path}")
+        with self._state_lock.write_lock():
+            data_dir_path = Path(self._data_dir).resolve()
+            if not data_dir_path.is_dir():
+                raise FileNotFoundError(
+                    f"data directory not found: {data_dir_path}"
+                )
+            self._flush_caches(async_close=False)
 
-        if output_path is not None:
-            archive_path = Path(output_path).resolve()
-            with self._lock_all():
+            if output_path is not None:
+                archive_path = Path(output_path).resolve()
                 self._write_zip(data_dir_path, archive_path)
-            return str(archive_path), None
+                return str(archive_path), None
 
-        tmp_dir = Path(tempfile.mkdtemp(prefix="pavedb_export_"))
-        timestamp = datetime.now(tz.utc).strftime("%Y%m%dT%H%M%SZ")
-        archive_path = tmp_dir / f"pavedb-data-{timestamp}.zip"
-        with self._lock_all():
+            tmp_dir = Path(tempfile.mkdtemp(prefix="pavedb_export_"))
+            timestamp = datetime.now(tz.utc).strftime("%Y%m%dT%H%M%SZ")
+            archive_path = tmp_dir / f"pavedb-data-{timestamp}.zip"
             self._write_zip(data_dir_path, archive_path)
-        return str(archive_path), str(tmp_dir)
+            return str(archive_path), str(tmp_dir)
 
     def restore_archive(self, archive_bytes: bytes) -> None:
-        data_dir_path = Path(self._data_dir).resolve()
-        data_dir_path.mkdir(parents=True, exist_ok=True)
+        with self._state_lock.write_lock():
+            data_dir_path = Path(self._data_dir).resolve()
+            data_dir_path.mkdir(parents=True, exist_ok=True)
 
-        with tempfile.TemporaryDirectory(prefix="pavedb_import_") as tmp_dir:
-            tmp_path = Path(tmp_dir)
-            archive_path = tmp_path / "pavedb-data.zip"
-            extract_dir = tmp_path / "extracted"
-            archive_path.write_bytes(archive_bytes)
-            extract_dir.mkdir()
+            with tempfile.TemporaryDirectory(prefix="pavedb_import_") as tmp_dir:
+                tmp_path = Path(tmp_dir)
+                archive_path = tmp_path / "pavedb-data.zip"
+                extract_dir = tmp_path / "extracted"
+                archive_path.write_bytes(archive_bytes)
+                extract_dir.mkdir()
 
-            with zipfile.ZipFile(archive_path, "r") as zf:
-                self._validate_zip_members(zf)
-                zf.extractall(extract_dir)
+                with zipfile.ZipFile(archive_path, "r") as zf:
+                    self._validate_zip_members(zf)
+                    zf.extractall(extract_dir)
 
-            with self._lock_all():
                 self._flush_caches(async_close=False)
                 for entry in data_dir_path.iterdir():
                     self._remove_path(entry)
