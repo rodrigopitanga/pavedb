@@ -953,6 +953,19 @@ _bench-with-server:
 	fi; \
 	$(MAKE) -o install-dev _url="$$bench_url" _ts="$(_ts)" $(_run_target) || \
 	  bench_status=$$?; \
+	if [ "$$managed" = "1" ] && [ -n "$$srv_pid" ] && \
+	   ! kill -0 "$$srv_pid" >/dev/null 2>&1; then \
+	  srv_status=0; \
+	  wait "$$srv_pid" >/dev/null 2>&1 || srv_status=$$?; \
+	  srv_pid=""; \
+	  keep_data_dir=1; \
+	  if [ "$$srv_status" != "0" ]; then \
+	    if [ "$$bench_status" = "0" ]; then bench_status=$$srv_status; fi; \
+	  elif [ "$$bench_status" = "0" ]; then \
+	    bench_status=1; \
+	  fi; \
+	  echo "ERROR: benchmark server exited during run (status $$srv_status)."; \
+	fi; \
 	if [ "$$bench_status" != "0" ]; then \
 	  keep_data_dir=1; \
 	  exit "$$bench_status"; \
