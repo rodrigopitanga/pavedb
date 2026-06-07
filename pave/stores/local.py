@@ -964,9 +964,9 @@ class LocalStore(BaseStore):
         Queries the FAISS backend for top-k and keeps overfetch inside the
         store.
 
-        Key concurrency improvement (Phase 1):
-        - FAISS search runs inside collection_lock
-        - Meta read (get_meta_batch) runs OUTSIDE lock — WAL concurrent reads
+        Search keeps metadata reads inside collection_lock so collection
+        deletion cannot close the cached SQLite handle while results are being
+        hydrated.
         """
         _perf = _time.perf_counter
 
@@ -1001,65 +1001,68 @@ class LocalStore(BaseStore):
             candidate_rids = [rid for rid, _ in raw if rid]
             search_ms = _ms_since(t0)
 
-        filter_push_ms = 0.0
-        if normed_filters and col_db is not None:
+            filter_push_ms = 0.0
+            if normed_filters and col_db is not None:
+                t0 = _perf()
+                surviving = col_db.filter_by_meta(
+                    candidate_rids,
+                    normed_filters,
+                )
+                raw = [(rid, score) for rid, score in raw if rid in surviving]
+                candidate_rids = [rid for rid, _score in raw if rid]
+                filter_push_ms = _ms_since(t0)
+
             t0 = _perf()
-            surviving = col_db.filter_by_meta(
+            meta_batch = self._read_meta_batch_safe(
+                tenant,
+                collection,
                 candidate_rids,
-                normed_filters,
             )
-            raw = [(rid, score) for rid, score in raw if rid in surviving]
-            candidate_rids = [rid for rid, _score in raw if rid]
-            filter_push_ms = _ms_since(t0)
+            hydrate_meta_ms = _ms_since(t0)
 
-        # --- OUTSIDE lock: WAL meta read is concurrent ---
-        t0 = _perf()
-        meta_batch = self._read_meta_batch_safe(tenant, collection, candidate_rids)
-        hydrate_meta_ms = _ms_since(t0)
+            kept: list[tuple[str, float]] = []
+            if normed_filters:
+                log.debug(f"SEARCH-FILTER-POST: {normed_filters}")
+            t0 = _perf()
+            for rid, score in raw:
+                if not rid:
+                    continue
+                rid_meta = meta_batch.get(rid, {})
+                if matches_filters(rid_meta, normed_filters):
+                    kept.append((rid, score))
+                    if len(kept) >= kk:
+                        break
+            filter_post_ms = _ms_since(t0)
 
-        kept: list[tuple[str, float]] = []
-        if normed_filters:
-            log.debug(f"SEARCH-FILTER-POST: {normed_filters}")
-        t0 = _perf()
-        for rid, score in raw:
-            if not rid:
-                continue
-            rid_meta = meta_batch.get(rid, {})
-            if matches_filters(rid_meta, normed_filters):
-                kept.append((rid, score))
-                if len(kept) >= kk:
-                    break
-        filter_post_ms = _ms_since(t0)
-
-        out: list[SearchResult] = []
-        t0 = _perf()
-        for rid, score in kept:
-            txt = self._load_chunk_text(tenant, collection, rid)
-            rid_meta = meta_batch.get(rid, {})
-            out.append(SearchResult(
-                id=rid,
-                score=score,
-                text=txt,
-                tenant=tenant,
-                collection=collection,
-                meta=rid_meta,
-                match_reason=self._build_match_reason(
-                    query, score, filters, rid_meta
-                ),
-            ))
-        hydrate_text_ms = _ms_since(t0)
-        _hits = [(r.id, round(r.score, 3)) for r in out[:3]]
-        _sfx = " ..." if len(out) > 3 else ""
-        log.debug(f"SEARCH-OUT: {len(out)} hits {_hits}{_sfx}")
-        return SearchOutput(
-            matches=out,
-            timing={
-                "embed_ms": embed_ms,
-                "search_ms": search_ms,
-                "filter_ms": round(filter_push_ms + filter_post_ms, 2),
-                "hydrate_ms": round(hydrate_meta_ms + hydrate_text_ms, 2),
-            },
-        )
+            out: list[SearchResult] = []
+            t0 = _perf()
+            for rid, score in kept:
+                txt = self._load_chunk_text(tenant, collection, rid)
+                rid_meta = meta_batch.get(rid, {})
+                out.append(SearchResult(
+                    id=rid,
+                    score=score,
+                    text=txt,
+                    tenant=tenant,
+                    collection=collection,
+                    meta=rid_meta,
+                    match_reason=self._build_match_reason(
+                        query, score, filters, rid_meta
+                    ),
+                ))
+            hydrate_text_ms = _ms_since(t0)
+            _hits = [(r.id, round(r.score, 3)) for r in out[:3]]
+            _sfx = " ..." if len(out) > 3 else ""
+            log.debug(f"SEARCH-OUT: {len(out)} hits {_hits}{_sfx}")
+            return SearchOutput(
+                matches=out,
+                timing={
+                    "embed_ms": embed_ms,
+                    "search_ms": search_ms,
+                    "filter_ms": round(filter_push_ms + filter_post_ms, 2),
+                    "hydrate_ms": round(hydrate_meta_ms + hydrate_text_ms, 2),
+                },
+            )
 
     def _build_match_reason(self, query: str, score: float,
                             filters: dict[str, Any] | None,
