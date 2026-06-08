@@ -229,6 +229,7 @@ def delete_document(store, tenant: str, collection: str, docid: str) -> dict[str
         log.warning(
             "delete_document failed tenant=%s coll=%s "
             "docid=%s: %s", tenant, collection, docid, e,
+            exc_info=True,
         )
         return {
             "ok": False,
@@ -413,6 +414,7 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
     _t0 = _time.perf_counter()
     with m_timed("ingest"):
         try:
+            stage = "prepare"
             baseid = docid or _default_docid(filename)
             meta_from_call = metadata or {}
             now = datetime.now(tz.utc).isoformat(timespec="seconds")
@@ -438,6 +440,7 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
                     "code": "no_text_extracted",
                     "error": "no text extracted",
                 }
+            stage = "index_records"
             result = store.index_records(
                 tenant,
                 collection,
@@ -470,10 +473,11 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             raise ServiceError("invalid_csv_options", str(exc)) from exc
         except Exception as e:
             log.warning(
-                "ingest failed tenant=%s coll=%s "
-                "docid=%s: %s",
+                "ingest failed stage=%s tenant=%s coll=%s docid=%s: %s",
+                stage,
                 tenant, collection,
                 docid or filename, e,
+                exc_info=True,
             )
             return {
                 "ok": False,
@@ -550,6 +554,14 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
             "request_id": request_id,
         }
     except Exception as exc:
+        log.warning(
+            "search failed tenant=%s coll=%s request_id=%s: %s",
+            tenant,
+            collection,
+            request_id,
+            exc,
+            exc_info=True,
+        )
         raise ServiceError("search_failed", str(exc)) from exc
 
 

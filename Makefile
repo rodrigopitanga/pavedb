@@ -775,6 +775,7 @@ _check-with-server: install
 	  log_file="$$data_dir/server.log"; \
 	  echo "==> CHECK_FORCE_EPHEMERAL=1; starting ephemeral server on $$check_url (data_dir=$$data_dir)"; \
 	  PYTHONPATH=. \
+	  PYTHONFAULTHANDLER=1 \
 	  PAVEDB_DEV=1 \
 	  PAVEDB_DATA_DIR="$$data_dir" \
 	  PAVEDB_AUTH__MODE=$(CHECK_AUTH_MODE) \
@@ -794,6 +795,7 @@ _check-with-server: install
 	  log_file="$$data_dir/server.log"; \
 	  echo "==> No active server on $(CHECK_DEFAULT_URL); starting ephemeral server on $$check_url (data_dir=$$data_dir)"; \
 	  PYTHONPATH=. \
+	  PYTHONFAULTHANDLER=1 \
 	  PAVEDB_DEV=1 \
 	  PAVEDB_DATA_DIR="$$data_dir" \
 	  PAVEDB_AUTH__MODE=$(CHECK_AUTH_MODE) \
@@ -889,6 +891,7 @@ _bench-with-server:
 	  log_file="$$data_dir/server.log"; \
 	  echo "==> BENCH_FORCE_EPHEMERAL=1; starting ephemeral server on $$bench_url (data_dir=$$data_dir)"; \
 	  PYTHONPATH=. \
+	  PYTHONFAULTHANDLER=1 \
 	  PAVEDB_DEV=1 \
 	  PAVEDB_DATA_DIR="$$data_dir" \
 	  PAVEDB_AUTH__MODE=none \
@@ -906,6 +909,7 @@ _bench-with-server:
 	  log_file="$$data_dir/server.log"; \
 	  echo "==> No active server on $(_default_url); starting ephemeral server on $$bench_url (data_dir=$$data_dir)"; \
 	  PYTHONPATH=. \
+	  PYTHONFAULTHANDLER=1 \
 	  PAVEDB_DEV=1 \
 	  PAVEDB_DATA_DIR="$$data_dir" \
 	  PAVEDB_AUTH__MODE=none \
