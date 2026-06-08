@@ -210,9 +210,19 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         # Check-and-increment has no await between them: atomic in asyncio.
         if max_s > 0:
             if app.state.active_searches >= max_s:
+                active = app.state.active_searches
+                log.warning(
+                    "search capped by instance-scoped search cap active=%s "
+                    "limit=%s path=%s request_id=%s",
+                    active,
+                    max_s,
+                    request.url.path,
+                    request_id,
+                )
                 return _error(
                     503, "search_overloaded",
-                    "too many concurrent searches, try again later",
+                    "search capped by instance-scoped search cap "
+                    f"(active={active}, limit={max_s})",
                     request=request,
                     request_id=request_id,
                 )
@@ -435,10 +445,20 @@ def main_srv(argv=None):
         f"data_dir={cfg.get('data_dir')} "
         f"bind={host}:{port} workers={workers}"
     )
+    _s_cap_label = (
+        "unlimited (0 disables gate)" if _s_cap == 0 else str(_s_cap)
+    )
+    _i_cap_label = (
+        "unlimited (0 disables gate)" if _i_cap == 0 else str(_i_cap)
+    )
+    _t_cap_label = (
+        "unlimited (0 disables gate)" if _tcap == 0 else str(_tcap)
+    )
     log.info(
-        f"│  search_cap={_s_cap} search_to={_s_to}ms "
-        f"ingest_cap={_i_cap} "
-        f"tenant_cap={'unlimited' if _tcap == 0 else _tcap} "
+        f"│  search.max_concurrent={_s_cap_label} "
+        f"search.timeout_ms={_s_to} "
+        f"ingest.max_concurrent={_i_cap_label} "
+        f"tenants.default_max_concurrent={_t_cap_label} "
         f"ops_log={_ops_dest}"
     )
     log.info("└" + "─" * 40)

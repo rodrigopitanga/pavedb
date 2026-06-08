@@ -12,6 +12,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from . import config as cfg
 
 bearer = HTTPBearer(auto_error=False)
+log = cfg.get_logger()
 
 @dataclass
 class AuthContext:
@@ -90,6 +91,51 @@ def authorize_tenant(tenant: str, ctx: AuthContext = Depends(auth_ctx)) -> AuthC
     _raise_403()
 
 
+def _tenant_cap_target(path: str, method: str) -> str:
+    if path.endswith("/search"):
+        return "search"
+    if method.upper() == "POST" and path.endswith("/documents"):
+        return "ingest"
+    return "tenant request"
+
+
+def _tenant_limit_exception(
+    *,
+    tenant: str,
+    active: int,
+    limit: int,
+    source: str,
+    target: str,
+    path: str,
+    request_id: str | None,
+) -> HTTPException:
+    log.warning(
+        "%s capped by %s tenant=%s active=%s limit=%s path=%s request_id=%s",
+        target,
+        source,
+        tenant,
+        active,
+        limit,
+        path,
+        request_id,
+    )
+    return HTTPException(
+        status_code=429,
+        detail={
+            "code": "tenant_rate_limited",
+            "error": (
+                f"{target} capped by {source} for tenant {tenant} "
+                f"(active={active}, limit={limit})"
+            ),
+        },
+        headers={
+            "Retry-After": "1",
+            "X-RateLimit-Limit": str(limit),
+            "X-RateLimit-Remaining": "0",
+        },
+    )
+
+
 async def tenant_rate_limit(
     request: Request,
     response: Response,
@@ -110,18 +156,21 @@ async def tenant_rate_limit(
         return
 
     active = request.app.state.tenant_active
-    if active.get(tenant, 0) >= max_c:
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "code": "tenant_rate_limited",
-                "error": "too many concurrent requests for this tenant",
-            },
-            headers={
-                "Retry-After": "1",
-                "X-RateLimit-Limit": str(max_c),
-                "X-RateLimit-Remaining": "0",
-            },
+    current = active.get(tenant, 0)
+    if current >= max_c:
+        source = (
+            "tenant-scoped cap"
+            if tenant in request.app.state.tenant_limits
+            else "instance-scoped tenant cap"
+        )
+        raise _tenant_limit_exception(
+            tenant=tenant,
+            active=current,
+            limit=max_c,
+            source=source,
+            target=_tenant_cap_target(request.url.path, request.method),
+            path=request.url.path,
+            request_id=getattr(request.state, "request_id", None),
         )
     active[tenant] = active.get(tenant, 0) + 1
     remaining = max(0, max_c - active[tenant])
@@ -152,18 +201,21 @@ async def tenant_limit_gate(
         return
 
     active = request.app.state.tenant_active
-    if active.get(tenant, 0) >= max_c:
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "code": "tenant_rate_limited",
-                "error": "too many concurrent requests for this tenant",
-            },
-            headers={
-                "Retry-After": "1",
-                "X-RateLimit-Limit": str(max_c),
-                "X-RateLimit-Remaining": "0",
-            },
+    current = active.get(tenant, 0)
+    if current >= max_c:
+        source = (
+            "tenant-scoped cap"
+            if tenant in request.app.state.tenant_limits
+            else "instance-scoped tenant cap"
+        )
+        raise _tenant_limit_exception(
+            tenant=tenant,
+            active=current,
+            limit=max_c,
+            source=source,
+            target=_tenant_cap_target(request.url.path, request.method),
+            path=request.url.path,
+            request_id=getattr(request.state, "request_id", None),
         )
 
     active[tenant] = active.get(tenant, 0) + 1

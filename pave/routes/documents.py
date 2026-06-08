@@ -10,6 +10,7 @@ import json
 from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile
 
 from pave.auth import AuthContext, tenant_rate_limit
+from pave.config import get_logger
 from pave.log import ops_event
 from pave.metrics import inc
 from pave.schemas import (
@@ -35,6 +36,7 @@ from pave.stores.base import BaseStore
 
 def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
     router = APIRouter()
+    log = get_logger()
 
     def current_store(request: Request) -> BaseStore:
         return request.app.state.store
@@ -140,10 +142,22 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         max_i = request.app.state.max_ingests
         if max_i > 0:
             if request.app.state.active_ingests >= max_i:
+                active = request.app.state.active_ingests
+                log.warning(
+                    "ingest capped by instance-scoped ingest cap tenant=%s "
+                    "collection=%s active=%s limit=%s path=%s request_id=%s",
+                    tenant,
+                    collection,
+                    active,
+                    max_i,
+                    request.url.path,
+                    rid,
+                )
                 return error(
                     503,
                     "ingest_overloaded",
-                    "too many concurrent ingests, try again later",
+                    "ingest capped by instance-scoped ingest cap "
+                    f"(active={active}, limit={max_i})",
                     request=request,
                     request_id=rid,
                 )
