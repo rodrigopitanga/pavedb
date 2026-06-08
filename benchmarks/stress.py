@@ -554,16 +554,16 @@ async def op_rename_collection(client: httpx.AsyncClient, world: World, stats: S
             _record_rate_limited(stats, lat)
             return
         if not _ok_response(r):
-            stats.record(OpResult("collection_rename", lat, False,
+            stats.record(OpResult("rename_collection", lat, False,
                                   _parse_error(r)))
             return
         # Mirror the rename in world so workers stop targeting the old name.
         await world.remove_collection(old)
         await world.add_collection(new)
-        stats.record(OpResult("collection_rename", lat, True))
+        stats.record(OpResult("rename_collection", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
-        stats.record(OpResult("collection_rename", lat, False, str(e)))
+        stats.record(OpResult("rename_collection", lat, False, str(e)))
 
 
 async def op_list_documents(client: httpx.AsyncClient, world: World, stats: Stats):
@@ -581,13 +581,13 @@ async def op_list_documents(client: httpx.AsyncClient, world: World, stats: Stat
             _record_rate_limited(stats, lat)
             return
         if not _ok_response(r):
-            stats.record(OpResult("documents_list", lat, False,
+            stats.record(OpResult("list_documents", lat, False,
                                   _parse_error(r)))
             return
-        stats.record(OpResult("documents_list", lat, True))
+        stats.record(OpResult("list_documents", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
-        stats.record(OpResult("documents_list", lat, False, str(e)))
+        stats.record(OpResult("list_documents", lat, False, str(e)))
 
 
 async def op_list_collections(client: httpx.AsyncClient, _: World, stats: Stats):
@@ -600,13 +600,13 @@ async def op_list_collections(client: httpx.AsyncClient, _: World, stats: Stats)
             _record_rate_limited(stats, lat)
             return
         if not _ok_response(r):
-            stats.record(OpResult("collections_list", lat, False,
+            stats.record(OpResult("list_collections", lat, False,
                                   _parse_error(r)))
             return
-        stats.record(OpResult("collections_list", lat, True))
+        stats.record(OpResult("list_collections", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
-        stats.record(OpResult("collections_list", lat, False, str(e)))
+        stats.record(OpResult("list_collections", lat, False, str(e)))
 
 
 async def op_query_log_list(client: httpx.AsyncClient, world: World, stats: Stats):
@@ -686,16 +686,16 @@ async def op_get_chunk_content(
             _record_rate_limited(stats, lat)
             return
         if r.status_code == 404:
-            stats.record(OpResult("chunk_content_get", lat, True, "404"))
+            stats.record(OpResult("get_chunk_content", lat, True, "404"))
             return
         if not _ok_response(r):
-            stats.record(OpResult("chunk_content_get", lat, False,
+            stats.record(OpResult("get_chunk_content", lat, False,
                                   _parse_error(r)))
             return
-        stats.record(OpResult("chunk_content_get", lat, True))
+        stats.record(OpResult("get_chunk_content", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
-        stats.record(OpResult("chunk_content_get", lat, False, str(e)))
+        stats.record(OpResult("get_chunk_content", lat, False, str(e)))
 
 
 # ---------------------------------------------------------------------------
@@ -718,13 +718,13 @@ async def op_get_collection_detail(
             _record_rate_limited(stats, lat)
             return
         if not _ok_response(r):
-            stats.record(OpResult("collection_detail", lat, False,
+            stats.record(OpResult("get_collection_detail", lat, False,
                                   _parse_error(r)))
             return
-        stats.record(OpResult("collection_detail", lat, True))
+        stats.record(OpResult("get_collection_detail", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
-        stats.record(OpResult("collection_detail", lat, False, str(e)))
+        stats.record(OpResult("get_collection_detail", lat, False, str(e)))
 
 
 async def op_get_document(client: httpx.AsyncClient, world: World, stats: Stats):
@@ -742,15 +742,15 @@ async def op_get_document(client: httpx.AsyncClient, world: World, stats: Stats)
             _record_rate_limited(stats, lat)
             return
         if r.status_code == 404:
-            stats.record(OpResult("document_get", lat, True, "404"))
+            stats.record(OpResult("get_document", lat, True, "404"))
             return
         if not _ok_response(r):
-            stats.record(OpResult("document_get", lat, False, _parse_error(r)))
+            stats.record(OpResult("get_document", lat, False, _parse_error(r)))
             return
-        stats.record(OpResult("document_get", lat, True))
+        stats.record(OpResult("get_document", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
-        stats.record(OpResult("document_get", lat, False, str(e)))
+        stats.record(OpResult("get_document", lat, False, str(e)))
 
 
 async def op_list_chunks(client: httpx.AsyncClient, world: World, stats: Stats):
@@ -768,15 +768,15 @@ async def op_list_chunks(client: httpx.AsyncClient, world: World, stats: Stats):
             _record_rate_limited(stats, lat)
             return
         if r.status_code == 404:
-            stats.record(OpResult("chunks_list", lat, True, "404"))
+            stats.record(OpResult("list_chunks", lat, True, "404"))
             return
         if not _ok_response(r):
-            stats.record(OpResult("chunks_list", lat, False, _parse_error(r)))
+            stats.record(OpResult("list_chunks", lat, False, _parse_error(r)))
             return
-        stats.record(OpResult("chunks_list", lat, True))
+        stats.record(OpResult("list_chunks", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
-        stats.record(OpResult("chunks_list", lat, False, str(e)))
+        stats.record(OpResult("list_chunks", lat, False, str(e)))
 
 
 async def op_get_chunk(client: httpx.AsyncClient, world: World, stats: Stats):
@@ -795,15 +795,15 @@ async def op_get_chunk(client: httpx.AsyncClient, world: World, stats: Stats):
             _record_rate_limited(stats, lat)
             return
         if r.status_code == 404:
-            stats.record(OpResult("chunk_get", lat, True, "404"))
+            stats.record(OpResult("get_chunk", lat, True, "404"))
             return
         if not _ok_response(r):
-            stats.record(OpResult("chunk_get", lat, False, _parse_error(r)))
+            stats.record(OpResult("get_chunk", lat, False, _parse_error(r)))
             return
-        stats.record(OpResult("chunk_get", lat, True))
+        stats.record(OpResult("get_chunk", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
-        stats.record(OpResult("chunk_get", lat, False, str(e)))
+        stats.record(OpResult("get_chunk", lat, False, str(e)))
 
 
 async def op_search_get(client: httpx.AsyncClient, world: World, stats: Stats):
@@ -906,12 +906,12 @@ async def op_prometheus_metrics(
         r = await client.get("/metrics")
         lat = (time.perf_counter() - t0) * 1000
         if not _ok_response(r):
-            stats.record(OpResult("prometheus", lat, False, _parse_error(r)))
+            stats.record(OpResult("prometheus_metrics", lat, False, _parse_error(r)))
             return
-        stats.record(OpResult("prometheus", lat, True))
+        stats.record(OpResult("prometheus_metrics", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
-        stats.record(OpResult("prometheus", lat, False, str(e)))
+        stats.record(OpResult("prometheus_metrics", lat, False, str(e)))
 
 
 # ---------------------------------------------------------------------------
@@ -954,13 +954,14 @@ OPERATIONS_CRITICAL = [
     (op_delete_document,     "doc_delete",         8),
     (op_create_collection,   "collection_create",  5),
     (op_delete_collection,   "collection_delete",  4),
-    # The race-critical adds.
-    (op_rename_collection,   "collection_rename",  8),
-    (op_list_documents,      "documents_list",     8),
-    (op_list_collections,    "collections_list",   5),
+    # The race-critical adds. Recorded names match function name minus
+    # `op_` prefix so that auto-discovery in `full` lines up.
+    (op_rename_collection,   "rename_collection",  8),
+    (op_list_documents,      "list_documents",     8),
+    (op_list_collections,    "list_collections",   5),
     (op_query_log_list,      "query_log_list",     4),
     (op_query_replay,        "query_replay",       6),
-    (op_get_chunk_content,   "chunk_content_get",  6),
+    (op_get_chunk_content,   "get_chunk_content",  6),
     # Kept low: state-lock races + smoke.
     (op_archive_restore,     "archive_restore",    2),
     (op_archive_download,    "archive_download",   1),
@@ -970,18 +971,32 @@ OPERATIONS_CRITICAL = [
     (op_health_metrics,      "health_metrics",     1),
 ]
 
-OPERATIONS_FULL = OPERATIONS_CRITICAL + [
-    # Coverage-only additions (low weight; goal is "touched", not "stressed").
-    (op_get_collection_detail, "collection_detail",  2),
-    (op_get_document,          "document_get",       2),
-    (op_list_chunks,           "chunks_list",        2),
-    (op_get_chunk,             "chunk_get",          2),
-    (op_search_get,            "search_get",         3),
-    (op_global_search,         "global_search",      2),
-    (op_admin_tenants,         "admin_tenants",      1),
-    (op_admin_queries_get,     "admin_queries_get",  2),
-    (op_prometheus_metrics,    "prometheus",         2),
-]
+# full is built by discovery: every module-level `op_*` coroutine that isn't
+# already in critical gets added with _FULL_DEFAULT_WEIGHT. This way adding
+# a new `async def op_xyz(...)` automatically extends `full` coverage without
+# touching the suite list. Convention: the recorded OpResult name should be
+# the function name minus the `op_` prefix.
+_FULL_DEFAULT_WEIGHT = 2
+
+
+def _discover_remaining_ops(already_in_suite, namespace):
+    seen = {func for func, _name, _weight in already_in_suite}
+    extras = []
+    for name, obj in sorted(namespace.items()):
+        if not name.startswith("op_"):
+            continue
+        if not asyncio.iscoroutinefunction(obj):
+            continue
+        if obj in seen:
+            continue
+        extras.append((obj, name[len("op_"):], _FULL_DEFAULT_WEIGHT))
+    return extras
+
+
+OPERATIONS_FULL = OPERATIONS_CRITICAL + _discover_remaining_ops(
+    OPERATIONS_CRITICAL,
+    globals(),
+)
 
 SUITES = {
     "base": OPERATIONS_BASE,
