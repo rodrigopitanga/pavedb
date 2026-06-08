@@ -382,7 +382,7 @@ class LocalStore(BaseStore):
         with self._collection_write_lock(tenant, name):
             self._load_or_init(tenant, name)
             self._save(tenant, name)
-        self._register_catalog_collection(tenant, name)
+            self._register_catalog_collection(tenant, name)
 
     def delete_collection(self, tenant: str, collection: str) -> None:
         with self._collection_write_lock(tenant, collection):
@@ -399,18 +399,20 @@ class LocalStore(BaseStore):
             path = Path(self._base_path(tenant, collection))
             if path.exists() or path.is_symlink():
                 self._remove_path(path)
-        if tenant != "_system":
-            self._with_catalog_retry(
-                "unregister_collection",
-                lambda catalog: catalog.unregister_collection(tenant, collection),
-            )
-            self._with_catalog_retry(
-                "purge_query_homes_for_collection",
-                lambda catalog: catalog.purge_query_homes_for_collection(
-                    tenant,
-                    collection,
-                ),
-            )
+            if tenant != "_system":
+                self._with_catalog_retry(
+                    "unregister_collection",
+                    lambda catalog: catalog.unregister_collection(
+                        tenant, collection,
+                    ),
+                )
+                self._with_catalog_retry(
+                    "purge_query_homes_for_collection",
+                    lambda catalog: catalog.purge_query_homes_for_collection(
+                        tenant,
+                        collection,
+                    ),
+                )
 
     def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
         if old_name == new_name:
@@ -450,24 +452,28 @@ class LocalStore(BaseStore):
             col_db.open(self._db_path(tenant, new_name))
             self._dbs[new_key] = col_db
 
-        if tenant != "_system":
-            self._register_catalog_collection(tenant, old_name)
-            self._with_catalog_retry(
-                "rename_collection",
-                lambda catalog: catalog.rename_collection(
-                    tenant,
-                    old_name,
-                    new_name,
-                ),
-            )
-            self._with_catalog_retry(
-                "rename_query_homes_for_collection",
-                lambda catalog: catalog.rename_query_homes_for_collection(
-                    tenant,
-                    old_name,
-                    new_name,
-                ),
-            )
+            # Catalog updates stay inside the two-collection lock so a
+            # concurrent delete/create on either name can't race the
+            # register-then-rename pair (which is what surfaced as
+            # "catalog row missing" and spurious UNIQUE collisions).
+            if tenant != "_system":
+                self._register_catalog_collection(tenant, old_name)
+                self._with_catalog_retry(
+                    "rename_collection",
+                    lambda catalog: catalog.rename_collection(
+                        tenant,
+                        old_name,
+                        new_name,
+                    ),
+                )
+                self._with_catalog_retry(
+                    "rename_query_homes_for_collection",
+                    lambda catalog: catalog.rename_query_homes_for_collection(
+                        tenant,
+                        old_name,
+                        new_name,
+                    ),
+                )
 
     @staticmethod
     def _is_transient_db_read_error(exc: Exception) -> bool:
