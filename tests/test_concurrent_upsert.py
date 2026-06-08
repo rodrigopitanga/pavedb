@@ -19,7 +19,7 @@ def test_concurrent_upsert_with_manual_lock(cfg, temp_data_dir):
     col_db = store._dbs[(tenant, coll)]
 
     def safe_upsert(data):
-        with store._collection_lock(tenant, coll):
+        with store._collection_write_lock(tenant, coll):
             rid, text, meta = data
             chunk_path = f"chunks/{store._urid_to_fname(rid)}"
             parsed_meta = json.loads(meta) if isinstance(meta, str) else meta

@@ -63,7 +63,7 @@ def test_create_collection_uses_collection_lock(monkeypatch, temp_data_dir):
 
     monkeypatch.setattr(
         store,
-        "_collection_lock",
+        "_collection_write_lock",
         fake_collection_lock,
     )
 
@@ -180,7 +180,7 @@ def test_restore_archive_waits_for_active_collection_operation(temp_data_dir):
     restored = threading.Event()
 
     def hold_collection() -> None:
-        with store._collection_lock("acme", "busy"):
+        with store._collection_write_lock("acme", "busy"):
             entered.set()
             release.wait(timeout=2.0)
 
@@ -189,6 +189,44 @@ def test_restore_archive_waits_for_active_collection_operation(temp_data_dir):
         restored.set()
 
     holder = threading.Thread(target=hold_collection, daemon=True)
+    holder.start()
+    assert entered.wait(timeout=1.0)
+
+    restorer = threading.Thread(target=restore, daemon=True)
+    restorer.start()
+    time.sleep(0.1)
+    assert not restored.is_set()
+
+    release.set()
+    holder.join(timeout=2.0)
+    restorer.join(timeout=2.0)
+
+    assert restored.is_set()
+    assert (Path(temp_data_dir) / "restored.txt").read_text(
+        encoding="utf-8"
+    ) == "ok"
+
+
+def test_restore_archive_waits_for_active_collection_read(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        zf.writestr("restored.txt", "ok")
+
+    entered = threading.Event()
+    release = threading.Event()
+    restored = threading.Event()
+
+    def hold_collection_read() -> None:
+        with store._collection_read_lock("acme", "busy"):
+            entered.set()
+            release.wait(timeout=2.0)
+
+    def restore() -> None:
+        store.restore_archive(archive.getvalue())
+        restored.set()
+
+    holder = threading.Thread(target=hold_collection_read, daemon=True)
     holder.start()
     assert entered.wait(timeout=1.0)
 
@@ -223,7 +261,7 @@ def test_dump_archive_waits_for_active_collection_operation(temp_data_dir):
     tmp_dir: list[str | None] = []
 
     def hold_collection() -> None:
-        with store._collection_lock("acme", "busy"):
+        with store._collection_write_lock("acme", "busy"):
             entered.set()
             release.wait(timeout=2.0)
 

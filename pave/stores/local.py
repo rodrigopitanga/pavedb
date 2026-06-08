@@ -10,7 +10,7 @@ import sqlite3
 import tempfile
 import zipfile
 from collections.abc import Iterable, Iterator
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from datetime import datetime, date, timezone as tz
 from pathlib import Path
 from threading import Condition, Lock, get_ident
@@ -106,6 +106,51 @@ class _StoreStateLock:
                     self._cond.notify_all()
 
 
+class _CollectionReadWriteLock:
+    """Per-collection lock allowing concurrent readers and exclusive writes.
+
+    Not reentrant: nested read acquisition or read-to-write upgrade by the
+    same thread will deadlock.
+    """
+
+    def __init__(self) -> None:
+        self._cond = Condition(Lock())
+        self._readers = 0
+        self._writer = False
+        self._pending_writers = 0
+
+    @contextmanager
+    def read_lock(self) -> Iterator[None]:
+        with self._cond:
+            while self._writer or self._pending_writers > 0:
+                self._cond.wait()
+            self._readers += 1
+        try:
+            yield
+        finally:
+            with self._cond:
+                self._readers -= 1
+                if self._readers == 0:
+                    self._cond.notify_all()
+
+    @contextmanager
+    def write_lock(self) -> Iterator[None]:
+        with self._cond:
+            self._pending_writers += 1
+            try:
+                while self._writer or self._readers > 0:
+                    self._cond.wait()
+                self._writer = True
+            finally:
+                self._pending_writers -= 1
+        try:
+            yield
+        finally:
+            with self._cond:
+                self._writer = False
+                self._cond.notify_all()
+
+
 class LocalStore(BaseStore):
     def __init__(
         self,
@@ -121,27 +166,54 @@ class LocalStore(BaseStore):
         self._catalog = cat_db or self._catalog_factory()
         self._catalog_path: Path | None = None
         self._catalog_guard = Lock()
-        self._locks: dict[str, Lock] = {}
-        self._locks_guard = Lock()
+        self._collection_locks: dict[str, _CollectionReadWriteLock] = {}
+        self._collection_locks_guard = Lock()
         self._state_lock = _StoreStateLock()
         self._ensure_catalog()
 
-    def _get_lock(self, key: str) -> Lock:
-        if key not in self._locks:
-            with self._locks_guard:
-                if key not in self._locks:
-                    self._locks[key] = Lock()
-        return self._locks[key]
+    def _get_collection_lock(self, key: str) -> _CollectionReadWriteLock:
+        if key not in self._collection_locks:
+            with self._collection_locks_guard:
+                if key not in self._collection_locks:
+                    self._collection_locks[key] = _CollectionReadWriteLock()
+        return self._collection_locks[key]
 
     @contextmanager
-    def _collection_lock(self, tenant: str, collection: str) -> Iterator[None]:
+    def _collection_read_lock(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> Iterator[None]:
         with self._state_lock.read_lock():
-            lock = self._get_lock(f"t_{tenant}:c_{collection}")
-            lock.acquire()
-            try:
+            lock = self._get_collection_lock(f"t_{tenant}:c_{collection}")
+            with lock.read_lock():
                 yield
-            finally:
-                lock.release()
+
+    @contextmanager
+    def _collection_write_lock(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> Iterator[None]:
+        with self._collection_write_locks((tenant, collection)):
+            yield
+
+    @contextmanager
+    def _collection_write_locks(
+        self,
+        *collections: tuple[str, str],
+    ) -> Iterator[None]:
+        """Atomic write across one or more collections (e.g. rename)."""
+        with self._state_lock.read_lock():
+            locks = [
+                self._get_collection_lock(f"t_{tenant}:c_{collection}")
+                for tenant, collection in collections
+            ]
+            unique_locks = sorted(set(locks), key=id)
+            with ExitStack() as stack:
+                for lock in unique_locks:
+                    stack.enter_context(lock.write_lock())
+                yield
 
     def _base_path(self, tenant: str, collection: str) -> str:
         return os.path.join(self._data_dir, f"t_{tenant}", f"c_{collection}")
@@ -307,13 +379,13 @@ class LocalStore(BaseStore):
         em.flush()
 
     def create_collection(self, tenant: str, name: str) -> None:
-        with self._collection_lock(tenant, name):
+        with self._collection_write_lock(tenant, name):
             self._load_or_init(tenant, name)
             self._save(tenant, name)
         self._register_catalog_collection(tenant, name)
 
     def delete_collection(self, tenant: str, collection: str) -> None:
-        with self._collection_lock(tenant, collection):
+        with self._collection_write_lock(tenant, collection):
             key = (tenant, collection)
             backend = self._emb.pop(key, None)
             if backend is not None:
@@ -351,13 +423,10 @@ class LocalStore(BaseStore):
         old_path = self._base_path(tenant, old_name)
         new_path = self._base_path(tenant, new_name)
 
-        # Acquire locks in sorted order to prevent deadlock
-        lock_old = self._get_lock(f"t_{tenant}:c_{old_name}")
-        lock_new = self._get_lock(f"t_{tenant}:c_{new_name}")
-        locks = sorted([lock_old, lock_new], key=id)
-        locks[0].acquire()
-        locks[1].acquire()
-        try:
+        with self._collection_write_locks(
+            (tenant, old_name),
+            (tenant, new_name),
+        ):
             # Pre-checks
             if not os.path.isdir(old_path):
                 raise ValueError(f"collection '{old_name}' does not exist")
@@ -380,9 +449,6 @@ class LocalStore(BaseStore):
             col_db = CollectionDB()
             col_db.open(self._db_path(tenant, new_name))
             self._dbs[new_key] = col_db
-        finally:
-            locks[1].release()
-            locks[0].release()
 
         if tenant != "_system":
             self._register_catalog_collection(tenant, old_name)
@@ -553,9 +619,10 @@ class LocalStore(BaseStore):
         request_id: str | None = None,
         replay_of: str | None = None,
     ) -> None:
-        with self._collection_lock(tenant, collection):
-            self._load_or_init(tenant, collection)
-            self._dbs[(tenant, collection)].log_query(
+        key = (tenant, collection)
+
+        def _write_log(col_db: CollectionDB) -> None:
+            col_db.log_query(
                 query_id=query_id,
                 tenant=tenant,
                 collection=collection,
@@ -573,6 +640,19 @@ class LocalStore(BaseStore):
                 request_id=request_id,
                 replay_of=replay_of,
             )
+
+        for attempt in range(3):
+            with self._collection_read_lock(tenant, collection):
+                col_db = self._dbs.get(key)
+                if col_db is not None:
+                    _write_log(col_db)
+                    break
+
+            with self._collection_write_lock(tenant, collection):
+                self._load_or_init(tenant, collection)
+                if attempt == 2:
+                    _write_log(self._dbs[key])
+                    break
         try:
             self.put_query_home(query_id, tenant, collection)
         except Exception:
@@ -780,7 +860,7 @@ class LocalStore(BaseStore):
         )
 
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
-        with self._collection_lock(tenant, collection):
+        with self._collection_write_lock(tenant, collection):
             return self._purge_doc_locked(tenant, collection, docid)
 
     def _purge_doc_locked(self, tenant: str, collection: str, docid: str) -> int:
@@ -857,7 +937,7 @@ class LocalStore(BaseStore):
         """
         chunk_count = 0
         purged = 0
-        with self._collection_lock(tenant, collection):
+        with self._collection_write_lock(tenant, collection):
             self._load_or_init(tenant, collection)
             key = (tenant, collection)
             col_db = self._dbs[key]
@@ -964,9 +1044,10 @@ class LocalStore(BaseStore):
         Queries the FAISS backend for top-k and keeps overfetch inside the
         store.
 
-        Search keeps metadata reads inside collection_lock so collection
-        deletion cannot close the cached SQLite handle while results are being
-        hydrated.
+        Search holds the shared collection read lock while touching cached
+        backend, metadata, and chunk files. Collection mutation/delete/restore
+        take the write side, so same-collection searches can overlap without
+        racing cache close or data-dir replacement.
         """
         _perf = _time.perf_counter
 
@@ -986,29 +1067,31 @@ class LocalStore(BaseStore):
             else:
                 normed_filters[safe_key] = [vals]
 
-        with self._collection_lock(tenant, collection):
-            self._load_or_init(tenant, collection)
-            key = (tenant, collection)
-            backend = self._emb[key]
-            col_db = self._dbs.get(key)
+        t0 = _perf()
+        q_vec = self._embedder.encode([query])[0]
+        embed_ms = _ms_since(t0)
 
-            t0 = _perf()
-            q_vec = self._embedder.encode([query])[0]
-            embed_ms = _ms_since(t0)
-
+        def _search_loaded(
+            backend: VectorBackend,
+            col_db: CollectionDB,
+        ) -> SearchOutput:
             t0 = _perf()
             raw = backend.search(q_vec, fetch_k)
             candidate_rids = [rid for rid, _ in raw if rid]
             search_ms = _ms_since(t0)
 
             filter_push_ms = 0.0
-            if normed_filters and col_db is not None:
+            if normed_filters:
                 t0 = _perf()
                 surviving = col_db.filter_by_meta(
                     candidate_rids,
                     normed_filters,
                 )
-                raw = [(rid, score) for rid, score in raw if rid in surviving]
+                raw = [
+                    (rid, score)
+                    for rid, score in raw
+                    if rid in surviving
+                ]
                 candidate_rids = [rid for rid, _score in raw if rid]
                 filter_push_ms = _ms_since(t0)
 
@@ -1063,6 +1146,23 @@ class LocalStore(BaseStore):
                     "hydrate_ms": round(hydrate_meta_ms + hydrate_text_ms, 2),
                 },
             )
+
+        key = (tenant, collection)
+        for attempt in range(3):
+            with self._collection_read_lock(tenant, collection):
+                backend = self._emb.get(key)
+                col_db = self._dbs.get(key)
+                if backend is not None and col_db is not None:
+                    return _search_loaded(backend, col_db)
+
+            with self._collection_write_lock(tenant, collection):
+                self._load_or_init(tenant, collection)
+                if attempt == 2:
+                    return _search_loaded(self._emb[key], self._dbs[key])
+
+            # The collection may have been deleted between initialization and
+            # reacquiring the shared read lock. Loop back and re-check caches.
+        raise RuntimeError("collection cache initialization did not stabilize")
 
     def _build_match_reason(self, query: str, score: float,
                             filters: dict[str, Any] | None,

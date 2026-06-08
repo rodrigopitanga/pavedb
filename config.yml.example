@@ -132,8 +132,11 @@ ingest:
 
   # Max parallel ingests; excess requests get 503 immediately.
   # Ingest is CPU/memory heavy — keep this well below your core count.
+  # In-code default is 7 (conservative floor); 10 below is a typical-dev-host
+  # value. Rule of thumb: ~1× core count on dedicated hosts (e.g. 10 on a
+  # 10-core M-series, 16 on a 16-vCPU VM).
   # 0 = unlimited (not recommended in production).
-  max_concurrent: 7
+  max_concurrent: 10
 
 # Reverse-proxy timeout guidance for ingest endpoints:
 # Ingest embeds the entire document before responding; large files can take
@@ -150,8 +153,11 @@ ingest:
 
 search:
   # Max parallel searches; excess requests get 503 immediately.
+  # In-code default is 42 (conservative floor); 48 below is a typical-dev-host
+  # value. Rule of thumb: ~4–5× core count on dedicated hosts; throughput
+  # plateaus past that and only latency grows.
   # 0 = unlimited (not recommended in production).
-  max_concurrent: 42
+  max_concurrent: 48
 
   # Per-search timeout in ms; returns 503 on expiry. 0 = no timeout.
   timeout_ms: 30000
