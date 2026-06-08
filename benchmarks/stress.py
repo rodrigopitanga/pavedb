@@ -206,6 +206,9 @@ class World:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     collections: dict[str, list[str]] = field(default_factory=dict)
     # collections[name] -> list of docids
+    query_ids: list[tuple[str, str]] = field(default_factory=list)
+    # bounded ring buffer of (collection, query_id) seen via op_search
+    _query_id_cap: int = 256
 
     async def add_collection(self, name: str):
         async with self.lock:
@@ -248,6 +251,19 @@ class World:
     async def snapshot_collections(self) -> list[str]:
         async with self.lock:
             return list(self.collections.keys())
+
+    async def add_query_id(self, collection: str, query_id: str):
+        async with self.lock:
+            self.query_ids.append((collection, query_id))
+            if len(self.query_ids) > self._query_id_cap:
+                # Drop oldest to bound memory under long runs.
+                self.query_ids = self.query_ids[-self._query_id_cap:]
+
+    async def pick_query_id(self) -> tuple[str, str] | None:
+        async with self.lock:
+            if not self.query_ids:
+                return None
+            return random.choice(self.query_ids)
 
 
 # ---------------------------------------------------------------------------
@@ -395,6 +411,13 @@ async def op_search(client: httpx.AsyncClient, world: World, stats: Stats):
         if not _ok_response(r):
             stats.record(OpResult("search", lat, False, _parse_error(r)))
             return
+        try:
+            payload = r.json()
+        except Exception:
+            payload = {}
+        qid = payload.get("query_id") if isinstance(payload, dict) else None
+        if qid:
+            await world.add_query_id(coll, qid)
         stats.record(OpResult("search", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
@@ -510,10 +533,403 @@ async def op_archive_restore(client: httpx.AsyncClient, _: World, stats: Stats):
 
 
 # ---------------------------------------------------------------------------
-# Weighted operation dispatcher
+# Critical-suite ops: exercise endpoints that base does not, focused on
+# race-prone paths (multi-collection write lock, reads racing with delete,
+# query-log retry path, sidecar chunk read).
 # ---------------------------------------------------------------------------
-# Weights control how often each operation is chosen.
-OPERATIONS = [
+async def op_rename_collection(client: httpx.AsyncClient, world: World, stats: Stats):
+    """PUT /collections/{tenant}/{old} {new_name} — variadic write lock path."""
+    old = await world.pick_collection()
+    if old is None:
+        return
+    new = f"r_{_rand_name()}"
+    t0 = time.perf_counter()
+    try:
+        r = await client.put(
+            f"{API_PREFIX}/collections/{TENANT}/{old}",
+            json={"new_name": new},
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("collection_rename", lat, False,
+                                  _parse_error(r)))
+            return
+        # Mirror the rename in world so workers stop targeting the old name.
+        await world.remove_collection(old)
+        await world.add_collection(new)
+        stats.record(OpResult("collection_rename", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("collection_rename", lat, False, str(e)))
+
+
+async def op_list_documents(client: httpx.AsyncClient, world: World, stats: Stats):
+    """GET /collections/{tenant}/{coll}/documents — read racing with delete."""
+    coll = await world.pick_collection()
+    if coll is None:
+        return
+    t0 = time.perf_counter()
+    try:
+        r = await client.get(
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/documents",
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("documents_list", lat, False,
+                                  _parse_error(r)))
+            return
+        stats.record(OpResult("documents_list", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("documents_list", lat, False, str(e)))
+
+
+async def op_list_collections(client: httpx.AsyncClient, _: World, stats: Stats):
+    """GET /collections/{tenant} — catalog read racing with create/delete."""
+    t0 = time.perf_counter()
+    try:
+        r = await client.get(f"{API_PREFIX}/collections/{TENANT}")
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("collections_list", lat, False,
+                                  _parse_error(r)))
+            return
+        stats.record(OpResult("collections_list", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("collections_list", lat, False, str(e)))
+
+
+async def op_query_log_list(client: httpx.AsyncClient, world: World, stats: Stats):
+    """GET /collections/{tenant}/{coll}/queries — query log read path."""
+    coll = await world.pick_collection()
+    if coll is None:
+        return
+    t0 = time.perf_counter()
+    try:
+        r = await client.get(
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/queries",
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("query_log_list", lat, False,
+                                  _parse_error(r)))
+            return
+        stats.record(OpResult("query_log_list", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("query_log_list", lat, False, str(e)))
+
+
+async def op_query_replay(client: httpx.AsyncClient, world: World, stats: Stats):
+    """POST /collections/{tenant}/{coll}/queries/{id}/replay — exercises the
+    log_query retry pattern and read-lock-then-write-lock loop."""
+    pair = await world.pick_query_id()
+    if pair is None:
+        return
+    coll, qid = pair
+    t0 = time.perf_counter()
+    try:
+        r = await client.post(
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/queries/{qid}/replay",
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if r.status_code == 404:
+            # Query log entry was purged by archive_restore or delete; not a
+            # bug, just a race that's expected under stress.
+            stats.record(OpResult("query_replay", lat, True, "404"))
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("query_replay", lat, False, _parse_error(r)))
+            return
+        stats.record(OpResult("query_replay", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("query_replay", lat, False, str(e)))
+
+
+async def op_get_chunk_content(
+    client: httpx.AsyncClient, world: World, stats: Stats,
+):
+    """GET /collections/{tenant}/{coll}/chunks/{rid}/content — sidecar file
+    read racing with purge_doc/delete_collection."""
+    pair = await world.pick_doc()
+    if pair is None:
+        return
+    coll, docid = pair
+    # Bench-ingested docs (op_ingest_small + seeds) produce a single chunk
+    # whose rid is "{docid}::chunk_0"; large docs may not, but the 404 path
+    # is also a valid race outcome here.
+    rid = f"{docid}::chunk_0"
+    t0 = time.perf_counter()
+    try:
+        r = await client.get(
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/chunks/{rid}/content",
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if r.status_code == 404:
+            stats.record(OpResult("chunk_content_get", lat, True, "404"))
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("chunk_content_get", lat, False,
+                                  _parse_error(r)))
+            return
+        stats.record(OpResult("chunk_content_get", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("chunk_content_get", lat, False, str(e)))
+
+
+# ---------------------------------------------------------------------------
+# Full-suite ops: rest of the API surface. Lower individual weights since
+# they are mostly thin reads; here for coverage, not for stress shape.
+# ---------------------------------------------------------------------------
+async def op_get_collection_detail(
+    client: httpx.AsyncClient, world: World, stats: Stats,
+):
+    coll = await world.pick_collection()
+    if coll is None:
+        return
+    t0 = time.perf_counter()
+    try:
+        r = await client.get(
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/detail",
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("collection_detail", lat, False,
+                                  _parse_error(r)))
+            return
+        stats.record(OpResult("collection_detail", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("collection_detail", lat, False, str(e)))
+
+
+async def op_get_document(client: httpx.AsyncClient, world: World, stats: Stats):
+    pair = await world.pick_doc()
+    if pair is None:
+        return
+    coll, docid = pair
+    t0 = time.perf_counter()
+    try:
+        r = await client.get(
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/documents/{docid}",
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if r.status_code == 404:
+            stats.record(OpResult("document_get", lat, True, "404"))
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("document_get", lat, False, _parse_error(r)))
+            return
+        stats.record(OpResult("document_get", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("document_get", lat, False, str(e)))
+
+
+async def op_list_chunks(client: httpx.AsyncClient, world: World, stats: Stats):
+    pair = await world.pick_doc()
+    if pair is None:
+        return
+    coll, docid = pair
+    t0 = time.perf_counter()
+    try:
+        r = await client.get(
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/documents/{docid}/chunks",
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if r.status_code == 404:
+            stats.record(OpResult("chunks_list", lat, True, "404"))
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("chunks_list", lat, False, _parse_error(r)))
+            return
+        stats.record(OpResult("chunks_list", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("chunks_list", lat, False, str(e)))
+
+
+async def op_get_chunk(client: httpx.AsyncClient, world: World, stats: Stats):
+    pair = await world.pick_doc()
+    if pair is None:
+        return
+    coll, docid = pair
+    rid = f"{docid}::chunk_0"
+    t0 = time.perf_counter()
+    try:
+        r = await client.get(
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/chunks/{rid}",
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if r.status_code == 404:
+            stats.record(OpResult("chunk_get", lat, True, "404"))
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("chunk_get", lat, False, _parse_error(r)))
+            return
+        stats.record(OpResult("chunk_get", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("chunk_get", lat, False, str(e)))
+
+
+async def op_search_get(client: httpx.AsyncClient, world: World, stats: Stats):
+    """GET /collections/{tenant}/{coll}/search — query-string variant."""
+    coll = await world.pick_collection()
+    if coll is None:
+        return
+    query = random.choice(QUERIES)
+    t0 = time.perf_counter()
+    try:
+        r = await client.get(
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/search",
+            params={"q": query, "k": 5},
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("search_get", lat, False, _parse_error(r)))
+            return
+        stats.record(OpResult("search_get", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("search_get", lat, False, str(e)))
+
+
+async def op_global_search(client: httpx.AsyncClient, _: World, stats: Stats):
+    """POST /search — cross-collection global search."""
+    query = random.choice(QUERIES)
+    t0 = time.perf_counter()
+    try:
+        r = await client.post(
+            f"{API_PREFIX}/search",
+            json={"q": query, "k": 5},
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("global_search", lat, False, _parse_error(r)))
+            return
+        stats.record(OpResult("global_search", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("global_search", lat, False, str(e)))
+
+
+async def op_admin_tenants(client: httpx.AsyncClient, _: World, stats: Stats):
+    t0 = time.perf_counter()
+    try:
+        r = await client.get(f"{API_PREFIX}/admin/tenants")
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("admin_tenants", lat, False, _parse_error(r)))
+            return
+        stats.record(OpResult("admin_tenants", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("admin_tenants", lat, False, str(e)))
+
+
+async def op_admin_queries_get(
+    client: httpx.AsyncClient, world: World, stats: Stats,
+):
+    pair = await world.pick_query_id()
+    if pair is None:
+        return
+    _coll, qid = pair
+    t0 = time.perf_counter()
+    try:
+        r = await client.get(f"{API_PREFIX}/admin/queries/{qid}")
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if r.status_code == 404:
+            stats.record(OpResult("admin_queries_get", lat, True, "404"))
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("admin_queries_get", lat, False,
+                                  _parse_error(r)))
+            return
+        stats.record(OpResult("admin_queries_get", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("admin_queries_get", lat, False, str(e)))
+
+
+async def op_prometheus_metrics(
+    client: httpx.AsyncClient, _: World, stats: Stats,
+):
+    """GET /metrics — Prometheus scrape endpoint."""
+    t0 = time.perf_counter()
+    try:
+        r = await client.get("/metrics")
+        lat = (time.perf_counter() - t0) * 1000
+        if not _ok_response(r):
+            stats.record(OpResult("prometheus", lat, False, _parse_error(r)))
+            return
+        stats.record(OpResult("prometheus", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("prometheus", lat, False, str(e)))
+
+
+# ---------------------------------------------------------------------------
+# Weighted operation suites
+# ---------------------------------------------------------------------------
+# Each suite is a complete (func, name, weight) list. Weights are tuned for
+# the suite's goal, not normalised across suites.
+#
+# - base: production-shaped traffic, kept stable so its throughput numbers
+#   stay comparable to prior runs.
+# - critical: same writers as base plus the race-prone paths that base
+#   doesn't reach (rename via variadic write lock, reads racing with delete,
+#   query-log retry, sidecar reads). Search weight is dropped to leave
+#   headroom for the new ops.
+# - full: exercises every reachable endpoint at least occasionally. Numbers
+#   only comparable to other full runs.
+
+OPERATIONS_BASE = [
     # (func, op_name, weight)
     # Read-heavy production shape, biased toward write pressure for stress.
     (op_search,              "search",            60),  # ~59%
@@ -530,9 +946,52 @@ OPERATIONS = [
     (op_archive_restore,     "archive_restore",    1),  # ~1%
 ]
 
+OPERATIONS_CRITICAL = [
+    # Background load (lower than base so the race ops get real airtime).
+    (op_search,              "search",            25),
+    (op_ingest_small,        "ingest_small",      10),
+    (op_ingest_large,        "ingest_chunked",     4),
+    (op_delete_document,     "doc_delete",         8),
+    (op_create_collection,   "collection_create",  5),
+    (op_delete_collection,   "collection_delete",  4),
+    # The race-critical adds.
+    (op_rename_collection,   "collection_rename",  8),
+    (op_list_documents,      "documents_list",     8),
+    (op_list_collections,    "collections_list",   5),
+    (op_query_log_list,      "query_log_list",     4),
+    (op_query_replay,        "query_replay",       6),
+    (op_get_chunk_content,   "chunk_content_get",  6),
+    # Kept low: state-lock races + smoke.
+    (op_archive_restore,     "archive_restore",    2),
+    (op_archive_download,    "archive_download",   1),
+    (op_health_live,         "health_live",        2),
+    (op_health,              "health",             1),
+    (op_health_ready,        "health_ready",       1),
+    (op_health_metrics,      "health_metrics",     1),
+]
 
-def _pick_operation():
-    ops, _, weights = zip(*OPERATIONS)
+OPERATIONS_FULL = OPERATIONS_CRITICAL + [
+    # Coverage-only additions (low weight; goal is "touched", not "stressed").
+    (op_get_collection_detail, "collection_detail",  2),
+    (op_get_document,          "document_get",       2),
+    (op_list_chunks,           "chunks_list",        2),
+    (op_get_chunk,             "chunk_get",          2),
+    (op_search_get,            "search_get",         3),
+    (op_global_search,         "global_search",      2),
+    (op_admin_tenants,         "admin_tenants",      1),
+    (op_admin_queries_get,     "admin_queries_get",  2),
+    (op_prometheus_metrics,    "prometheus",         2),
+]
+
+SUITES = {
+    "base": OPERATIONS_BASE,
+    "critical": OPERATIONS_CRITICAL,
+    "full": OPERATIONS_FULL,
+}
+
+
+def _pick_operation(operations):
+    ops, _, weights = zip(*operations)
     return random.choices(ops, weights=weights, k=1)[0]
 
 
@@ -546,7 +1005,13 @@ async def run_stress(
     api_key: str | None = None,
     debug: bool = False,
     max_error_pct: float = 0,
+    suite: str = "base",
 ) -> Stats | None:
+    operations = SUITES.get(suite)
+    if operations is None:
+        raise ValueError(
+            f"unknown suite '{suite}'; choose one of {sorted(SUITES)}"
+        )
     stats = Stats()
     world = World()
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
@@ -581,7 +1046,7 @@ async def run_stress(
         print(f"Seeded 3 collections with 3 docs each.")
         print(
             f"Running stress test for {duration_secs}s with "
-            f"concurrency={concurrency}..."
+            f"concurrency={concurrency} suite={suite}..."
         )
         print()
 
@@ -595,7 +1060,7 @@ async def run_stress(
                 async with sem:
                     if stop.is_set():
                         break
-                    op = _pick_operation()
+                    op = _pick_operation(operations)
                     ops_started += 1
                     await op(client, world, stats)
 
@@ -617,7 +1082,7 @@ async def run_stress(
 
         # Coverage pass: run any op that was never picked during the timed phase.
         seen_ops = {r.op for r in stats.results}
-        missed = [(op, name) for op, name, _ in OPERATIONS if name not in seen_ops]
+        missed = [(op, name) for op, name, _ in operations if name not in seen_ops]
         if missed:
             missed_names = ", ".join(name for _op, name in missed)
             print(
@@ -749,8 +1214,18 @@ def main():
         type=float,
         default=0,
         help=(
-            "Fail (exit 1) if error % exceeds this."
+            "Fail (exit 1) if error %% exceeds this."
             " 0 = disabled."
+        ),
+    )
+    parser.add_argument(
+        "--suite",
+        choices=sorted(SUITES),
+        default="base",
+        help=(
+            "Operation suite. 'base' is the historical mix (comparable to "
+            "prior runs). 'critical' adds race-prone reads + rename. 'full' "
+            "exercises every API endpoint."
         ),
     )
     args = parser.parse_args()
@@ -763,6 +1238,7 @@ def main():
             api_key=args.api_key,
             debug=args.debug,
             max_error_pct=args.max_error_pct,
+            suite=args.suite,
         ))
     except Exception:
         if args.debug:

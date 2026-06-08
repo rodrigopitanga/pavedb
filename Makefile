@@ -114,7 +114,7 @@ help:
 	echo "Benchmarks:"; \
 	echo "  $${B}benchmark$${R}       Run latency + stress (reuse :8086, else fresh ephemeral per bench; flags: BENCH_FORCE_EPHEMERAL=1, BENCH_SERVER_URL=URL)"; \
 	echo "  bench-latency    Search latency (LAT_LENGTH=queries/variant, LAT_CONCUR, LAT_FILTERS=x,y)"; \
-	echo "  bench-stress     Stress test (STR_LENGTH=seconds, STR_CONCUR)"; \
+	echo "  bench-stress     Stress test (STR_LENGTH=seconds, STR_CONCUR, STR_SUITE=base|critical|full)"; \
 	echo "    BENCH_SAVE=1 to save outputs in benchmarks/results/"; \
 	echo "    BENCH_TAG=<tag> adds suffix to saved filenames"; \
 	echo "  LAT_SLO_P99_MS    Fail bench-latency if p99 > N ms (0=off)"; \
@@ -851,6 +851,7 @@ LAT_CONCUR        ?= 42
 LAT_FILTERS       ?= none,exact,wildcard,mixed
 STR_LENGTH        ?= 90
 STR_CONCUR        ?= 8
+STR_SUITE         ?= base
 REL_PROFILE       ?= tatoeba-core-xling
 REL_MODEL_ID      ?= multi-minilm-l12
 BENCH_TAG         ?=
@@ -1053,6 +1054,9 @@ bench-stress-run:
 	if [ "$(STR_MAX_ERROR_PCT)" != "0" ]; then \
 	  err_arg="--max-error-pct $(STR_MAX_ERROR_PCT)"; \
 	fi; \
+	suite_arg="--suite $(STR_SUITE)"; \
+	suite_tag=""; \
+	if [ "$(STR_SUITE)" != "base" ]; then suite_tag="_$(STR_SUITE)"; fi; \
 	if [ -z "$$tag" ]; then \
 	  branch=$$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "detached"); \
 	  tag="$$branch-$$sha"; \
@@ -1060,19 +1064,19 @@ bench-stress-run:
 	  tag="$$tag-$$sha"; \
 	fi; \
 	if [ "$(BENCH_SAVE)" = "1" ]; then \
-	  echo "==> Saving: yes (ts=$(_ts), tag=$$tag)"; \
+	  echo "==> Saving: yes (ts=$(_ts), tag=$$tag, suite=$(STR_SUITE))"; \
 	  mkdir -p $(_results_dir); \
 	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/stress.py \
 	    --url $(_url) --duration $(STR_LENGTH) \
 	    --concurrency $(STR_CONCUR) \
-	    $$api_arg $$err_arg \
-	    | tee $(_results_dir)/stress-$(_ts)_$$tag.txt; \
+	    $$suite_arg $$api_arg $$err_arg \
+	    | tee $(_results_dir)/stress-$(_ts)_$$tag$$suite_tag.txt; \
 	else \
-	  echo "==> Saving: no (ts=$(_ts), tag=$$tag)"; \
+	  echo "==> Saving: no (ts=$(_ts), tag=$$tag, suite=$(STR_SUITE))"; \
 	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/stress.py \
 	    --url $(_url) --duration $(STR_LENGTH) \
 	    --concurrency $(STR_CONCUR) \
-	    $$api_arg $$err_arg; \
+	    $$suite_arg $$api_arg $$err_arg; \
 	fi
 
 .PHONY: benchmark
