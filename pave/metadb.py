@@ -5,8 +5,8 @@
 CollectionDB — impl2: read/write split connections.
 
 Two persistent connections (check_same_thread=False):
-  _rconn: read connection (WAL, no lock, concurrent reads)
-  _wconn: write connection (serialised by _write_lock)
+  _rconn: read connection (WAL, serialized by _read_lock)
+  _wconn: write connection (serialized by _write_lock)
 """
 
 from __future__ import annotations
@@ -162,14 +162,15 @@ class CollectionDB:
     """Per-collection SQLite metadata store (impl2).
 
     Two persistent connections with check_same_thread=False:
-      _rconn: used for all reads (WAL, no lock, fully concurrent)
-      _wconn: used for all writes (protected by _write_lock and _writer)
+      _rconn: used for reads (WAL, protected by _read_lock)
+      _wconn: used for writes (protected by _write_lock and _writer)
     """
 
     def __init__(self) -> None:
         self.path: Path | None = None
         self._rconn: sqlite3.Connection | None = None
         self._wconn: sqlite3.Connection | None = None
+        self._read_lock = threading.Lock()
         self._write_lock = threading.Lock()
         self._state_cv = threading.Condition()
         self._active_readers = 0
@@ -202,7 +203,7 @@ class CollectionDB:
 
         When *read_only* is True only the read connection is opened
         and migrations are skipped.  Use this for fallback reads
-        (``has_doc``, ``catalog_metrics``, ``_read_meta_batch_safe``)
+        (``get_document``, ``catalog_metrics``, ``_read_meta_batch_safe``)
         where a write connection is unnecessary.
 
         Raises LegacyMetadataError if catalog.json or meta.json exist
@@ -291,9 +292,11 @@ class CollectionDB:
                 raise RuntimeError("CollectionDB is closing.")
             self._active_readers += 1
             conn = self._rconn
+        self._read_lock.acquire()
         try:
             yield conn
         finally:
+            self._read_lock.release()
             with self._state_cv:
                 if self._active_readers > 0:
                     self._active_readers -= 1
@@ -612,7 +615,7 @@ class CollectionDB:
         ]
 
     # ------------------------------------------------------------------
-    # Read operations — use _rconn, no lock needed (WAL)
+    # Read operations — use _rconn serialized by _read_lock (WAL)
     # ------------------------------------------------------------------
 
     def has_doc(self, docid: str) -> bool:
@@ -910,7 +913,8 @@ class CollectionDB:
     def get_meta_batch(self, rids: list[str]) -> dict[str, dict[str, Any]]:
         """Fetch merged document + chunk metadata for *rids*.
 
-        Called OUTSIDE collection_lock — WAL reads via _rconn are concurrent.
+        Called OUTSIDE collection_lock. WAL keeps this compatible with writers,
+        but Python sqlite access to the shared read connection is serialized.
         Chunks the rid list into groups of 999 (SQLite variable limit).
         """
         if not rids:
@@ -958,6 +962,7 @@ class CatalogDB:
         self.path: Path | None = None
         self._rconn: sqlite3.Connection | None = None
         self._wconn: sqlite3.Connection | None = None
+        self._read_lock = threading.Lock()
         self._write_lock = threading.Lock()
         self._state_cv = threading.Condition()
         self._active_readers = 0
@@ -1031,9 +1036,11 @@ class CatalogDB:
                 raise RuntimeError("CatalogDB is closing.")
             self._active_readers += 1
             conn = self._rconn
+        self._read_lock.acquire()
         try:
             yield conn
         finally:
+            self._read_lock.release()
             with self._state_cv:
                 if self._active_readers > 0:
                     self._active_readers -= 1
