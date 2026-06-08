@@ -5,7 +5,7 @@ from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
 
-def test_has_doc_uses_atomic_cache_lookup_under_flush_race(temp_data_dir):
+def test_get_document_uses_atomic_cache_lookup_under_flush_race(temp_data_dir):
     store = LocalStore(str(temp_data_dir), FakeEmbedder())
     tenant, collection, docid = "acme", "race", "DOC-1"
     records = [("0", "cache race probe", {"lang": "en"})]
@@ -30,4 +30,4 @@ def test_has_doc_uses_atomic_cache_lookup_under_flush_race(temp_data_dir):
     store._dbs = RaceyCache(key, col_db)
 
     # With the old pattern (`if key in _dbs: _dbs[key]`) this raises KeyError.
-    assert store.has_doc(tenant, collection, docid) is True
+    assert store.get_document(tenant, collection, docid) is not None

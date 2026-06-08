@@ -93,6 +93,36 @@ def test_flush_store_caches_closes_old_dbs_sync(temp_data_dir):
     assert col_db._wconn is None
 
 
+def test_index_records_replaces_existing_doc_chunks(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+
+    store.index_records(
+        "acme",
+        "replace_me",
+        "doc1",
+        [
+            ("0", "alpha one", {"kind": "old"}),
+            ("1", "beta two", {"kind": "old"}),
+            ("2", "gamma three", {"kind": "old"}),
+        ],
+    )
+    store.index_records(
+        "acme",
+        "replace_me",
+        "doc1",
+        [
+            ("0", "beta two", {"kind": "new"}),
+        ],
+    )
+
+    assert len(store.list_chunks("acme", "replace_me", "doc1")) == 1
+    backend = store._emb[("acme", "replace_me")]
+    assert int(backend._index.ntotal) == 1
+    hits = store.search("acme", "replace_me", "beta", k=5)
+    assert len(hits) >= 1
+    assert hits[0].id == "doc1::0"
+
+
 def test_remove_path_retries_transient_errors(monkeypatch, tmp_path):
     target = tmp_path / "to_remove"
     target.mkdir()

@@ -49,7 +49,16 @@ def test_reupload_same_docid_calls_purge_and_reindexes(client):
                             ("a.txt", b"delta echo foxtrot", "text/plain")},
                      data={"docid": "R-42"})
     assert r2.status_code == 201
-    assert ("purge_doc", "acme", "reup", "R-42") in store.calls
+    # Purge now happens atomically inside index_records (the service no longer
+    # issues a separate purge_doc call). Verify the re-ingest path went through
+    # index_records twice for the same docid.
+    index_calls = [
+        c for c in store.calls
+        if c[0] == "index_records" and c[1] == "acme"
+        and c[2] == "reup" and c[3] == "R-42"
+    ]
+    assert len(index_calls) == 2
+    assert ("purge_doc", "acme", "reup", "R-42") not in store.calls
 
     # confirm only new content appears
     s = client.post(

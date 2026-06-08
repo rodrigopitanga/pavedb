@@ -52,7 +52,6 @@ def test_cli_ingest_on_fresh_collection_with_empty_index_dir(cli_env, tmp_path):
     pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1", "--metadata", '{"lang":"pt"}'])
 
     assert ("create_collection", tenant, coll) in store.calls
-    assert ("has_doc", tenant, coll, "DOC1") in store.calls
     assert ("purge_doc", tenant, coll, "DOC1") not in store.calls
     assert any(c[0] == "index_records" and c[1] == tenant and c[2] == coll \
                and c[3] == "DOC1" for c in store.calls)
@@ -143,7 +142,16 @@ def test_cli_reingest_same_docid_triggers_purge(cli_env, tmp_path):
     sample.write_text("delta echo", encoding="utf-8")
     pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC-REUP"])
 
-    assert ("purge_doc", tenant, coll, "DOC-REUP") in store.calls
+    # Purge now happens atomically inside index_records, so the service no
+    # longer issues a separate purge_doc call. Verify the two-ingest path
+    # actually went through index_records both times.
+    index_calls = [
+        c for c in store.calls
+        if c[0] == "index_records" and c[1] == tenant
+        and c[2] == coll and c[3] == "DOC-REUP"
+    ]
+    assert len(index_calls) == 2
+    assert ("purge_doc", tenant, coll, "DOC-REUP") not in store.calls
 
 def test_cli_search_returns_matches(cli_env, tmp_path):
     pvcli, store, _ = cli_env

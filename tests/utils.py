@@ -11,7 +11,13 @@ from typing import Any
 
 import numpy as np
 
-from pave.stores.base import BaseStore, Record, SearchOutput, SearchResult
+from pave.stores.base import (
+    BaseStore,
+    IndexResult,
+    Record,
+    SearchOutput,
+    SearchResult,
+)
 from pave.config import get_cfg
 
 
@@ -247,15 +253,6 @@ class DummyStore(BaseStore):
             json.dump(data, f)
         return removed
 
-    def has_doc(self, tenant: str, collection: str, docid: str) -> bool:
-        cat = os.path.join(self._dir(tenant, collection), "catalog.json")
-        try:
-            data = json.load(open(cat, "r", encoding="utf-8"))
-        except Exception:
-            data = {}
-        ret = 1 if docid in data else 0
-        return bool(ret)
-
     def get_document(
         self,
         tenant: str,
@@ -327,7 +324,7 @@ class DummyStore(BaseStore):
 
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],
-                      doc_meta: dict[str, Any] | None = None) -> int:
+                      doc_meta: dict[str, Any] | None = None) -> IndexResult:
         cat = os.path.join(self._dir(tenant, collection), "catalog.json")
         try:
             data = json.load(open(cat, "r", encoding="utf-8"))
@@ -336,10 +333,11 @@ class DummyStore(BaseStore):
         ids: list[str] = []
         for i, (rid, _, _) in enumerate(records):
             ids.append(rid or f"{docid}-{i}")
-        data.setdefault(docid, []).extend(ids)
+        purged = len(data.get(docid, []))
+        data[docid] = ids
         with open(cat, "w", encoding="utf-8") as f:
             json.dump(data, f)
-        return len(ids)
+        return IndexResult(indexed_chunks=len(ids), purged_chunks=purged)
 
     def search(self, tenant: str, collection: str, text: str, k: int = 5,
                filters: dict[str, Any] | None = None) -> SearchOutput:
@@ -496,10 +494,6 @@ class SpyStore(BaseStore):
         self.calls.append(("purge_doc", tenant, collection, docid))
         return self.impl.purge_doc(tenant, collection, docid)
 
-    def has_doc(self, tenant: str, collection: str, docid: str) -> bool:
-        self.calls.append(("has_doc", tenant, collection, docid))
-        return self.impl.has_doc(tenant, collection, docid)
-
     def get_document(
         self,
         tenant: str,
@@ -546,7 +540,7 @@ class SpyStore(BaseStore):
 
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],
-                      doc_meta: dict[str, Any] | None = None) -> int:
+                      doc_meta: dict[str, Any] | None = None) -> IndexResult:
         recs = list(records)
         self.calls.append(
             ("index_records", tenant, collection, docid, len(recs), doc_meta)

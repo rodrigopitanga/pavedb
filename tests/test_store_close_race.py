@@ -17,9 +17,9 @@ def _store(temp_data_dir):
     return LocalStore(str(temp_data_dir), FakeEmbedder())
 
 
-def test_has_doc_recovers_from_closed_cached_db(temp_data_dir):
+def test_get_document_recovers_from_closed_cached_db(temp_data_dir):
     store = _store(temp_data_dir)
-    tenant, collection, docid = "acme", "race_has_doc", "DOC-1"
+    tenant, collection, docid = "acme", "race_get_doc", "DOC-1"
     store.index_records(
         tenant,
         collection,
@@ -31,7 +31,9 @@ def test_has_doc_recovers_from_closed_cached_db(temp_data_dir):
     store._dbs[(tenant, collection)].close()
 
     # Should not raise "Cannot operate on a closed database."
-    assert store.has_doc(tenant, collection, docid) is True
+    doc = store.get_document(tenant, collection, docid)
+    assert doc is not None
+    assert doc["docid"] == docid
 
 
 def test_search_recovers_from_closed_cached_db(temp_data_dir):
@@ -92,7 +94,7 @@ def test_rename_collection_evicts_old_cache_before_close(temp_data_dir):
     assert seen.get("present_during_close") is False
 
 
-def test_has_doc_fallback_opens_read_only(temp_data_dir):
+def test_get_document_fallback_opens_read_only(temp_data_dir):
     """Fallback CollectionDB opens read-only (no _wconn)."""
     store = _store(temp_data_dir)
     tenant, collection = "acme", "ro_fallback"
@@ -114,14 +116,15 @@ def test_has_doc_fallback_opens_read_only(temp_data_dir):
         _orig_open(self, path, read_only=read_only)
 
     with patch.object(CollectionDB, "open", _spy_open):
-        result = store.has_doc(tenant, collection, docid)
+        result = store.get_document(tenant, collection, docid)
 
-    assert result is True
+    assert result is not None
+    assert result["docid"] == docid
     assert len(opened) == 1
     assert opened[0]._wconn is None
 
 
-def test_has_doc_fallback_handles_db_removed_before_read_only_open(
+def test_get_document_fallback_handles_db_removed_before_read_only_open(
     temp_data_dir,
 ):
     store = _store(temp_data_dir)
@@ -145,21 +148,21 @@ def test_has_doc_fallback_handles_db_removed_before_read_only_open(
         return _orig_open(self, path, read_only=read_only)
 
     with patch.object(CollectionDB, "open", _unlink_then_open):
-        result = store.has_doc(tenant, collection, docid)
+        result = store.get_document(tenant, collection, docid)
 
-    assert result is False
+    assert result is None
     assert len(opened) == 1
     assert not db_path.exists()
 
 
-def test_has_doc_fallback_treats_empty_meta_db_as_transient(temp_data_dir):
+def test_get_document_fallback_treats_empty_meta_db_as_transient(temp_data_dir):
     store = _store(temp_data_dir)
     tenant, collection, docid = "acme", "ro_empty_schema", "DOC-EMPTY"
     db_path = store._db_path(tenant, collection)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     db_path.touch()
 
-    assert store.has_doc(tenant, collection, docid) is False
+    assert store.get_document(tenant, collection, docid) is None
 
 
 def test_get_query_log_entry_recovers_from_closed_cached_db(temp_data_dir):

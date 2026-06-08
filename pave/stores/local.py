@@ -28,6 +28,7 @@ from pave.filters import lookup_meta, matches_filters, sanit_field, sanit_meta_d
 from pave.metadb import CatalogDB, CollectionDB, UnsupportedSchemaVersionError
 from pave.stores.base import (
     BaseStore,
+    IndexResult,
     MetadataValidationError,
     Record,
     SearchOutput,
@@ -701,15 +702,6 @@ class LocalStore(BaseStore):
             "chunk_count": chunk_count,
         }
 
-    def has_doc(self, tenant: str, collection: str, docid: str) -> bool:
-        return self._read_collection_db(
-            tenant,
-            collection,
-            op_name="has_doc",
-            default=False,
-            reader=lambda db: db.has_doc(docid),
-        )
-
     def get_document(
         self,
         tenant: str,
@@ -789,40 +781,38 @@ class LocalStore(BaseStore):
 
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         with self._collection_lock(tenant, collection):
-            self._load_or_init(tenant, collection)
-            key = (tenant, collection)
-            col_db = self._dbs[key]
-            ids = col_db.get_rids_for_doc(docid)
-            if not ids:
-                return 0
+            return self._purge_doc_locked(tenant, collection, docid)
 
-            # remove sidecar .txt files
-            for urid in ids:
-                p = os.path.join(
-                    self._chunks_dir(tenant, collection),
-                    self._urid_to_fname(urid)
-                )
-                if os.path.isfile(p):
-                    try:
-                        os.remove(p)
-                    except Exception:
-                        pass
+    def _purge_doc_locked(self, tenant: str, collection: str, docid: str) -> int:
+        self._load_or_init(tenant, collection)
+        key = (tenant, collection)
+        col_db = self._dbs[key]
+        ids = col_db.delete_doc(docid)
+        if not ids:
+            return 0
 
-            # delete from SQLite (chunks + documents rows)
-            col_db.delete_doc(docid)
-
-            # delete vectors for these chunk ids
-            backend = self._emb.get(key)
-            if backend and ids:
+        for urid in ids:
+            p = os.path.join(
+                self._chunks_dir(tenant, collection),
+                self._urid_to_fname(urid)
+            )
+            if os.path.isfile(p):
                 try:
-                    backend.delete(ids)
+                    os.remove(p)
                 except Exception:
-                    # Skip silently. Metadata-side cleanup already happened
-                    # and searches hydrate text from sidecars.
                     pass
 
-            self._save(tenant, collection)
-            return len(ids)
+        backend = self._emb.get(key)
+        if backend and ids:
+            try:
+                backend.delete(ids)
+            except Exception:
+                # Skip silently. Metadata-side cleanup already happened
+                # and searches hydrate text from sidecars.
+                pass
+
+        self._save(tenant, collection)
+        return len(ids)
 
     def _chunks_dir(self, tenant: str, collection: str) -> str:
         return os.path.join(self._base_path(tenant, collection), "chunks")
@@ -860,17 +850,27 @@ class LocalStore(BaseStore):
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],
                       doc_meta: dict[str, Any] | None = None
-                      ) -> int:
+                      ) -> IndexResult:
         """
         Ingests records as (rid, text, meta). Guarantees non-null text, coerces
         dict-records, updates SQLite metadata, saves index. Thread critical.
         """
         chunk_count = 0
+        purged = 0
         with self._collection_lock(tenant, collection):
             self._load_or_init(tenant, collection)
             key = (tenant, collection)
             col_db = self._dbs[key]
             backend = self._emb[key]
+            purged = self._purge_doc_locked(tenant, collection, docid)
+            if purged:
+                log.debug(
+                    "INGEST-REPLACE tenant=%s coll=%s docid=%s purged_chunks=%s",
+                    tenant,
+                    collection,
+                    docid,
+                    purged,
+                )
             raw_doc_meta = dict(doc_meta or {})
             raw_doc_meta.setdefault("docid", docid)
             try:
@@ -940,7 +940,7 @@ class LocalStore(BaseStore):
                     )
 
             if not rids_to_add:
-                return 0
+                return IndexResult(indexed_chunks=0, purged_chunks=purged)
 
             # Write metadata to SQLite (inside collection_lock)
             col_db.upsert_chunks(docid, chunk_rows, doc_meta=safe_doc_meta)
@@ -954,9 +954,9 @@ class LocalStore(BaseStore):
             )
             chunk_count = len(rids_to_add)
 
-        if chunk_count:
-            self._register_catalog_collection(tenant, collection)
-        return chunk_count
+            if chunk_count:
+                self._register_catalog_collection(tenant, collection)
+        return IndexResult(indexed_chunks=chunk_count, purged_chunks=purged)
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: dict[str, Any] | None = None) -> SearchOutput:

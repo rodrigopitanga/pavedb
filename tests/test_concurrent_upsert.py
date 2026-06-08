@@ -48,13 +48,16 @@ def test_concurrent_upsert_with_lock_always_consistent(cfg, temp_data_dir):
     store._load_or_init(tenant, coll)
     emb = store._emb[(tenant, coll)]
 
-    def safe_upsert(data):
-        store.index_records(tenant, coll, "doc", [data])
+    # index_records is an atomic full-doc replace, so concurrent calls with
+    # the SAME docid intentionally clobber each other. Concurrency on
+    # DISTINCT docids must remain consistent.
+    def safe_upsert(docid, data):
+        store.index_records(tenant, coll, docid, [data])
 
     for _ in range(100):
         with ThreadPoolExecutor(max_workers=2) as ex:
-            ex.submit(safe_upsert, REC0)
-            ex.submit(safe_upsert, REC1)
+            ex.submit(safe_upsert, "docA", REC0)
+            ex.submit(safe_upsert, "docB", REC1)
         results = store.search(tenant, coll, "texto", 5)
         texts = [r.text for r in results]
         assert "texto A" in texts and "texto B" in texts,\

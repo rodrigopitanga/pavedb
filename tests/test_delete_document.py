@@ -104,10 +104,10 @@ def test_delete_document_cli(tmp_path, monkeypatch):
     main_cli(["ingest", "t1", "c1", str(test_file), "--docid", "CLI-DOC"])
 
     # Verify document exists
-    assert store.has_doc("t1", "c1", "CLI-DOC")
+    assert store.get_document("t1", "c1", "CLI-DOC") is not None
 
     # Delete document via CLI
     main_cli(["delete-document", "t1", "c1", "CLI-DOC"])
 
     # Verify document is gone
-    assert not store.has_doc("t1", "c1", "CLI-DOC")
+    assert store.get_document("t1", "c1", "CLI-DOC") is None

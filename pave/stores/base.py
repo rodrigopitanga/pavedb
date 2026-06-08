@@ -54,6 +54,13 @@ class SearchOutput:
         return NotImplemented
 
 
+@dataclass(frozen=True)
+class IndexResult:
+    """Store-layer indexing result."""
+    indexed_chunks: int
+    purged_chunks: int = 0
+
+
 class BaseStore(ABC):
     @abstractmethod
     def create_collection(self, tenant: str, name: str) -> None: ...
@@ -82,9 +89,6 @@ class BaseStore(ABC):
     def list_tenants(self) -> list[str]:
         """List all tenants."""
         ...
-
-    @abstractmethod
-    def has_doc(self, tenant: str, collection: str, docid: str) -> bool: ...
 
     @abstractmethod
     def get_document(
@@ -132,7 +136,7 @@ class BaseStore(ABC):
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],
                       doc_meta: dict[str, Any] | None = None
-                      ) -> int: ...
+                      ) -> IndexResult: ...
 
     @abstractmethod
     def search(self, tenant: str, collection: str, query: str, k: int = 5,

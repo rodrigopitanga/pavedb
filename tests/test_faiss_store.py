@@ -31,7 +31,7 @@ def test_index_and_search_pt_text(store):
         },
     ]
     n = store.index_records("acme", "undersea", "d1", recs)
-    assert n == 2
+    assert n.indexed_chunks == 2
 
     hits = store.search("acme", "undersea", "avião", k=5)
     assert len(hits) >= 1
@@ -47,10 +47,10 @@ def test_index_two_docs_no_purge(store):
         {"id": "doc2::0", "content": "Veludosas vozes.", "metadata": {"lang": "pt"}},
     ]
     n = store.index_records("acme", "undersea2", "doc1", recs1)
-    assert n == 1
+    assert n.indexed_chunks == 1
 
     n = store.index_records("acme", "undersea2", "doc2", recs2)
-    assert n == 1
+    assert n.indexed_chunks == 1
 
     hits = store.search("acme", "undersea2", "amarelo", k=5)
     assert ("purge_doc", "acme", "undersea2", "doc1") not in store.calls
@@ -61,7 +61,7 @@ def test_index_two_docs_no_purge(store):
         {"id": "doc3::0", "content": "Som amarelo.", "metadata": {"lang": "pt"}},
     ]
     n = store.index_records("acme", "undersea2", "doc3", recs3)
-    assert n == 1
+    assert n.indexed_chunks == 1
 
     hits = store.search("acme", "undersea2", "amarelo", k=5)
     assert len(hits) >= 2
@@ -72,7 +72,7 @@ def test_index_adds_docid_prefix(store):
         {"id": "0", "content": "bicicleta verde.", "metadata": {"lang": "pt"}},
     ]
     n = store.index_records("acme", "cycling", "docbike", recs)
-    assert n == 1
+    assert n.indexed_chunks == 1
     hits = store.search("acme", "cycling", "bicicleta", k=5)
     assert hits[0].text is not None and "bicicleta" in hits[0].text.lower()
     assert hits[0].text is not None and "verde" in hits[0].text.lower()
@@ -85,7 +85,7 @@ def test_chunk_sidecar_preserves_crlf(store):
     ]
 
     n = store.index_records("acme", "crlf", "doccrlf", recs)
-    assert n == 1
+    assert n.indexed_chunks == 1
 
     stored = store.impl._load_chunk_text("acme", "crlf", "doccrlf::0")
     assert stored == text
@@ -141,7 +141,7 @@ def test_doc_level_meta_persists_in_documents_table(store):
     }
 
     n = store.index_records(tenant, coll, docid, recs, doc_meta=doc_meta)
-    assert n == 1
+    assert n.indexed_chunks == 1
 
     col_db = store.impl._dbs[(tenant, coll)]
     conn = col_db._conn
@@ -183,7 +183,7 @@ def test_load_or_init_handles_empty_index_dir(store, tmp_path):
     # Ingest one record; should not raise, and should persist fake index json
     recs = [{"id": "r::0", "content": "hello world", "metadata": {"lang": "en"}}]
     n = store.index_records(tenant, coll, "DOC", recs)
-    assert n == 1
+    assert n.indexed_chunks == 1
 
     # force a save; backend writes persisted FAISS artifacts
     store.impl._save(tenant, coll)

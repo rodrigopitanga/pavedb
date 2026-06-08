@@ -254,7 +254,7 @@ def test_public_profile_matches_bruteforce_baseline(
         ],
         doc_meta={"profile": profile_cfg["id"]},
     )
-    assert n == len(rows)
+    assert n.indexed_chunks == len(rows)
 
     doc_ids = [row["doc_id"] for row in rows]
     doc_matrix = _normalize_rows(

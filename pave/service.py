@@ -214,12 +214,10 @@ def rename_collection(store, tenant: str,
 
 def delete_document(store, tenant: str, collection: str, docid: str) -> dict[str, Any]:
     try:
-        if store.has_doc(tenant, collection, docid):
-            purged = store.purge_doc(tenant, collection, docid)
+        purged = store.purge_doc(tenant, collection, docid)
+        if purged:
             m_inc("purge_total", float(purged))
             m_inc("documents_deleted_total", 1.0)
-        else:
-            purged = 0
         return {
             "ok": True,
             "tenant": tenant,
@@ -416,9 +414,6 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
     with m_timed("ingest"):
         try:
             baseid = docid or _default_docid(filename)
-            if baseid and store.has_doc(tenant, collection, baseid):
-                purged = store.purge_doc(tenant, collection, baseid)
-                m_inc("purge_total", purged)
             meta_from_call = metadata or {}
             now = datetime.now(tz.utc).isoformat(timespec="seconds")
             now = now.replace("+00:00", "Z")
@@ -443,20 +438,29 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
                     "code": "no_text_extracted",
                     "error": "no text extracted",
                 }
-            count = store.index_records(tenant, collection, baseid, records, doc_meta)
+            result = store.index_records(
+                tenant,
+                collection,
+                baseid,
+                records,
+                doc_meta,
+            )
+            if result.purged_chunks:
+                m_inc("purge_total", float(result.purged_chunks))
             m_inc("documents_indexed_total", 1.0)
-            m_inc("chunks_indexed_total", float(count or 0))
+            m_inc("chunks_indexed_total", float(result.indexed_chunks))
             latency_ms = round((_time.perf_counter() - _t0) * 1000, 2)
             log.info(
                 f"ingest tenant={tenant} coll={collection} "
-                f"docid={baseid} chunks={count} ms={latency_ms:.2f}"
+                f"docid={baseid} indexed_chunks={result.indexed_chunks} "
+                f"ms={latency_ms:.2f}"
             )
             return {
                 "ok": True,
                 "tenant": tenant,
                 "collection": collection,
                 "docid": baseid,
-                "chunks": count
+                "chunks": result.indexed_chunks,
             }
         except ServiceError:
             raise
