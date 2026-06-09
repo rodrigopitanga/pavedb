@@ -109,28 +109,42 @@ class _StoreStateLock:
 class _CollectionReadWriteLock:
     """Per-collection lock allowing concurrent readers and exclusive writes.
 
-    Not reentrant: nested read acquisition or read-to-write upgrade by the
-    same thread will deadlock.
+    Reads are reentrant on the same thread (search() already holds a read
+    lock when it calls _read_meta_batch_safe which re-enters via
+    _read_collection_db). A thread that already holds a read lock bypasses
+    the writer-priority gate so a queued writer cannot deadlock the nested
+    re-acquisition.
+
+    Read-to-write upgrade is still not supported: a thread holding read_lock
+    that calls write_lock will deadlock waiting for itself to release.
     """
 
     def __init__(self) -> None:
         self._cond = Condition(Lock())
-        self._readers = 0
+        self._readers: dict[int, int] = {}
         self._writer = False
         self._pending_writers = 0
 
     @contextmanager
     def read_lock(self) -> Iterator[None]:
+        tid = get_ident()
         with self._cond:
-            while self._writer or self._pending_writers > 0:
+            while (
+                self._writer
+                or (self._pending_writers > 0 and tid not in self._readers)
+            ):
                 self._cond.wait()
-            self._readers += 1
+            self._readers[tid] = self._readers.get(tid, 0) + 1
         try:
             yield
         finally:
             with self._cond:
-                self._readers -= 1
-                if self._readers == 0:
+                depth = self._readers[tid] - 1
+                if depth:
+                    self._readers[tid] = depth
+                else:
+                    self._readers.pop(tid, None)
+                if not self._readers:
                     self._cond.notify_all()
 
     @contextmanager
@@ -138,7 +152,7 @@ class _CollectionReadWriteLock:
         with self._cond:
             self._pending_writers += 1
             try:
-                while self._writer or self._readers > 0:
+                while self._writer or self._readers:
                     self._cond.wait()
                 self._writer = True
             finally:
@@ -520,7 +534,12 @@ class LocalStore(BaseStore):
         default: Any,
         reader,
     ) -> Any:
-        with self._state_lock.read_lock():
+        # Per-collection read lock pins the cached col_db against concurrent
+        # delete_collection / rename_collection / restore_archive, which take
+        # the write side. Without it, the cached SQLite handle can be closed
+        # underneath an in-flight read and surface as "disk I/O error" rather
+        # than something the transient-error fallback can recover from.
+        with self._collection_read_lock(tenant, collection):
             key = (tenant, collection)
             col_db = self._dbs.get(key)
             if col_db is not None:
@@ -1178,11 +1197,14 @@ class LocalStore(BaseStore):
 
             with self._collection_write_lock(tenant, collection):
                 self._load_or_init(tenant, collection)
-                if attempt == 2:
-                    return _search_loaded(self._emb[key], self._dbs[key])
 
             # The collection may have been deleted between initialization and
             # reacquiring the shared read lock. Loop back and re-check caches.
+        with self._collection_read_lock(tenant, collection):
+            backend = self._emb.get(key)
+            col_db = self._dbs.get(key)
+            if backend is not None and col_db is not None:
+                return _search_loaded(backend, col_db)
         raise RuntimeError("collection cache initialization did not stabilize")
 
     def _build_match_reason(self, query: str, score: float,
