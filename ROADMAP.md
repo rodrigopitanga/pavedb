@@ -78,7 +78,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-12 | ~~Ingest timeout guidance~~ | 🧩 | Avoid client timeouts | v0.5.8 |
 | P1-13 | ~~Ingest size limits~~ | 🧩 | Fail fast on huge uploads | v0.5.8 |
 | P1-14 | ~~Response envelope standardization~~ | 🧱 | SDK-friendly API | v0.9 |
-| P1-15 | Embedded/library mode | 🧱 | In-app use, adoption | v1.1 |
+| P1-15 | Embedded/library mode | 🧱 | In-app use, adoption | v1.0 |
 | P1-16 | Batch ingest endpoint | 🧩 | Throughput, DX | v1.1 |
 | P1-17 | ~~Get document by ID~~ | 🧩 | Visibility, library mode | v0.9 |
 | P1-18 | ~~Error code standardization~~ | 🧩 | Consistent API errors | v0.5.8 |
@@ -86,33 +86,38 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-20 | ~~Search timeout + concurrency cap~~ | 🔧 | Graceful degradation | v0.5.8 |
 | P1-21 | ~~Serve listings + store catalog counts in health/metrics~~ | 🧩 | Internal store query layer | v0.5.8 |
 | P1-22 | Per-collection hot caches | 🧱 | Performance isolation | v1.0 |
-| P1-23 | Freeze search response schema | 🧩 | SDK contract | v0.9 |
+| P1-23 | ~~Freeze search response schema~~ | 🧩 | SDK contract; `query_id` added additively after freeze | v0.9 |
 | P1-24 | Python client package | 🧱 | SDK foundation | v1.1 |
 | P1-25 | Dev vs prod config defaults | 🔧 | Safe defaults | v1.0 |
-| P1-34 | ~~Server config bootstrap~~ | 🧩 | Explicit `pavecli init` + `--home` / explicit runtime paths for pip installs | v1.0 |
-| P1-35 | Filter pushdown parity harness | 🔧 | Speedups without semantic drift | v1.0 |
 | P1-26 | Config reference + CI doc check | 🧩 | Config clarity | v1.0 |
 | P1-27 | Admin key auto-generate + persist | 🧩 | Secure bootstrap | v1.0 |
 | P1-28 | Moving-window rate limiting per tenant | 🔧 | req/min, req/hour — needs `rate_limit_buckets` table (Phase 3) | post-SQLite |
 | P1-29 | ~~VectorBackend protocol~~ | 🔧 | Initial backend seam for store split | v0.5.9 |
 | P1-29b | ~~Clean protocol + Faiss path~~ | 🔧 | Finish FAISS cutover | v0.5.9 |
 | P1-29c | ~~CollectionDB k/v pre-filter~~ | 🔧 | First pushdown stage | v0.5.9 |
-| P1-36 | ~~Reject empty/colliding sanitized metadata keys~~ | 🧩 | Avoid silent key drops/coalescing under current sanitization rules | v0.5.9 |
-| P1-37 | ~~Pre-orchestrator cleanup~~ | 🔧 | Drop txtai dep, rename store/embedder, dead code removal, filter path simplification | v0.5.9 |
 | P1-30 | ~~Activate embedder factory cache (superseded by P1-29b)~~ |  | Superseded by Step 2 in PLAN-STORE | superseded |
 | P1-31 | ~~Store orchestrator~~ | 🧱 | Orchestrate backend + meta + catalog | v0.5.9 |
 | P1-32 | Per-collection embeddings | 🧱 | Model per collection | v1.0 |
 | P1-33 | ~~CatalogDB + catalog separation~~ | 🧱 | Catalog + collection backend/embedder config source | v0.9 |
+| P1-34 | ~~Server config bootstrap~~ | 🧩 | Explicit `pavecli init` + `--home` / explicit runtime paths for pip installs | v1.0 |
+| P1-35 | Filter pushdown parity harness | 🔧 | Speedups without semantic drift | v1.0 |
+| P1-36 | ~~Reject empty/colliding sanitized metadata keys~~ | 🧩 | Avoid silent key drops/coalescing under current sanitization rules | v0.5.9 |
+| P1-37 | ~~Pre-orchestrator cleanup~~ | 🔧 | Drop txtai dep, rename store/embedder, dead code removal, filter path simplification | v0.5.9 |
 | P1-40 | ~~Search timing breakdown in response~~ | 🔧 | Latency debugging: embed/search/filter/hydrate split | v0.9 |
 | P1-41 | ~~Persistent query log~~ | 🔧 | Queryable search history (query, filters, config, result IDs) in SQLite | v0.9 |
 | P1-42 | ~~Query replay endpoint~~ | 🧩 | Re-execute stored query; depends on P1-41 | v0.9 |
 | P1-43 | ~~`/v1/` route prefix~~ | 🔧 | Versioned API base path; frozen at v1.0, additive after | v0.9 |
-| P1-51 | ~~Admin query-home resolver + shortcut routes + CLI rework~~ | 🧩 | Bare-`query_id` lookup/replay for admin via `query_home` table in `catalog.db` | v0.9 |
-| P1-46 | Docs site — preview | 🔧 | MkDocs static site; user + developer sections; published via GitLab Pages | v0.9 |
-| P1-47 | Docs site — 1.0 | 🧱 | Full coverage: guides, core concepts, inspect/debug, operations, architecture, plugins | v1.0 |
+| P1-46 | Docs site — preview | 🔧 | MkDocs static site; user + developer sections; published via GitLab Pages. Most reference content auto-rendered from the source plumbing landed in v1.0 (P1-53a–d) | v1.1 |
+| P1-47 | Docs site — 1.0 | 🧱 | Full coverage: guides, core concepts, inspect/debug, operations, architecture, plugins; versioned via `mike`, custom domain | v1.2 |
 | P1-48 | ~~Remove `SearchBody.request_id`~~ | 🧩 | `X-Request-ID` becomes the only request-correlation input | v0.9 |
 | P1-49 | HTTP request metrics middleware | 🔧 | Per-endpoint request count + latency histogram, status class split, Prometheus `# HELP`/`# TYPE` metadata | v1.0 |
 | P1-50 | Product-signal metrics | 🧩 | Zero-match searches, filter usage, query-log readiness, embedder counters, sidecar drift — competitor gap | v1.0 |
+| P1-51 | ~~Admin query-home resolver + shortcut routes + CLI rework~~ | 🧩 | Bare-`query_id` lookup/replay for admin via `query_home` table in `catalog.db` | v0.9 |
+| P1-52 | Concurrency chaos test (Level 1) | 🔧 | N-thread random-interleave fuzz over create/delete/rename/ingest/search/dump/restore with post-run catalog↔disk invariants. Regression net for the lock lattice hardened during the v0.9 rc cycle; bench-stress finds races, this turns them into non-flaky CI checks. | v1.0 |
+| P1-53a | Reference-source plumbing: OpenAPI completeness pass | 🔧 | Every route gets `summary`/`description`/`tags`/`responses`; every Pydantic `Field` gets `description` + at least one example. Unblocks an auto-rendered API reference. | v1.0 |
+| P1-53b | Reference-source plumbing: CLI completeness + dumper | 🔧 | Every subcommand gets `help`/`epilog`-example; `scripts/cli_to_markdown.py` renders `reference/cli.md` committed in-repo. | v1.0 |
+| P1-53c | Reference-source plumbing: config schema refactor | 🔧 | Single (key, default, description, env_var) source for `_DEFAULTS`, `config.yml.example`, and `reference/config.md`. Closes P1-26 (drift check) as a side effect. | v1.0 |
+| P1-53d | Reference-source plumbing: module/class docstrings on public seams | 🔧 | `pave/stores`, `pave/backends`, `pave/embedders`, catalog, `pave/service.py` public functions. Powers `mkdocstrings` once the docs site lands. | v1.0 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -123,26 +128,16 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-13 | Collection log export | 🧱 | Search analytics | v1.4 |
 | P2-14 | Document versioning | 🧱 | Audit trails | v1.7 |
 | P2-19 | Tenant admin infra | 🧱 | Admin ops | v1.5 |
-| P2-38 | Tenant key management API | 🔧 | Generate/revoke keys, YAML seed → SQL | v1.6 |
 | P2-20 | Collection limit / tenant | 🧩 | Cap growth | v1.5 |
 | P2-21 | Storage limit / tenant | 🧩 | Cap storage | v1.5 |
-| P2-47 | Per-collection storage accounting | 🔧 | Separate document/chunk/index/meta bytes; expose `document_bytes` for quotas, keep `chunk_bytes` admin-only | v1.5 |
 | P2-22 | Usage stats to mothership |  | Capacity planning | v1.4 |
-| P2-23 | Chunk inspector + collection browser | 🔧 | List chunks, get chunk by ID, browse doc→chunk tree | v0.9 |
+| P2-23 | ~~Chunk inspector + collection browser~~ | 🔧 | List chunks, get chunk by ID, browse doc→chunk tree | v0.9 |
 | P2-24 | Delete by ID list / by query | 🧩 | Bulk ops, DX | v1.6 |
 | P2-25 | Collection version tagging | 🧩 | Portability, migration | v1.5 |
 | P2-26 | Tenant profiles + templates | 🧱 | Quota governance, tiers | v1.6 |
-| P2-42 | Result diff API | 🔧 | Compare two search runs: added/removed/reordered | v1.2 |
-| P2-43 | Eval assertion API | 🧱 | Define expected results, batch run, track pass/fail | v1.2 |
-| P2-44 | Regression detection | 🔧 | Compare eval runs across versions, flag drift; depends on P2-43 | v1.2 |
-| P2-45 | Config snapshot per collection | 🧩 | Record embedder model + version + search params at ingest | v1.2 |
-| P2-46 | ~~query_log + ops_log enrichment~~ | 🧩 | Historical `tenant` / `collection` / `actor` columns; `actor` field in ops_log | v0.9 |
 | P2-28 | ~~Structured log emission~~ | 🧩 | JSON lines per operation with request_id, tenant, latency | v0.5.8 |
-| P2-40 | ~~Error logging at service layer~~ | 🧩 | `log.warning` on every `ok: false` return site; audit codes and choose level per error class | v0.5.9 |
-| P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v1.2 |
 | P2-29 | ~~Public cross-language retrieval fixtures~~ | 🧩 | Recall validation | v0.5.9 |
 | P2-30 | ~~Benchmark CI gate + p99 SLO~~ | 🧩 | Latency contract | v0.5.9 |
-| P2-48 | `bench-stress-full` profile | 🔧 | Off-by-default stress run covering every public endpoint; full-surface regression profile | v1.0 |
 | P2-31 | Formalize collection independence | 🔧 | Portability contract | v1.5 |
 | P2-32 | `pavecli --host` remote mode | 🧩 | CLI/SDK parity | v1.3 |
 | P2-33 | JS/TS client | 🧱 | Web + Node adoption | v1.3 |
@@ -150,7 +145,17 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-35 | MCP server | 🧱 | AI agent integration | v1.3 |
 | P2-36 | LlamaIndex adapter | 🧱 | Framework coverage | v1.3 |
 | P2-37 | Audit logs for admin actions | 🧩 | Governance trail | v2.0 |
+| P2-38 | Tenant key management API | 🔧 | Generate/revoke keys, YAML seed → SQL | v1.6 |
+| P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v1.2 |
+| P2-40 | ~~Error logging at service layer~~ | 🧩 | `log.warning` on every `ok: false` return site; audit codes and choose level per error class | v0.5.9 |
 | P2-41 | ~~TXT preprocessor: character offset in chunk metadata~~ | 🧩 | Provenance contract (replace `chunk` key with `offset`) | v0.5.9 |
+| P2-42 | Result diff API | 🔧 | Compare two search runs: added/removed/reordered | v1.2 |
+| P2-43 | Eval assertion API | 🧱 | Define expected results, batch run, track pass/fail | v1.2 |
+| P2-44 | Regression detection | 🔧 | Compare eval runs across versions, flag drift; depends on P2-43 | v1.2 |
+| P2-45 | Config snapshot per collection | 🧩 | Record embedder model + version + search params at ingest | v1.2 |
+| P2-46 | ~~query_log + ops_log enrichment~~ | 🧩 | Historical `tenant` / `collection` / `actor` columns; `actor` field in ops_log | v0.9 |
+| P2-47 | Per-collection storage accounting | 🔧 | Separate document/chunk/index/meta bytes; expose `document_bytes` for quotas, keep `chunk_bytes` admin-only | v1.5 |
+| P2-48 | ~~`bench-stress-full` profile~~ | 🔧 | Off-by-default stress run covering every public endpoint; landed early as `STR_SUITE=critical/full` with `@_covers` decorator + OpenAPI startup gap warning | v0.9 |
 
 ### P3 — Scale and long-term
 
@@ -313,8 +318,10 @@ latency on every search/ingest/delete.~~
   collection backend/embedder config wiring (P1-33).~~
 - ~~Response envelope standardization (P1-14).~~
 - ~~Global `request_id` echo across endpoints and responses (P1-11).~~
-- Freeze search response schema (`matches`, `latency_ms`,
-  `match_reason`, `request_id`) (P1-23).
+- ~~Freeze search response schema (`matches`, `latency_ms`,
+  `match_reason`, `request_id`); `query_id` added additively
+  to enable replay from clients without scanning the log
+  (P1-23).~~
 - ~~Search timing breakdown in response: embed/search/filter/hydrate
   split alongside existing `latency_ms` (P1-40).~~
 - ~~Persistent query log: store query text, filters, config snapshot,
@@ -334,8 +341,8 @@ latency on every search/ingest/delete.~~
   historical `tenant` / `collection` / `actor` columns
   (audit + portability); `ops_log` events gain `actor`
   (P2-46).~~
-- Chunk inspector + collection browser: list chunks, get chunk
-  by ID (text + metadata + provenance), doc→chunk tree (P2-23).
+- ~~Chunk inspector + collection browser: list chunks, get chunk
+  by ID (text + metadata + provenance), doc→chunk tree (P2-23).~~
 - ~~Mount all routes under `/v1/` prefix; drop unversioned routes
   (no compat shim pre-GA). Contract: frozen at v1.0, additive
   only after (new endpoints, optional fields). `/v2/` introduced
@@ -345,13 +352,11 @@ latency on every search/ingest/delete.~~
 - ~~Remove `SearchBody.request_id`; `X-Request-ID` becomes the
   single documented input channel for request correlation
   (P1-48).~~
-- Docs site — preview: MkDocs Material static site with
-  getting-started guide, core concepts (tenants, collections,
-  chunks, metadata, filters), inspect/debug walkthrough using
-  the v0.9 endpoints (query log, replay, chunk inspector,
-  request_id correlation), and a developer section seeded from
-  `docs/PLAN-*.md`. Published via GitLab Pages at a stable URL.
-  Text-first, no marketing chrome (P1-46).
+- ~~`bench-stress-full` profile: STR_SUITE=critical/full tiers
+  with `@_covers` decorator + OpenAPI coverage warning;
+  auto-discovery picks up any new `op_*` without touching
+  `bench-stress.py`. Race-outcome reclassification keeps real
+  5xx visible (P2-48).~~
 
 ### PaveDB v1.0 — Stability
 
@@ -359,23 +364,38 @@ latency on every search/ingest/delete.~~
 - ~~Activate embedder factory cache (P1-30; superseded by P1-29b).~~
 - Per-collection embeddings (P1-32).
 - Per-collection hot caches with isolation (P1-22).
+- Embedded/library mode: import `pave` and use the store
+  in-process — no server required. Lowers the install friction
+  bar (Chroma-like first impression) without sacrificing the
+  inspectability surface (P1-15).
+- Reference-source plumbing pass — the docs site slips to v1.1,
+  but v1.0 lands the source-of-truth so reference content can be
+  rendered from code without re-writing it later:
+  - OpenAPI completeness: every route gets summary/description/
+    tags/responses; every Pydantic Field gets description + at
+    least one example. Unblocks an auto-rendered API reference
+    (P1-53a).
+  - CLI completeness + dumper: every subcommand gets help and
+    an epilog example; `scripts/cli_to_markdown.py` renders
+    `reference/cli.md` committed in-repo (P1-53b).
+  - Config schema refactor: single (key, default, description,
+    env_var) source feeds `_DEFAULTS`, `config.yml.example`, and
+    `reference/config.md`. Closes the P1-26 drift check as a
+    side effect (P1-53c).
+  - Module/class docstrings on public seams: `pave/stores`,
+    `pave/backends`, `pave/embedders`, catalog, and
+    `pave/service.py` public functions. Powers `mkdocstrings`
+    when the docs site lands at v1.1 (P1-53d).
 - Dev vs prod config defaults (P1-25).
 - ~~Explicit config bootstrap for pip installs (`pavecli init`,
   `--home`, explicit runtime paths) (P1-34).~~
 - Add capability-based filter pushdown with parity checks against
   canonical post-filter semantics (P1-35).
 - Admin key auto-generate + persist (P1-27).
-- Config reference doc + CI drift check (P1-26).
+- Config reference doc + CI drift check — lands as a side effect
+  of P1-53c (P1-26).
 - Publish `pip freeze` snapshot as release artifact (P3-40).
 - ~~List tenants and collections via API (CLI parity) (P2-12).~~
-- Docs site — 1.0: expand the v0.9 preview to full release
-  coverage. User-facing: install, quickstart, core concepts,
-  auth, ingest, search, filters, inspect/debug, operations
-  (config, limits, metrics, health). Developer-facing:
-  architecture, service/store/embedder seams, plugin contract,
-  internals. Auto-generated API reference from OpenAPI. Search,
-  versioned URLs, dark/light theme. Seeds future language
-  translations (P1-47).
 - HTTP request metrics middleware: single middleware records
   per-endpoint count + latency histogram labeled by method,
   path template, and status class. Removes per-handler `inc`
@@ -387,19 +407,34 @@ latency on every search/ingest/delete.~~
   rows + oldest-entry age, embedder counters, sidecar drift
   gauges. Signals competitors don't expose; directly ties
   metrics to the inspectability thesis (P1-50).
+- Concurrency chaos test (Level 1): N-thread random-interleave
+  fuzz over create/delete/rename/ingest/search/dump/restore with
+  post-run catalog↔disk invariants. Locks in the lock-lattice
+  hardening done during the v0.9 rc cycle; turns races
+  bench-stress catches into non-flaky CI checks (P1-52).
 
 ### PaveDB v1.1 — Adoption
 
-- Python client package (`pave`): HTTP mode for remote instances;
-  library mode for in-process use (no HTTP). Same package, two
-  transports.
-- Embedded/library mode: run PaveDB in-process without HTTP server
-  (expose service + store layer as a Python API; single-tenant
-  default).
+- Docs site — preview: MkDocs Material static site published via
+  GitLab Pages. Most reference content auto-rendered from the
+  source plumbing landed at v1.0 (P1-53a–d); hand-written content
+  is small (index, concepts, inspect walkthrough). Text-first, no
+  marketing chrome (P1-46).
+- Python client package (`pave`): unified Python API that wraps the
+  in-process library mode (v1.0) and an HTTP client for remote
+  instances behind the same interface. Same package, two transports
+  (P1-24).
 - Batch ingest endpoint (list of documents in one call).
 
 ### PaveDB v1.2 — Control
 
+- Docs site — 1.0: expand the v1.1 preview to full release
+  coverage. User-facing: install, quickstart, core concepts,
+  auth, ingest, search, filters, inspect/debug, operations
+  (config, limits, metrics, health). Developer-facing:
+  architecture, service/store/embedder seams, plugin contract,
+  internals. Versioned via `mike`, custom domain, search,
+  dark/light theme. Seeds future language translations (P1-47).
 - Honor `meta.priority` boosts during scoring (P2-11).
 - Add hybrid reranking (vector similarity + BM25/token
   matching) (P1-07).
