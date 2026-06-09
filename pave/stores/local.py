@@ -434,6 +434,21 @@ class LocalStore(BaseStore):
                 raise ValueError(f"collection '{old_name}' does not exist")
             if os.path.exists(new_path):
                 raise ValueError(f"collection '{new_name}' already exists")
+            # The catalog can hold a row for new_name even when the directory
+            # doesn't (orphan rows from an interrupted op or restore). Catch
+            # that here so a UNIQUE collision surfaces as a clean conflict
+            # before any filesystem state changes.
+            if tenant != "_system":
+                existing = self._with_catalog_retry(
+                    "rename_conflict_check",
+                    lambda catalog: catalog.get_collection_config(
+                        tenant, new_name,
+                    ),
+                )
+                if existing is not None:
+                    raise ValueError(
+                        f"collection '{new_name}' already exists"
+                    )
 
             # Close DB for old collection before rename
             old_db = self._dbs.pop(old_key, None)
