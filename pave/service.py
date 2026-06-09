@@ -525,10 +525,12 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
                f"{'...' if len(_t.text or '') > 60 else ''}\""
                if _t else "")
             + (f" req={request_id}" if request_id else ""))
+        query_id: str | None = None
         if _log:
+            query_id = str(uuid.uuid4())
             try:
                 store.log_query(
-                    query_id=str(uuid.uuid4()),
+                    query_id=query_id,
                     tenant=tenant,
                     collection=collection,
                     actor=actor,
@@ -546,12 +548,14 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
                 )
             except Exception:
                 log.warning("query log write failed", exc_info=True)
+                query_id = None
         return {
             "ok": True,
             "matches": [r.to_dict() for r in top],
             "latency_ms": latency_ms,
             "timing": timing,
             "request_id": request_id,
+            "query_id": query_id,
         }
     except Exception as exc:
         log.warning(

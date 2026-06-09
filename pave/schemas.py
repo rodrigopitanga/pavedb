@@ -56,6 +56,14 @@ class SearchResponse(OkResponse):
         default=None,
         description="Per-phase latency breakdown",
     )
+    query_id: str | None = Field(
+        default=None,
+        description=(
+            "Server-assigned id for this search, usable with the "
+            "/queries/{query_id} and /queries/{query_id}/replay endpoints. "
+            "Omitted when query logging is disabled."
+        ),
+    )
 
 
 class SearchBody(BaseModel):
