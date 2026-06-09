@@ -972,6 +972,114 @@ async def op_prometheus_metrics(
         stats.record(OpResult("prometheus_metrics", lat, False, str(e)))
 
 
+@_covers(("GET", "/v1/search"))
+async def op_global_search_get(client: httpx.AsyncClient, _: World, stats: Stats):
+    """GET /search — cross-collection global search, query-string variant."""
+    query = random.choice(QUERIES)
+    t0 = time.perf_counter()
+    try:
+        r = await client.get(
+            f"{API_PREFIX}/search",
+            params={"q": query, "k": 5},
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("global_search_get", lat, False,
+                                  _parse_error(r)))
+            return
+        stats.record(OpResult("global_search_get", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("global_search_get", lat, False, str(e)))
+
+
+@_covers(("GET", "/v1/collections/{tenant}/{name}/queries/{query_id}"))
+async def op_get_query_log_entry(
+    client: httpx.AsyncClient, world: World, stats: Stats,
+):
+    """GET /collections/{tenant}/{coll}/queries/{id} — single log entry."""
+    pair = await world.pick_query_id()
+    if pair is None:
+        return
+    coll, qid = pair
+    t0 = time.perf_counter()
+    try:
+        r = await client.get(
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/queries/{qid}",
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if r.status_code == 404:
+            stats.record(OpResult("get_query_log_entry", lat, True, "404"))
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("get_query_log_entry", lat, False,
+                                  _parse_error(r)))
+            return
+        stats.record(OpResult("get_query_log_entry", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("get_query_log_entry", lat, False, str(e)))
+
+
+@_covers(("POST", "/v1/admin/queries/{query_id}/replay"))
+async def op_admin_replay_query(
+    client: httpx.AsyncClient, world: World, stats: Stats,
+):
+    """POST /admin/queries/{id}/replay — exercises catalog.resolve_query_home
+    to look up the collection, then replays. 404 is a valid race outcome."""
+    pair = await world.pick_query_id()
+    if pair is None:
+        return
+    _coll, qid = pair
+    t0 = time.perf_counter()
+    try:
+        r = await client.post(f"{API_PREFIX}/admin/queries/{qid}/replay")
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if r.status_code == 404:
+            stats.record(OpResult("admin_replay_query", lat, True, "404"))
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("admin_replay_query", lat, False,
+                                  _parse_error(r)))
+            return
+        stats.record(OpResult("admin_replay_query", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("admin_replay_query", lat, False, str(e)))
+
+
+@_covers(("DELETE", "/v1/admin/metrics"))
+async def op_admin_reset_metrics(
+    client: httpx.AsyncClient, _: World, stats: Stats,
+):
+    """DELETE /admin/metrics — zero out in-memory counters. Destructive on
+    metrics state, so should run at a very low weight."""
+    t0 = time.perf_counter()
+    try:
+        r = await client.delete(f"{API_PREFIX}/admin/metrics")
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("admin_reset_metrics", lat, False,
+                                  _parse_error(r)))
+            return
+        stats.record(OpResult("admin_reset_metrics", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("admin_reset_metrics", lat, False, str(e)))
+
+
 # ---------------------------------------------------------------------------
 # Weighted operation suites
 # ---------------------------------------------------------------------------
