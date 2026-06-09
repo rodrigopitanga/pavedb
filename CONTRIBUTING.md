@@ -191,6 +191,48 @@ asking for permission to ask.
 - CLI entrypoints are defined in `pave/cli.py`; shell shims `pavecli.sh`/`pavesrv.sh`
   wrap the same commands for repo contributors.
 
+## Concurrency model
+
+Per-collection SQLite + per-collection FAISS gives us portable
+collections (dump = zip a directory) but it also means consistency across
+collections, the catalog, and the filesystem is enforced in the application,
+not by a single transactional store. Three lock layers do the work; reach
+for the right one for what you're protecting:
+
+```
+State lock        (_StoreStateLock,     reentrant rw)
+  └─ Collection lock  (_CollectionReadWriteLock,  reentrant reads)
+       └─ DB-internal cvs  (CollectionDB / CatalogDB writer/reader gates)
+            └─ SQLite WAL (file-level, transparent to us)
+```
+
+| Lock | Defined in | Held by |
+|---|---|---|
+| `_StoreStateLock` | `pave/stores/local.py` | `restore_archive` / `dump_archive` take the write side; every other op takes the read side via the per-collection helpers. |
+| `_CollectionReadWriteLock` | `pave/stores/local.py` | `search` and other reads take `_collection_read_lock`; `index_records`, `purge_doc`, `delete_collection`, `create_collection`, `rename_collection` take `_collection_write_lock` (variadic `_collection_write_locks` for multi-collection ops like rename). |
+| `CollectionDB` / `CatalogDB` internal cvs | `pave/metadb.py` | Taken inside the db classes' `_reader`/`_writer` context managers. Don't take these from `pave/stores/*`. |
+
+Rules we've actually learned the hard way:
+
+1. **Catalog writes happen *inside* the per-collection write lock.** If you
+   write to the catalog after releasing the collection lock, a concurrent
+   delete/rename/restore can leave catalog and disk inconsistent. See
+   `create_collection`, `delete_collection`, `rename_collection`,
+   `index_records` for the pattern.
+2. **Reads can nest; writes can't upgrade from reads.**
+   `_CollectionReadWriteLock` tracks readers per thread, so
+   `search()` may legally re-enter via `_read_collection_db`. A thread
+   that holds a read lock and tries to take the write lock will deadlock
+   waiting for itself — that's an upgrade, not a reentry, and we don't
+   support it.
+3. **Pre-check the catalog inside the lock when conflict matters.**
+   `rename_collection` checks the catalog for a row at the target name
+   before touching disk; otherwise a UNIQUE collision surfaces as a 500
+   instead of a 409 and disk/catalog end up out of sync.
+
+If you add a new lock or a new lock-holding path, update this section and
+the docstring on the affected lock class.
+
 ## Logging conventions
 
 All modules use `log = get_logger()` at module level (no underscore prefix).
