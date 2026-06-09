@@ -48,7 +48,12 @@ class SbertEmbedder:
         )
         self.model = SentenceTransformer(model_name, device=device)
         try:
-            self._dim = int(self.model.get_sentence_embedding_dimension())
+            get_dim = getattr(
+                self.model,
+                "get_embedding_dimension",
+                None,
+            ) or getattr(self.model, "get_sentence_embedding_dimension", None)
+            self._dim = int(get_dim()) if get_dim is not None else None
         except Exception:
             self._dim = None
 

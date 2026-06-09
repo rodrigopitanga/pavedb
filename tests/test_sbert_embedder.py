@@ -141,8 +141,11 @@ def test_dim_reads_model_dimension_without_probe(monkeypatch) -> None:
         def __init__(self, *_args, **_kwargs) -> None:
             pass
 
-        def get_sentence_embedding_dimension(self) -> int:
+        def get_embedding_dimension(self) -> int:
             return 7
+
+        def get_sentence_embedding_dimension(self) -> int:
+            raise AssertionError("deprecated dimension method was called")
 
         def encode(self, texts, **_kwargs):
             calls["encode"] += 1

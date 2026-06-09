@@ -40,8 +40,15 @@ def _worker_main(conn, model_name: str, raw_device: str, batch_size: int) -> Non
         device = _resolve_device(raw_device)
         model = SentenceTransformer(model_name, device=device)
         try:
-            dim = int(model.get_sentence_embedding_dimension())
+            get_dim = getattr(
+                model,
+                "get_embedding_dimension",
+                None,
+            ) or getattr(model, "get_sentence_embedding_dimension", None)
+            dim = int(get_dim()) if get_dim is not None else None
         except Exception:
+            dim = None
+        if dim is None:
             probe = model.encode(
                 ["_"],
                 batch_size=batch_size,
