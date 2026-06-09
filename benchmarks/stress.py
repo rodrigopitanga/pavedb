@@ -269,6 +269,20 @@ class World:
 # ---------------------------------------------------------------------------
 # Individual operations
 # ---------------------------------------------------------------------------
+# Each op_* function declares the (METHOD, path-template) routes it exercises
+# via @_covers(...). The startup coverage check compares the union of these
+# against /openapi.json and warns about any uncovered endpoint. Forgetting
+# the decorator on a new op means the coverage check will surface the gap.
+
+def _covers(*routes: tuple[str, str]):
+    """Mark which (METHOD, path-template) routes an op_* exercises."""
+    def deco(fn):
+        fn.__bench_covers__ = tuple(routes)
+        return fn
+    return deco
+
+
+@_covers(("POST", "/v1/collections/{tenant}/{name}"))
 async def op_create_collection(client: httpx.AsyncClient, world: World, stats: Stats):
     name = f"s_{_rand_name()}"
     t0 = time.perf_counter()
@@ -289,6 +303,7 @@ async def op_create_collection(client: httpx.AsyncClient, world: World, stats: S
         stats.record(OpResult("collection_create", lat, False, str(e)))
 
 
+@_covers(("DELETE", "/v1/collections/{tenant}/{name}"))
 async def op_delete_collection(client: httpx.AsyncClient, world: World, stats: Stats):
     name = await world.pick_collection()
     if name is None:
@@ -313,6 +328,7 @@ async def op_delete_collection(client: httpx.AsyncClient, world: World, stats: S
         stats.record(OpResult("collection_delete", lat, False, str(e)))
 
 
+@_covers(("POST", "/v1/collections/{tenant}/{collection}/documents"))
 async def op_ingest_small(client: httpx.AsyncClient, world: World, stats: Stats):
     """Ingest a short document (no chunking)."""
     coll = await world.pick_collection()
@@ -341,6 +357,7 @@ async def op_ingest_small(client: httpx.AsyncClient, world: World, stats: Stats)
         stats.record(OpResult("ingest_small", lat, False, str(e)))
 
 
+@_covers(("POST", "/v1/collections/{tenant}/{collection}/documents"))
 async def op_ingest_large(client: httpx.AsyncClient, world: World, stats: Stats):
     """Ingest a larger document that triggers chunking."""
     coll = await world.pick_collection()
@@ -369,6 +386,7 @@ async def op_ingest_large(client: httpx.AsyncClient, world: World, stats: Stats)
         stats.record(OpResult("ingest_chunked", lat, False, str(e)))
 
 
+@_covers(("DELETE", "/v1/collections/{tenant}/{collection}/documents/{docid}"))
 async def op_delete_document(client: httpx.AsyncClient, world: World, stats: Stats):
     pair = await world.pick_doc()
     if pair is None:
@@ -393,6 +411,7 @@ async def op_delete_document(client: httpx.AsyncClient, world: World, stats: Sta
         stats.record(OpResult("doc_delete", lat, False, str(e)))
 
 
+@_covers(("POST", "/v1/collections/{tenant}/{name}/search"))
 async def op_search(client: httpx.AsyncClient, world: World, stats: Stats):
     coll = await world.pick_collection()
     if coll is None:
@@ -424,6 +443,7 @@ async def op_search(client: httpx.AsyncClient, world: World, stats: Stats):
         stats.record(OpResult("search", lat, False, str(e)))
 
 
+@_covers(("GET", "/v1/admin/archive"))
 async def op_archive_download(client: httpx.AsyncClient, _: World, stats: Stats):
     t0 = time.perf_counter()
     try:
@@ -440,6 +460,7 @@ async def op_archive_download(client: httpx.AsyncClient, _: World, stats: Stats)
         stats.record(OpResult("archive_download", lat, False, str(e)))
 
 
+@_covers(("GET", "/health"))
 async def op_health(client: httpx.AsyncClient, _: World, stats: Stats):
     """GET /health — triggers .writetest write+delete and metrics inc."""
     t0 = time.perf_counter()
@@ -455,6 +476,7 @@ async def op_health(client: httpx.AsyncClient, _: World, stats: Stats):
         stats.record(OpResult("health", lat, False, str(e)))
 
 
+@_covers(("GET", "/health/ready"))
 async def op_health_ready(client: httpx.AsyncClient, _: World, stats: Stats):
     """GET /health/ready — same .writetest race plus vector backend init."""
     t0 = time.perf_counter()
@@ -468,6 +490,7 @@ async def op_health_ready(client: httpx.AsyncClient, _: World, stats: Stats):
         stats.record(OpResult("health_ready", lat, False, str(e)))
 
 
+@_covers(("GET", "/health/live"))
 async def op_health_live(client: httpx.AsyncClient, _: World, stats: Stats):
     """GET /health/live — no I/O, but still triggers metrics inc+save."""
     t0 = time.perf_counter()
@@ -483,6 +506,7 @@ async def op_health_live(client: httpx.AsyncClient, _: World, stats: Stats):
         stats.record(OpResult("health_live", lat, False, str(e)))
 
 
+@_covers(("GET", "/health/metrics"))
 async def op_health_metrics(client: httpx.AsyncClient, _: World, stats: Stats):
     """GET /health/metrics — reads counters+latencies, triggers metrics save."""
     t0 = time.perf_counter()
@@ -499,6 +523,10 @@ async def op_health_metrics(client: httpx.AsyncClient, _: World, stats: Stats):
         stats.record(OpResult("health_metrics", lat, False, str(e)))
 
 
+@_covers(
+    ("GET", "/v1/admin/archive"),
+    ("PUT", "/v1/admin/archive"),
+)
 async def op_archive_restore(client: httpx.AsyncClient, _: World, stats: Stats):
     # First download an archive, then restore it
     t0 = time.perf_counter()
@@ -537,6 +565,7 @@ async def op_archive_restore(client: httpx.AsyncClient, _: World, stats: Stats):
 # race-prone paths (multi-collection write lock, reads racing with delete,
 # query-log retry path, sidecar chunk read).
 # ---------------------------------------------------------------------------
+@_covers(("PUT", "/v1/collections/{tenant}/{name}"))
 async def op_rename_collection(client: httpx.AsyncClient, world: World, stats: Stats):
     """PUT /collections/{tenant}/{old} {new_name} — variadic write lock path."""
     old = await world.pick_collection()
@@ -553,6 +582,14 @@ async def op_rename_collection(client: httpx.AsyncClient, world: World, stats: S
         if _is_rate_limited(r):
             _record_rate_limited(stats, lat)
             return
+        # Expected race outcomes under stress: 404 (source gone — another
+        # worker deleted/renamed it first) and 409 (target name just got
+        # taken). Count as race-wins so genuine 5xx stand out.
+        if r.status_code in (404, 409):
+            stats.record(OpResult(
+                "rename_collection", lat, True, f"http_{r.status_code}",
+            ))
+            return
         if not _ok_response(r):
             stats.record(OpResult("rename_collection", lat, False,
                                   _parse_error(r)))
@@ -566,6 +603,7 @@ async def op_rename_collection(client: httpx.AsyncClient, world: World, stats: S
         stats.record(OpResult("rename_collection", lat, False, str(e)))
 
 
+@_covers(("GET", "/v1/collections/{tenant}/{collection}/documents"))
 async def op_list_documents(client: httpx.AsyncClient, world: World, stats: Stats):
     """GET /collections/{tenant}/{coll}/documents — read racing with delete."""
     coll = await world.pick_collection()
@@ -590,6 +628,7 @@ async def op_list_documents(client: httpx.AsyncClient, world: World, stats: Stat
         stats.record(OpResult("list_documents", lat, False, str(e)))
 
 
+@_covers(("GET", "/v1/collections/{tenant}"))
 async def op_list_collections(client: httpx.AsyncClient, _: World, stats: Stats):
     """GET /collections/{tenant} — catalog read racing with create/delete."""
     t0 = time.perf_counter()
@@ -609,6 +648,7 @@ async def op_list_collections(client: httpx.AsyncClient, _: World, stats: Stats)
         stats.record(OpResult("list_collections", lat, False, str(e)))
 
 
+@_covers(("GET", "/v1/collections/{tenant}/{name}/queries"))
 async def op_query_log_list(client: httpx.AsyncClient, world: World, stats: Stats):
     """GET /collections/{tenant}/{coll}/queries — query log read path."""
     coll = await world.pick_collection()
@@ -633,6 +673,7 @@ async def op_query_log_list(client: httpx.AsyncClient, world: World, stats: Stat
         stats.record(OpResult("query_log_list", lat, False, str(e)))
 
 
+@_covers(("POST", "/v1/collections/{tenant}/{name}/queries/{query_id}/replay"))
 async def op_query_replay(client: httpx.AsyncClient, world: World, stats: Stats):
     """POST /collections/{tenant}/{coll}/queries/{id}/replay — exercises the
     log_query retry pattern and read-lock-then-write-lock loop."""
@@ -663,6 +704,9 @@ async def op_query_replay(client: httpx.AsyncClient, world: World, stats: Stats)
         stats.record(OpResult("query_replay", lat, False, str(e)))
 
 
+@_covers(
+    ("GET", "/v1/collections/{tenant}/{collection}/chunks/{rid}/content"),
+)
 async def op_get_chunk_content(
     client: httpx.AsyncClient, world: World, stats: Stats,
 ):
@@ -702,6 +746,7 @@ async def op_get_chunk_content(
 # Full-suite ops: rest of the API surface. Lower individual weights since
 # they are mostly thin reads; here for coverage, not for stress shape.
 # ---------------------------------------------------------------------------
+@_covers(("GET", "/v1/collections/{tenant}/{name}/detail"))
 async def op_get_collection_detail(
     client: httpx.AsyncClient, world: World, stats: Stats,
 ):
@@ -717,6 +762,9 @@ async def op_get_collection_detail(
         if _is_rate_limited(r):
             _record_rate_limited(stats, lat)
             return
+        if r.status_code == 404:
+            stats.record(OpResult("get_collection_detail", lat, True, "404"))
+            return
         if not _ok_response(r):
             stats.record(OpResult("get_collection_detail", lat, False,
                                   _parse_error(r)))
@@ -727,6 +775,7 @@ async def op_get_collection_detail(
         stats.record(OpResult("get_collection_detail", lat, False, str(e)))
 
 
+@_covers(("GET", "/v1/collections/{tenant}/{collection}/documents/{docid}"))
 async def op_get_document(client: httpx.AsyncClient, world: World, stats: Stats):
     pair = await world.pick_doc()
     if pair is None:
@@ -753,6 +802,9 @@ async def op_get_document(client: httpx.AsyncClient, world: World, stats: Stats)
         stats.record(OpResult("get_document", lat, False, str(e)))
 
 
+@_covers(
+    ("GET", "/v1/collections/{tenant}/{collection}/documents/{docid}/chunks"),
+)
 async def op_list_chunks(client: httpx.AsyncClient, world: World, stats: Stats):
     pair = await world.pick_doc()
     if pair is None:
@@ -779,6 +831,7 @@ async def op_list_chunks(client: httpx.AsyncClient, world: World, stats: Stats):
         stats.record(OpResult("list_chunks", lat, False, str(e)))
 
 
+@_covers(("GET", "/v1/collections/{tenant}/{collection}/chunks/{rid}"))
 async def op_get_chunk(client: httpx.AsyncClient, world: World, stats: Stats):
     pair = await world.pick_doc()
     if pair is None:
@@ -806,6 +859,7 @@ async def op_get_chunk(client: httpx.AsyncClient, world: World, stats: Stats):
         stats.record(OpResult("get_chunk", lat, False, str(e)))
 
 
+@_covers(("GET", "/v1/collections/{tenant}/{name}/search"))
 async def op_search_get(client: httpx.AsyncClient, world: World, stats: Stats):
     """GET /collections/{tenant}/{coll}/search — query-string variant."""
     coll = await world.pick_collection()
@@ -831,6 +885,7 @@ async def op_search_get(client: httpx.AsyncClient, world: World, stats: Stats):
         stats.record(OpResult("search_get", lat, False, str(e)))
 
 
+@_covers(("POST", "/v1/search"))
 async def op_global_search(client: httpx.AsyncClient, _: World, stats: Stats):
     """POST /search — cross-collection global search."""
     query = random.choice(QUERIES)
@@ -853,6 +908,7 @@ async def op_global_search(client: httpx.AsyncClient, _: World, stats: Stats):
         stats.record(OpResult("global_search", lat, False, str(e)))
 
 
+@_covers(("GET", "/v1/admin/tenants"))
 async def op_admin_tenants(client: httpx.AsyncClient, _: World, stats: Stats):
     t0 = time.perf_counter()
     try:
@@ -870,6 +926,7 @@ async def op_admin_tenants(client: httpx.AsyncClient, _: World, stats: Stats):
         stats.record(OpResult("admin_tenants", lat, False, str(e)))
 
 
+@_covers(("GET", "/v1/admin/queries/{query_id}"))
 async def op_admin_queries_get(
     client: httpx.AsyncClient, world: World, stats: Stats,
 ):
@@ -897,6 +954,7 @@ async def op_admin_queries_get(
         stats.record(OpResult("admin_queries_get", lat, False, str(e)))
 
 
+@_covers(("GET", "/metrics"))
 async def op_prometheus_metrics(
     client: httpx.AsyncClient, _: World, stats: Stats,
 ):
@@ -1011,6 +1069,72 @@ def _pick_operation(operations):
 
 
 # ---------------------------------------------------------------------------
+# OpenAPI coverage check
+# ---------------------------------------------------------------------------
+# Endpoints intentionally skipped: FastAPI/Starlette built-ins, UI routes,
+# segmented openapi files, and the root redirect — none worth bench coverage.
+_COVERAGE_EXCLUDE_PATHS = {
+    "/",
+    "/favicon.ico",
+}
+_COVERAGE_EXCLUDE_PREFIXES = (
+    "/openapi",
+    "/docs",
+    "/redoc",
+    "/ui",
+)
+
+
+def _gather_covered_routes(namespace) -> set[tuple[str, str]]:
+    """Union the @_covers(...) declarations from every op_* in the module."""
+    covered: set[tuple[str, str]] = set()
+    for name, obj in namespace.items():
+        if not name.startswith("op_"):
+            continue
+        for method, path in getattr(obj, "__bench_covers__", ()):
+            covered.add((method.upper(), path))
+    return covered
+
+
+def _is_excluded_path(path: str) -> bool:
+    if path in _COVERAGE_EXCLUDE_PATHS:
+        return True
+    return any(path.startswith(p) for p in _COVERAGE_EXCLUDE_PREFIXES)
+
+
+async def _print_coverage_gap(client: httpx.AsyncClient) -> None:
+    """Fetch /openapi.json and warn for any endpoint no op_* declares."""
+    try:
+        r = await client.get("/openapi.json")
+        if not _ok_response(r):
+            return
+        spec = r.json()
+    except Exception:
+        return
+    paths = spec.get("paths") or {}
+    covered = _gather_covered_routes(globals())
+    gaps: list[tuple[str, str]] = []
+    for path, methods in paths.items():
+        if _is_excluded_path(path):
+            continue
+        for method in methods.keys():
+            m = method.upper()
+            if m in ("OPTIONS", "HEAD"):
+                continue
+            if (m, path) not in covered:
+                gaps.append((m, path))
+    if not gaps:
+        return
+    print(
+        f"WARNING: {len(gaps)} endpoint(s) not covered by any op_* "
+        "(add @_covers(...) on a new or existing op):"
+    )
+    for method, path in sorted(gaps):
+        print(f"  {method:<6} {path}")
+    print()
+
+
+# ---------------------------------------------------------------------------
 # Main driver
 # ---------------------------------------------------------------------------
 async def run_stress(
@@ -1035,6 +1159,7 @@ async def run_stress(
         base_url=base_url, timeout=60.0, headers=headers
     ) as client:
         await print_run_header(client, base_url, "stress")
+        await _print_coverage_gap(client)
         # Seed a few collections so workers have something to target
         print(f"Seeding initial collections...")
         for i in range(3):
