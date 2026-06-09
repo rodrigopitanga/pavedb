@@ -464,6 +464,14 @@ class LocalStore(BaseStore):
                         f"collection '{new_name}' already exists"
                     )
 
+            # Flush and drop the old backend before the directory move. The
+            # backend keeps its storage path internally; reusing it after rename
+            # would make later flushes recreate the old collection directory.
+            old_backend = self._emb.get(old_key)
+            if old_backend is not None:
+                old_backend.close()
+                self._emb.pop(old_key, None)
+
             # Close DB for old collection before rename
             old_db = self._dbs.pop(old_key, None)
             if old_db is not None:
@@ -472,14 +480,8 @@ class LocalStore(BaseStore):
             # Atomic directory rename
             os.rename(old_path, new_path)
 
-            # Update in-memory cache for vector backends
-            if old_key in self._emb:
-                self._emb[new_key] = self._emb.pop(old_key)
-
-            # Re-open CollectionDB at new path
-            col_db = CollectionDB()
-            col_db.open(self._db_path(tenant, new_name))
-            self._dbs[new_key] = col_db
+            # Re-open caches from the new path.
+            self._load_or_init(tenant, new_name)
 
             # Catalog updates stay inside the two-collection lock so a
             # concurrent delete/create on either name can't race the

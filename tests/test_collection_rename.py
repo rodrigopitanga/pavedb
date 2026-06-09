@@ -1,7 +1,12 @@
 # (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+from pathlib import Path
+
 import pytest
+
+from pave.stores.local import LocalStore
+from utils import FakeEmbedder
 
 
 def test_rename_collection_basic(client):
@@ -55,6 +60,37 @@ def test_rename_collection_basic(client):
     # This should return empty results (fresh empty collection created on access)
     assert r.status_code == 200
     assert len(r.json()["matches"]) == 0
+
+
+def test_rename_reopens_backend_at_new_path(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    tenant, old_name, new_name = "acme", "old_vectors", "new_vectors"
+
+    old_path = Path(store._base_path(tenant, old_name))
+    store.index_records(
+        tenant,
+        old_name,
+        "doc1",
+        [("0", "alpha rename persistence", {})],
+    )
+
+    store.rename_collection(tenant, old_name, new_name)
+    store.index_records(
+        tenant,
+        new_name,
+        "doc2",
+        [("0", "beta rename persistence", {})],
+    )
+    store._flush_caches(async_close=False)
+
+    assert not old_path.exists()
+
+    reopened = LocalStore(str(temp_data_dir), FakeEmbedder())
+    alpha = reopened.search(tenant, new_name, "alpha", k=5)
+    beta = reopened.search(tenant, new_name, "beta", k=5)
+
+    assert any(hit.id == "doc1::0" for hit in alpha.matches)
+    assert any(hit.id == "doc2::0" for hit in beta.matches)
 
 
 def test_rename_nonexistent_collection(client):
