@@ -1,7 +1,7 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-## 0.9.0rc0 — 2026-05-22
+## 0.9.0rc2 — 2026-06-10
 
 ### API
 - Get document by ID endpoint (P1-17)
@@ -22,6 +22,7 @@
 - [fix] make global searches go through the ops_event annotation and generate o...
 - Add actor field to ops_log events (P2-46)
 - [cli] Add chunk inspector endpoints and commands (P2-23)
+- [bench] Surface search query IDs for stress replay (P2-48)
 
 ### Store
 - Add CatalogDB catalog store (P1-33)
@@ -33,6 +34,32 @@
 - [fix] Avoid collection reopen races after cache flush
 - [fix] Avoid CatalogDB reopen races after cache flush
 - [fix] Wait for SQLite writers before closing DB handles
+- [fix] Serialize archive restore with store ops (P1-52)
+- [fix] Keep search hydration under collection lock (P1-52)
+- [fix] Serialize SQLite read connections (P1-52)
+- [fix] Replace documents atomically during ingest (P1-52)
+- Allow concurrent same-collection reads (P1-52)
+- [fix] Make catalog updates atomic (P1-52)
+- [fix] Return 409 for rename target collisions (P1-52)
+- [fix] Pin cached collection reads during races (P1-52)
+- [fix] Reopen vector backend after collection rename (P1-52)
+
+### Performance
+- [fix] Disambiguate bench-stress coverage-pass misses
+- [fix] Preserve ephemeral server logs on benchmark failure
+- [fix] Fail when managed benchmark server exits (P2-48)
+- Add critical/full stress suites (P2-48)
+- Auto-discover stress ops for full suite (P2-48)
+- Warn on stress coverage gaps and race outcomes (P2-48)
+- Add stress ops for remaining OpenAPI endpoints (P2-48)
+- Add bench-stress-full target (P2-48)
+
+### Build
+- Defer release commit until local validation passes
+- Keep version in one file
+- [fix] Avoid eager embedder loads in build-check (P3-52)
+- [fix] Force BuildKit on docker build
+- [fix] Use validated bash for make recipes
 
 ### UI
 - Align docs UI with PaveDB theme
@@ -47,24 +74,24 @@
 - Add collection config args to create-collection (P1-45)
 - Add explicit common-merge search flag
 
+### Core
+- [fix] Normalize _do_search error results
+- [fix] Cross-check scoped query lookup against query_home
+- [fix] Isolate SBERT from server process on macOS (P3-26)
+- [fix] Prefer current SBERT dimension API (P3-26)
+
 ### Testing
 - CatalogDB integration + upgrade tests (P1-33)
 - Make LocalStore tests use temp_data_dir explicitly
 - Consolidate collection API tests into one file
 
-### Core
-- [fix] Normalize _do_search error results
-- [fix] Cross-check scoped query lookup against query_home
-
-### Performance
-- [fix] Disambiguate bench-stress coverage-pass misses
-- [fix] Preserve ephemeral server logs on benchmark failure
-
-### Build
-- Defer release commit until local validation passes
-
 ### Documentation
 - Update roadmap and plan docs
+- Document store concurrency model (P1-52)
+
+### Log
+- Improve server failure diagnostics (P1-52)
+- Clarify concurrency cap diagnostics (P1-20)
 
 ### Infrastructure
 - Rename GitLab CI config file
