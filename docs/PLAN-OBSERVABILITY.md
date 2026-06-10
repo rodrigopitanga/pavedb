@@ -59,28 +59,27 @@ Pipeline steps and their inspection surface:
 | Step | Inspect via | Delivered |
 |---|---|---|
 | Request correlation | `request_id` echoed in every envelope and `ops_event` | ✓ P1-11 |
-| Request-correlation input cleanup | `X-Request-ID` as the sole public input channel | v0.9 planned (P1-48) |
+| Request-correlation input cleanup | `X-Request-ID` as the sole public input channel | ✓ P1-48 |
 | Per-request envelope | `ok` / `code` / `error` / `request_id` / `latency_ms` | ✓ P1-14 |
 | Operational event stream | JSONL `ops_event` lines | ✓ P2-28 |
 | Latency histograms | `/health/metrics`, `/metrics` (p50/p95/p99) | ✓ P0-03 |
 | Ingest record | `GET /v1/collections/{t}/{c}/documents/{docid}` | ✓ P1-17 |
-| Document listing | `GET /v1/collections/{t}/{c}/documents` | v0.9 planned (P1-44) |
-| Collection catalog | `GET /v1/collections/{t}` (enriched) + detail | v0.9 planned (P1-45) |
+| Document listing | `GET /v1/collections/{t}/{c}/documents` | ✓ P1-44 |
+| Collection catalog | `GET /v1/collections/{t}` (enriched) + detail | ✓ P1-45 |
 | Chunk offsets in source | `meta.offset` on every chunk | ✓ P2-41 |
 | Service-layer errors | `log.warning` on every `ok: false` site | ✓ P2-40 |
 | Search timing breakdown | `timing.{embed,search,filter,hydrate}_ms` | ✓ P1-40 |
 | Versioned API path | `/v1/` prefix, additive-only contract | ✓ P1-43 |
-| Chunk inspection | list chunks + get chunk metadata + get chunk content | v0.9 (P2-23) |
-| Query history | per-collection `query_log` + read endpoints | v0.9 planned (P1-41) |
-| Admin bare-id resolver | `query_home` table in `catalog.db` | v0.9 planned (P1-51) |
-| Query replay | `POST /v1/collections/{t}/{c}/queries/{id}/replay` | v0.9 planned (P1-42) |
-| Frozen public schema | contract tests + field descriptions | v0.9 (P1-23) |
+| Chunk inspection | list chunks + get chunk metadata + get chunk content | ✓ P2-23 |
+| Query history | per-collection `query_log` + read endpoints | ✓ P1-41 |
+| Admin bare-id resolver | `query_home` table in `catalog.db` | ✓ P1-51 |
+| Query replay | `POST /v1/collections/{t}/{c}/queries/{id}/replay` | ✓ P1-42 |
+| Frozen public schema | contract tests + field descriptions; `query_id` added additively | ✓ P1-23 |
 
-The remaining v0.9 observability work centers on P1-41,
-P1-42, P1-44, P1-45, P1-48, P1-51, P2-23, and P1-23. Later
+The v0.9 inspectability surface is fully delivered. Later
 additions (result diff, eval assertions, regression
 detection, retention, export) build on top and are listed
-under **Not in scope**.
+under **Not in scope** below.
 
 ---
 
@@ -142,23 +141,24 @@ attribute slow searches to the actual bottleneck (embedding?
 FAISS? post-filter? metadata hydration?) without enabling
 debug logs.
 
-### Read endpoints over persisted state — current base + v0.9 extensions
+### Read endpoints over persisted state — v0.9
 
-- Already shipped:
-  `GET /v1/collections/{t}/{c}/documents/{docid}` — single
-  doc with version, ingest timestamp, merged metadata.
-- Planned for the rest of v0.9:
-  `GET /v1/collections/{t}/{c}/documents` — full listing
+- `GET /v1/collections/{t}/{c}/documents/{docid}` — single
+  doc with version, ingest timestamp, merged metadata
+  (P1-17).
+- `GET /v1/collections/{t}/{c}/documents` — full listing
   with per-doc chunk counts (single-query aggregate,
   no N+1) (P1-44).
-- Planned for the rest of v0.9:
-  `GET /v1/collections/{t}` — tenant's collections with
+- `GET /v1/collections/{t}` — tenant's collections with
   doc / chunk counts and embedder config, plus
-  `GET /v1/collections/{t}/{c}` detail (P1-45).
+  `GET /v1/collections/{t}/{c}/detail` (P1-45).
 
-All read endpoints in this family should tolerate transient
+All read endpoints in this family tolerate transient
 `meta.db` read errors under concurrent writes (fallback to a
-read-only open).
+read-only open). The cached `col_db` is pinned by the
+per-collection read lock so concurrent `delete_collection` /
+`restore_archive` cannot close the handle mid-read (lock
+lattice documented in CONTRIBUTING.md "Concurrency model").
 
 ### Service-layer error logging — P2-40 (v0.5.9)
 
@@ -182,14 +182,15 @@ unversioned (they are operational, not contract surface).
 
 ---
 
-## What v0.9 adds
+## What v0.9 added
 
-The v0.9 cycle closes the minimum viable inspectability
+The v0.9 cycle closed the minimum viable inspectability
 surface: P1-41 (persistent query log), P1-42 (replay),
 P1-44/P1-45 (read-side browsing), P1-48 (request-correlation
 input cleanup), P1-51 (admin query-home resolver), P2-46
-(query_log + ops_log enrichment — shipped alongside P1-51),
-P2-23 (chunk inspector), and P1-23 (pre-freeze).
+(query_log + ops_log enrichment), P2-23 (chunk inspector),
+and P1-23 (response-schema freeze; `query_id` was the only
+additive extension after freeze).
 
 ### P1-41 — Persistent query log (2 commits)
 
