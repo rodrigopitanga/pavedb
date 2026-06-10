@@ -3,10 +3,33 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 import sys
+from threading import Lock
 
 from .base import Embedder
 from ..config import CFG
+
+
+class LazyEmbedder:
+    def __init__(self, factory: Callable[[], Embedder]) -> None:
+        self._factory = factory
+        self._embedder: Embedder | None = None
+        self._lock = Lock()
+
+    def _get(self) -> Embedder:
+        if self._embedder is None:
+            with self._lock:
+                if self._embedder is None:
+                    self._embedder = self._factory()
+        return self._embedder
+
+    @property
+    def dim(self) -> int:
+        return self._get().dim
+
+    def encode(self, texts: list[str]):
+        return self._get().encode(texts)
 
 
 def get_embedder(cfg: CFG = CFG) -> Embedder:

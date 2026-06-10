@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 
 from pave.config import get_cfg, get_logger, reload_cfg
 from pave.auth import enforce_policy, resolve_bind
-from pave.embedders import get_embedder
+from pave.embedders import LazyEmbedder, get_embedder
 from pave.metrics import set_data_dir as metrics_set_data_dir, \
     flush as metrics_flush
 from pave.stores.local import LocalStore
@@ -70,13 +70,14 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        # Eagerly load the sentence-transformer model so the first
-        # request doesn't pay the cold-start penalty.
-        try:
-            app.state.store.create_collection("_system", "health")
-            log.info("Embedding model warm-up complete")
-        except Exception as e:
-            log.warning(f"Embedding model warm-up failed: {e}")
+        if str(cfg.get("embedder.type", "sbert")).lower() == "sbert":
+            # Eagerly load the local sentence-transformer model so the first
+            # request doesn't pay the cold-start penalty.
+            try:
+                app.state.store.create_collection("_system", "health")
+                log.info("Embedding model warm-up complete")
+            except Exception as e:
+                log.warning(f"Embedding model warm-up failed: {e}")
         yield
         metrics_flush()
         ops_log.close()
@@ -101,7 +102,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     app.state.store = LocalStore(
         data_dir=str(cfg.get("data_dir")),
-        embedder=get_embedder(),
+        embedder=LazyEmbedder(get_embedder),
     )
     app.state.cfg = cfg
     app.state.version = VERSION

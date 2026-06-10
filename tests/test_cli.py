@@ -629,8 +629,12 @@ def test_cli_list_tenants(cli_env, tmp_path, capsys, monkeypatch):
     cfg = get_cfg()
     monkeypatch.setattr(cfg, "_cfg", {**cfg._cfg, "data_dir": str(tmp_path)})
 
-    (tmp_path / "t_beta").mkdir(parents=True, exist_ok=True)
-    (tmp_path / "t_alpha").mkdir(parents=True, exist_ok=True)
+    beta = tmp_path / "t_beta" / "c_docs" / "meta.db"
+    alpha = tmp_path / "t_alpha" / "c_docs" / "meta.db"
+    beta.parent.mkdir(parents=True, exist_ok=True)
+    alpha.parent.mkdir(parents=True, exist_ok=True)
+    beta.touch()
+    alpha.touch()
 
     pvcli.main_cli(["list-tenants"])
     out = json.loads(capsys.readouterr().out)
@@ -652,6 +656,37 @@ def test_cli_list_tenants_accepts_home_flag(cli_env, tmp_path, capsys):
     pvcli.main_cli(["list-tenants", "--home", str(home)])
     out = json.loads(capsys.readouterr().out)
 
+    assert out["ok"] is True
+    assert out["tenants"] == ["alpha", "beta"]
+
+
+def test_cli_list_tenants_does_not_load_embedder(tmp_path, capsys, monkeypatch):
+    from pave import cli as pvcli_mod
+
+    pvcli = importlib.reload(pvcli_mod)
+    pvcli.store = None
+
+    def fail_get_embedder():
+        raise AssertionError("list-tenants loaded an embedder")
+
+    monkeypatch.setattr(pvcli, "get_embedder", fail_get_embedder, raising=True)
+
+    beta = tmp_path / "t_beta" / "c_docs" / "meta.db"
+    alpha = tmp_path / "t_alpha" / "c_docs" / "meta.db"
+    beta.parent.mkdir(parents=True, exist_ok=True)
+    alpha.parent.mkdir(parents=True, exist_ok=True)
+    beta.touch()
+    alpha.touch()
+
+    rc = pvcli.main_cli([
+        "--compact",
+        "list-tenants",
+        "--data-dir",
+        str(tmp_path),
+    ])
+    out = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
     assert out["ok"] is True
     assert out["tenants"] == ["alpha", "beta"]
 

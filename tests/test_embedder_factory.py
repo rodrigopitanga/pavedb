@@ -22,6 +22,30 @@ def _reload_factory():
     return importlib.reload(factory_mod)
 
 
+def test_lazy_embedder_defers_factory_until_used() -> None:
+    factory = _reload_factory()
+    calls = {"factory": 0}
+
+    class FakeEmbedder:
+        @property
+        def dim(self) -> int:
+            return 3
+
+        def encode(self, texts: list[str]):
+            return texts
+
+    def make_embedder():
+        calls["factory"] += 1
+        return FakeEmbedder()
+
+    emb = factory.LazyEmbedder(make_embedder)
+
+    assert calls["factory"] == 0
+    assert emb.dim == 3
+    assert emb.encode(["a"]) == ["a"]
+    assert calls["factory"] == 1
+
+
 def test_factory_uses_process_mode_when_explicitly_requested(monkeypatch) -> None:
     factory = _reload_factory()
 

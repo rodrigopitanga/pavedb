@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse, json, pathlib, sys, uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pave.embedders import get_embedder
+from pave.embedders import LazyEmbedder, get_embedder
 from pave.stores.base import BaseStore
 from pave.stores.local import LocalStore
 from pave.service import (
@@ -54,7 +54,7 @@ def _get_store() -> BaseStore:
         cfg = get_cfg()
         store = LocalStore(
             data_dir=str(cfg.get("data_dir")),
-            embedder=get_embedder(),
+            embedder=LazyEmbedder(get_embedder),
         )
     return store
 

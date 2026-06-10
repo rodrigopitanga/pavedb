@@ -551,6 +551,8 @@ _build-check-run: venv
 	instance_dir="$$tmp_root/instance"; \
 	log_file="$$tmp_root/server.log"; \
 	dep_site="$$( $(PYTHON_BIN) -c 'import site; print(site.getsitepackages()[0])' )"; \
+	temp_site=""; \
+	check_pythonpath=""; \
 	srv_pid=""; \
 	cleanup() { \
 	  if [ -n "$$srv_pid" ]; then \
@@ -563,16 +565,18 @@ _build-check-run: venv
 	echo "==> Creating temp venv at $$venv_dir"; \
 	$(PYTHON_BIN) -m venv "$$venv_dir"; \
 	"$$venv_dir/bin/python" -m pip install -q --upgrade pip; \
+	temp_site="$$( "$$venv_dir/bin/python" -c 'import site; print(site.getsitepackages()[0])' )"; \
+	check_pythonpath="$$temp_site:$$dep_site"; \
 	echo "==> Installing local wheel $$wheel (no deps)"; \
 	"$$venv_dir/bin/pip" install -q --no-deps "$$wheel"; \
 	echo "==> Initializing instance via installed pavecli"; \
-	PYTHONPATH="$$dep_site" \
+	PYTHONPATH="$$check_pythonpath" \
 	"$$venv_dir/bin/pavecli" --compact init "$$instance_dir" >/dev/null; \
 	test -f "$$instance_dir/config.yml"; \
 	test -f "$$instance_dir/tenants.yml"; \
 	test -d "$$instance_dir/data"; \
 	echo "==> Checking installed CLI bootstrap"; \
-	PYTHONPATH="$$dep_site" \
+	PYTHONPATH="$$check_pythonpath" \
 	PAVEDB_DEV=1 \
 	PAVEDB_EMBEDDER__TYPE=openai \
 	PAVEDB_EMBEDDER__OPENAI__API_KEY=$(BUILD_CHECK_OPENAI_KEY) \
@@ -580,7 +584,7 @@ _build-check-run: venv
 	PAVEDB_AUTH__MODE=none \
 	"$$venv_dir/bin/pavecli" --compact list-tenants --home "$$instance_dir" >/dev/null; \
 	echo "==> Starting installed pavesrv on $(BUILD_CHECK_URL)"; \
-	PYTHONPATH="$$dep_site" \
+	PYTHONPATH="$$check_pythonpath" \
 	PAVEDB_DEV=1 \
 	PAVEDB_EMBEDDER__TYPE=openai \
 	PAVEDB_EMBEDDER__OPENAI__API_KEY=$(BUILD_CHECK_OPENAI_KEY) \
