@@ -20,6 +20,11 @@ make install-dev
 USE_CPU=1 make serve
 ```
 
+**macOS:** `brew install make bash` and invoke `gmake` instead of `make`.
+The system `/usr/bin/make` is GNU Make 3.81 (2006) and `/bin/bash` is
+3.2 (2007); the Makefile requires Make 4+ and bash 4+, and aborts at
+parse time otherwise.
+
 `make serve` in the source tree runs with `DEV=1`, so it uses defaults and explicit
 env overrides. If you need to exercise a file-based config from the checkout, pass it
 explicitly, for example `CONFIG=./config.yml make serve` or

@@ -7,6 +7,26 @@
 # Base deps by default. Set USE_CPU=1 to install CPU deps instead.
 # All dependency versions live in setup.py (single source of truth).
 
+# GNU Make 4+ and bash 4+ required.
+ifeq ($(shell uname -s),Darwin)
+_MAKE_HINT := . macOS: `brew install make` and invoke as `gmake`
+_BASH_HINT := . macOS: `brew install bash`
+endif
+
+_MAKE_MAJOR := $(firstword $(subst ., ,$(MAKE_VERSION)))
+ifneq ($(filter 1 2 3,$(_MAKE_MAJOR)),)
+$(error GNU Make >= 4 required (found $(MAKE_VERSION))$(_MAKE_HINT))
+endif
+
+SHELL := $(shell command -v bash)
+ifeq ($(SHELL),)
+$(error bash not found$(_BASH_HINT))
+endif
+_BASH_MAJOR := $(shell $(SHELL) -c 'echo $${BASH_VERSINFO[0]}' 2>/dev/null)
+ifneq ($(filter 1 2 3,$(_BASH_MAJOR)),)
+$(error bash >= 4 required (found bash $(_BASH_MAJOR).x at $(SHELL))$(_BASH_HINT))
+endif
+
 PKG_NAME        := pavedb
 PYPI_DIST_NAME  ?= pavedb
 PKG_ICON	:= 🛣️
@@ -79,7 +99,6 @@ else
 endif
 
 .ONESHELL:
-SHELL := /bin/bash
 # With .ONESHELL enabled, keep recipe failure semantics strict so later
 # status messages do not run after an earlier command has already failed.
 .SHELLFLAGS := -e -o pipefail -c
