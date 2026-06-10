@@ -38,8 +38,8 @@ LOG_LEVEL       ?= debug
 USE_CPU ?= 0
 REQ_MAIN_CPU    ?= requirements-cpu.txt
 
-# Version helpers - setup.py source of truth
-VERSION         ?= $(shell sed -n 's/^ *version="\([^"]*\)".*/\1/p' setup.py | head -1)
+# Version helpers - pave/version.py source of truth
+VERSION         ?= $(shell sed -n 's/^VERSION = "\([^"]*\)".*/\1/p' $(PKG_INTERNAL)/version.py | head -1)
 ARCHIVE_BASENAME := $(PKG_NAME)-$(VERSION)
 DIST_DIR        := dist
 BUILD_DIR       := build
@@ -123,7 +123,7 @@ help:
 	echo ""; \
 	echo "Release:"; \
 	echo "  $${B}release$${R}         Bump/tag/build; flags: SKIP_PYPI_BUILD, SKIP_PYPI_PUSH, SKIP_DOCKER_BUILD, SKIP_DOCKER_PUSH (or RELEASE_PUBLISH=1)"; \
-	echo "  bump             Bump release versions in project files"; \
+	echo "  bump             Bump release version in $(PKG_INTERNAL)/version.py"; \
 	echo "  changelog        Preview changelog entry for VERSION (no write)"; \
 	echo "  changelog-write  Update CHANGELOG.md for VERSION and print new entry"; \
 	echo "  pypi-push        Upload existing dist/* to PyPI"; \
@@ -224,34 +224,8 @@ bump:
 	fi
 	@echo "Bumping version to $(VERSION)..."
 
-	# setup.py: version="x.y.z" or version="x.y.zdevN"
-	@if [ -f setup.py ]; then \
-	  sed -i -E 's/(version=)\"[^\"]*\"/\1"$(VERSION)"/' setup.py; \
-	fi
-	# pave/main.py: VERSION = "x.y.z"
-	@if [ -f pave/main.py ] && grep -qE '^VERSION\s*=' pave/main.py; then \
-	  sed -i -E 's/^VERSION\s*=.*/VERSION = "$(VERSION)"/' pave/main.py; \
-	fi
-	# Dockerfile: ARG APP_VERSION or LABEL version
-	@if [ -f Dockerfile ]; then \
-	  if grep -qE '^ARG +APP_VERSION=' Dockerfile; then \
-	    sed -i -E 's/^(ARG +APP_VERSION=).*/\1$(VERSION)/' Dockerfile; \
-	  fi; \
-	  if grep -qE 'LABEL +version=' Dockerfile; then \
-	    sed -i -E 's/(LABEL +version=)\"[^\"]*\"/\1"$(VERSION)"/' Dockerfile; \
-	  fi; \
-	fi
-	# docker-compose.yml: image: $(IMAGE_NAME):x.y.z
-	@if [ -f docker-compose.yml ] && grep -qE 'image:\s*$(IMAGE_NAME):' docker-compose.yml; then \
-	  sed -i -E 's/(image:\s*$(IMAGE_NAME):).*/\1$(VERSION)/' docker-compose.yml; \
-	fi
-	# README.md example tags for docker build/run
-	@if [ -f README.md ] && grep -q 'docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $(IMAGE_NAME):' README.md; then \
-	  sed -i -E 's@(docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $(IMAGE_NAME):).*@\1$(VERSION) \.@' README.md; \
-	fi
-	@if [ -f README.md ] && grep -q 'docker run --rm -p 8086:8086 -v $$\(pwd\)/data:/app/data $(IMAGE_NAME):' README.md; then \
-	  sed -i -E 's@(docker run --rm -p 8086:8086 -v \$$\(pwd\)/data:/app/data $(IMAGE_NAME):).*@\1$(VERSION)@' README.md; \
-	fi
+	# pave/version.py: VERSION = "x.y.z"
+	@perl -0pi -e 's/^VERSION = ".*"/VERSION = "$(VERSION)"/m' $(PKG_INTERNAL)/version.py
 	@echo "✅ Bumped to $(VERSION). Review changes, then commit:"
 	@echo "   git add -A && git commit -m \"chore: bump version to $(VERSION)\""
 
@@ -356,8 +330,8 @@ release:
 	POST_TAG=0; \
 	revert_changes() { \
 	  echo "Reverting version bumps and changelog..."; \
-	  git restore --staged CHANGELOG.md setup.py README.md Dockerfile docker-compose.yml $(PKG_INTERNAL)/main.py 2>/dev/null || true; \
-	  git checkout -- CHANGELOG.md setup.py README.md Dockerfile docker-compose.yml $(PKG_INTERNAL)/main.py 2>/dev/null || true; \
+	  git restore --staged CHANGELOG.md $(PKG_INTERNAL)/version.py 2>/dev/null || true; \
+	  git checkout -- CHANGELOG.md $(PKG_INTERNAL)/version.py 2>/dev/null || true; \
 	}; \
 	trap 'status=$$?; if [ "$$status" -ne 0 ] && [ "$$POST_TAG" = "1" ] && [ "$$TAG_TOUCHED" = "1" ]; then echo "Release failed after tagging; deleting tag v$(VERSION) (keeping bumped commit)."; git tag -d "v$(VERSION)" >/dev/null 2>&1 || true; fi; exit $$status' ERR; \
 	if [ "$(SKIP_BUMP)" != "1" ]; then \
@@ -407,7 +381,7 @@ release:
 	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-$$IMG_SUFFIX" || { echo "docker-check failed."; revert_changes; exit 1; }; \
 	  fi; \
 	fi; \
-	git add CHANGELOG.md setup.py README.md Dockerfile docker-compose.yml $(PKG_INTERNAL)/main.py 2>/dev/null || true; \
+	git add CHANGELOG.md $(PKG_INTERNAL)/version.py 2>/dev/null || true; \
 	if git diff --cached --quiet; then \
 	  echo "Nothing to commit — release commit already exists, skipping."; \
 	else \
@@ -504,7 +478,7 @@ release:
 # -------- changelog --------
 .PHONY: changelog
 changelog:
-	@if [ -z "$(VERSION)" ]; then echo "VERSION not detected (setup.py). Set VERSION=x.y.z if needed."; exit 1; fi
+	@if [ -z "$(VERSION)" ]; then echo "VERSION not detected ($(PKG_INTERNAL)/version.py). Set VERSION=x.y.z if needed."; exit 1; fi
 	@TMPFILE=$$(mktemp); \
 	cp CHANGELOG.md $$TMPFILE; \
 	CHANGELOG_SILENT=1 CHANGELOG_PATH=$$TMPFILE $(PYTHON_BIN) scripts/update_changelog.py $(VERSION); \
@@ -513,7 +487,7 @@ changelog:
 
 .PHONY: changelog-write
 changelog-write:
-	@if [ -z "$(VERSION)" ]; then echo "VERSION not detected (setup.py). Set VERSION=x.y.z if needed."; exit 1; fi
+	@if [ -z "$(VERSION)" ]; then echo "VERSION not detected ($(PKG_INTERNAL)/version.py). Set VERSION=x.y.z if needed."; exit 1; fi
 	@$(PYTHON_BIN) scripts/update_changelog.py $(VERSION)
 	@awk 'BEGIN{p=0} /^## /{p=1} p{print} /^---/{exit}' CHANGELOG.md
 

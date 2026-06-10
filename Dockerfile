@@ -29,6 +29,7 @@ COPY requirements-cpu.txt /app/
 
 # create a dummy package so setup.py can resolve deps without full source
 RUN mkdir -p /app/pave && touch /app/pave/__init__.py
+COPY pave/version.py /app/pave/version.py
 
 # install deps only (cached until setup.py changes)
 RUN --mount=type=cache,target=/root/.cache/pip \

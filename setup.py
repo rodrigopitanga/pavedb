@@ -6,6 +6,13 @@ from pathlib import Path
 
 here = Path(__file__).parent.resolve()
 
+
+def read_version():
+    ns = {}
+    exec((here / "pave" / "version.py").read_text(encoding="utf-8"), ns)
+    return ns["VERSION"]
+
+
 def read_long_description():
     for candidate in ("ABOUT.md", "PYPI_DESCRIPTION.md", "README.md"):
         path = here / candidate
@@ -17,7 +24,7 @@ long_description, long_type = read_long_description()
 
 setup(
     name="pavedb",                        # external name
-    version="0.9.0rc0",
+    version=read_version(),
     description="PaveDB — A lightweight, pluggable vector search microservice.",
     long_description=long_description,
     long_description_content_type="text/markdown",

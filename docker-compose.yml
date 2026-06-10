@@ -3,7 +3,7 @@
 
 services:
   pavedb:
-    image: pavedb:0.9.0rc0
+    image: pavedb:${PAVEDB_VERSION:-local}
     build: .
     container_name: pavedb
     ports:
