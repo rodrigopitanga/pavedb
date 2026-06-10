@@ -115,6 +115,7 @@ help:
 	echo "  $${B}benchmark$${R}       Run latency + stress (reuse :8086, else fresh ephemeral per bench; flags: BENCH_FORCE_EPHEMERAL=1, BENCH_SERVER_URL=URL)"; \
 	echo "  bench-latency    Search latency (LAT_LENGTH=queries/variant, LAT_CONCUR, LAT_FILTERS=x,y)"; \
 	echo "  bench-stress     Stress test (STR_LENGTH=seconds, STR_CONCUR, STR_SUITE=base|critical|full)"; \
+	echo "  bench-stress-full Full-suite stress test (alias for STR_SUITE=full bench-stress)"; \
 	echo "    BENCH_SAVE=1 to save outputs in benchmarks/results/"; \
 	echo "    BENCH_TAG=<tag> adds suffix to saved filenames"; \
 	echo "  LAT_SLO_P99_MS    Fail bench-latency if p99 > N ms (0=off)"; \
@@ -1041,9 +1042,12 @@ bench-latency-run:
 	    $$api_arg $$summary_arg $$slo_arg; \
 	fi
 
-.PHONY: bench-stress bench-stress-run
+.PHONY: bench-stress bench-stress-full bench-stress-run
 bench-stress: install-dev
 	@$(MAKE) -o install-dev _run_target=bench-stress-run _ts="$(_ts)" _bench-with-server
+
+bench-stress-full:
+	@$(MAKE) -o install-dev STR_SUITE=full bench-stress
 
 bench-stress-run:
 	@sha=$$(git rev-parse --short HEAD 2>/dev/null || echo "unknown"); \
