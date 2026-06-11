@@ -1,7 +1,7 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-## 0.9.0rc2 — 2026-06-11
+## 0.9.0rc3 — 2026-06-11
 
 ### API
 - Get document by ID endpoint (P1-17)
@@ -60,6 +60,7 @@
 - [fix] Avoid eager embedder loads in build-check (P3-52)
 - [fix] Force BuildKit on docker build
 - [fix] Use validated bash for make recipes
+- Make release builds opt-in and name dev artifacts
 
 ### UI
 - Align docs UI with PaveDB theme
