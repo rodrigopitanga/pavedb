@@ -1,7 +1,7 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-## 0.9.0rc3 — 2026-06-11
+## 0.9.0 — 2026-06-11
 
 ### API
 - Get document by ID endpoint (P1-17)
