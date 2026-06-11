@@ -66,12 +66,6 @@ docker exec pavedb pavecli search demo books "captain nemo" -k 3
 
 See below for REST and UI.
 
-Stop the container when you are done:
-
-```bash
-docker rm -f pavedb
-```
-
 ### 🐍 PyPI workflow
 
 Install PaveDB from PyPI inside an isolated virtual environment. You can run it
@@ -84,7 +78,7 @@ mkdir -p ~/pv && cd ~/pv  # or wherever
 python -m venv .venv-pv
 source .venv-pv/bin/activate
 python -m pip install --upgrade pip
-pip install "pavedb[cpu]"
+pip install pavedb
 
 # create the default instance under ~/pavedb
 pavecli init
