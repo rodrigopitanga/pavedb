@@ -1,7 +1,7 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-## 0.9.0rc2 — 2026-06-10
+## 0.9.0rc2 — 2026-06-11
 
 ### API
 - Get document by ID endpoint (P1-17)
@@ -80,14 +80,15 @@
 - [fix] Isolate SBERT from server process on macOS (P3-26)
 - [fix] Prefer current SBERT dimension API (P3-26)
 
+### Documentation
+- Update roadmap and plan docs
+- Document store concurrency model (P1-52)
+- [fix] Default to non-cpu quick startup
+
 ### Testing
 - CatalogDB integration + upgrade tests (P1-33)
 - Make LocalStore tests use temp_data_dir explicitly
 - Consolidate collection API tests into one file
-
-### Documentation
-- Update roadmap and plan docs
-- Document store concurrency model (P1-52)
 
 ### Log
 - Improve server failure diagnostics (P1-52)
