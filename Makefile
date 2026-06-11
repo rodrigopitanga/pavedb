@@ -60,7 +60,26 @@ REQ_MAIN_CPU    ?= requirements-cpu.txt
 
 # Version helpers - pave/version.py source of truth
 VERSION         ?= $(shell sed -n 's/^VERSION = "\([^"]*\)".*/\1/p' $(PKG_INTERNAL)/version.py | head -1)
-ARCHIVE_BASENAME := $(PKG_NAME)-$(VERSION)
+RELEASE_ARTIFACT ?= 0
+_TARGET_TAG     := v$(VERSION)
+_HEAD_SHORT_SHA := $(shell git rev-parse --short HEAD 2>/dev/null || echo nogit)
+_HEAD_EXACT_TAG := $(shell git describe --tags --exact-match HEAD 2>/dev/null || true)
+_HEAD_IS_CLEAN  := $(shell if git diff --quiet --ignore-submodules HEAD -- 2>/dev/null && git diff --cached --quiet --ignore-submodules -- 2>/dev/null; then echo 1; else echo 0; fi)
+_TARGET_TAG_EXISTS := $(shell git rev-parse -q --verify refs/tags/$(_TARGET_TAG) >/dev/null 2>&1 && echo 1 || echo 0)
+_COMMITS_SINCE_TARGET_TAG := $(shell git rev-list --count $(_TARGET_TAG)..HEAD 2>/dev/null || echo 0)
+_COMMITS_SINCE_NEAREST_TAG := $(shell d=$$(git describe --tags --long --match 'v[0-9]*' 2>/dev/null | awk -F- '{print $$(NF-1)}'); echo $${d:-0})
+_USE_RELEASE_VERSION := $(if $(filter 1,$(RELEASE_ARTIFACT)),1,$(if $(filter $(_TARGET_TAG),$(_HEAD_EXACT_TAG)),$(_HEAD_IS_CLEAN),0))
+PUSH_LATEST     ?= $(_USE_RELEASE_VERSION)
+_PYPI_DIRTY_SUFFIX := $(if $(filter 1,$(_HEAD_IS_CLEAN)),,.dirty)
+_ARCHIVE_DIRTY_SUFFIX := $(if $(filter 1,$(_HEAD_IS_CLEAN)),,-dirty)
+# If v$(VERSION) exists, a non-release build is after that release:
+# use post0.devN so Python ordering is > VERSION. If the tag does not
+# exist, VERSION is a future target: use devN so ordering is < VERSION.
+_DEV_PYPI_VERSION := $(if $(filter 1,$(_TARGET_TAG_EXISTS)),$(VERSION).post0.dev$(_COMMITS_SINCE_TARGET_TAG),$(VERSION).dev$(_COMMITS_SINCE_NEAREST_TAG))
+_DEV_ARTIFACT_VERSION := $(if $(filter 1,$(_TARGET_TAG_EXISTS)),$(VERSION)-$(_COMMITS_SINCE_TARGET_TAG)-g$(_HEAD_SHORT_SHA),$(VERSION)-dev$(_COMMITS_SINCE_NEAREST_TAG)-g$(_HEAD_SHORT_SHA))
+BUILD_VERSION   ?= $(if $(filter 1,$(_USE_RELEASE_VERSION)),$(VERSION),$(_DEV_PYPI_VERSION)+g$(_HEAD_SHORT_SHA)$(_PYPI_DIRTY_SUFFIX))
+ARCHIVE_VERSION ?= $(if $(filter 1,$(_USE_RELEASE_VERSION)),$(VERSION),$(_DEV_ARTIFACT_VERSION)$(_ARCHIVE_DIRTY_SUFFIX))
+ARCHIVE_BASENAME := $(PKG_NAME)-$(ARCHIVE_VERSION)
 DIST_DIR        := dist
 BUILD_DIR       := build
 ART_DIR         := artifacts
@@ -68,12 +87,9 @@ ART_DIR         := artifacts
 # Docker / publish
 DOCKERFILE      ?= Dockerfile
 CONTEXT         ?= .
-PUSH_LATEST     ?= 1
 RELEASE_PUBLISH ?= 0
-SKIP_DOCKER_BUILD ?= 0
-SKIP_DOCKER_PUSH  ?= $(if $(filter 1,$(RELEASE_PUBLISH)),0,1)
-SKIP_PYPI_BUILD   ?= 0
-SKIP_PYPI_PUSH    ?= $(if $(filter 1,$(RELEASE_PUBLISH)),0,1)
+PYPI_BUILD      ?= $(if $(filter 1,$(RELEASE_PUBLISH)),1,0)
+DOCKER_BUILD    ?= $(if $(filter 1,$(RELEASE_PUBLISH)),1,0)
 # Space-separated remote lists used by `make release`.
 # Defaults support canonical `gitlab` and legacy `flowlexi` names.
 RELEASE_TAG_REMOTES_FINAL      ?= gitlab flowlexi origin
@@ -82,10 +98,10 @@ RELEASE_BRANCH_REMOTES         ?= gitlab flowlexi origin
 REGISTRY        ?= $(REGISTRY_HOST)/$(REGISTRY_GROUP)/$(PKG_NAME)
 IMAGE_NAME 	?= $(PKG_NAME)
 ifeq ($(USE_CPU),1)
-    IMAGE_TAG 	:= $(VERSION)-cpu
+    IMAGE_TAG 	:= $(ARCHIVE_VERSION)-cpu
     LATEST_TAG 	:= latest-cpu
 else
-    IMAGE_TAG 	:= $(VERSION)-gpu
+    IMAGE_TAG 	:= $(ARCHIVE_VERSION)-gpu
     LATEST_TAG 	:= latest-gpu
 endif
 BUILD_VARIANT 	:= $(if $(filter 1,$(USE_CPU)),cpu,gpu)
@@ -118,8 +134,8 @@ help:
 	echo "  cli              Run CLI (pass ARGS='...')"; \
 	echo ""; \
 	echo "Build:"; \
-	echo "  build            Build sdist+wheel to ./dist"; \
-	echo "  package          Build release archives (.zip + .tar.gz) to ./artifacts"; \
+	echo "  build            Build sdist+wheel to ./dist (git-suffixed unless release)"; \
+	echo "  package          Build source archives to ./artifacts (git-suffixed unless release)"; \
 	echo "  docker-build     Build Docker image (VERSION=x.y.z)"; \
 	echo "  docker-check     Run alive check against a prebuilt local Docker image"; \
 	echo ""; \
@@ -141,7 +157,9 @@ help:
 	echo "  STR_MAX_ERROR_PCT Fail bench-stress if error% > N (0=off)"; \
 	echo ""; \
 	echo "Release:"; \
-	echo "  $${B}release$${R}         Bump/tag/build; flags: SKIP_PYPI_BUILD, SKIP_PYPI_PUSH, SKIP_DOCKER_BUILD, SKIP_DOCKER_PUSH (or RELEASE_PUBLISH=1)"; \
+	echo "  $${B}release$${R}         Bump/test/package/tag; CI builds by default"; \
+	echo "    PYPI_BUILD=1 and/or DOCKER_BUILD=1 to build locally"; \
+	echo "    RELEASE_PUBLISH=1 to build and publish locally"; \
 	echo "  bump             Bump release version in $(PKG_INTERNAL)/version.py"; \
 	echo "  changelog        Preview changelog entry for VERSION (no write)"; \
 	echo "  changelog-write  Update CHANGELOG.md for VERSION and print new entry"; \
@@ -253,7 +271,8 @@ bump:
 build: install
 	rm -rf $(DIST_DIR) $(BUILD_DIR)
 	$(PYTHON_BIN) -m pip install -q build twine
-	$(PYTHON_BIN) -m build
+	@echo "Building Python distributions for $(BUILD_VERSION)"
+	PAVEDB_BUILD_VERSION="$(BUILD_VERSION)" $(PYTHON_BIN) -m build
 	$(PYTHON_BIN) -m twine check $(DIST_DIR)/*
 
 .PHONY: package
@@ -267,8 +286,9 @@ package: build
 	# .zip from tracked files only (explicit, reproducible)
 	git archive --format=zip --output $(ART_DIR)/$(ARCHIVE_BASENAME).zip HEAD
 	# .tar.gz from sdist if available, else from tracked files only
-	if ls $(DIST_DIR)/*.tar.gz >/dev/null 2>&1; then \
-	  cp $(DIST_DIR)/*.tar.gz $(ART_DIR)/$(ARCHIVE_BASENAME).tar.gz; \
+	sdist="$(DIST_DIR)/$(PYPI_DIST_NAME)-$(BUILD_VERSION).tar.gz"; \
+	if [ -f "$$sdist" ]; then \
+	  cp "$$sdist" $(ART_DIR)/$(ARCHIVE_BASENAME).tar.gz; \
 	else \
 	  git archive --format=tar.gz --output $(ART_DIR)/$(ARCHIVE_BASENAME).tar.gz HEAD; \
 	fi
@@ -278,9 +298,10 @@ package: build
 .PHONY: docker-build
 docker-build: install
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make docker-build VERSION=0.5.4')"; exit 1; fi
+	@echo "Docker image tag: $(IMAGE_TAG)"
 	@set -e; if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
-	  $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
-	  $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
+	  $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=$(RELEASE_ARTIFACT) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
+	  $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=$(RELEASE_ARTIFACT) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
 	elif [ -n "$(REGISTRY)" ]; then \
 	  echo "Building $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) from $(DOCKERFILE)"; \
 	  DOCKER_BUILDKIT=1 docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) -f $(DOCKERFILE) $(CONTEXT); \
@@ -295,8 +316,8 @@ docker-build: install
 docker-push:
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make docker-push VERSION=0.5.4')"; exit 1; fi
 	@set -e; if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
-	  $(MAKE) docker-push VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
-	  $(MAKE) docker-push VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
+	  $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=$(RELEASE_ARTIFACT) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
+	  $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=$(RELEASE_ARTIFACT) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
 	elif [ -n "$(REGISTRY)" ]; then \
 	  echo "Pushing $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)"; \
 	  docker push $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG); \
@@ -340,9 +361,9 @@ release:
 	BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
 	LAST_TAG=$$(git describe --tags --abbrev=0 2>/dev/null || true); \
 	PKG_PUBLISHED="no"; \
-	PKG_WHERE="not published (local build only)"; \
+	PKG_WHERE="not published (delegated to CI)"; \
 	DOCKER_PUBLISHED="no"; \
-	DOCKER_WHERE="not published (local build only)"; \
+	DOCKER_WHERE="not published (delegated to CI)"; \
 	IMAGE_REFS=""; \
 	BRANCH_REMOTES="$(RELEASE_BRANCH_REMOTES)"; \
 	TAG_TOUCHED=0; \
@@ -353,22 +374,33 @@ release:
 	  git checkout -- CHANGELOG.md $(PKG_INTERNAL)/version.py 2>/dev/null || true; \
 	}; \
 	trap 'status=$$?; if [ "$$status" -ne 0 ] && [ "$$POST_TAG" = "1" ] && [ "$$TAG_TOUCHED" = "1" ]; then echo "Release failed after tagging; deleting tag v$(VERSION) (keeping bumped commit)."; git tag -d "v$(VERSION)" >/dev/null 2>&1 || true; fi; exit $$status' ERR; \
-	if [ "$(SKIP_BUMP)" != "1" ]; then \
-	  echo "Bumping to $(VERSION) via 'make bump'..."; \
-	  $(MAKE) bump VERSION=$(VERSION) || { echo "Version bump failed."; revert_changes; exit 1; }; \
+	case "$(PYPI_BUILD)" in 0|1) ;; *) echo "Invalid PYPI_BUILD=$(PYPI_BUILD); expected 0 or 1."; exit 1 ;; esac; \
+	case "$(DOCKER_BUILD)" in 0|1) ;; *) echo "Invalid DOCKER_BUILD=$(DOCKER_BUILD); expected 0 or 1."; exit 1 ;; esac; \
+	case "$(RELEASE_PUBLISH)" in 0|1) ;; *) echo "Invalid RELEASE_PUBLISH=$(RELEASE_PUBLISH); expected 0 or 1."; exit 1 ;; esac; \
+	if [ "$(RELEASE_PUBLISH)" = "1" ]; then \
+	  if [ "$(PYPI_BUILD)" != "1" ]; then \
+	    echo "Invalid flags: RELEASE_PUBLISH=1 requires PYPI_BUILD=1; omit PYPI_BUILD to build implicitly."; \
+	    exit 1; \
+	  fi; \
+	  if [ "$(DOCKER_BUILD)" != "1" ]; then \
+	    echo "Invalid flags: RELEASE_PUBLISH=1 requires DOCKER_BUILD=1; omit DOCKER_BUILD to build implicitly."; \
+	    exit 1; \
+	  fi; \
 	fi; \
+	echo "Bumping to $(VERSION) via 'make bump'..."; \
+	$(MAKE) bump VERSION=$(VERSION) || { echo "Version bump failed."; revert_changes; exit 1; }; \
 	$(MAKE) changelog-write VERSION=$(VERSION) || { echo "Changelog generation failed."; revert_changes; exit 1; }; \
 	echo "Running tests..."; \
 	$(MAKE) test || { echo "Tests failed."; revert_changes; exit 1; }; \
-	if [ "$(SKIP_PYPI_BUILD)" != "1" ]; then \
+	if [ "$(PYPI_BUILD)" = "1" ]; then \
 	  echo "Building dists..."; \
-	  $(MAKE) build || { echo "Build failed."; revert_changes; exit 1; }; \
+	  $(MAKE) build VERSION=$(VERSION) RELEASE_ARTIFACT=1 || { echo "Build failed."; revert_changes; exit 1; }; \
 	  echo "Running build-check runner..."; \
 	  $(MAKE) _build-check-run || { echo "build-check failed."; revert_changes; exit 1; }; \
 	else \
-	  echo "Skipping dists build (SKIP_PYPI_BUILD=1)."; \
+	  echo "Delegating PyPI build to CI (PYPI_BUILD=0)."; \
 	fi; \
-	$(MAKE) -o build package || { echo "Packaging failed."; revert_changes; exit 1; }; \
+	$(MAKE) -o build package VERSION=$(VERSION) RELEASE_ARTIFACT=1 || { echo "Packaging failed."; revert_changes; exit 1; }; \
 	if [ -n "$(REGISTRY)" ]; then IMAGE_BASE="$(REGISTRY)/$(IMAGE_NAME)"; else IMAGE_BASE="$(IMAGE_NAME)"; fi; \
 	if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
 	  IMAGE_REFS="$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-gpu $(REGISTRY)/$(IMAGE_NAME):$(VERSION)-cpu"; \
@@ -378,27 +410,23 @@ release:
 	  IMAGE_REFS="$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-$$IMG_SUFFIX"; \
 	  if [ "$(PUSH_LATEST)" = "1" ]; then IMAGE_REFS="$$IMAGE_REFS $(REGISTRY)/$(IMAGE_NAME):latest-$$IMG_SUFFIX"; fi; \
 	fi; \
-	if [ "$(SKIP_DOCKER_BUILD)" = "1" ] && [ "$(SKIP_DOCKER_PUSH)" != "1" ]; then \
-	  echo "Invalid flags: SKIP_DOCKER_BUILD=1 requires SKIP_DOCKER_PUSH=1."; \
-	  revert_changes; \
-	  exit 1; \
-	elif [ "$(SKIP_DOCKER_BUILD)" = "1" ]; then \
-	  echo "Skipping Docker build/push (SKIP_DOCKER_BUILD=1)."; \
-	else \
-	  if [ "$(SKIP_DOCKER_PUSH)" != "1" ]; then \
+	if [ "$(DOCKER_BUILD)" = "1" ]; then \
+	  if [ "$(RELEASE_PUBLISH)" = "1" ]; then \
 	    echo "Building and validating Docker image(s)..."; \
 	  else \
 	    echo "Building and validating Docker image(s) (no push)..."; \
 	  fi; \
 	  if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
-	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0 || { echo "Docker build failed."; revert_changes; exit 1; }; \
+	    $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0 || { echo "Docker build failed."; revert_changes; exit 1; }; \
 	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-gpu" || { echo "docker-check failed."; revert_changes; exit 1; }; \
-	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1 || { echo "Docker build failed."; revert_changes; exit 1; }; \
+	    $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1 || { echo "Docker build failed."; revert_changes; exit 1; }; \
 	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-cpu" || { echo "docker-check failed."; revert_changes; exit 1; }; \
 	  else \
-	    $(MAKE) docker-build VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU) || { echo "Docker build failed."; revert_changes; exit 1; }; \
+	    $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU) || { echo "Docker build failed."; revert_changes; exit 1; }; \
 	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-$$IMG_SUFFIX" || { echo "docker-check failed."; revert_changes; exit 1; }; \
 	  fi; \
+	else \
+	  echo "Delegating Docker build to CI (DOCKER_BUILD=0)."; \
 	fi; \
 	git add CHANGELOG.md $(PKG_INTERNAL)/version.py 2>/dev/null || true; \
 	if git diff --cached --quiet; then \
@@ -422,7 +450,7 @@ release:
 	  TAG_TOUCHED=1; \
 	fi; \
 	POST_TAG=1; \
-	if [ "$(SKIP_PYPI_PUSH)" != "1" ]; then \
+	if [ "$(RELEASE_PUBLISH)" = "1" ]; then \
 	  if printf '%s' "$(VERSION)" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+rc[0-9]+$$'; then \
 	    echo "Publishing package(s) to TestPyPI..."; \
 	    $(MAKE) pypitest-push; \
@@ -435,13 +463,13 @@ release:
 	    PKG_WHERE="PyPI (https://pypi.org/project/$(PYPI_DIST_NAME)/)"; \
 	  fi; \
 	fi; \
-	if [ "$(SKIP_DOCKER_BUILD)" != "1" ] && [ "$(SKIP_DOCKER_PUSH)" != "1" ]; then \
+	if [ "$(RELEASE_PUBLISH)" = "1" ]; then \
 	  echo "Publishing Docker image(s)..."; \
 	  if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
-	    $(MAKE) docker-push VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
-	    $(MAKE) docker-push VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
+	    $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
+	    $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
 	  else \
-	    $(MAKE) docker-push VERSION=$(VERSION) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
+	    $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
 	  fi; \
 	  DOCKER_PUBLISHED="yes"; \
 	  DOCKER_WHERE="$(REGISTRY)/$(IMAGE_NAME)"; \
@@ -470,12 +498,20 @@ release:
 	echo "✅ Release v$(VERSION): tests and builds succeeded."; \
 	echo ""; \
 	echo "Packages:"; \
-	for f in dist/*; do [ -e "$$f" ] && echo "  - $$f"; done; \
+	if [ "$(PYPI_BUILD)" = "1" ]; then \
+	  for f in dist/*; do [ -e "$$f" ] && echo "  - $$f"; done; \
+	else \
+	  echo "  - local dist build skipped (PYPI_BUILD=0)"; \
+	fi; \
 	echo "  Published: $$PKG_PUBLISHED"; \
 	echo "  Destination: $$PKG_WHERE"; \
 	echo ""; \
 	echo "Docker images:"; \
-	for img in $$IMAGE_REFS; do echo "  - $$img"; done; \
+	if [ "$(DOCKER_BUILD)" = "1" ]; then \
+	  for img in $$IMAGE_REFS; do echo "  - $$img"; done; \
+	else \
+	  echo "  - local Docker build skipped (DOCKER_BUILD=0)"; \
+	fi; \
 	echo "  Published: $$DOCKER_PUBLISHED"; \
 	echo "  Destination: $$DOCKER_WHERE"; \
 	echo ""; \

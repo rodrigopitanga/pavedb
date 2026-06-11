@@ -3,11 +3,14 @@
 
 from setuptools import setup, find_packages
 from pathlib import Path
+import os
 
 here = Path(__file__).parent.resolve()
 
 
 def read_version():
+    if os.environ.get("PAVEDB_BUILD_VERSION"):
+        return os.environ["PAVEDB_BUILD_VERSION"]
     ns = {}
     exec((here / "pave" / "version.py").read_text(encoding="utf-8"), ns)
     return ns["VERSION"]

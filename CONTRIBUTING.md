@@ -352,9 +352,11 @@ Run `make help` for the full list and flags. Key targets:
   Reuses `:8086` if active, otherwise starts an ephemeral server.
 - `make benchmark` — latency + stress benchmarks (`BENCH_SAVE=1`
   to persist results, `BENCH_TAG=<tag>` for naming).
-- `make release VERSION=x.y.z` — bump, test, build, tag, push
-  tags. Set `RELEASE_PUBLISH=1` to also publish to PyPI and
-  Docker registries.
+- `make release VERSION=x.y.z` — bump, test, package tracked
+  archives, commit, tag, and push tags. Local PyPI and Docker builds
+  are opt-in with `PYPI_BUILD=1` and `DOCKER_BUILD=1`; by default,
+  publishing builds are delegated to CI. Set `RELEASE_PUBLISH=1` to
+  build and publish locally.
 - `make clean` — remove caches and build outputs (keeps `.venv`).
 
 ### Maintainer git remotes
