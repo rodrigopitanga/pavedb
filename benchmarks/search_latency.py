@@ -268,7 +268,7 @@ async def run_benchmark(
 ) -> list[float] | None:
     bench_start = time.perf_counter()
     tenant = "bench"
-    collection = f"lat_{int(time.time())}"
+    collection = f"lat-{int(time.time())}"
     headers = (
         {"Authorization": f"Bearer {api_key}"}
         if api_key else {}

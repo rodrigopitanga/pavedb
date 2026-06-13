@@ -284,7 +284,7 @@ def _covers(*routes: tuple[str, str]):
 
 @_covers(("POST", "/v1/collections/{tenant}/{name}"))
 async def op_create_collection(client: httpx.AsyncClient, world: World, stats: Stats):
-    name = f"s_{_rand_name()}"
+    name = f"s-{_rand_name()}"
     t0 = time.perf_counter()
     try:
         r = await client.post(f"{API_PREFIX}/collections/{TENANT}/{name}")
@@ -565,17 +565,51 @@ async def op_archive_restore(client: httpx.AsyncClient, _: World, stats: Stats):
 # race-prone paths (multi-collection write lock, reads racing with delete,
 # query-log retry path, sidecar chunk read).
 # ---------------------------------------------------------------------------
-@_covers(("PUT", "/v1/collections/{tenant}/{name}"))
-async def op_rename_collection(client: httpx.AsyncClient, world: World, stats: Stats):
-    """PUT /collections/{tenant}/{old} {new_name} — variadic write lock path."""
+@_covers(("PATCH", "/v1/collections/{tenant}/{name}"))
+async def op_update_collection(client: httpx.AsyncClient, world: World, stats: Stats):
+    """PATCH collection display_name — mutable metadata path."""
+    coll = await world.pick_collection()
+    if coll is None:
+        return
+    display_name = f"Display {_rand_name()}"
+    t0 = time.perf_counter()
+    try:
+        r = await client.patch(
+            f"{API_PREFIX}/collections/{TENANT}/{coll}",
+            json={"display_name": display_name},
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        # Expected race outcome: collection got deleted/moved between
+        # pick and patch.
+        if r.status_code == 404:
+            stats.record(OpResult(
+                "update_collection", lat, True, f"http_{r.status_code}",
+            ))
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("update_collection", lat, False,
+                                  _parse_error(r)))
+            return
+        stats.record(OpResult("update_collection", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("update_collection", lat, False, str(e)))
+
+
+@_covers(("POST", "/v1/admin/collections/{tenant}/{name}/move"))
+async def op_move_collection(client: httpx.AsyncClient, world: World, stats: Stats):
+    """POST admin collection move — variadic write lock path."""
     old = await world.pick_collection()
     if old is None:
         return
-    new = f"r_{_rand_name()}"
+    new = f"r-{_rand_name()}"
     t0 = time.perf_counter()
     try:
-        r = await client.put(
-            f"{API_PREFIX}/collections/{TENANT}/{old}",
+        r = await client.post(
+            f"{API_PREFIX}/admin/collections/{TENANT}/{old}/move",
             json={"new_name": new},
         )
         lat = (time.perf_counter() - t0) * 1000
@@ -583,24 +617,24 @@ async def op_rename_collection(client: httpx.AsyncClient, world: World, stats: S
             _record_rate_limited(stats, lat)
             return
         # Expected race outcomes under stress: 404 (source gone — another
-        # worker deleted/renamed it first) and 409 (target name just got
+        # worker deleted/moved it first) and 409 (target name just got
         # taken). Count as race-wins so genuine 5xx stand out.
         if r.status_code in (404, 409):
             stats.record(OpResult(
-                "rename_collection", lat, True, f"http_{r.status_code}",
+                "move_collection", lat, True, f"http_{r.status_code}",
             ))
             return
         if not _ok_response(r):
-            stats.record(OpResult("rename_collection", lat, False,
+            stats.record(OpResult("move_collection", lat, False,
                                   _parse_error(r)))
             return
-        # Mirror the rename in world so workers stop targeting the old name.
+        # Mirror the move in world so workers stop targeting the old name.
         await world.remove_collection(old)
         await world.add_collection(new)
-        stats.record(OpResult("rename_collection", lat, True))
+        stats.record(OpResult("move_collection", lat, True))
     except Exception as e:
         lat = (time.perf_counter() - t0) * 1000
-        stats.record(OpResult("rename_collection", lat, False, str(e)))
+        stats.record(OpResult("move_collection", lat, False, str(e)))
 
 
 @_covers(("GET", "/v1/collections/{tenant}/{collection}/documents"))
@@ -1122,7 +1156,7 @@ OPERATIONS_CRITICAL = [
     (op_delete_collection,   "collection_delete",  4),
     # The race-critical adds. Recorded names match function name minus
     # `op_` prefix so that auto-discovery in `full` lines up.
-    (op_rename_collection,   "rename_collection",  8),
+    (op_move_collection,     "move_collection",    8),
     (op_list_documents,      "list_documents",     8),
     (op_list_collections,    "list_collections",   5),
     (op_query_log_list,      "query_log_list",     4),
@@ -1271,7 +1305,7 @@ async def run_stress(
         # Seed a few collections so workers have something to target
         print(f"Seeding initial collections...")
         for i in range(3):
-            name = f"s_seed{i}"
+            name = f"s-seed{i}"
             r = await _post_with_retries(
                 client,
                 f"{API_PREFIX}/collections/{TENANT}/{name}",
