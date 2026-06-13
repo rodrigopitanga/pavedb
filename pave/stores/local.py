@@ -399,8 +399,6 @@ class LocalStore(BaseStore):
         cfg: dict[str, Any] | None = None,
         display_name: str | None = None,
     ) -> None:
-        if tenant == "_system":
-            return
         resolved = cfg or self._default_collection_config()
         self._with_catalog_retry(
             "register_collection",
@@ -421,8 +419,6 @@ class LocalStore(BaseStore):
         tenant: str,
         collection: str,
     ) -> dict[str, Any]:
-        if tenant == "_system":
-            return self._default_collection_config()
         stored = self._with_catalog_retry(
             "get_collection_config",
             lambda catalog: catalog.get_collection_config(tenant, collection),
@@ -566,32 +562,28 @@ class LocalStore(BaseStore):
         is_new = False
         with self._collection_write_lock(tenant, name):
             try:
-                if tenant != "_system":
-                    stored = self._with_catalog_retry(
-                        "get_collection_config",
-                        lambda catalog: catalog.get_collection_config(
-                            tenant, name,
-                        )
+                stored = self._with_catalog_retry(
+                    "get_collection_config",
+                    lambda catalog: catalog.get_collection_config(
+                        tenant, name,
                     )
-                    is_new = stored is None
-                    if stored is None:
-                        self._validate_embedder_for_config(requested)
-                    else:
-                        existing = self._effective_collection_config(stored)
-                        if (
-                            explicit
-                            and embedder_factory_mod.embedder_cache_key(existing)
-                            != embedder_factory_mod.embedder_cache_key(requested)
-                        ):
-                            raise ValueError(
-                                "collection already exists with a different "
-                                "embedder config"
-                            )
-                        requested = existing
-                        resolved_display_name = stored.get("display_name")
-                else:
-                    is_new = not os.path.isdir(self._base_path(tenant, name))
+                )
+                is_new = stored is None
+                if stored is None:
                     self._validate_embedder_for_config(requested)
+                else:
+                    existing = self._effective_collection_config(stored)
+                    if (
+                        explicit
+                        and embedder_factory_mod.embedder_cache_key(existing)
+                        != embedder_factory_mod.embedder_cache_key(requested)
+                    ):
+                        raise ValueError(
+                            "collection already exists with a different "
+                            "embedder config"
+                        )
+                    requested = existing
+                    resolved_display_name = stored.get("display_name")
 
                 self._load_or_init(
                     tenant,
@@ -617,14 +609,13 @@ class LocalStore(BaseStore):
                         with suppress(Exception):
                             db.close()
                     self._collection_embedders.pop(key, None)
-                    if tenant != "_system":
-                        with suppress(Exception):
-                            self._with_catalog_retry(
-                                "unregister_collection",
-                                lambda catalog: catalog.unregister_collection(
-                                    tenant, name,
-                                ),
-                            )
+                    with suppress(Exception):
+                        self._with_catalog_retry(
+                            "unregister_collection",
+                            lambda catalog: catalog.unregister_collection(
+                                tenant, name,
+                            ),
+                        )
                     self._remove_path(Path(self._base_path(tenant, name)))
                 raise
         requested["display_name"] = resolved_display_name
@@ -646,20 +637,19 @@ class LocalStore(BaseStore):
             path = Path(self._base_path(tenant, collection))
             if path.exists() or path.is_symlink():
                 self._remove_path(path)
-            if tenant != "_system":
-                self._with_catalog_retry(
-                    "unregister_collection",
-                    lambda catalog: catalog.unregister_collection(
-                        tenant, collection,
-                    ),
-                )
-                self._with_catalog_retry(
-                    "purge_query_homes_for_collection",
-                    lambda catalog: catalog.purge_query_homes_for_collection(
-                        tenant,
-                        collection,
-                    ),
-                )
+            self._with_catalog_retry(
+                "unregister_collection",
+                lambda catalog: catalog.unregister_collection(
+                    tenant, collection,
+                ),
+            )
+            self._with_catalog_retry(
+                "purge_query_homes_for_collection",
+                lambda catalog: catalog.purge_query_homes_for_collection(
+                    tenant,
+                    collection,
+                ),
+            )
 
     def update_collection(
         self,
@@ -668,8 +658,6 @@ class LocalStore(BaseStore):
         *,
         display_name: str | None = None,
     ) -> dict[str, Any] | None:
-        if tenant == "_system":
-            return None
         with self._collection_write_lock(tenant, name):
             if not os.path.isdir(self._base_path(tenant, name)):
                 raise ValueError(f"collection '{name}' does not exist")
@@ -707,20 +695,17 @@ class LocalStore(BaseStore):
             # doesn't (orphan rows from an interrupted op or restore). Catch
             # that here so a UNIQUE collision surfaces as a clean conflict
             # before any filesystem state changes.
-            if tenant != "_system":
-                existing = self._with_catalog_retry(
-                    "move_conflict_check",
-                    lambda catalog: catalog.get_collection_config(
-                        tenant, new_name,
-                    ),
+            existing = self._with_catalog_retry(
+                "move_conflict_check",
+                lambda catalog: catalog.get_collection_config(
+                    tenant, new_name,
+                ),
+            )
+            if existing is not None:
+                raise ValueError(
+                    f"collection '{new_name}' already exists"
                 )
-                if existing is not None:
-                    raise ValueError(
-                        f"collection '{new_name}' already exists"
-                    )
-                rename_cfg = self._collection_config_for_load(tenant, old_name)
-            else:
-                rename_cfg = self._default_collection_config()
+            rename_cfg = self._collection_config_for_load(tenant, old_name)
 
             # Flush and drop the old backend before the directory move. The
             # backend keeps its storage path internally; reusing it after move
@@ -750,24 +735,23 @@ class LocalStore(BaseStore):
             # concurrent delete/create on either name can't race the
             # register-then-rename pair (which is what surfaced as
             # "catalog row missing" and spurious UNIQUE collisions).
-            if tenant != "_system":
-                self._register_catalog_collection(tenant, old_name)
-                self._with_catalog_retry(
-                    "move_collection",
-                    lambda catalog: catalog.move_collection(
-                        tenant,
-                        old_name,
-                        new_name,
-                    ),
-                )
-                self._with_catalog_retry(
-                    "move_query_homes_for_collection",
-                    lambda catalog: catalog.move_query_homes_for_collection(
-                        tenant,
-                        old_name,
-                        new_name,
-                    ),
-                )
+            self._register_catalog_collection(tenant, old_name)
+            self._with_catalog_retry(
+                "move_collection",
+                lambda catalog: catalog.move_collection(
+                    tenant,
+                    old_name,
+                    new_name,
+                ),
+            )
+            self._with_catalog_retry(
+                "move_query_homes_for_collection",
+                lambda catalog: catalog.move_query_homes_for_collection(
+                    tenant,
+                    old_name,
+                    new_name,
+                ),
+            )
 
     @staticmethod
     def _is_transient_db_read_error(exc: Exception) -> bool:

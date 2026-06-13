@@ -37,8 +37,10 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
             details["writable"] = False
             set_error(f"fs: {e}")
         try:
-            request_store = request.app.state.store
-            request_store.create_collection("_system", "health")
+            # Lightweight catalog probe: confirms the store is wired and the
+            # SQLite catalog is readable. Vector backend itself is exercised
+            # at startup via `store.warm()`; no per-health collection write.
+            request.app.state.store.catalog_metrics()
             details["vector_backend_init"] = True
         except Exception as e:
             details["vector_backend_init"] = False
