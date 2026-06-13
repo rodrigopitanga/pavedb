@@ -20,7 +20,7 @@ def cli_env(temp_data_dir, tmp_path, monkeypatch):
     monkeypatch.setattr(
         pvcli,
         "get_embedder",
-        lambda: FakeEmbedder(),
+        lambda *_args, **_kwargs: FakeEmbedder(),
         raising=True,
     )
     pvcli.store = store
@@ -35,7 +35,7 @@ def cli_query_env(temp_data_dir, tmp_path, monkeypatch):
     monkeypatch.setattr(
         pvcli,
         "get_embedder",
-        lambda: FakeEmbedder(),
+        lambda *_args, **_kwargs: FakeEmbedder(),
         raising=True,
     )
     store = SpyStore(LocalStore(str(temp_data_dir), FakeEmbedder()))
@@ -70,18 +70,23 @@ def test_cli_create_collection_accepts_embedder_args(cli_env, capsys):
             "sbert",
             "--embed-model",
             "fake",
+            "--embedder-config",
+            '{"batch_size": 64}',
         ]
     )
     out = json.loads(capsys.readouterr().out)
 
     assert rc == 0
     assert out["ok"] is True
+    assert out["name"] == "cfgcli"
+    assert out["display_name"] == "cfgcli"
     assert out["embedder_type"] == "sbert"
     assert out["embed_model"] == "fake"
+    assert out["embedder_config"] == {"batch_size": 64}
     assert ("create_collection", tenant, coll) in store.calls
 
 
-def test_cli_create_collection_rejects_wrong_embed_model(cli_env, capsys):
+def test_cli_create_collection_accepts_embed_model(cli_env, capsys):
     pvcli, _, _ = cli_env
 
     rc = pvcli.main_cli(
@@ -95,9 +100,32 @@ def test_cli_create_collection_rejects_wrong_embed_model(cli_env, capsys):
     )
     out = json.loads(capsys.readouterr().out)
 
-    assert rc == 1
-    assert out["ok"] is False
-    assert out["code"] == "embed_model_not_supported"
+    assert rc == 0
+    assert out["ok"] is True
+    assert out["display_name"] == "badcfgcli"
+    assert out["embedder_type"] == "sbert"
+    assert out["embed_model"] == "sentence-transformers/all-MiniLM-L6-v2"
+
+
+def test_cli_create_collection_accepts_display_name(cli_env, capsys):
+    pvcli, store, _ = cli_env
+
+    rc = pvcli.main_cli(
+        [
+            "create-collection",
+            "acme",
+            "Human Docs",
+            "--display-name",
+            "Human Docs",
+        ]
+    )
+    out = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert out["ok"] is True
+    assert out["name"] == "human-docs"
+    assert out["display_name"] == "Human Docs"
+    assert ("create_collection", "acme", "human-docs") in store.calls
 
 
 def test_cli_ingest_passes_doc_meta_through_wrapper(cli_env, tmp_path):
@@ -704,11 +732,36 @@ def test_cli_get_collection_returns_detail(cli_env, capsys):
     assert out["ok"] is True
     assert out["tenant"] == tenant
     assert out["name"] == coll
+    assert out["display_name"] == coll
     assert out["embedder_type"] == "sbert"
     assert out["embed_model"] == "fake"
     assert out["doc_count"] == 0
     assert out["chunk_count"] == 0
     assert ("get_collection_detail", tenant, coll) in store.calls
+
+
+def test_cli_update_collection_display_name(cli_env, capsys):
+    pvcli, store, _ = cli_env
+    tenant, coll = "acme", "labelcli"
+
+    pvcli.main_cli(["create-collection", tenant, coll])
+    capsys.readouterr()
+
+    rc = pvcli.main_cli(
+        [
+            "update-collection",
+            tenant,
+            coll,
+            "--display-name",
+            "Label CLI",
+        ]
+    )
+    out = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert out["ok"] is True
+    assert out["display_name"] == "Label CLI"
+    assert ("update_collection", tenant, coll, "Label CLI") in store.calls
 
 
 def test_cli_init_writes_default_instance_files(cli_env, monkeypatch, tmp_path, capsys):

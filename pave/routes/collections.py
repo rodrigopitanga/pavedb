@@ -10,19 +10,19 @@ from pave.log import ops_event
 from pave.metrics import inc
 from pave.schemas import (
     CollectionDetailResponse,
-    CreateCollectionBody,
+    CreateCollectionOptionsBody,
     CreateCollectionResponse,
     DeleteCollectionResponse,
     ListCollectionsResponse,
-    RenameCollectionBody,
-    RenameCollectionResponse,
+    UpdateCollectionBody,
+    UpdateCollectionResponse,
 )
 from pave.service import (
     create_collection as svc_create_collection,
     delete_collection as svc_delete_collection,
     get_collection_detail as svc_get_collection_detail,
     list_collections as svc_list_collections,
-    rename_collection as svc_rename_collection,
+    update_collection as svc_update_collection,
 )
 from pave.stores.base import BaseStore
 
@@ -99,7 +99,7 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         "/collections/{tenant}/{name}",
         status_code=201,
         response_model=CreateCollectionResponse,
-        responses=resp(400, 401, 403, 429, 500),
+        responses=resp(400, 401, 403, 429, 500, 503),
         tags=["Collection Catalog"],
     )
     @ops_event("create_collection", request_id="rid")
@@ -107,7 +107,7 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         request: Request,
         tenant: str,
         name: str,
-        body: CreateCollectionBody | None = Body(None),
+        body: CreateCollectionOptionsBody | None = Body(None),
         rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
@@ -117,19 +117,65 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
             store,
             tenant,
             name,
+            display_name=body.display_name if body else None,
             embedder_type=body.embedder_type if body else None,
             embed_model=body.embed_model if body else None,
+            embedder_config=body.embedder_config if body else None,
         )
         if not result.get("ok"):
             error_type = result.get("error_type", "failed")
             status_map = {
                 "invalid": 400,
+                "unavailable": 503,
                 "failed": 500,
             }
             return error(
                 status_map.get(error_type, 500),
                 result.get("code", "create_collection_failed"),
                 result.get("error", "failed to create collection"),
+                request=request,
+                request_id=rid,
+            )
+        return trace(result, request, request_id=rid)
+
+    @router.patch(
+        "/collections/{tenant}/{name}",
+        response_model=UpdateCollectionResponse,
+        responses=resp(400, 401, 403, 404, 429, 500),
+        tags=["Collection Catalog"],
+    )
+    @ops_event(
+        "update_collection",
+        coll="name",
+        request_id="rid",
+    )
+    def update_collection(
+        request: Request,
+        tenant: str,
+        name: str,
+        body: UpdateCollectionBody,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(tenant_rate_limit),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        result = svc_update_collection(
+            store,
+            tenant,
+            name,
+            display_name=body.display_name,
+        )
+        if not result.get("ok"):
+            error_type = result.get("error_type", "failed")
+            status_map = {
+                "not_found": 404,
+                "invalid": 400,
+                "failed": 500,
+            }
+            return error(
+                status_map.get(error_type, 500),
+                result.get("code", "update_collection_failed"),
+                result.get("error", "failed to update collection"),
                 request=request,
                 request_id=rid,
             )
@@ -157,46 +203,6 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
                 500,
                 result.get("code", "delete_collection_failed"),
                 result.get("error", "failed to delete collection"),
-                request=request,
-                request_id=rid,
-            )
-        return trace(result, request, request_id=rid)
-
-    @router.put(
-        "/collections/{tenant}/{name}",
-        response_model=RenameCollectionResponse,
-        responses=resp(400, 401, 403, 404, 409, 429, 500),
-        tags=["Collection Catalog"],
-    )
-    @ops_event(
-        "rename_collection",
-        new_name=lambda kw, r: kw["body"].new_name,
-        request_id="rid",
-    )
-    def rename_collection(
-        request: Request,
-        tenant: str,
-        name: str,
-        body: RenameCollectionBody,
-        rid: str | None = Depends(get_rid),
-        ctx: AuthContext = Depends(tenant_rate_limit),
-        store: BaseStore = Depends(current_store),
-    ):
-        inc("requests_total")
-        result = svc_rename_collection(store, tenant, name, body.new_name)
-        if not result.get("ok"):
-            error_type = result.get("error_type", "invalid")
-            status_map = {
-                "not_found": 404,
-                "conflict": 409,
-                "invalid": 400,
-                "failed": 500,
-            }
-            status_code = status_map.get(error_type, 500)
-            return error(
-                status_code,
-                result.get("code", "rename_invalid"),
-                result.get("error", "failed to rename collection"),
                 request=request,
                 request_id=rid,
             )

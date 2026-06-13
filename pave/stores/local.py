@@ -9,8 +9,8 @@ import shutil
 import sqlite3
 import tempfile
 import zipfile
-from collections.abc import Iterable, Iterator
-from contextlib import ExitStack, contextmanager
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import ExitStack, contextmanager, suppress
 from datetime import datetime, date, timezone as tz
 from pathlib import Path
 from threading import Condition, Lock, get_ident
@@ -23,7 +23,8 @@ sqlite3.register_adapter(date, date.isoformat)
 sqlite3.register_adapter(datetime, datetime.isoformat)
 
 from pave.backends import FaissBackend, VectorBackend
-from pave.embedders import Embedder
+from pave.embedders import Embedder, EmbedderUnavailableError
+import pave.embedders.factory as embedder_factory_mod
 from pave.filters import lookup_meta, matches_filters, sanit_field, sanit_meta_dict
 from pave.metadb import CatalogDB, CollectionDB, UnsupportedSchemaVersionError
 from pave.stores.base import (
@@ -171,10 +172,16 @@ class LocalStore(BaseStore):
         data_dir: str,
         embedder: Embedder,
         cat_db: CatalogDB | None = None,
+        embedder_factory: (
+            Callable[[str, str, dict[str, Any]], Embedder] | None
+        ) = None,
     ) -> None:
         self._data_dir = data_dir
         self._embedder = embedder
+        self._embedder_factory = embedder_factory or self._make_embedder
         self._emb: dict[tuple[str, str], VectorBackend] = {}
+        self._collection_embedders: dict[tuple[str, str], Embedder] = {}
+        self._embedder_cache: dict[tuple[str, str, str], Embedder] = {}
         self._dbs: dict[tuple[str, str], CollectionDB] = {}
         self._catalog_factory = cat_db.__class__ if cat_db is not None else CatalogDB
         self._catalog = cat_db or self._catalog_factory()
@@ -183,7 +190,23 @@ class LocalStore(BaseStore):
         self._collection_locks: dict[str, _CollectionReadWriteLock] = {}
         self._collection_locks_guard = Lock()
         self._state_lock = _StoreStateLock()
+        default_key = embedder_factory_mod.embedder_cache_key(
+            self._default_collection_config()
+        )
+        self._embedder_cache[default_key] = embedder
         self._ensure_catalog()
+
+    @staticmethod
+    def _make_embedder(
+        embedder_type: str,
+        embed_model: str,
+        embedder_config: dict[str, Any],
+    ) -> Embedder:
+        return embedder_factory_mod.get_embedder(
+            embedder_type=embedder_type,
+            model=embed_model,
+            embedder_config=embedder_config,
+        )
 
     def _get_collection_lock(self, key: str) -> _CollectionReadWriteLock:
         if key not in self._collection_locks:
@@ -238,18 +261,41 @@ class LocalStore(BaseStore):
     def _catalog_db_path(self) -> Path:
         return Path(self._data_dir).resolve() / "catalog.db"
 
-    def _default_collection_config(self) -> dict[str, Any]:
+    def _resolve_collection_config(
+        self,
+        *,
+        embedder_type: str | None = None,
+        embed_model: str | None = None,
+        embedder_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         cfg = get_cfg()
         backend_type = str(cfg.get("vector_store.type")).lower()
-        embedder_type = str(cfg.get("embedder.type")).lower()
-        embed_model = cfg.get(f"embedder.{embedder_type}.model")
+        embedder_spec = embedder_factory_mod.resolve_embedder_spec(
+            cfg,
+            embedder_type=embedder_type,
+            model=embed_model,
+            embedder_config=embedder_config,
+        )
         return {
             "backend_type": backend_type,
             "backend_config": {},
-            "embedder_type": embedder_type,
-            "embed_model": str(embed_model) if embed_model is not None else None,
-            "embedder_config": {},
+            **embedder_spec,
         }
+
+    def _default_collection_config(self) -> dict[str, Any]:
+        return self._resolve_collection_config()
+
+    def _effective_collection_config(
+        self,
+        stored: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        if stored is None:
+            return self._default_collection_config()
+        return self._resolve_collection_config(
+            embedder_type=stored.get("embedder_type"),
+            embed_model=stored.get("embed_model"),
+            embedder_config=stored.get("embedder_config") or {},
+        )
 
     @staticmethod
     def _is_transient_catalog_error(exc: Exception) -> bool:
@@ -330,36 +376,123 @@ class LocalStore(BaseStore):
             self._catalog_path = catalog_path
             return self._catalog
 
-    def _register_catalog_collection(self, tenant: str, name: str) -> None:
+    def _register_catalog_collection(
+        self,
+        tenant: str,
+        name: str,
+        cfg: dict[str, Any] | None = None,
+        display_name: str | None = None,
+    ) -> None:
         if tenant == "_system":
             return
-        defaults = self._default_collection_config()
+        resolved = cfg or self._default_collection_config()
         self._with_catalog_retry(
             "register_collection",
             lambda catalog: catalog.register_collection(
                 tenant,
                 name,
-                backend_type=defaults["backend_type"],
-                backend_config=defaults["backend_config"],
-                embedder_type=defaults["embedder_type"],
-                embed_model=defaults["embed_model"],
-                embed_config=defaults["embedder_config"],
+                display_name=display_name,
+                backend_type=resolved["backend_type"],
+                backend_config=resolved["backend_config"],
+                embedder_type=resolved["embedder_type"],
+                embed_model=resolved["embed_model"],
+                embed_config=resolved["embedder_config"],
             ),
         )
 
-    def _load_or_init(self, tenant: str, collection: str) -> None:
+    def _collection_config_for_load(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> dict[str, Any]:
+        if tenant == "_system":
+            return self._default_collection_config()
+        stored = self._with_catalog_retry(
+            "get_collection_config",
+            lambda catalog: catalog.get_collection_config(tenant, collection),
+        )
+        cfg = self._effective_collection_config(stored)
+        if stored is None:
+            self._register_catalog_collection(tenant, collection, cfg)
+        return cfg
+
+    def _get_embedder_for_config(self, cfg: dict[str, Any]) -> Embedder:
+        key = embedder_factory_mod.embedder_cache_key(cfg)
+        embedder = self._embedder_cache.get(key)
+        if embedder is None:
+            try:
+                embedder = self._embedder_factory(
+                    str(cfg["embedder_type"]),
+                    str(cfg["embed_model"]),
+                    dict(cfg.get("embedder_config") or {}),
+                )
+            except EmbedderUnavailableError:
+                raise
+            except Exception as exc:
+                raise EmbedderUnavailableError(
+                    f"embedder {cfg.get('embedder_type')!s}:"
+                    f"{cfg.get('embed_model')!s} could not be initialised: "
+                    f"{exc}"
+                ) from exc
+            self._embedder_cache[key] = embedder
+        return embedder
+
+    def _embedder_dim_for_config(
+        self,
+        cfg: dict[str, Any],
+        embedder: Embedder,
+    ) -> int:
+        try:
+            return int(embedder.dim)
+        except EmbedderUnavailableError:
+            self._embedder_cache.pop(
+                embedder_factory_mod.embedder_cache_key(cfg),
+                None,
+            )
+            raise
+        except Exception as exc:
+            self._embedder_cache.pop(
+                embedder_factory_mod.embedder_cache_key(cfg),
+                None,
+            )
+            raise EmbedderUnavailableError(
+                f"embedder {cfg.get('embedder_type')!s}:"
+                f"{cfg.get('embed_model')!s} dimension unavailable: {exc}"
+            ) from exc
+
+    def _validate_embedder_for_config(self, cfg: dict[str, Any]) -> None:
+        embedder = self._get_embedder_for_config(cfg)
+        self._embedder_dim_for_config(cfg, embedder)
+
+    def _load_or_init(
+        self,
+        tenant: str,
+        collection: str,
+        *,
+        collection_config: dict[str, Any] | None = None,
+    ) -> None:
         key = (tenant, collection)
-        if key in self._emb and key in self._dbs:
+        if (
+            key in self._emb
+            and key in self._dbs
+            and key in self._collection_embedders
+        ):
             return
 
         base = self._base_path(tenant, collection)
         os.makedirs(base, exist_ok=True)
+        coll_cfg = collection_config or self._collection_config_for_load(
+            tenant,
+            collection,
+        )
+        embedder = self._get_embedder_for_config(coll_cfg)
+        embedder_dim = self._embedder_dim_for_config(coll_cfg, embedder)
 
         backend = self._emb.get(key)
         if backend is None:
             idx_dir = Path(os.path.join(base, "index"))
             backend = FaissBackend(
-                self._embedder.dim,
+                embedder_dim,
                 storage_dir=idx_dir,
             )
 
@@ -373,7 +506,7 @@ class LocalStore(BaseStore):
                     collection,
                 )
                 backend = FaissBackend(
-                    self._embedder.dim,
+                    embedder_dim,
                     storage_dir=idx_dir,
                 )
 
@@ -383,6 +516,7 @@ class LocalStore(BaseStore):
             col_db.open(self._db_path(tenant, collection))
 
         self._emb[key] = backend
+        self._collection_embedders[key] = embedder
         self._dbs[key] = col_db
 
     def _save(self, tenant: str, collection: str) -> None:
@@ -392,11 +526,93 @@ class LocalStore(BaseStore):
             return
         em.flush()
 
-    def create_collection(self, tenant: str, name: str) -> None:
+    def create_collection(
+        self,
+        tenant: str,
+        name: str,
+        *,
+        embedder_type: str | None = None,
+        embed_model: str | None = None,
+        embedder_config: dict[str, Any] | None = None,
+        display_name: str | None = None,
+    ) -> dict[str, Any]:
+        requested = self._resolve_collection_config(
+            embedder_type=embedder_type,
+            embed_model=embed_model,
+            embedder_config=embedder_config,
+        )
+        explicit = (
+            embedder_type is not None
+            or embed_model is not None
+            or embedder_config is not None
+        )
+        resolved_display_name = display_name
+        is_new = False
         with self._collection_write_lock(tenant, name):
-            self._load_or_init(tenant, name)
-            self._save(tenant, name)
-            self._register_catalog_collection(tenant, name)
+            try:
+                if tenant != "_system":
+                    stored = self._with_catalog_retry(
+                        "get_collection_config",
+                        lambda catalog: catalog.get_collection_config(
+                            tenant, name,
+                        )
+                    )
+                    is_new = stored is None
+                    if stored is None:
+                        self._validate_embedder_for_config(requested)
+                    else:
+                        existing = self._effective_collection_config(stored)
+                        if (
+                            explicit
+                            and embedder_factory_mod.embedder_cache_key(existing)
+                            != embedder_factory_mod.embedder_cache_key(requested)
+                        ):
+                            raise ValueError(
+                                "collection already exists with a different "
+                                "embedder config"
+                            )
+                        requested = existing
+                        resolved_display_name = stored.get("display_name")
+                else:
+                    is_new = not os.path.isdir(self._base_path(tenant, name))
+                    self._validate_embedder_for_config(requested)
+
+                self._load_or_init(
+                    tenant,
+                    name,
+                    collection_config=requested,
+                )
+                self._save(tenant, name)
+                self._register_catalog_collection(
+                    tenant,
+                    name,
+                    requested,
+                    display_name=display_name,
+                )
+            except Exception:
+                if is_new:
+                    key = (tenant, name)
+                    backend = self._emb.pop(key, None)
+                    if backend is not None:
+                        with suppress(Exception):
+                            backend.close()
+                    db = self._dbs.pop(key, None)
+                    if db is not None:
+                        with suppress(Exception):
+                            db.close()
+                    self._collection_embedders.pop(key, None)
+                    if tenant != "_system":
+                        with suppress(Exception):
+                            self._with_catalog_retry(
+                                "unregister_collection",
+                                lambda catalog: catalog.unregister_collection(
+                                    tenant, name,
+                                ),
+                            )
+                    self._remove_path(Path(self._base_path(tenant, name)))
+                raise
+        requested["display_name"] = resolved_display_name
+        return requested
 
     def delete_collection(self, tenant: str, collection: str) -> None:
         with self._collection_write_lock(tenant, collection):
@@ -407,6 +623,7 @@ class LocalStore(BaseStore):
                     backend.close()
                 except Exception:
                     pass
+            self._collection_embedders.pop(key, None)
             col_db = self._dbs.pop(key, None)
             if col_db is not None:
                 col_db.close()
@@ -428,7 +645,29 @@ class LocalStore(BaseStore):
                     ),
                 )
 
-    def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
+    def update_collection(
+        self,
+        tenant: str,
+        name: str,
+        *,
+        display_name: str | None = None,
+    ) -> dict[str, Any] | None:
+        if tenant == "_system":
+            return None
+        with self._collection_write_lock(tenant, name):
+            if not os.path.isdir(self._base_path(tenant, name)):
+                raise ValueError(f"collection '{name}' does not exist")
+            self._with_catalog_retry(
+                "update_collection",
+                lambda catalog: catalog.update_collection(
+                    tenant,
+                    name,
+                    display_name=display_name,
+                ),
+            )
+            return self.get_collection_config(tenant, name)
+
+    def move_collection(self, tenant: str, old_name: str, new_name: str) -> None:
         if old_name == new_name:
             raise ValueError(
                 f"old and new collection names are the same: {old_name}"
@@ -454,7 +693,7 @@ class LocalStore(BaseStore):
             # before any filesystem state changes.
             if tenant != "_system":
                 existing = self._with_catalog_retry(
-                    "rename_conflict_check",
+                    "move_conflict_check",
                     lambda catalog: catalog.get_collection_config(
                         tenant, new_name,
                     ),
@@ -463,14 +702,18 @@ class LocalStore(BaseStore):
                     raise ValueError(
                         f"collection '{new_name}' already exists"
                     )
+                rename_cfg = self._collection_config_for_load(tenant, old_name)
+            else:
+                rename_cfg = self._default_collection_config()
 
             # Flush and drop the old backend before the directory move. The
-            # backend keeps its storage path internally; reusing it after rename
+            # backend keeps its storage path internally; reusing it after move
             # would make later flushes recreate the old collection directory.
             old_backend = self._emb.get(old_key)
             if old_backend is not None:
                 old_backend.close()
                 self._emb.pop(old_key, None)
+            self._collection_embedders.pop(old_key, None)
 
             # Close DB for old collection before rename
             old_db = self._dbs.pop(old_key, None)
@@ -481,7 +724,11 @@ class LocalStore(BaseStore):
             os.rename(old_path, new_path)
 
             # Re-open caches from the new path.
-            self._load_or_init(tenant, new_name)
+            self._load_or_init(
+                tenant,
+                new_name,
+                collection_config=rename_cfg,
+            )
 
             # Catalog updates stay inside the two-collection lock so a
             # concurrent delete/create on either name can't race the
@@ -490,16 +737,16 @@ class LocalStore(BaseStore):
             if tenant != "_system":
                 self._register_catalog_collection(tenant, old_name)
                 self._with_catalog_retry(
-                    "rename_collection",
-                    lambda catalog: catalog.rename_collection(
+                    "move_collection",
+                    lambda catalog: catalog.move_collection(
                         tenant,
                         old_name,
                         new_name,
                     ),
                 )
                 self._with_catalog_retry(
-                    "rename_query_homes_for_collection",
-                    lambda catalog: catalog.rename_query_homes_for_collection(
+                    "move_query_homes_for_collection",
+                    lambda catalog: catalog.move_query_homes_for_collection(
                         tenant,
                         old_name,
                         new_name,
@@ -537,7 +784,7 @@ class LocalStore(BaseStore):
         reader,
     ) -> Any:
         # Per-collection read lock pins the cached col_db against concurrent
-        # delete_collection / rename_collection / restore_archive, which take
+        # delete_collection / move_collection / restore_archive, which take
         # the write side. Without it, the cached SQLite handle can be closed
         # underneath an in-flight read and surface as "disk I/O error" rather
         # than something the transient-error fallback can recover from.
@@ -597,10 +844,21 @@ class LocalStore(BaseStore):
         )
 
     def list_collections(self, tenant: str) -> list[dict[str, Any]]:
-        return self._with_catalog_retry(
+        summaries = self._with_catalog_retry(
             "list_collection_summaries",
             lambda catalog: catalog.list_collection_summaries(tenant),
         )
+        out: list[dict[str, Any]] = []
+        for row in summaries:
+            row["vector_space_key"] = embedder_factory_mod.vector_space_key(
+                {
+                    "embedder_type": row.get("embedder_type"),
+                    "embed_model": row.get("embed_model"),
+                    "embedder_config": row.get("embedder_config") or {},
+                }
+            )
+            out.append(row)
+        return out
 
     def get_collection_detail(
         self,
@@ -620,6 +878,14 @@ class LocalStore(BaseStore):
             "display_name": cfg.get("display_name"),
             "embedder_type": cfg.get("embedder_type"),
             "embed_model": cfg.get("embed_model"),
+            "embedder_config": cfg.get("embedder_config") or {},
+            "vector_space_key": embedder_factory_mod.vector_space_key(
+                {
+                    "embedder_type": cfg.get("embedder_type"),
+                    "embed_model": cfg.get("embed_model"),
+                    "embedder_config": cfg.get("embedder_config") or {},
+                }
+            ),
             "created_at": cfg.get("created_at"),
             "doc_count": doc_count,
             "chunk_count": chunk_count,
@@ -984,6 +1250,7 @@ class LocalStore(BaseStore):
             key = (tenant, collection)
             col_db = self._dbs[key]
             backend = self._emb[key]
+            embedder = self._collection_embedders[key]
             purged = self._purge_doc_locked(tenant, collection, docid)
             if purged:
                 log.debug(
@@ -1066,7 +1333,7 @@ class LocalStore(BaseStore):
 
             # Write metadata to SQLite (inside collection_lock)
             col_db.upsert_chunks(docid, chunk_rows, doc_meta=safe_doc_meta)
-            vectors = self._embedder.encode(texts_to_encode)
+            vectors = embedder.encode(texts_to_encode)
             backend.add(rids_to_add, vectors)
             self._save(tenant, collection)
             _rids = rids_to_add[:3]
@@ -1109,14 +1376,15 @@ class LocalStore(BaseStore):
             else:
                 normed_filters[safe_key] = [vals]
 
-        t0 = _perf()
-        q_vec = self._embedder.encode([query])[0]
-        embed_ms = _ms_since(t0)
-
         def _search_loaded(
             backend: VectorBackend,
             col_db: CollectionDB,
+            embedder: Embedder,
         ) -> SearchOutput:
+            t0 = _perf()
+            q_vec = embedder.encode([query])[0]
+            embed_ms = _ms_since(t0)
+
             t0 = _perf()
             raw = backend.search(q_vec, fetch_k)
             candidate_rids = [rid for rid, _ in raw if rid]
@@ -1194,8 +1462,13 @@ class LocalStore(BaseStore):
             with self._collection_read_lock(tenant, collection):
                 backend = self._emb.get(key)
                 col_db = self._dbs.get(key)
-                if backend is not None and col_db is not None:
-                    return _search_loaded(backend, col_db)
+                embedder = self._collection_embedders.get(key)
+                if (
+                    backend is not None
+                    and col_db is not None
+                    and embedder is not None
+                ):
+                    return _search_loaded(backend, col_db, embedder)
 
             with self._collection_write_lock(tenant, collection):
                 self._load_or_init(tenant, collection)
@@ -1205,8 +1478,13 @@ class LocalStore(BaseStore):
         with self._collection_read_lock(tenant, collection):
             backend = self._emb.get(key)
             col_db = self._dbs.get(key)
-            if backend is not None and col_db is not None:
-                return _search_loaded(backend, col_db)
+            embedder = self._collection_embedders.get(key)
+            if (
+                backend is not None
+                and col_db is not None
+                and embedder is not None
+            ):
+                return _search_loaded(backend, col_db, embedder)
         raise RuntimeError("collection cache initialization did not stabilize")
 
     def _build_match_reason(self, query: str, score: float,
@@ -1242,6 +1520,7 @@ class LocalStore(BaseStore):
             self._catalog_path = None
         self._dbs.clear()
         self._emb.clear()
+        self._collection_embedders.clear()
 
         if old_catalog._conn is not None:
             try:

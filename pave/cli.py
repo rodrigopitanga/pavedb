@@ -13,7 +13,8 @@ from pave.service import (
     dump_archive as svc_dump_archive,
     restore_archive as svc_restore_archive,
     delete_collection as svc_delete_collection,
-    rename_collection as svc_rename_collection,
+    move_collection as svc_move_collection,
+    update_collection as svc_update_collection,
     delete_document as svc_delete_document,
     get_chunk as svc_get_chunk,
     get_chunk_content as svc_get_chunk_content,
@@ -39,6 +40,7 @@ from pave.runtime_paths import (
     render_config_template,
     resolve_runtime_paths,
 )
+from pave.slugify import slugify
 
 store: BaseStore | None = None
 
@@ -148,12 +150,25 @@ def cmd_init(args):
     return out
 
 def cmd_create(args):
+    embedder_config = (
+        json.loads(args.embedder_config)
+        if args.embedder_config
+        else None
+    )
+    collection = args.collection
+    display_name = args.display_name
+    slug = slugify(collection)
+    if slug and slug != collection:
+        collection = slug
+        display_name = display_name or args.collection.strip()
     return svc_create_collection(
         _get_store(),
         args.tenant,
-        args.collection,
+        collection,
+        display_name=display_name,
         embedder_type=args.embedder_type,
         embed_model=args.embed_model,
+        embedder_config=embedder_config,
     )
 
 def cmd_ingest(args):
@@ -271,12 +286,20 @@ def cmd_get_chunk_content(args):
 def cmd_delete(args):
     return svc_delete_collection(_get_store(), args.tenant, args.collection)
 
-def cmd_rename(args):
-    return svc_rename_collection(
+def cmd_move(args):
+    return svc_move_collection(
         _get_store(),
         args.tenant,
         args.old_name,
         args.new_name,
+    )
+
+def cmd_update_collection(args):
+    return svc_update_collection(
+        _get_store(),
+        args.tenant,
+        args.collection,
+        display_name=args.display_name,
     )
 
 def cmd_delete_document(args):
@@ -383,8 +406,10 @@ def main_cli(argv=None):
     p_create = sub.add_parser("create-collection", parents=[runtime])
     p_create.add_argument("tenant")
     p_create.add_argument("collection")
+    p_create.add_argument("--display-name")
     p_create.add_argument("--embedder-type")
     p_create.add_argument("--embed-model")
+    p_create.add_argument("--embedder-config")
     p_create.set_defaults(func=cmd_create)
 
     p_ingest = sub.add_parser("ingest", parents=[runtime])
@@ -470,11 +495,17 @@ def main_cli(argv=None):
     p_delete.add_argument("collection")
     p_delete.set_defaults(func=cmd_delete)
 
-    p_rename = sub.add_parser("rename-collection", parents=[runtime])
-    p_rename.add_argument("tenant")
-    p_rename.add_argument("old_name")
-    p_rename.add_argument("new_name")
-    p_rename.set_defaults(func=cmd_rename)
+    p_move = sub.add_parser("move-collection", parents=[runtime])
+    p_move.add_argument("tenant")
+    p_move.add_argument("old_name")
+    p_move.add_argument("new_name")
+    p_move.set_defaults(func=cmd_move)
+
+    p_update_collection = sub.add_parser("update-collection", parents=[runtime])
+    p_update_collection.add_argument("tenant")
+    p_update_collection.add_argument("collection")
+    p_update_collection.add_argument("--display-name", required=True)
+    p_update_collection.set_defaults(func=cmd_update_collection)
 
     p_delete_doc = sub.add_parser("delete-document", parents=[runtime])
     p_delete_doc.add_argument("tenant")

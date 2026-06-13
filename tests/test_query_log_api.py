@@ -208,33 +208,33 @@ def test_search_log_reflects_common_merge_flags(client, cfg):
     assert query["replay_of"] is None
 
 
-def test_query_log_moves_with_collection_rename(client):
-    client.post("/v1/collections/acme/qrename")
+def test_query_log_moves_with_collection_move(client):
+    client.post("/v1/collections/acme/qmove")
     client.post(
-        "/v1/collections/acme/qrename/documents",
-        files={"file": ("a.txt", b"rename log history", "text/plain")},
+        "/v1/collections/acme/qmove/documents",
+        files={"file": ("a.txt", b"move log history", "text/plain")},
         data={"docid": "DOC-1"},
     )
 
     response = client.post(
-        "/v1/collections/acme/qrename/search",
-        json={"q": "rename", "k": 5},
+        "/v1/collections/acme/qmove/search",
+        json={"q": "move", "k": 5},
     )
     assert response.status_code == 200
 
-    logs = client.get("/v1/collections/acme/qrename/queries")
+    logs = client.get("/v1/collections/acme/qmove/queries")
     query_id = logs.json()["queries"][0]["query_id"]
 
-    renamed = client.put(
-        "/v1/collections/acme/qrename",
-        json={"new_name": "qrenamed"},
+    moved = client.post(
+        "/v1/admin/collections/acme/qmove/move",
+        json={"new_name": "qmoved"},
     )
-    assert renamed.status_code == 200
+    assert moved.status_code == 200
 
-    old_logs = client.get("/v1/collections/acme/qrename/queries")
-    new_logs = client.get("/v1/collections/acme/qrenamed/queries")
+    old_logs = client.get("/v1/collections/acme/qmove/queries")
+    new_logs = client.get("/v1/collections/acme/qmoved/queries")
     entry = client.get(
-        f"/v1/collections/acme/qrenamed/queries/{query_id}"
+        f"/v1/collections/acme/qmoved/queries/{query_id}"
     )
 
     assert old_logs.status_code == 200
@@ -243,7 +243,7 @@ def test_query_log_moves_with_collection_rename(client):
     assert new_logs.json()["count"] == 1
     assert new_logs.json()["queries"][0]["query_id"] == query_id
     assert entry.status_code == 200
-    assert entry.json()["query"]["collection"] == "qrename"
+    assert entry.json()["query"]["collection"] == "qmove"
 
 
 def test_service_search_with_log_false_skips_query_log(app):

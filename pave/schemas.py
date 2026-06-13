@@ -142,23 +142,33 @@ class QueryReplayResponse(OkResponse):
     original_latency_ms: float | None = None
 
 
-class RenameCollectionBody(BaseModel):
-    """API request body for collection rename."""
+class MoveCollectionBody(BaseModel):
+    """API request body for moving a collection slug/path."""
     new_name: str
 
 
-class CreateCollectionBody(BaseModel):
-    """Optional API request body for collection creation."""
+class CreateCollectionOptionsBody(BaseModel):
+    """Optional API body for path-bound collection creation."""
+    display_name: str | None = None
     embedder_type: str | None = None
     embed_model: str | None = None
+    embedder_config: dict[str, Any] | None = None
+
+
+class UpdateCollectionBody(BaseModel):
+    """API request body for mutable collection metadata."""
+    display_name: str
 
 
 class CreateCollectionResponse(OkResponse):
     """API response for collection creation."""
     tenant: str
+    name: str
     collection: str
+    display_name: str
     embedder_type: str
     embed_model: str
+    embedder_config: dict[str, Any] = Field(default_factory=dict)
 
 
 class DeleteCollectionResponse(OkResponse):
@@ -167,11 +177,18 @@ class DeleteCollectionResponse(OkResponse):
     deleted: str
 
 
-class RenameCollectionResponse(OkResponse):
-    """API response for collection rename."""
+class MoveCollectionResponse(OkResponse):
+    """API response for moving a collection slug/path."""
     tenant: str
     old_name: str
     new_name: str
+
+
+class UpdateCollectionResponse(OkResponse):
+    """API response for mutable collection metadata updates."""
+    tenant: str
+    name: str
+    display_name: str
 
 
 class CollectionSummary(BaseModel):
@@ -179,6 +196,7 @@ class CollectionSummary(BaseModel):
     name: str
     display_name: str | None = None
     embedder_label: str | None = None
+    vector_space_key: str | None = None
 
 
 class ListCollectionsResponse(OkResponse):
@@ -195,6 +213,8 @@ class CollectionDetailResponse(OkResponse):
     display_name: str | None = None
     embedder_type: str | None = None
     embed_model: str | None = None
+    embedder_config: dict[str, Any] = Field(default_factory=dict)
+    vector_space_key: str | None = None
     created_at: str | None = None
     doc_count: int
     chunk_count: int

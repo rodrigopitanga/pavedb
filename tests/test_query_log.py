@@ -230,11 +230,11 @@ def test_local_store_query_home_purged_on_delete_collection(tmp_path):
     assert store.resolve_query_home("qid-1") is None
 
 
-def test_local_store_query_home_follows_collection_rename(tmp_path):
+def test_local_store_query_home_follows_collection_move(tmp_path):
     store = LocalStore(str(tmp_path), FakeEmbedder())
     store.create_collection("acme", "docs")
     store.log_query(
-        query_id="qid-rename",
+        query_id="qid-move",
         tenant="acme",
         collection="docs",
         actor="admin",
@@ -243,10 +243,10 @@ def test_local_store_query_home_follows_collection_rename(tmp_path):
         result_count=1,
     )
 
-    store.rename_collection("acme", "docs", "renamed")
+    store.move_collection("acme", "docs", "moved")
 
-    assert store.resolve_query_home("qid-rename") == ("acme", "renamed")
-    entry = store.get_query_log_entry("acme", "renamed", "qid-rename")
+    assert store.resolve_query_home("qid-move") == ("acme", "moved")
+    entry = store.get_query_log_entry("acme", "moved", "qid-move")
     assert entry is not None
     assert entry["tenant"] == "acme"
     assert entry["collection"] == "docs"
@@ -434,18 +434,18 @@ def test_scoped_query_lookup_still_works_when_query_home_is_missing(
     assert result["query"]["query_id"] == "qid-no-home"
 
 
-def test_replay_after_collection_rename_uses_current_home_but_keeps_history(tmp_path):
+def test_replay_after_collection_move_uses_current_home_but_keeps_history(tmp_path):
     store = LocalStore(str(tmp_path), FakeEmbedder())
     store.create_collection("acme", "docs")
     store.index_records(
         "acme",
         "docs",
         "DOC-1",
-        [("DOC-1::chunk_0", "alpha renamed", {"docid": "DOC-1"})],
+        [("DOC-1::chunk_0", "alpha moved", {"docid": "DOC-1"})],
         doc_meta={"docid": "DOC-1"},
     )
     store.log_query(
-        query_id="qid-rename",
+        query_id="qid-move",
         tenant="acme",
         collection="docs",
         actor="tenant:acme",
@@ -455,30 +455,30 @@ def test_replay_after_collection_rename_uses_current_home_but_keeps_history(tmp_
         result_count=1,
     )
 
-    store.rename_collection("acme", "docs", "renamed")
+    store.move_collection("acme", "docs", "moved")
 
     result = svc_replay_query_scoped(
         store,
         "acme",
-        "renamed",
-        "qid-rename",
+        "moved",
+        "qid-move",
         actor="admin",
     )
 
     assert result["ok"] is True
-    assert result["original_query_id"] == "qid-rename"
-    assert result["replay_query_id"] != "qid-rename"
+    assert result["original_query_id"] == "qid-move"
+    assert result["replay_query_id"] != "qid-move"
 
-    original = store.get_query_log_entry("acme", "renamed", "qid-rename")
+    original = store.get_query_log_entry("acme", "moved", "qid-move")
     replay = store.get_query_log_entry(
         "acme",
-        "renamed",
+        "moved",
         result["replay_query_id"],
     )
     assert original is not None
     assert replay is not None
     assert original["collection"] == "docs"
     assert original["actor"] == "tenant:acme"
-    assert replay["collection"] == "renamed"
+    assert replay["collection"] == "moved"
     assert replay["actor"] == "admin"
-    assert replay["replay_of"] == "qid-rename"
+    assert replay["replay_of"] == "qid-move"

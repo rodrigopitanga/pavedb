@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import tempfile
+import unicodedata
 import uuid
 import zipfile
 from contextlib import contextmanager, nullcontext
@@ -19,6 +20,8 @@ from typing import Any
 
 import time as _time
 from pave.config import get_cfg, get_logger
+from pave.embedders import EmbedderUnavailableError
+from pave.embedders.factory import embedder_space_key, resolve_embedder_spec
 from pave.metrics import (
     inc as m_inc, timed as m_timed, record_latency as m_record_latency
 )
@@ -40,50 +43,111 @@ class ServiceError(RuntimeError):
         self.message = message
 
 
+_MAX_DISPLAY_NAME_LEN = 120
+_COLLECTION_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+
+
+def _has_control_chars(value: str) -> bool:
+    for ch in value:
+        cat = unicodedata.category(ch)
+        if cat.startswith("C"):
+            return True
+    return False
+
+
+def _normalize_display_name(value: str | None, fallback: str) -> str:
+    display_name = (value if value is not None else fallback).strip()
+    if not display_name:
+        raise ServiceError(
+            "invalid_display_name",
+            "display_name must not be empty",
+        )
+    if len(display_name) > _MAX_DISPLAY_NAME_LEN:
+        raise ServiceError(
+            "invalid_display_name",
+            f"display_name must be at most {_MAX_DISPLAY_NAME_LEN} characters",
+        )
+    if _has_control_chars(display_name):
+        raise ServiceError(
+            "invalid_display_name",
+            "display_name must not contain control characters",
+        )
+    return display_name
+
+
+def _validate_collection_name(value: str | None) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        raise ServiceError(
+            "invalid_collection_name",
+            "collection name is required",
+        )
+    if not _COLLECTION_NAME_RE.fullmatch(raw):
+        raise ServiceError(
+            "invalid_collection_name",
+            "collection name must match ^[a-z0-9][a-z0-9-]{0,62}$",
+        )
+    return raw
+
+
 def _resolve_global_embedder_config() -> tuple[str, str]:
-    cfg = get_cfg()
-    embedder_type = cfg.get("embedder.type").lower()
-    embed_model = cfg.get(f"embedder.{embedder_type}.model")
-    if not embed_model:
+    try:
+        spec = resolve_embedder_spec(get_cfg())
+    except ValueError as exc:
         raise ServiceError(
             "invalid_embedder_config",
-            f"no model configured for embedder.{embedder_type}.model",
-        )
-    return embedder_type, str(embed_model)
+            str(exc),
+        ) from exc
+    return str(spec["embedder_type"]), str(spec["embed_model"])
 
 
 def create_collection(
     store,
     tenant: str,
-    name: str,
+    name: str | None,
     *,
+    display_name: str | None = None,
     embedder_type: str | None = None,
     embed_model: str | None = None,
+    embedder_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     try:
-        global_type, global_model = _resolve_global_embedder_config()
-        resolved_type = (embedder_type or global_type).strip().lower()
-        resolved_model = str(embed_model or global_model).strip()
-
-        if resolved_type != global_type:
-            raise ServiceError(
-                "embedder_type_not_supported",
-                "per-collection embedder type not yet supported",
+        resolved_name = _validate_collection_name(name)
+        resolved_display_name = _normalize_display_name(
+            display_name,
+            resolved_name,
+        )
+        created = store.create_collection(
+            tenant,
+            resolved_name,
+            embedder_type=embedder_type,
+            embed_model=embed_model,
+            embedder_config=embedder_config,
+            display_name=resolved_display_name,
+        )
+        if isinstance(created, dict):
+            resolved_type = str(created.get("embedder_type") or "")
+            resolved_model = str(created.get("embed_model") or "")
+            resolved_config = dict(created.get("embedder_config") or {})
+            returned_display = str(
+                created.get("display_name") or resolved_display_name
             )
-        if resolved_model != global_model:
-            raise ServiceError(
-                "embed_model_not_supported",
-                "per-collection embed model not yet supported",
-            )
-
-        store.create_collection(tenant, name)
+        else:
+            global_type, global_model = _resolve_global_embedder_config()
+            resolved_type = str(embedder_type or global_type).strip().lower()
+            resolved_model = str(embed_model or global_model).strip()
+            resolved_config = dict(embedder_config or {})
+            returned_display = resolved_display_name
         m_inc("collections_created_total", 1.0)
         return {
             "ok": True,
             "tenant": tenant,
-            "collection": name,
-            "embedder_type": global_type,
-            "embed_model": global_model,
+            "name": resolved_name,
+            "collection": resolved_name,
+            "display_name": returned_display,
+            "embedder_type": resolved_type,
+            "embed_model": resolved_model,
+            "embedder_config": resolved_config,
         }
     except ServiceError as e:
         log.info(
@@ -96,6 +160,28 @@ def create_collection(
             "error": e.message,
             "error_type": "invalid",
         }
+    except ValueError as e:
+        log.info(
+            "create_collection invalid tenant=%s coll=%s: %s",
+            tenant, name, e,
+        )
+        return {
+            "ok": False,
+            "code": "invalid_embedder_config",
+            "error": str(e),
+            "error_type": "invalid",
+        }
+    except EmbedderUnavailableError as e:
+        log.warning(
+            "create_collection embedder_unavailable tenant=%s coll=%s: %s",
+            tenant, name, e,
+        )
+        return {
+            "ok": False,
+            "code": "embedder_unavailable",
+            "error": str(e),
+            "error_type": "unavailable",
+        }
     except Exception as e:
         log.warning(
             "create_collection failed tenant=%s coll=%s: %s",
@@ -104,6 +190,73 @@ def create_collection(
         return {
             "ok": False,
             "code": "create_collection_failed",
+            "error": str(e),
+            "error_type": "failed",
+        }
+
+
+def update_collection(
+    store,
+    tenant: str,
+    name: str,
+    *,
+    display_name: str | None = None,
+) -> dict[str, Any]:
+    try:
+        resolved_name = _validate_collection_name(name)
+        if display_name is None:
+            raise ServiceError(
+                "invalid_display_name",
+                "display_name is required",
+            )
+        resolved_display_name = _normalize_display_name(display_name, name)
+        updated = store.update_collection(
+            tenant,
+            resolved_name,
+            display_name=resolved_display_name,
+        )
+        if updated is None:
+            raise ValueError(f"collection '{resolved_name}' does not exist")
+        return {
+            "ok": True,
+            "tenant": tenant,
+            "name": resolved_name,
+            "display_name": resolved_display_name,
+        }
+    except ServiceError as e:
+        log.info(
+            "update_collection rejected tenant=%s coll=%s: %s",
+            tenant, name, e.message,
+        )
+        return {
+            "ok": False,
+            "code": e.code,
+            "error": e.message,
+            "error_type": "invalid",
+        }
+    except ValueError as e:
+        err = str(e)
+        if "does not exist" in err or "missing" in err:
+            return {
+                "ok": False,
+                "code": "collection_not_found",
+                "error": err,
+                "error_type": "not_found",
+            }
+        return {
+            "ok": False,
+            "code": "update_collection_invalid",
+            "error": err,
+            "error_type": "invalid",
+        }
+    except Exception as e:
+        log.warning(
+            "update_collection failed tenant=%s coll=%s: %s",
+            tenant, name, e,
+        )
+        return {
+            "ok": False,
+            "code": "update_collection_failed",
             "error": str(e),
             "error_type": "failed",
         }
@@ -121,6 +274,34 @@ def _sum_timing(*timings: dict[str, float]) -> dict[str, float]:
         key: round(sum(timing.get(key, 0.0) for timing in timings), 2)
         for key in keys
     }
+
+
+def _embedder_key_from_config(cfg: dict[str, Any] | None) -> tuple | None:
+    if not cfg:
+        return None
+    return embedder_space_key(cfg)
+
+
+def _require_compatible_embeddings(
+    store,
+    tenant: str,
+    collection: str,
+    common_tenant: str,
+    common_collection: str,
+) -> None:
+    get_config = getattr(store, "get_collection_config", None)
+    if get_config is None:
+        return
+    local_key = _embedder_key_from_config(get_config(tenant, collection))
+    common_key = _embedder_key_from_config(
+        get_config(common_tenant, common_collection)
+    )
+    if local_key and common_key and local_key != common_key:
+        raise ServiceError(
+            "incompatible_embedder_config",
+            "cannot merge search results from collections with different "
+            "embedder configs",
+        )
 
 def delete_collection(store, tenant: str, name: str) -> dict[str, Any]:
     try:
@@ -142,33 +323,42 @@ def delete_collection(store, tenant: str, name: str) -> dict[str, Any]:
             "error": str(e),
         }
 
-def rename_collection(store, tenant: str,
-                      old_name: str, new_name: str) -> dict[str, Any]:
-    if old_name == new_name:
-        log.info(
-            "rename_collection rejected tenant=%s: "
-            "same name %s", tenant, old_name,
-        )
-        return {
-            "ok": False,
-            "code": "rename_invalid",
-            "error": "old and new names are the same",
-            "error_type": "invalid",
-        }
+def move_collection(store, tenant: str,
+                    old_name: str, new_name: str) -> dict[str, Any]:
     try:
-        store.rename_collection(tenant, old_name, new_name)
-        m_inc("collections_renamed_total", 1.0)
+        resolved_old = _validate_collection_name(old_name)
+        resolved_new = _validate_collection_name(new_name)
+        if resolved_old == resolved_new:
+            log.info(
+                "move_collection rejected tenant=%s: "
+                "same name %s", tenant, resolved_old,
+            )
+            return {
+                "ok": False,
+                "code": "move_invalid",
+                "error": "old and new names are the same",
+                "error_type": "invalid",
+            }
+        store.move_collection(tenant, resolved_old, resolved_new)
+        m_inc("collections_moved_total", 1.0)
         return {
             "ok": True,
             "tenant": tenant,
-            "old_name": old_name,
-            "new_name": new_name
+            "old_name": resolved_old,
+            "new_name": resolved_new,
+        }
+    except ServiceError as e:
+        return {
+            "ok": False,
+            "code": e.code,
+            "error": e.message,
+            "error_type": "invalid",
         }
     except ValueError as e:
         err = str(e)
         if "does not exist" in err:
             log.info(
-                "rename_collection not_found tenant=%s "
+                "move_collection not_found tenant=%s "
                 "old=%s: %s", tenant, old_name, err,
             )
             return {
@@ -179,7 +369,7 @@ def rename_collection(store, tenant: str,
             }
         if "already exists" in err:
             log.info(
-                "rename_collection conflict tenant=%s "
+                "move_collection conflict tenant=%s "
                 "new=%s: %s", tenant, new_name, err,
             )
             return {
@@ -189,25 +379,25 @@ def rename_collection(store, tenant: str,
                 "error_type": "conflict",
             }
         log.info(
-            "rename_collection invalid tenant=%s "
+            "move_collection invalid tenant=%s "
             "old=%s new=%s: %s",
             tenant, old_name, new_name, err,
         )
         return {
             "ok": False,
-            "code": "rename_invalid",
+            "code": "move_invalid",
             "error": err,
             "error_type": "invalid",
         }
     except Exception as e:
         log.warning(
-            "rename_collection failed tenant=%s "
+            "move_collection failed tenant=%s "
             "old=%s new=%s: %s",
             tenant, old_name, new_name, e,
         )
         return {
             "ok": False,
-            "code": "rename_failed",
+            "code": "move_collection_failed",
             "error": str(e),
             "error_type": "failed",
         }
@@ -471,6 +661,18 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             raise ServiceError("invalid_metadata_keys", str(exc)) from exc
         except ValueError as exc:
             raise ServiceError("invalid_csv_options", str(exc)) from exc
+        except EmbedderUnavailableError as exc:
+            log.warning(
+                "ingest embedder_unavailable stage=%s tenant=%s coll=%s docid=%s: %s",
+                stage,
+                tenant, collection,
+                docid or filename, exc,
+            )
+            return {
+                "ok": False,
+                "code": "embedder_unavailable",
+                "error": str(exc),
+            }
         except Exception as e:
             log.warning(
                 "ingest failed stage=%s tenant=%s coll=%s docid=%s: %s",
@@ -498,6 +700,13 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
     m_inc("search_total", 1.0)
     try:
         if include_common and common_tenant and common_collection:
+            _require_compatible_embeddings(
+                store,
+                tenant,
+                collection,
+                common_tenant,
+                common_collection,
+            )
             local = _normalize_search_output(store.search(
                 tenant, collection, q, max(10, k * 2), filters=filters))
             common = _normalize_search_output(store.search(
@@ -557,6 +766,17 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
             "request_id": request_id,
             "query_id": query_id,
         }
+    except ServiceError:
+        raise
+    except EmbedderUnavailableError as exc:
+        log.warning(
+            "search embedder_unavailable tenant=%s coll=%s request_id=%s: %s",
+            tenant,
+            collection,
+            request_id,
+            exc,
+        )
+        raise ServiceError("embedder_unavailable", str(exc)) from exc
     except Exception as exc:
         log.warning(
             "search failed tenant=%s coll=%s request_id=%s: %s",

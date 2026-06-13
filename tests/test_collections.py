@@ -19,6 +19,8 @@ def test_create_and_delete_collection(client):
     r = client.post("/v1/collections/acme/invoices")
     assert r.status_code == 201 and r.json()["ok"] is True
     data = r.json()
+    assert data["name"] == "invoices"
+    assert data["display_name"] == "invoices"
     assert data["embedder_type"] == "sbert"
     assert data["embed_model"] == "fake"
     r2 = client.delete("/v1/collections/acme/invoices")
@@ -34,32 +36,64 @@ def test_create_collection_accepts_matching_embedder_config(client):
     assert r.status_code == 201
     data = r.json()
     assert data["ok"] is True
+    assert data["name"] == "contracts"
+    assert data["display_name"] == "contracts"
     assert data["embedder_type"] == "sbert"
     assert data["embed_model"] == "fake"
 
 
-def test_create_collection_rejects_different_embed_model(client):
+def test_create_collection_rejects_invalid_path_name(client):
+    r = client.post(
+        "/v1/collections/acme/Finance",
+    )
+
+    assert r.status_code == 400
+    assert r.json()["code"] == "invalid_collection_name"
+
+
+def test_create_collection_accepts_different_embed_model(client):
     r = client.post(
         "/v1/collections/acme/contracts2",
         json={"embed_model": "sentence-transformers/all-MiniLM-L6-v2"},
     )
 
-    assert r.status_code == 400
+    assert r.status_code == 201
     data = r.json()
-    assert data["code"] == "embed_model_not_supported"
-    assert "not yet supported" in data["error"]
+    assert data["ok"] is True
+    assert data["display_name"] == "contracts2"
+    assert data["embedder_type"] == "sbert"
+    assert data["embed_model"] == "sentence-transformers/all-MiniLM-L6-v2"
 
 
-def test_create_collection_rejects_different_embedder_type(client):
+def test_create_collection_accepts_different_embedder_type_and_config(client):
     r = client.post(
         "/v1/collections/acme/contracts3",
-        json={"embedder_type": "openai"},
+        json={
+            "embedder_type": "openai",
+            "embed_model": "bge-m3",
+            "embedder_config": {"dim": 1024, "base_url": "http://x/v1"},
+        },
+    )
+
+    assert r.status_code == 201
+    data = r.json()
+    assert data["ok"] is True
+    assert data["display_name"] == "contracts3"
+    assert data["embedder_type"] == "openai"
+    assert data["embed_model"] == "bge-m3"
+    assert data["embedder_config"]["dim"] == 1024
+
+
+def test_create_collection_rejects_unknown_embedder_config_key(client):
+    r = client.post(
+        "/v1/collections/acme/secret-config",
+        json={"embedder_config": {"api_key": "secret"}},
     )
 
     assert r.status_code == 400
     data = r.json()
-    assert data["code"] == "embedder_type_not_supported"
-    assert "not yet supported" in data["error"]
+    assert data["code"] == "invalid_embedder_config"
+    assert "api_key" in data["error"]
 
 
 def test_get_collection_detail_empty_collection(client):
@@ -73,7 +107,7 @@ def test_get_collection_detail_empty_collection(client):
     assert data["ok"] is True
     assert data["tenant"] == "acme"
     assert data["name"] == "detail-empty"
-    assert data["display_name"] is None
+    assert data["display_name"] == "detail-empty"
     assert data["embedder_type"] == "sbert"
     assert data["embed_model"] == "fake"
     assert data["created_at"].endswith("Z")
@@ -110,6 +144,39 @@ def test_get_collection_detail_not_found(client):
     assert "missing-detail" in data["error"]
 
 
+def test_update_collection_display_name(client):
+    create = client.post("/v1/collections/acme/display-docs")
+    assert create.status_code == 201
+
+    r = client.patch(
+        "/v1/collections/acme/display-docs",
+        json={"display_name": "Display Docs"},
+    )
+
+    assert r.status_code == 200
+    data = r.json()
+    assert data["ok"] is True
+    assert data["name"] == "display-docs"
+    assert data["display_name"] == "Display Docs"
+
+    detail = client.get("/v1/collections/acme/display-docs/detail")
+    assert detail.status_code == 200
+    assert detail.json()["display_name"] == "Display Docs"
+
+
+def test_update_collection_rejects_empty_display_name(client):
+    create = client.post("/v1/collections/acme/blank-display")
+    assert create.status_code == 201
+
+    r = client.patch(
+        "/v1/collections/acme/blank-display",
+        json={"display_name": "  "},
+    )
+
+    assert r.status_code == 400
+    assert r.json()["code"] == "invalid_display_name"
+
+
 def test_list_collections_api_sorted(client, tmp_path, monkeypatch):
     store = client.app.state.store.impl
     monkeypatch.setattr(store, "_data_dir", str(tmp_path))
@@ -129,9 +196,9 @@ def test_list_collections_api_sorted(client, tmp_path, monkeypatch):
         "reports",
     ]
     assert [c["display_name"] for c in data["collections"]] == [
-        None,
-        None,
-        None,
+        "contracts",
+        "invoices",
+        "reports",
     ]
     assert [c["embedder_label"] for c in data["collections"]] == [
         "sbert:fake",
@@ -216,13 +283,13 @@ def test_list_collections_bootstraps_existing_collection_db(tmp_path):
     store = LocalStore(str(tmp_path), FakeEmbedder())
 
     assert store.list_tenants() == ["acme"]
-    assert store.list_collections("acme") == [
-        {
-            "name": "bootstrap",
-            "display_name": None,
-            "embedder_label": "sbert:fake",
-        }
-    ]
+    summaries = store.list_collections("acme")
+    assert len(summaries) == 1
+    s = summaries[0]
+    assert s["name"] == "bootstrap"
+    assert s["display_name"] is None
+    assert s["embedder_label"] == "sbert:fake"
+    assert s["vector_space_key"] == "sbert:fake:"
 
     cfg = store.get_collection_config("acme", "bootstrap")
     assert cfg is not None
@@ -240,3 +307,144 @@ def test_local_store_accepts_injected_catalog_db(tmp_path):
     assert cat_db._conn is not None
     assert cat_db.list_tenants() == ["acme"]
     assert cat_db.list_collections("acme") == ["docs"]
+
+
+def test_local_store_uses_collection_embedder_specs(tmp_path):
+    created: list[tuple[str, str, dict]] = []
+
+    def make_embedder(
+        embedder_type: str,
+        embed_model: str,
+        embedder_config: dict,
+    ):
+        created.append((embedder_type, embed_model, dict(embedder_config)))
+        return FakeEmbedder(dim=int(embedder_config["dim"]))
+
+    store = LocalStore(
+        str(tmp_path),
+        FakeEmbedder(),
+        embedder_factory=make_embedder,
+    )
+
+    spec = {
+        "embedder_type": "openai",
+        "embed_model": "bge-m3",
+        "embedder_config": {"dim": 8, "base_url": "http://one/v1"},
+    }
+    store.create_collection("acme", "small", **spec)
+    store.create_collection(
+        "acme",
+        "large",
+        embedder_type="openai",
+        embed_model="bge-m3",
+        embedder_config={"dim": 16, "base_url": "http://one/v1"},
+    )
+    store.create_collection("acme", "small2", **spec)
+
+    assert store._collection_embedders[("acme", "small")].dim == 8
+    assert store._collection_embedders[("acme", "large")].dim == 16
+    assert (
+        store._collection_embedders[("acme", "small2")]
+        is store._collection_embedders[("acme", "small")]
+    )
+    assert created == [
+        ("openai", "bge-m3", {"dim": 8, "base_url": "http://one/v1"}),
+        ("openai", "bge-m3", {"dim": 16, "base_url": "http://one/v1"}),
+    ]
+
+
+def test_vector_space_key_on_detail_default_sbert(client):
+    client.post("/v1/collections/acme/space-default")
+    detail = client.get("/v1/collections/acme/space-default/detail").json()
+    assert detail["vector_space_key"] == "sbert:fake:"
+
+
+def test_vector_space_key_on_listing(client):
+    client.post("/v1/collections/acme/space-a")
+    client.post(
+        "/v1/collections/acme/space-b",
+        json={"embed_model": "sentence-transformers/all-MiniLM-L6-v2"},
+    )
+    data = client.get("/v1/collections/acme").json()
+    by_name = {c["name"]: c for c in data["collections"]}
+    assert by_name["space-a"]["vector_space_key"] == "sbert:fake:"
+    assert (
+        by_name["space-b"]["vector_space_key"]
+        == "sbert:sentence-transformers/all-MiniLM-L6-v2:"
+    )
+
+
+def test_base_url_change_keeps_same_vector_space_key(client):
+    """base_url is operational, not geometric."""
+    a = client.post(
+        "/v1/collections/acme/openai-a",
+        json={
+            "embedder_type": "openai",
+            "embed_model": "bge-m3",
+            "embedder_config": {"dim": 1024, "base_url": "http://a/v1"},
+        },
+    )
+    b = client.post(
+        "/v1/collections/acme/openai-b",
+        json={
+            "embedder_type": "openai",
+            "embed_model": "bge-m3",
+            "embedder_config": {"dim": 1024, "base_url": "http://b/v1"},
+        },
+    )
+    assert a.status_code == 201 and b.status_code == 201
+
+    da = client.get("/v1/collections/acme/openai-a/detail").json()
+    db = client.get("/v1/collections/acme/openai-b/detail").json()
+    assert da["vector_space_key"] == "openai:bge-m3:dim=1024"
+    assert da["vector_space_key"] == db["vector_space_key"]
+
+
+def test_dim_change_changes_vector_space_key(client):
+    a = client.post(
+        "/v1/collections/acme/dim-1024",
+        json={
+            "embedder_type": "openai",
+            "embed_model": "bge-m3",
+            "embedder_config": {"dim": 1024, "base_url": "http://x/v1"},
+        },
+    )
+    b = client.post(
+        "/v1/collections/acme/dim-1536",
+        json={
+            "embedder_type": "openai",
+            "embed_model": "bge-m3",
+            "embedder_config": {"dim": 1536, "base_url": "http://x/v1"},
+        },
+    )
+    assert a.status_code == 201 and b.status_code == 201
+    da = client.get("/v1/collections/acme/dim-1024/detail").json()
+    db = client.get("/v1/collections/acme/dim-1536/detail").json()
+    assert da["vector_space_key"] != db["vector_space_key"]
+
+
+def test_embedder_unavailable_on_create(tmp_path):
+    from pave.embedders import EmbedderUnavailableError
+
+    def failing_factory(etype, model, cfg):
+        raise EmbedderUnavailableError("OPENAI_API_KEY not set")
+
+    store = LocalStore(
+        str(tmp_path),
+        FakeEmbedder(),
+        embedder_factory=failing_factory,
+    )
+    from pave.service import create_collection as svc_create_collection
+
+    result = svc_create_collection(
+        store,
+        "acme",
+        "broken",
+        embedder_type="openai",
+        embed_model="bge-m3",
+        embedder_config={"dim": 1024},
+    )
+    assert result["ok"] is False
+    assert result["code"] == "embedder_unavailable"
+    assert store.list_collections("acme") == []
+    assert not (tmp_path / "t_acme" / "c_broken").exists()

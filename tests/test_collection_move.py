@@ -3,14 +3,12 @@
 
 from pathlib import Path
 
-import pytest
-
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
 
-def test_rename_collection_basic(client):
-    """Basic rename: collection data stays intact after rename."""
+def test_move_collection_basic(client):
+    """Basic move: collection data stays intact after slug move."""
     # Create and populate collection
     r = client.post("/v1/collections/acme/invoices")
     assert r.status_code == 201 and r.json()["ok"] is True
@@ -23,7 +21,7 @@ def test_rename_collection_basic(client):
     )
     assert r.status_code == 201 and r.json()["ok"] is True
 
-    # Search before rename
+    # Search before move
     r = client.post(
         "/v1/collections/acme/invoices/search",
         json={"q": "submarine", "k": 2},
@@ -32,9 +30,9 @@ def test_rename_collection_basic(client):
     matches_before = r.json()["matches"]
     assert len(matches_before) > 0
 
-    # Rename collection
-    r = client.put(
-        "/v1/collections/acme/invoices",
+    # Move collection
+    r = client.post(
+        "/v1/admin/collections/acme/invoices/move",
         json={"new_name": "bills"},
     )
     assert r.status_code == 200
@@ -62,7 +60,7 @@ def test_rename_collection_basic(client):
     assert len(r.json()["matches"]) == 0
 
 
-def test_rename_reopens_backend_at_new_path(temp_data_dir):
+def test_move_reopens_backend_at_new_path(temp_data_dir):
     store = LocalStore(str(temp_data_dir), FakeEmbedder())
     tenant, old_name, new_name = "acme", "old_vectors", "new_vectors"
 
@@ -71,15 +69,15 @@ def test_rename_reopens_backend_at_new_path(temp_data_dir):
         tenant,
         old_name,
         "doc1",
-        [("0", "alpha rename persistence", {})],
+        [("0", "alpha move persistence", {})],
     )
 
-    store.rename_collection(tenant, old_name, new_name)
+    store.move_collection(tenant, old_name, new_name)
     store.index_records(
         tenant,
         new_name,
         "doc2",
-        [("0", "beta rename persistence", {})],
+        [("0", "beta move persistence", {})],
     )
     store._flush_caches(async_close=False)
 
@@ -93,10 +91,10 @@ def test_rename_reopens_backend_at_new_path(temp_data_dir):
     assert any(hit.id == "doc2::0" for hit in beta.matches)
 
 
-def test_rename_nonexistent_collection(client):
-    """Rename non-existent collection should fail with 404."""
-    r = client.put(
-        "/v1/collections/acme/nonexistent",
+def test_move_nonexistent_collection(client):
+    """Move non-existent collection should fail with 404."""
+    r = client.post(
+        "/v1/admin/collections/acme/nonexistent/move",
         json={"new_name": "something"},
     )
     assert r.status_code == 404
@@ -105,24 +103,24 @@ def test_rename_nonexistent_collection(client):
     assert "does not exist" in data["error"]
 
 
-def test_rename_to_same_name(client):
-    """Rename to same name should fail with 400."""
+def test_move_to_same_name(client):
+    """Move to same name should fail with 400."""
     # Create collection first
     r = client.post("/v1/collections/acme/samename")
     assert r.status_code == 201
 
-    r = client.put(
-        "/v1/collections/acme/samename",
+    r = client.post(
+        "/v1/admin/collections/acme/samename/move",
         json={"new_name": "samename"},
     )
     assert r.status_code == 400
     data = r.json()
-    assert data["code"] == "rename_invalid"
+    assert data["code"] == "move_invalid"
     assert "same" in data["error"].lower()
 
 
-def test_rename_collision_sequence(client):
-    """Collision test: rename to existing name should fail gracefully."""
+def test_move_collision_sequence(client):
+    """Collision test: move to existing name should fail gracefully."""
     # 1. Create two collections: foo and bar
     r = client.post("/v1/collections/acme/foo")
     assert r.status_code == 201 and r.json()["ok"] is True
@@ -130,9 +128,9 @@ def test_rename_collision_sequence(client):
     r = client.post("/v1/collections/acme/bar")
     assert r.status_code == 201 and r.json()["ok"] is True
 
-    # 2. Rename bar -> foo (should fail - foo exists)
-    r = client.put(
-        "/v1/collections/acme/bar",
+    # 2. Move bar -> foo (should fail - foo exists)
+    r = client.post(
+        "/v1/admin/collections/acme/bar/move",
         json={"new_name": "foo"},
     )
     assert r.status_code == 409
@@ -144,9 +142,9 @@ def test_rename_collision_sequence(client):
     r = client.delete("/v1/collections/acme/foo")
     assert r.status_code == 200
 
-    # 4. Now rename bar -> foo (should succeed)
-    r = client.put(
-        "/v1/collections/acme/bar",
+    # 4. Now move bar -> foo (should succeed)
+    r = client.post(
+        "/v1/admin/collections/acme/bar/move",
         json={"new_name": "foo"},
     )
     assert r.status_code == 200
@@ -156,9 +154,9 @@ def test_rename_collision_sequence(client):
     r = client.post("/v1/collections/acme/bar")
     assert r.status_code == 201 and r.json()["ok"] is True
 
-    # 6. Try to rename bar -> foo again (should fail)
-    r = client.put(
-        "/v1/collections/acme/bar",
+    # 6. Try to move bar -> foo again (should fail)
+    r = client.post(
+        "/v1/admin/collections/acme/bar/move",
         json={"new_name": "foo"},
     )
     assert r.status_code == 409

@@ -155,6 +155,9 @@ class FakeEmbedder:
 
 
 class DummyStore(BaseStore):
+    def __init__(self) -> None:
+        self._collection_configs: dict[tuple[str, str], dict[str, Any]] = {}
+
     def _dir(self, tenant: str, collection: str) -> str:
         return os.path.join(get_cfg().get("data_dir"), tenant, collection)
 
@@ -167,14 +170,67 @@ class DummyStore(BaseStore):
             with open(cat, "w", encoding="utf-8") as f:
                 json.dump({}, f)
 
-    def create_collection(self, tenant: str, name: str) -> None:
+    def _collection_config(
+        self,
+        *,
+        embedder_type: str | None = None,
+        embed_model: str | None = None,
+        embedder_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        cfg = get_cfg()
+        resolved_type = str(
+            embedder_type or cfg.get("embedder.type") or "sbert"
+        ).lower()
+        resolved_model = str(
+            embed_model
+            or cfg.get(f"embedder.{resolved_type}.model")
+            or "fake"
+        )
+        return {
+            "embedder_type": resolved_type,
+            "embed_model": resolved_model,
+            "embedder_config": dict(embedder_config or {}),
+        }
+
+    def create_collection(
+        self,
+        tenant: str,
+        name: str,
+        *,
+        embedder_type: str | None = None,
+        embed_model: str | None = None,
+        embedder_config: dict[str, Any] | None = None,
+        display_name: str | None = None,
+    ) -> dict[str, Any]:
         self._load_or_init(tenant, name)
         self._save(tenant, name)
+        cfg = self._collection_config(
+            embedder_type=embedder_type,
+            embed_model=embed_model,
+            embedder_config=embedder_config,
+        )
+        cfg["display_name"] = display_name
+        self._collection_configs[(tenant, name)] = cfg
+        return cfg
 
     def delete_collection(self, tenant: str, collection: str) -> None:
+        self._collection_configs.pop((tenant, collection), None)
         shutil.rmtree(self._dir(tenant, collection), ignore_errors=True)
 
-    def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
+    def update_collection(
+        self,
+        tenant: str,
+        name: str,
+        *,
+        display_name: str | None = None,
+    ) -> dict[str, Any] | None:
+        cfg = self._collection_configs.get((tenant, name))
+        if cfg is None:
+            raise ValueError(f"collection '{name}' does not exist")
+        cfg["display_name"] = display_name
+        return cfg
+
+    def move_collection(self, tenant: str, old_name: str, new_name: str) -> None:
         if old_name == new_name:
             raise ValueError(f"old and new collection names are the same: {old_name}")
         old_path = self._dir(tenant, old_name)
@@ -186,6 +242,7 @@ class DummyStore(BaseStore):
         os.rename(old_path, new_path)
 
     def list_collections(self, tenant: str) -> list[dict[str, Any]]:
+        from pave.embedders.factory import vector_space_key
         tenant_path = os.path.join(get_cfg().get("data_dir"), tenant)
         if not os.path.isdir(tenant_path):
             return []
@@ -195,7 +252,32 @@ class DummyStore(BaseStore):
             if os.path.isdir(entry_path):
                 catalog_path = os.path.join(entry_path, "catalog.json")
                 if os.path.isfile(catalog_path):
-                    collections.append({"name": entry})
+                    cfg = self._collection_configs.get(
+                        (tenant, entry),
+                        self._collection_config(),
+                    )
+                    etype = cfg.get("embedder_type")
+                    emodel = cfg.get("embed_model")
+                    label = f"{etype}:{emodel}" if etype and emodel else None
+                    collections.append(
+                        {
+                            "name": entry,
+                            "display_name": cfg.get("display_name"),
+                            "embedder_type": etype,
+                            "embed_model": emodel,
+                            "embedder_config": cfg.get("embedder_config") or {},
+                            "embedder_label": label,
+                            "vector_space_key": vector_space_key(
+                                {
+                                    "embedder_type": etype,
+                                    "embed_model": emodel,
+                                    "embedder_config": (
+                                        cfg.get("embedder_config") or {}
+                                    ),
+                                }
+                            ),
+                        }
+                    )
         return collections
 
     def list_tenants(self) -> list[str]:
@@ -227,15 +309,25 @@ class DummyStore(BaseStore):
             data = json.load(open(coll_path, "r", encoding="utf-8"))
         except Exception:
             data = {}
-        cfg = get_cfg()
-        embedder_type = str(cfg.get("embedder.type")).lower()
-        embed_model = cfg.get(f"embedder.{embedder_type}.model")
+        cfg = self._collection_configs.get(
+            (tenant, name),
+            self._collection_config(),
+        )
+        from pave.embedders.factory import vector_space_key
         return {
             "tenant": tenant,
             "name": name,
-            "display_name": None,
-            "embedder_type": embedder_type,
-            "embed_model": str(embed_model) if embed_model else None,
+            "display_name": cfg.get("display_name"),
+            "embedder_type": cfg["embedder_type"],
+            "embed_model": cfg["embed_model"],
+            "embedder_config": cfg["embedder_config"],
+            "vector_space_key": vector_space_key(
+                {
+                    "embedder_type": cfg["embedder_type"],
+                    "embed_model": cfg["embed_model"],
+                    "embedder_config": cfg["embedder_config"],
+                }
+            ),
             "created_at": None,
             "doc_count": len(data),
             "chunk_count": sum(len(chunk_ids) for chunk_ids in data.values()),
@@ -466,17 +558,47 @@ class SpyStore(BaseStore):
         self.impl = impl
         self.calls: list[tuple] = []
 
-    def create_collection(self, tenant: str, name: str) -> None:
+    def create_collection(
+        self,
+        tenant: str,
+        name: str,
+        *,
+        embedder_type: str | None = None,
+        embed_model: str | None = None,
+        embedder_config: dict[str, Any] | None = None,
+        display_name: str | None = None,
+    ) -> dict[str, Any] | None:
         self.calls.append(("create_collection", tenant, name))
-        return self.impl.create_collection(tenant, name)
+        return self.impl.create_collection(
+            tenant,
+            name,
+            embedder_type=embedder_type,
+            embed_model=embed_model,
+            embedder_config=embedder_config,
+            display_name=display_name,
+        )
 
     def delete_collection(self, tenant: str, collection: str) -> None:
         self.calls.append(("delete_collection", tenant, collection))
         return self.impl.delete_collection(tenant, collection)
 
-    def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
-        self.calls.append(("rename_collection", tenant, old_name, new_name))
-        return self.impl.rename_collection(tenant, old_name, new_name)
+    def update_collection(
+        self,
+        tenant: str,
+        name: str,
+        *,
+        display_name: str | None = None,
+    ) -> dict[str, Any] | None:
+        self.calls.append(("update_collection", tenant, name, display_name))
+        return self.impl.update_collection(
+            tenant,
+            name,
+            display_name=display_name,
+        )
+
+    def move_collection(self, tenant: str, old_name: str, new_name: str) -> None:
+        self.calls.append(("move_collection", tenant, old_name, new_name))
+        return self.impl.move_collection(tenant, old_name, new_name)
 
     def list_collections(self, tenant: str) -> list[dict[str, Any]]:
         self.calls.append(("list_collections", tenant))
@@ -489,6 +611,16 @@ class SpyStore(BaseStore):
     ) -> dict[str, Any] | None:
         self.calls.append(("get_collection_detail", tenant, name))
         return self.impl.get_collection_detail(tenant, name)
+
+    def get_collection_config(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> dict[str, Any] | None:
+        get_config = getattr(self.impl, "get_collection_config", None)
+        if get_config is None:
+            return None
+        return get_config(tenant, collection)
 
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         self.calls.append(("purge_doc", tenant, collection, docid))

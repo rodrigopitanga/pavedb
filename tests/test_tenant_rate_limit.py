@@ -82,7 +82,7 @@ def test_unconfigured_tenant_no_default_unlimited(app, monkeypatch):
 
     c = TestClient(app)
     r = c.post(
-        "/v1/collections/acme/unlimited_rl/search",
+        "/v1/collections/acme/unlimited-rl/search",
         json={"q": "x", "k": 1},
         headers={"Authorization": "Bearer acmetoken"},
     )

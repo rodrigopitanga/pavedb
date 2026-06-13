@@ -1256,7 +1256,28 @@ class CatalogDB:
                 (tenant, name),
             )
 
-    def rename_collection(self, tenant: str, old: str, new: str) -> None:
+    def update_collection(
+        self,
+        tenant: str,
+        name: str,
+        *,
+        display_name: str | None = None,
+    ) -> None:
+        with self._writer() as conn, conn:
+            cur = conn.execute(
+                """
+                UPDATE collections
+                SET display_name=?
+                WHERE tenant=? AND name=?
+                """,
+                (display_name, tenant, name),
+            )
+            if cur.rowcount <= 0:
+                raise ValueError(
+                    f"catalog row missing for collection '{tenant}/{name}'"
+                )
+
+    def move_collection(self, tenant: str, old: str, new: str) -> None:
         with self._writer() as conn, conn:
             cur = conn.execute(
                 "UPDATE collections SET name=? WHERE tenant=? AND name=?",
@@ -1328,7 +1349,7 @@ class CatalogDB:
                 (tenant, collection),
             )
 
-    def rename_query_homes_for_collection(
+    def move_query_homes_for_collection(
         self,
         tenant: str,
         old: str,
@@ -1400,19 +1421,29 @@ class CatalogDB:
     ) -> list[dict[str, Any]]:
         with self._reader() as conn:
             cur = conn.execute(
-                "SELECT name, display_name, embedder_type, embed_model "
+                "SELECT name, display_name, embedder_type, embed_model, "
+                "embed_config_json "
                 "FROM collections WHERE tenant=? ORDER BY name",
                 (tenant,),
             )
             out: list[dict[str, Any]] = []
-            for name, display_name, emb_type, emb_model in cur.fetchall():
+            for name, display_name, emb_type, emb_model, emb_cfg_json in (
+                cur.fetchall()
+            ):
                 label = None
                 if emb_type and emb_model:
                     label = f"{emb_type}:{emb_model}"
+                try:
+                    emb_cfg = json.loads(emb_cfg_json) if emb_cfg_json else {}
+                except (TypeError, ValueError):
+                    emb_cfg = {}
                 out.append(
                     {
                         "name": name,
                         "display_name": display_name,
+                        "embedder_type": emb_type,
+                        "embed_model": emb_model,
+                        "embedder_config": emb_cfg,
                         "embedder_label": label,
                     }
                 )

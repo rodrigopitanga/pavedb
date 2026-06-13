@@ -74,7 +74,7 @@ def test_delete_collection_evicts_cache_before_close(temp_data_dir):
     assert seen.get("present_during_close") is False
 
 
-def test_rename_collection_evicts_old_cache_before_close(temp_data_dir):
+def test_move_collection_evicts_old_cache_before_close(temp_data_dir):
     store = _store(temp_data_dir)
     tenant, old_name, new_name = "acme", "old_order", "new_order"
     store._load_or_init(tenant, old_name)
@@ -89,7 +89,7 @@ def test_rename_collection_evicts_old_cache_before_close(temp_data_dir):
 
     col_db.close = _spy_close  # type: ignore[method-assign]
 
-    store.rename_collection(tenant, old_name, new_name)
+    store.move_collection(tenant, old_name, new_name)
 
     assert seen.get("present_during_close") is False
 

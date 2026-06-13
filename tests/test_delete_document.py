@@ -90,6 +90,10 @@ def test_delete_document_cli(tmp_path, monkeypatch):
     monkeypatch.setattr(cfg, "_cfg", {
         "data_dir": str(tmp_path),
         "vector_store": {"type": "faiss"},
+        "embedder": {
+            "type": "sbert",
+            "sbert": {"runtime": "auto", "model": "fake"},
+        },
         "auth": {"mode": "none"},
     })
 

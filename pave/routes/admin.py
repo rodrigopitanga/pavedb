@@ -19,6 +19,8 @@ from pave.schemas import (
     GetQueryLogResponse,
     QueryReplayResponse,
     ListTenantsResponse,
+    MoveCollectionBody,
+    MoveCollectionResponse,
     ResetMetricsResponse,
     RestoreArchiveResponse,
 )
@@ -26,6 +28,7 @@ from pave.service import (
     dump_archive as svc_dump_archive,
     get_query_log_entry_scoped as svc_get_query_log_entry_scoped,
     list_tenants as svc_list_tenants,
+    move_collection as svc_move_collection,
     replay_query_scoped as svc_replay_query_scoped,
     resolve_query_home as svc_resolve_query_home,
     restore_archive as svc_restore_archive,
@@ -196,6 +199,56 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
                 500,
                 result.get("code", "list_tenants_failed"),
                 result.get("error", "failed to list tenants"),
+                request=request,
+                request_id=rid,
+            )
+        return trace(result, request, request_id=rid)
+
+    @router.post(
+        "/admin/collections/{tenant}/{name}/move",
+        response_model=MoveCollectionResponse,
+        responses=resp(400, 401, 403, 404, 409, 500),
+        tags=["Instance Admin"],
+    )
+    @ops_event(
+        "move_collection",
+        coll="name",
+        new_name=lambda kw, r: kw["body"].new_name,
+        request_id="rid",
+    )
+    def move_collection(
+        request: Request,
+        tenant: str,
+        name: str,
+        body: MoveCollectionBody,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        if not ctx.is_admin:
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
+
+        result = svc_move_collection(store, tenant, name, body.new_name)
+        if not result.get("ok"):
+            error_type = result.get("error_type", "invalid")
+            status_map = {
+                "not_found": 404,
+                "conflict": 409,
+                "invalid": 400,
+                "failed": 500,
+            }
+            status_code = status_map.get(error_type, 500)
+            return error(
+                status_code,
+                result.get("code", "move_invalid"),
+                result.get("error", "failed to move collection"),
                 request=request,
                 request_id=rid,
             )

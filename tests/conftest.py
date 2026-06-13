@@ -48,7 +48,9 @@ def _reset_cfg_between_tests(monkeypatch, temp_data_dir, request):
         import pave.embedders as emb_mod
         import pave.embedders.factory as emb_factory_mod
 
-        fake_get_embedder = lambda: FakeEmbedder()
+        def fake_get_embedder(*_args, **kwargs):
+            spec = kwargs.get("embedder_config") or {}
+            return FakeEmbedder(dim=int(spec.get("dim", 64)))
 
         monkeypatch.setattr(
             main_mod,

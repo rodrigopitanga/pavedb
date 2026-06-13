@@ -63,14 +63,32 @@ class IndexResult:
 
 class BaseStore(ABC):
     @abstractmethod
-    def create_collection(self, tenant: str, name: str) -> None: ...
+    def create_collection(
+        self,
+        tenant: str,
+        name: str,
+        *,
+        embedder_type: str | None = None,
+        embed_model: str | None = None,
+        embedder_config: dict[str, Any] | None = None,
+        display_name: str | None = None,
+    ) -> dict[str, Any] | None: ...
 
     @abstractmethod
     def delete_collection(self, tenant: str, collection: str) -> None: ...
 
     @abstractmethod
-    def rename_collection(self, tenant: str, old_name: str, new_name: str) -> None:
-        """Rename a collection. Raises ValueError if old/new name invalid."""
+    def update_collection(
+        self,
+        tenant: str,
+        name: str,
+        *,
+        display_name: str | None = None,
+    ) -> dict[str, Any] | None: ...
+
+    @abstractmethod
+    def move_collection(self, tenant: str, old_name: str, new_name: str) -> None:
+        """Move a collection slug/path. Raises ValueError if invalid."""
         ...
 
     @abstractmethod

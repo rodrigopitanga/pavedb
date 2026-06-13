@@ -394,7 +394,7 @@ def test_catalog_db_get_collection_config(tmp_path):
     db.close()
 
 
-def test_catalog_db_rename_collection_is_retry_safe(tmp_path):
+def test_catalog_db_move_collection_is_retry_safe(tmp_path):
     db = CatalogDB()
     db.open(_catalog_db(tmp_path))
     db.register_collection(
@@ -405,8 +405,8 @@ def test_catalog_db_rename_collection_is_retry_safe(tmp_path):
         embed_model="fake",
     )
 
-    db.rename_collection("acme", "docs", "docs-v2")
-    db.rename_collection("acme", "docs", "docs-v2")
+    db.move_collection("acme", "docs", "docs-v2")
+    db.move_collection("acme", "docs", "docs-v2")
 
     assert db.list_collections("acme") == ["docs-v2"]
     db.close()
