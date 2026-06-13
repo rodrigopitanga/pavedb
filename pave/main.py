@@ -270,6 +270,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             except ServiceError as exc:
                 status_map = {
                     "embedder_unavailable": 503,
+                    "collection_not_found": 404,
                 }
                 return _error(
                     status_map.get(exc.code, 500),

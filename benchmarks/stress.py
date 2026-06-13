@@ -427,6 +427,9 @@ async def op_search(client: httpx.AsyncClient, world: World, stats: Stats):
         if _is_rate_limited(r):
             _record_rate_limited(stats, lat)
             return
+        if r.status_code == 404:
+            stats.record(OpResult("search", lat, True, f"http_{r.status_code}"))
+            return
         if not _ok_response(r):
             stats.record(OpResult("search", lat, False, _parse_error(r)))
             return
@@ -909,6 +912,11 @@ async def op_search_get(client: httpx.AsyncClient, world: World, stats: Stats):
         lat = (time.perf_counter() - t0) * 1000
         if _is_rate_limited(r):
             _record_rate_limited(stats, lat)
+            return
+        if r.status_code == 404:
+            stats.record(OpResult(
+                "search_get", lat, True, f"http_{r.status_code}",
+            ))
             return
         if not _ok_response(r):
             stats.record(OpResult("search_get", lat, False, _parse_error(r)))

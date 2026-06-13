@@ -777,6 +777,16 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
             exc,
         )
         raise ServiceError("embedder_unavailable", str(exc)) from exc
+    except ValueError as exc:
+        msg = str(exc)
+        if "does not exist" in msg:
+            log.info(
+                "search collection_not_found tenant=%s coll=%s "
+                "request_id=%s: %s",
+                tenant, collection, request_id, msg,
+            )
+            raise ServiceError("collection_not_found", msg) from exc
+        raise
     except Exception as exc:
         log.warning(
             "search failed tenant=%s coll=%s request_id=%s: %s",

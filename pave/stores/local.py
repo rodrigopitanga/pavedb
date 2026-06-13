@@ -1485,7 +1485,13 @@ class LocalStore(BaseStore):
                 and embedder is not None
             ):
                 return _search_loaded(backend, col_db, embedder)
-        raise RuntimeError("collection cache initialization did not stabilize")
+        # Caches drained across every retry — overwhelmingly means a
+        # concurrent delete/move removed the collection. Surface as a
+        # not-found ValueError so the service layer translates it to 404
+        # instead of a generic 500.
+        raise ValueError(
+            f"collection '{collection}' does not exist"
+        )
 
     def _build_match_reason(self, query: str, score: float,
                             filters: dict[str, Any] | None,
