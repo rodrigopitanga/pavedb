@@ -182,6 +182,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                 if not result.get("ok"):
                     code = result.get("code", "ingest_failed")
                     status_map = {
+                        "embedder_unavailable": 503,
                         "no_text_extracted": 400,
                         "ingest_failed": 500,
                     }
@@ -196,6 +197,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
             except ServiceError as exc:
                 code = exc.code
                 status_map = {
+                    "embedder_unavailable": 503,
                     "invalid_csv_options": 400,
                     "invalid_metadata_keys": 400,
                     "ingest_failed": 500,
