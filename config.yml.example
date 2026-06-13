@@ -119,8 +119,16 @@ embedder:
     model: text-embedding-3-small
     batch_size: 256
     api_key: ${PAVEDB_OPENAI_API_KEY}
-    base_url: ${PAVEDB_OPENAI_BASE_URL}
+    # base_url: ${PAVEDB_OPENAI_BASE_URL}   # override to hit a compatible endpoint
     dim: 1536
+
+  # Used by type=ollama. Thin OpenAI-compatible wrapper for a local Ollama
+  # daemon. Probes /api/tags at construction; raises embedder_unavailable
+  # if the daemon is down.
+  ollama:
+    model: nomic-embed-text
+    # base_url: http://localhost:11434/v1   # override to point at a remote Ollama
+    dim: 768
 
 # ---------------------------------------------------------------------------
 # Ingest limits

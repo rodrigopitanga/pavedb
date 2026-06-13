@@ -1,0 +1,68 @@
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+from __future__ import annotations
+
+import urllib.error
+import urllib.request
+
+from ..config import CFG
+from .base import EmbedderUnavailableError
+from .openai import OpenAIEmbedder
+
+
+CONFIG_KEYS: tuple[str, ...] = ("dim", "base_url", "batch_size")
+SPACE_KEYS: tuple[str, ...] = ("dim",)
+
+_DEFAULT_BASE_URL = "http://localhost:11434/v1"
+_DEFAULT_MODEL = "nomic-embed-text"
+_DEFAULT_DIM = 768
+_PROBE_TIMEOUT_S = 1.5
+
+
+def validate_spec(resolved_config: dict) -> dict:
+    from .openai import validate_spec as _openai_validate
+    return _openai_validate(resolved_config)
+
+
+def build_embedder(cfg, *, model=None, embedder_config=None):
+    from .factory import resolve_setting
+
+    spec = dict(embedder_config or {})
+    resolved_model = str(
+        model if model is not None else cfg.get("embedder.ollama.model") or _DEFAULT_MODEL
+    ).strip()
+    base_url = str(
+        resolve_setting(cfg, "ollama", "base_url", spec, _DEFAULT_BASE_URL)
+    )
+    batch_size = resolve_setting(cfg, "ollama", "batch_size", spec, None)
+    dim = resolve_setting(cfg, "ollama", "dim", spec, _DEFAULT_DIM)
+    api_key = resolve_setting(cfg, "ollama", "api_key", spec, "ollama")
+
+    _probe_daemon(base_url)
+
+    return OllamaEmbedder(
+        model=resolved_model,
+        batch_size=batch_size,
+        dim=dim,
+        api_key=api_key,
+        base_url=base_url,
+    )
+
+
+def _probe_daemon(base_url: str) -> None:
+    """Cheap reachability check against Ollama's `/api/tags` endpoint."""
+    root = base_url.rstrip("/")
+    if root.endswith("/v1"):
+        root = root[: -len("/v1")]
+    probe_url = f"{root}/api/tags"
+    try:
+        urllib.request.urlopen(probe_url, timeout=_PROBE_TIMEOUT_S).close()
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        raise EmbedderUnavailableError(
+            f"Ollama daemon not reachable at {base_url}: {exc}"
+        ) from exc
+
+
+class OllamaEmbedder(OpenAIEmbedder):
+    """OpenAI-compatible client pointed at a local Ollama daemon."""

@@ -75,6 +75,11 @@ _DEFAULTS = {
         "openai": {
             "model": "text-embedding-3-small",
         },
+        "ollama": {
+            "model": "nomic-embed-text",
+            "base_url": "http://localhost:11434/v1",
+            "dim": 768,
+        },
     },
     "ingest": {"max_file_size_mb": 500, "max_concurrent": 7},
     "search": {"max_concurrent": 42, "timeout_ms": 30000},
