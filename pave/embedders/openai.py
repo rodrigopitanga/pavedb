@@ -1,5 +1,6 @@
-# (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
+
 from __future__ import annotations
 import os
 
@@ -10,6 +11,44 @@ from ..config import CFG
 
 CONFIG_KEYS: tuple[str, ...] = ("dim", "base_url", "batch_size")
 SPACE_KEYS: tuple[str, ...] = ("dim",)
+
+
+def validate_spec(resolved_config: dict) -> dict:
+    """Enforce openai-specific config invariants at create-collection time.
+
+    Called by `factory.resolve_embedder_spec`; mutates and returns the
+    coerced config so the catalog row stores the int form of `dim`.
+    """
+    raw_dim = resolved_config.get("dim")
+    if raw_dim in (None, ""):
+        raise ValueError("embedder.openai.dim must be configured")
+    try:
+        dim = int(raw_dim)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("embedder.openai.dim must be an integer") from exc
+    if dim <= 0:
+        raise ValueError("embedder.openai.dim must be positive")
+    resolved_config["dim"] = dim
+    return resolved_config
+
+
+def build_embedder(cfg, *, model=None, embedder_config=None):
+    """Construct an OpenAIEmbedder using cfg/spec resolution."""
+    from .factory import resolve_setting
+
+    spec = dict(embedder_config or {})
+    model_name = str(
+        model if model is not None else cfg.get("embedder.openai.model") or ""
+    ).strip()
+    if not model_name:
+        raise RuntimeError("embedder.openai.model must be configured")
+    return OpenAIEmbedder(
+        model=model_name,
+        batch_size=resolve_setting(cfg, "openai", "batch_size", spec, None),
+        dim=resolve_setting(cfg, "openai", "dim", spec, None),
+        api_key=cfg.get("embedder.openai.api_key"),
+        base_url=resolve_setting(cfg, "openai", "base_url", spec, None),
+    )
 
 
 class OpenAIEmbedder:

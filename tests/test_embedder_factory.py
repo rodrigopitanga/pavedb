@@ -62,6 +62,21 @@ def test_lazy_embedder_defers_factory_until_used() -> None:
     assert calls["factory"] == 1
 
 
+def _patch_sbert_class(monkeypatch, fake_cls):
+    sbert_mod = importlib.import_module("pave.embedders.sbert")
+    monkeypatch.setattr(sbert_mod, "SbertEmbedder", fake_cls, raising=True)
+
+
+def _patch_openai_class(monkeypatch, fake_cls):
+    openai_mod = importlib.import_module("pave.embedders.openai")
+    monkeypatch.setattr(openai_mod, "OpenAIEmbedder", fake_cls, raising=True)
+
+
+def _patch_platform(monkeypatch, platform):
+    sbert_mod = importlib.import_module("pave.embedders.sbert")
+    monkeypatch.setattr(sbert_mod.sys, "platform", platform)
+
+
 def test_factory_uses_process_mode_when_explicitly_requested(monkeypatch) -> None:
     factory = _reload_factory()
 
@@ -69,7 +84,7 @@ def test_factory_uses_process_mode_when_explicitly_requested(monkeypatch) -> Non
         def __init__(self, **kwargs) -> None:
             self.kwargs = kwargs
 
-    monkeypatch.setattr(factory.sys, "platform", "linux")
+    _patch_platform(monkeypatch, "linux")
     _fake_module(
         monkeypatch,
         "pave.embedders.sbert_worker",
@@ -98,12 +113,8 @@ def test_factory_uses_none_mode_for_direct_sbert(monkeypatch) -> None:
         def __init__(self, **kwargs) -> None:
             self.kwargs = kwargs
 
-    monkeypatch.setattr(factory.sys, "platform", "darwin")
-    _fake_module(
-        monkeypatch,
-        "pave.embedders.sbert",
-        SbertEmbedder=FakeSbert,
-    )
+    _patch_platform(monkeypatch, "darwin")
+    _patch_sbert_class(monkeypatch, FakeSbert)
 
     emb = factory.get_embedder(
         _DummyCFG(
@@ -128,7 +139,7 @@ def test_factory_uses_process_sbert_for_auto_mode_on_darwin_faiss(
         def __init__(self, **kwargs) -> None:
             self.kwargs = kwargs
 
-    monkeypatch.setattr(factory.sys, "platform", "darwin")
+    _patch_platform(monkeypatch, "darwin")
     _fake_module(
         monkeypatch,
         "pave.embedders.sbert_worker",
@@ -158,12 +169,8 @@ def test_factory_uses_direct_sbert_for_auto_mode_off_darwin(
         def __init__(self, **kwargs) -> None:
             self.kwargs = kwargs
 
-    monkeypatch.setattr(factory.sys, "platform", "linux")
-    _fake_module(
-        monkeypatch,
-        "pave.embedders.sbert",
-        SbertEmbedder=FakeSbert,
-    )
+    _patch_platform(monkeypatch, "linux")
+    _patch_sbert_class(monkeypatch, FakeSbert)
 
     emb = factory.get_embedder(
         _DummyCFG(
@@ -187,12 +194,8 @@ def test_factory_passes_explicit_sbert_spec(monkeypatch) -> None:
         def __init__(self, **kwargs) -> None:
             seen.update(kwargs)
 
-    monkeypatch.setattr(factory.sys, "platform", "linux")
-    _fake_module(
-        monkeypatch,
-        "pave.embedders.sbert",
-        SbertEmbedder=FakeSbert,
-    )
+    _patch_platform(monkeypatch, "linux")
+    _patch_sbert_class(monkeypatch, FakeSbert)
 
     factory.get_embedder(
         _DummyCFG(
@@ -222,11 +225,7 @@ def test_factory_passes_explicit_openai_spec(monkeypatch) -> None:
         def __init__(self, **kwargs) -> None:
             seen.update(kwargs)
 
-    _fake_module(
-        monkeypatch,
-        "pave.embedders.openai",
-        OpenAIEmbedder=FakeOpenAI,
-    )
+    _patch_openai_class(monkeypatch, FakeOpenAI)
 
     factory.get_embedder(
         _DummyCFG({

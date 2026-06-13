@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import json
-import sys
 from threading import Lock
 from typing import Any
 
@@ -13,19 +12,32 @@ from .base import Embedder
 from ..config import CFG
 
 
-def _embedder_schema(etype: str) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
-    """Return (CONFIG_KEYS, SPACE_KEYS) for a registered embedder type.
+def _embedder_module(etype: str):
+    """Import the embedder module by convention `pave.embedders.<etype>`.
 
-    Lazily imports the embedder module so the heavy class body (sbert pulls
-    torch, openai pulls the SDK) is not loaded at factory import time.
+    Returns the module on success, or None if no such module exists. The
+    module's heavy class body remains deferred until the class itself is
+    referenced.
     """
-    if etype == "sbert":
-        from .sbert import CONFIG_KEYS, SPACE_KEYS
-        return CONFIG_KEYS, SPACE_KEYS
-    if etype == "openai":
-        from .openai import CONFIG_KEYS, SPACE_KEYS
-        return CONFIG_KEYS, SPACE_KEYS
-    return None
+    import importlib
+
+    try:
+        if "." in etype:
+            return importlib.import_module(etype)
+        return importlib.import_module(f"pave.embedders.{etype}")
+    except ModuleNotFoundError:
+        return None
+
+
+def _embedder_schema(etype: str) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
+    """Return (CONFIG_KEYS, SPACE_KEYS) for a registered embedder type."""
+    mod = _embedder_module(etype)
+    if mod is None:
+        return None
+    return (
+        getattr(mod, "CONFIG_KEYS", ()),
+        getattr(mod, "SPACE_KEYS", ()),
+    )
 
 
 class LazyEmbedder:
@@ -49,13 +61,18 @@ class LazyEmbedder:
         return self._get().encode(texts)
 
 
-def _setting(
+def resolve_setting(
     cfg: CFG,
     etype: str,
     key: str,
     spec: dict[str, Any],
     default: Any = None,
 ) -> Any:
+    """Read an embedder config field from spec first, falling back to global cfg.
+
+    Exposed so per-embedder ``build_embedder`` functions can share the
+    spec-then-config resolution rule without duplicating it.
+    """
     if key in spec and spec[key] is not None:
         return spec[key]
     return cfg.get(f"embedder.{etype}.{key}", default)
@@ -69,7 +86,7 @@ def resolve_embedder_spec(
     embedder_config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     etype = str(
-        embedder_type or cfg.get("embedder.type") or "sbert"
+        embedder_type or cfg.get("embedder.type")
     ).strip().lower()
     schema = _embedder_schema(etype)
     if schema is None:
@@ -97,19 +114,10 @@ def resolve_embedder_spec(
         if val is not None and val != "":
             resolved_config[key] = val
 
-    if etype == "openai":
-        raw_dim = resolved_config.get("dim")
-        if raw_dim in (None, ""):
-            raise ValueError("embedder.openai.dim must be configured")
-        try:
-            dim = int(raw_dim)
-        except (TypeError, ValueError) as exc:
-            raise ValueError(
-                "embedder.openai.dim must be an integer"
-            ) from exc
-        if dim <= 0:
-            raise ValueError("embedder.openai.dim must be positive")
-        resolved_config["dim"] = dim
+    mod = _embedder_module(etype)
+    validate = getattr(mod, "validate_spec", None) if mod is not None else None
+    if validate is not None:
+        resolved_config = validate(resolved_config)
 
     return {
         "embedder_type": etype,
@@ -174,75 +182,15 @@ def get_embedder(
     model: str | None = None,
     embedder_config: dict[str, Any] | None = None,
 ) -> Embedder:
-    spec = dict(embedder_config or {})
     etype = str(
-        embedder_type or cfg.get("embedder.type", "sbert") or "sbert"
+        embedder_type or cfg.get("embedder.type")
     ).strip().lower()
-    match etype:
-        case "sbert":
-            model_name = str(
-                model if model is not None else cfg.get("embedder.sbert.model")
-                or ""
-            ).strip()
-            if not model_name:
-                raise RuntimeError("embedder.sbert.model must be configured")
-            runtime_value = _setting(cfg, "sbert", "runtime", spec, None)
-            if runtime_value is None:
-                raise RuntimeError("embedder.sbert.runtime must be configured")
-            runtime = str(runtime_value).lower()
-            device = _setting(cfg, "sbert", "device", spec, None)
-            batch_size = _setting(cfg, "sbert", "batch_size", spec, None)
-            backend_type = str(cfg.get("vector_store.type", "faiss")).lower()
-            if runtime == "process":
-                from .sbert_worker import ProcessSbertEmbedder
-
-                return ProcessSbertEmbedder(
-                    model_name=model_name,
-                    device=None if device is None else str(device),
-                    batch_size=None if batch_size is None else int(batch_size),
-                )
-            if runtime in {"direct", "none"}:
-                from .sbert import SbertEmbedder
-
-                return SbertEmbedder(
-                    model_name=model_name,
-                    device=None if device is None else str(device),
-                    batch_size=None if batch_size is None else int(batch_size),
-                )
-            if runtime != "auto":
-                raise RuntimeError(f"Unknown embedder.sbert.runtime: {runtime}")
-            if sys.platform == "darwin" and backend_type == "faiss":
-                from .sbert_worker import ProcessSbertEmbedder
-
-                return ProcessSbertEmbedder(
-                    model_name=model_name,
-                    device=None if device is None else str(device),
-                    batch_size=None if batch_size is None else int(batch_size),
-                )
-            from .sbert import SbertEmbedder
-
-            return SbertEmbedder(
-                model_name=model_name,
-                device=None if device is None else str(device),
-                batch_size=None if batch_size is None else int(batch_size),
-            )
-        case "openai":
-            from .openai import OpenAIEmbedder
-
-            model_name = str(
-                model
-                if model is not None
-                else cfg.get("embedder.openai.model")
-                or ""
-            ).strip()
-            if not model_name:
-                raise RuntimeError("embedder.openai.model must be configured")
-            return OpenAIEmbedder(
-                model=model_name,
-                batch_size=_setting(cfg, "openai", "batch_size", spec, None),
-                dim=_setting(cfg, "openai", "dim", spec, None),
-                api_key=cfg.get("embedder.openai.api_key"),
-                base_url=_setting(cfg, "openai", "base_url", spec, None),
-            )
-        case _:
-            raise RuntimeError(f"Unknown embedder.type: {etype}")
+    mod = _embedder_module(etype)
+    if mod is None:
+        raise RuntimeError(f"Unknown embedder.type: {etype}")
+    build = getattr(mod, "build_embedder", None)
+    if build is None:
+        raise RuntimeError(
+            f"pave.embedders.{etype} does not expose build_embedder(cfg, ...)"
+        )
+    return build(cfg, model=model, embedder_config=embedder_config or {})

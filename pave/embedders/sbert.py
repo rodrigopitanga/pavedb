@@ -3,6 +3,8 @@
 
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 from numpy.typing import NDArray
 
@@ -11,6 +13,49 @@ from ..config import CFG
 
 CONFIG_KEYS: tuple[str, ...] = ("runtime", "device", "batch_size")
 SPACE_KEYS: tuple[str, ...] = ()
+
+
+def build_embedder(cfg, *, model=None, embedder_config=None):
+    """Construct an sbert-family embedder; dispatches between in-process
+    SbertEmbedder and subprocess ProcessSbertEmbedder per `runtime`.
+    """
+    from .factory import resolve_setting
+
+    spec = dict(embedder_config or {})
+    model_name = str(
+        model if model is not None else cfg.get("embedder.sbert.model") or ""
+    ).strip()
+    if not model_name:
+        raise RuntimeError("embedder.sbert.model must be configured")
+
+    runtime_value = resolve_setting(cfg, "sbert", "runtime", spec, None)
+    if runtime_value is None:
+        raise RuntimeError("embedder.sbert.runtime must be configured")
+    runtime = str(runtime_value).lower()
+    device = resolve_setting(cfg, "sbert", "device", spec, None)
+    batch_size = resolve_setting(cfg, "sbert", "batch_size", spec, None)
+    backend_type = str(cfg.get("vector_store.type", "faiss")).lower()
+
+    if runtime == "auto":
+        runtime = (
+            "process"
+            if (sys.platform == "darwin" and backend_type == "faiss")
+            else "direct"
+        )
+    elif runtime == "none":
+        runtime = "direct"
+    elif runtime not in {"process", "direct"}:
+        raise RuntimeError(f"Unknown embedder.sbert.runtime: {runtime}")
+
+    kwargs = {
+        "model_name": model_name,
+        "device": None if device is None else str(device),
+        "batch_size": None if batch_size is None else int(batch_size),
+    }
+    if runtime == "process":
+        from .sbert_worker import ProcessSbertEmbedder
+        return ProcessSbertEmbedder(**kwargs)
+    return SbertEmbedder(**kwargs)
 
 
 class SbertEmbedder:
