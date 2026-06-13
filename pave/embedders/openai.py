@@ -5,26 +5,54 @@ import os
 
 import numpy as np
 
-from openai import OpenAI
-
 from ..config import CFG
 
 
+CONFIG_KEYS: tuple[str, ...] = ("dim", "base_url", "batch_size")
+SPACE_KEYS: tuple[str, ...] = ("dim",)
+
+
 class OpenAIEmbedder:
-    def __init__(self):
-        self.model = CFG.get(
-            "embedder.openai.model",
-            "text-embedding-3-small",
+    def __init__(
+        self,
+        *,
+        model: str | None = None,
+        batch_size: int | None = None,
+        dim: int | str | None = None,
+        api_key: str | None = None,
+        base_url: str | None = None,
+    ) -> None:
+        from openai import OpenAI
+
+        self.model = str(
+            model if model is not None else CFG.get("embedder.openai.model")
+            or ""
+        ).strip()
+        if not self.model:
+            raise RuntimeError("embedder.openai.model must be configured")
+        self.batch_size = int(
+            batch_size
+            if batch_size is not None
+            else CFG.get("embedder.openai.batch_size", 256)
         )
-        self.batch_size = int(CFG.get("embedder.openai.batch_size", 256))
-        self._dim = CFG.get("embedder.openai.dim")
-        api_key = (
-            CFG.get("embedder.openai.api_key")
+        self._dim = dim if dim is not None else CFG.get("embedder.openai.dim")
+        resolved_key = (
+            api_key
+            or CFG.get("embedder.openai.api_key")
             or os.environ.get("OPENAI_API_KEY")
         )
-        if not api_key:
+        if not resolved_key:
             raise RuntimeError("OpenAI API key not configured")
-        self.client = OpenAI(api_key=api_key)
+        client_kwargs = {"api_key": resolved_key}
+        resolved_base_url = str(
+            base_url
+            if base_url is not None
+            else CFG.get("embedder.openai.base_url", "")
+            or ""
+        ).strip()
+        if resolved_base_url:
+            client_kwargs["base_url"] = resolved_base_url
+        self.client = OpenAI(**client_kwargs)
 
     @property
     def dim(self) -> int:

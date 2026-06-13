@@ -119,6 +119,7 @@ embedder:
     model: text-embedding-3-small
     batch_size: 256
     api_key: ${PAVEDB_OPENAI_API_KEY}
+    base_url: ${PAVEDB_OPENAI_BASE_URL}
     dim: 1536
 
 # ---------------------------------------------------------------------------

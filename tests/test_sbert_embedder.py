@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import sys
 import types
 
 import numpy as np
@@ -22,6 +23,25 @@ class _DummyCFG:
 
     def get(self, key: str, default=None):
         return self._values.get(key, default)
+
+
+def _install_fake_deps(
+    monkeypatch,
+    fake_model,
+    *,
+    cuda: bool = False,
+    mps: bool = False,
+) -> None:
+    fake_st = types.ModuleType("sentence_transformers")
+    fake_st.SentenceTransformer = fake_model
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_st)
+
+    fake_torch = types.ModuleType("torch")
+    fake_torch.cuda = types.SimpleNamespace(is_available=lambda: cuda)
+    fake_torch.backends = types.SimpleNamespace(
+        mps=types.SimpleNamespace(is_available=lambda: mps)
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
 
 
 def test_encode_returns_float32_ndarray(monkeypatch) -> None:
@@ -49,12 +69,7 @@ def test_encode_returns_float32_ndarray(monkeypatch) -> None:
             seen["convert_to_numpy"] = convert_to_numpy
             return np.array([[1, 2], [3, 4]], dtype=np.float64)
 
-    monkeypatch.setattr(
-        sbert_mod,
-        "SentenceTransformer",
-        FakeModel,
-        raising=True,
-    )
+    _install_fake_deps(monkeypatch, FakeModel)
     monkeypatch.setattr(
         sbert_mod,
         "CFG",
@@ -96,26 +111,7 @@ def test_auto_device_resolves_to_cpu_when_no_accelerator(monkeypatch) -> None:
         def encode(self, texts, **_kwargs):
             return np.array([[1.0, 2.0] for _ in texts], dtype=np.float32)
 
-    monkeypatch.setattr(
-        sbert_mod,
-        "SentenceTransformer",
-        FakeModel,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        sbert_mod.torch.cuda,
-        "is_available",
-        lambda: False,
-        raising=True,
-    )
-    mps = getattr(sbert_mod.torch.backends, "mps", None)
-    if mps is not None:
-        monkeypatch.setattr(
-            mps,
-            "is_available",
-            lambda: False,
-            raising=True,
-        )
+    _install_fake_deps(monkeypatch, FakeModel)
     monkeypatch.setattr(
         sbert_mod,
         "CFG",
@@ -123,6 +119,7 @@ def test_auto_device_resolves_to_cpu_when_no_accelerator(monkeypatch) -> None:
             {
                 "embedder.sbert.model": "sentence-transformers/test-model",
                 "embedder.sbert.device": "auto",
+                "embedder.sbert.batch_size": 64,
             }
         ),
         raising=True,
@@ -151,16 +148,17 @@ def test_dim_reads_model_dimension_without_probe(monkeypatch) -> None:
             calls["encode"] += 1
             return np.array([[0.0] * 7 for _ in texts], dtype=np.float32)
 
-    monkeypatch.setattr(
-        sbert_mod,
-        "SentenceTransformer",
-        FakeModel,
-        raising=True,
-    )
+    _install_fake_deps(monkeypatch, FakeModel)
     monkeypatch.setattr(
         sbert_mod,
         "CFG",
-        _DummyCFG({}),
+        _DummyCFG(
+            {
+                "embedder.sbert.model": "sentence-transformers/test-model",
+                "embedder.sbert.device": "auto",
+                "embedder.sbert.batch_size": 64,
+            }
+        ),
         raising=True,
     )
 
@@ -183,16 +181,17 @@ def test_dim_probes_when_model_dimension_missing(monkeypatch) -> None:
             seen["texts"] = list(texts)
             return np.array([[1.0, 2.0, 3.0]], dtype=np.float32)
 
-    monkeypatch.setattr(
-        sbert_mod,
-        "SentenceTransformer",
-        FakeModel,
-        raising=True,
-    )
+    _install_fake_deps(monkeypatch, FakeModel)
     monkeypatch.setattr(
         sbert_mod,
         "CFG",
-        _DummyCFG({}),
+        _DummyCFG(
+            {
+                "embedder.sbert.model": "sentence-transformers/test-model",
+                "embedder.sbert.device": "auto",
+                "embedder.sbert.batch_size": 64,
+            }
+        ),
         raising=True,
     )
 
@@ -215,12 +214,7 @@ def test_explicit_model_overrides_cfg(monkeypatch) -> None:
         def encode(self, texts, **_kwargs):
             return np.array([[1.0] * 5 for _ in texts], dtype=np.float32)
 
-    monkeypatch.setattr(
-        sbert_mod,
-        "SentenceTransformer",
-        FakeModel,
-        raising=True,
-    )
+    _install_fake_deps(monkeypatch, FakeModel)
     monkeypatch.setattr(
         sbert_mod,
         "CFG",

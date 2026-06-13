@@ -18,4 +18,14 @@ class Embedder(Protocol):
         """Embedding dimensionality (e.g. 384)."""
 
 
+class EmbedderUnavailableError(RuntimeError):
+    """Raised when the embedder for a collection cannot be instantiated.
+
+    Distinct from a search/ingest bug: signals a missing dependency
+    (model file, API key, network), so the service layer can surface a
+    dedicated `embedder_unavailable` error code instead of wrapping in
+    the generic failure envelope.
+    """
+
+
 BaseEmbedder = Embedder  # deprecated alias

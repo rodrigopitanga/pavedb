@@ -110,10 +110,13 @@ class ProcessSbertEmbedder:
         device: str | None = None,
         batch_size: int | None = None,
     ) -> None:
-        self.model_name = model_name or CFG.get(
-            "embedder.sbert.model",
-            "sentence-transformers/all-MiniLM-L6-v2",
-        )
+        self.model_name = str(
+            model_name if model_name is not None
+            else CFG.get("embedder.sbert.model")
+            or ""
+        ).strip()
+        if not self.model_name:
+            raise RuntimeError("embedder.sbert.model must be configured")
         self.device = str(
             device
             if device is not None

@@ -4,26 +4,16 @@
 from __future__ import annotations
 
 import numpy as np
-import torch
 from numpy.typing import NDArray
-from sentence_transformers import SentenceTransformer
 
 from ..config import CFG
 
 
-class SbertEmbedder:
-    @staticmethod
-    def _resolve_device(raw_device: object) -> str:
-        device = str(raw_device or "auto").strip().lower()
-        if device != "auto":
-            return device
-        if torch.cuda.is_available():
-            return "cuda"
-        mps = getattr(torch.backends, "mps", None)
-        if mps is not None and mps.is_available():
-            return "mps"
-        return "cpu"
+CONFIG_KEYS: tuple[str, ...] = ("runtime", "device", "batch_size")
+SPACE_KEYS: tuple[str, ...] = ()
 
+
+class SbertEmbedder:
     def __init__(
         self,
         *,
@@ -31,15 +21,22 @@ class SbertEmbedder:
         device: str | None = None,
         batch_size: int | None = None,
     ) -> None:
-        model_name = model_name or CFG.get(
-            "embedder.sbert.model",
-            "sentence-transformers/all-MiniLM-L6-v2",
-        )
+        import torch
+        from sentence_transformers import SentenceTransformer
+
+        model_name = str(
+            model_name if model_name is not None
+            else CFG.get("embedder.sbert.model")
+            or ""
+        ).strip()
+        if not model_name:
+            raise RuntimeError("embedder.sbert.model must be configured")
         device = self._resolve_device(
+            torch,
             device if device is not None else CFG.get(
                 "embedder.sbert.device",
                 "auto",
-            )
+            ),
         )
         self.batch_size = int(
             batch_size
@@ -56,6 +53,18 @@ class SbertEmbedder:
             self._dim = int(get_dim()) if get_dim is not None else None
         except Exception:
             self._dim = None
+
+    @staticmethod
+    def _resolve_device(torch_mod, raw_device: object) -> str:
+        device = str(raw_device or "auto").strip().lower()
+        if device != "auto":
+            return device
+        if torch_mod.cuda.is_available():
+            return "cuda"
+        mps = getattr(torch_mod.backends, "mps", None)
+        if mps is not None and mps.is_available():
+            return "mps"
+        return "cpu"
 
     @property
     def dim(self) -> int:

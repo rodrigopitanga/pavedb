@@ -66,7 +66,16 @@ _DEFAULTS = {
     # External tenant maps are opt-in; no tenants sidecar is loaded by default.
     "auth": {"mode": "none", "api_keys": {}, "tenants_file": None},
     "vector_store": {"type": "faiss"},
-    "embedder": {"type": "sbert", "sbert": {"runtime": "auto"}},
+    "embedder": {
+        "type": "sbert",
+        "sbert": {
+            "runtime": "auto",
+            "model": "sentence-transformers/all-MiniLM-L6-v2",
+        },
+        "openai": {
+            "model": "text-embedding-3-small",
+        },
+    },
     "ingest": {"max_file_size_mb": 500, "max_concurrent": 7},
     "search": {"max_concurrent": 42, "timeout_ms": 30000},
     "preprocess": {"txt_chunk_size": 1000, "txt_chunk_overlap": 200},
