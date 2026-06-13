@@ -79,12 +79,12 @@ Use the `[tag]` prefix format for commits that affect functionality:
 breakdown:
 
 ```
-[core] Add collection rename across all layers
+[core] Add collection move across all layers
 
 - Store: abstract method + FaissStore implementation with deadlock-safe locking
-- Service: rename_collection() with error handling
-- API: PUT /collections/{tenant}/{name} endpoint
-- CLI: rename-collection command
+- Service: move_collection() with error handling
+- API: POST /admin/collections/{tenant}/{name}/move endpoint
+- CLI: move-collection command
 ```
 
 **Available tags** (mapped to changelog sections):
@@ -214,15 +214,15 @@ State lock        (_StoreStateLock,     reentrant rw)
 | Lock | Defined in | Held by |
 |---|---|---|
 | `_StoreStateLock` | `pave/stores/local.py` | `restore_archive` / `dump_archive` take the write side; every other op takes the read side via the per-collection helpers. |
-| `_CollectionReadWriteLock` | `pave/stores/local.py` | `search` and other reads take `_collection_read_lock`; `index_records`, `purge_doc`, `delete_collection`, `create_collection`, `rename_collection` take `_collection_write_lock` (variadic `_collection_write_locks` for multi-collection ops like rename). |
+| `_CollectionReadWriteLock` | `pave/stores/local.py` | `search` and other reads take `_collection_read_lock`; `index_records`, `purge_doc`, `delete_collection`, `create_collection`, `move_collection` take `_collection_write_lock` (variadic `_collection_write_locks` for multi-collection ops like move). |
 | `CollectionDB` / `CatalogDB` internal cvs | `pave/metadb.py` | Taken inside the db classes' `_reader`/`_writer` context managers. Don't take these from `pave/stores/*`. |
 
 Rules we've actually learned the hard way:
 
 1. **Catalog writes happen *inside* the per-collection write lock.** If you
    write to the catalog after releasing the collection lock, a concurrent
-   delete/rename/restore can leave catalog and disk inconsistent. See
-   `create_collection`, `delete_collection`, `rename_collection`,
+   delete/move/restore can leave catalog and disk inconsistent. See
+   `create_collection`, `delete_collection`, `move_collection`,
    `index_records` for the pattern.
 2. **Reads can nest; writes can't upgrade from reads.**
    `_CollectionReadWriteLock` tracks readers per thread, so
@@ -231,7 +231,7 @@ Rules we've actually learned the hard way:
    waiting for itself — that's an upgrade, not a reentry, and we don't
    support it.
 3. **Pre-check the catalog inside the lock when conflict matters.**
-   `rename_collection` checks the catalog for a row at the target name
+   `move_collection` checks the catalog for a row at the target name
    before touching disk; otherwise a UNIQUE collision surfaces as a 500
    instead of a 409 and disk/catalog end up out of sync.
 

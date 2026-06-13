@@ -28,6 +28,7 @@ env*/
 *.swo
 *~
 \#*\#
+.#*
 
 # Local data & indices
 data/
@@ -58,3 +59,7 @@ logs/
 .e2e_ingest.json
 .e2e_search.json
 .demo.pid
+
+# Editor lock files
+.#*
+.aider*

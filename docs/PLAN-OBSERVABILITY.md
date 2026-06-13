@@ -304,9 +304,9 @@ per-collection row first, then best-effort-upserts the
 entry remains reachable via the collection-scoped route.
 `delete_collection` calls `purge_query_homes_for_collection`
 after per-collection teardown so stale rows don't linger.
-`rename_collection` updates the matching `query_home` rows
+`move_collection` updates the matching `query_home` rows
 to the new collection name so bare-id resolution stays valid
-after a rename.
+after a collection move.
 
 **Service.** `resolve_query_home(store, query_id)` — thin
 passthrough to `CatalogDB`. `list_query_homes(store, tenant=

@@ -367,12 +367,11 @@ No permanent filesystem-walk fallback for listing.
 
 These are decided up front, not deferred to implementation:
 
-1. **`_system/*` collections are not cataloged.** Startup and
-   readiness probes create `_system/health` via
-   `create_collection()` (`main.py:75`, `health.py:41`).
-   `create_collection` skips the CatalogDB insert when
-   `tenant == "_system"`. Listing and metrics never see
-   `_system/*` collections.
+1. **`_system/*` collections are not cataloged.** Internal probes
+   may use `_system/*` scratch collections; `create_collection`
+   skips the CatalogDB insert when `tenant == "_system"`. Listing
+   and metrics never see `_system/*` collections. Server startup
+   no longer creates `_system/health` as an implicit model warmup.
 
 2. **Tenant semantics change (breaking).** A tenant exists only
    if it has at least one cataloged collection. Empty `t_*`
@@ -416,10 +415,12 @@ Column notes:
 - `created_at`: automatic, zero-maintenance timestamp.
 
 **`name` (slug) assignment rules:**
-- Explicit API-provided slug → used as-is.
-- Display name provided → slug auto-derived: lowercase,
-  spaces → underscores, strip non-alphanum/dash/underscore.
-- Neither provided → UUID.
+- API `name` is the slug. The server validates it and stores it
+  unchanged.
+- No API body uses a separate `slug` field. Client helpers may
+  slugify a human label before sending `name`.
+- If `display_name` is omitted at create time, the server stores
+  `display_name = name`.
 
 Doc and chunk counts are derived on demand from each
 collection's Phase 1 `meta.db`
@@ -449,7 +450,7 @@ class CatalogDB:
     def unregister_collection(
         self, tenant: str, name: str,
     ) -> None
-    def rename_collection(
+    def move_collection(
         self, tenant: str, old: str, new: str,
     ) -> None
     def list_tenants(self) -> list[str]
@@ -493,7 +494,7 @@ All integration is against `LocalStore`
   insert into CatalogDB. Skip insert if `tenant == "_system"`.
 - `delete_collection()`: after filesystem removal, delete from
   CatalogDB.
-- `rename_collection()`: after `os.rename()`, update CatalogDB.
+- `move_collection()`: after `os.rename()`, update CatalogDB.
 
 **Query methods (replace filesystem walk):**
 - `list_collections()`: `CatalogDB.list_collections(tenant)`.
@@ -536,7 +537,7 @@ not require another catalog migration.
 | Integration | create/delete/rename/listing via `LocalStore` |
 | Upgrade | Existing on-disk collections with no `catalog.db` discovered on first boot |
 | Metrics | Counts from catalog + `meta.db`, not dir walk |
-| `_system` exclusion | Startup creates `_system/health`; listings and metrics never show it |
+| `_system` exclusion | Internal `_system/*` scratch collections are skipped by catalog listings and metrics |
 | Tenant semantics | Empty tenant dir → not listed |
 
 ---

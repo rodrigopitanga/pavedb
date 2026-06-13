@@ -76,7 +76,7 @@ One JSON line per operation, written to the configured destination.
 | `hits` | op == search |
 | `docid` | op == ingest, delete_doc |
 | `chunks` | op == ingest, status == ok |
-| `new_name` | op == rename_collection |
+| `new_name` | op == move_collection |
 
 ### Operations
 
@@ -87,7 +87,7 @@ One JSON line per operation, written to the configured destination.
 | `delete_doc` | DELETE `/collections/{t}/{c}/documents/{id}` |
 | `create_collection` | POST `/collections/{t}/{name}` |
 | `delete_collection` | DELETE `/collections/{t}/{name}` |
-| `rename_collection` | PUT `/collections/{t}/{name}` |
+| `move_collection` | POST `/admin/collections/{t}/{name}/move` |
 | `list_collections` | GET `/collections/{t}` |
 
 Admin routes (`/admin/archive`, `/admin/metrics`) and health routes are not

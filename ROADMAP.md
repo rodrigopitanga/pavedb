@@ -88,19 +88,19 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-22 | Per-collection hot caches | 🧱 | Performance isolation | v1.0 |
 | P1-23 | ~~Freeze search response schema~~ | 🧩 | SDK contract; `query_id` added additively after freeze | v0.9 |
 | P1-24 | Python client package | 🧱 | SDK foundation | v1.1 |
-| P1-25 | Dev vs prod config defaults | 🔧 | Safe defaults | v1.0 |
+| P1-25 | ~~Dev vs prod config defaults~~ | 🔧 | Safe defaults — code defaults are prod-safe (`auth.mode=none` refuses to boot outside dev); dev overlay lives in the `make serve` env | v1.0 |
 | P1-26 | Config reference + CI doc check | 🧩 | Config clarity | v1.0 |
-| P1-27 | Admin key auto-generate + persist | 🧩 | Secure bootstrap | v1.0 |
+| P1-27 | Admin key auto-generate + persist | 🧩 | Secure bootstrap | v1.1 |
 | P1-28 | Moving-window rate limiting per tenant | 🔧 | req/min, req/hour — needs `rate_limit_buckets` table (Phase 3) | post-SQLite |
 | P1-29 | ~~VectorBackend protocol~~ | 🔧 | Initial backend seam for store split | v0.5.9 |
 | P1-29b | ~~Clean protocol + Faiss path~~ | 🔧 | Finish FAISS cutover | v0.5.9 |
 | P1-29c | ~~CollectionDB k/v pre-filter~~ | 🔧 | First pushdown stage | v0.5.9 |
 | P1-30 | ~~Activate embedder factory cache (superseded by P1-29b)~~ |  | Superseded by Step 2 in PLAN-STORE | superseded |
 | P1-31 | ~~Store orchestrator~~ | 🧱 | Orchestrate backend + meta + catalog | v0.5.9 |
-| P1-32 | Per-collection embeddings | 🧱 | Model per collection | v1.0 |
+| P1-32 | ~~Per-collection embeddings~~ | 🧱 | Model per collection | v1.0 |
 | P1-33 | ~~CatalogDB + catalog separation~~ | 🧱 | Catalog + collection backend/embedder config source | v0.9 |
 | P1-34 | ~~Server config bootstrap~~ | 🧩 | Explicit `pavecli init` + `--home` / explicit runtime paths for pip installs | v1.0 |
-| P1-35 | Filter pushdown parity harness | 🔧 | Speedups without semantic drift | v1.0 |
+| P1-35 | Filter pushdown parity harness | 🔧 | Speedups without semantic drift; lands when a new pushdown capability ships | v1.2 |
 | P1-36 | ~~Reject empty/colliding sanitized metadata keys~~ | 🧩 | Avoid silent key drops/coalescing under current sanitization rules | v0.5.9 |
 | P1-37 | ~~Pre-orchestrator cleanup~~ | 🔧 | Drop txtai dep, rename store/embedder, dead code removal, filter path simplification | v0.5.9 |
 | P1-40 | ~~Search timing breakdown in response~~ | 🔧 | Latency debugging: embed/search/filter/hydrate split | v0.9 |
@@ -110,14 +110,18 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-46 | Docs site — preview | 🔧 | MkDocs static site; user + developer sections; published via GitLab Pages. Most reference content auto-rendered from the source plumbing landed in v1.0 (P1-53a–d) | v1.1 |
 | P1-47 | Docs site — 1.0 | 🧱 | Full coverage: guides, core concepts, inspect/debug, operations, architecture, plugins; versioned via `mike`, custom domain | v1.2 |
 | P1-48 | ~~Remove `SearchBody.request_id`~~ | 🧩 | `X-Request-ID` becomes the only request-correlation input | v0.9 |
-| P1-49 | HTTP request metrics middleware | 🔧 | Per-endpoint request count + latency histogram, status class split, Prometheus `# HELP`/`# TYPE` metadata | v1.0 |
-| P1-50 | Product-signal metrics | 🧩 | Zero-match searches, filter usage, query-log readiness, embedder counters, sidecar drift — competitor gap | v1.0 |
+| P1-49 | HTTP request metrics middleware | 🔧 | v1.0 ships labeled `http_requests_total` middleware + handler-side `inc("requests_total")` cleanup; histogram + `# HELP`/`# TYPE` metadata ride P1-50 at v1.1 | v1.0 / v1.1 |
+| P1-50 | Product-signal metrics + metrics polish | 🧩 | Zero-match searches, filter usage, query-log readiness, embedder counters, sidecar drift — competitor gap. Bundled with P1-49's histogram + HELP/TYPE refactor and docs-site coverage so the new gauges are discoverable | v1.1 |
 | P1-51 | ~~Admin query-home resolver + shortcut routes + CLI rework~~ | 🧩 | Bare-`query_id` lookup/replay for admin via `query_home` table in `catalog.db` | v0.9 |
-| P1-52 | Concurrency chaos test (Level 1) | 🔧 | N-thread random-interleave fuzz over create/delete/rename/ingest/search/dump/restore with post-run catalog↔disk invariants. Regression net for the lock lattice hardened during the v0.9 rc cycle; bench-stress finds races, this turns them into non-flaky CI checks. | v1.0 |
+| P1-52 | Concurrency chaos test (Level 1) | 🔧 | N-thread random-interleave fuzz over create/delete/move/ingest/search/dump/restore with post-run catalog↔disk invariants. Regression net for the lock lattice hardened during the v0.9 rc cycle; bench-stress finds races, this turns them into non-flaky CI checks. Ships as nightly job at v1.1 (not a v1.0 release gate). | v1.1 |
 | P1-53a | Reference-source plumbing: OpenAPI completeness pass | 🔧 | Every route gets `summary`/`description`/`tags`/`responses`; every Pydantic `Field` gets `description` + at least one example. Unblocks an auto-rendered API reference. | v1.0 |
 | P1-53b | Reference-source plumbing: CLI completeness + dumper | 🔧 | Every subcommand gets `help`/`epilog`-example; `scripts/cli_to_markdown.py` renders `reference/cli.md` committed in-repo. | v1.0 |
 | P1-53c | Reference-source plumbing: config schema refactor | 🔧 | Single (key, default, description, env_var) source for `_DEFAULTS`, `config.yml.example`, and `reference/config.md`. Closes P1-26 (drift check) as a side effect. | v1.0 |
 | P1-53d | Reference-source plumbing: module/class docstrings on public seams | 🔧 | `pave/stores`, `pave/backends`, `pave/embedders`, catalog, `pave/service.py` public functions. Powers `mkdocstrings` once the docs site lands. | v1.0 |
+| P1-54 | Per-collection archive (dump + restore) | 🧱 | Admin-only `GET`/`POST` archive endpoints for a single collection. Carries `manifest.json` (PaveDB version, embedder spec, schema version), `meta.db`, FAISS index, sidecars. Restore must verify embedder spec is resolvable locally before touching disk. Same-version restore only at v1.5; cross-version waits on P3-37. Depends on P2-25. | v1.5 |
+| P1-55 | Per-collection reindex | 🧱 | Admin-only operation: rebuild vectors against a new embedder spec. Needs a job model (interruptible, resumable, status-trackable). Splits cleanly from PATCH (cheap label edit) and `move` (slug/path move + disk move) because it's the only one that rewrites stored vectors. | v1.6 |
+| P1-56 | Chroma comparison benchmark | 🔧 | Optional local compare bench for PaveDB vs Chroma using the same corpus, same sentence-transformers model, comparable create/upsert/delete/search operations, exact metadata filters only, and consolidated latency/stress output. Keep Chroma deps off the default install/test path. | v1.0 |
+| P1-58 | Multi-embedder config registry | 🧱 | List-of-specs config replacing single-default-per-type; `embedder.default` accepts a full or partial `vector_space_key` with auto-disambiguation; new `GET /v1/admin/embedders`; collection-create accepts an `embedder` shorthand. Pairs with P2-49 credential refs; unblocks the v1.7 per-embedder warmup enum. Depends on P1-32 (done) | v1.6 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -156,6 +160,8 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-46 | ~~query_log + ops_log enrichment~~ | 🧩 | Historical `tenant` / `collection` / `actor` columns; `actor` field in ops_log | v0.9 |
 | P2-47 | Per-collection storage accounting | 🔧 | Separate document/chunk/index/meta bytes; expose `document_bytes` for quotas, keep `chunk_bytes` admin-only | v1.5 |
 | P2-48 | ~~`bench-stress-full` profile~~ | 🔧 | Off-by-default stress run covering every public endpoint; landed early as `STR_SUITE=critical/full` with `@_covers` decorator + OpenAPI startup gap warning | v0.9 |
+| P2-49 | Embedder credential refs | 🔧 | Multi-key embedder runtimes without storing or echoing raw secrets in collection config; credentials resolve from server config/secret store and affect runtime cache identity, not vector-space compatibility | v1.6 |
+| P2-50 | Ollama embedder | 🧩 | Thin OpenAI-compatible wrapper for the local Ollama daemon — default base_url `http://localhost:11434/v1`, daemon-up probe → `embedder_unavailable`, sane embedding-model defaults. Lowers adoption bar for devs already running Ollama for LLM workflows | v1.0 |
 
 ### P3 — Scale and long-term
 
@@ -165,7 +171,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-16 | Horizontal scalability + routing | 🧱 | v1.8 |
 | P3-17 | OIDC/JWT auth (additive; API keys remain) | 🧱 | v1.6 |
 | P3-18 | API freeze + SDK client | 🧱 | v2.0 |
-| P3-23 | Docs website | 🧩 | v1.4 |
+| P3-23 | ~~Docs website (superseded by P1-46/P1-47)~~ | 🧩 | v1.1–v1.2 |
 | P3-24 | Revamp UI | 🧱 | v1.4 |
 | P3-25 | Multilingual UI/errors/docs | 🧱 | v1.4 |
 | P3-26 | Embedder/store contract | 🧱 | v1.0 |
@@ -185,9 +191,12 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-45 | Independence principle audit | 🔧 | v1.6 |
 | P3-46 | Matrix CI builds | 🧱 | v1.8 |
 | P3-47 | Additional media types | 🧱 | post-1.0 |
+| P3-48 | Explicit embedder warmup policy (v1.0: `warmup_default` bool; v1.7: enum + per-embedder switch + warmup-by-key list, depends on P1-58 registry) | 🧩 | v1.0 / v1.7 |
+| P3-49 | Convention-based embedder dispatch | 🔧 | v1.0 |
 | P3-50 | ~~Split main.py routes into APIRouter modules (health, admin, collections, documents, search)~~ | 🧩 | v0.5.9 |
 | P3-51 | ~~`make docker-check`: alive test against prebuilt Docker image~~ | 🧩 | v0.5.9 |
 | P3-52 | ~~`make build-check`: install from local wheel in temp venv, alive test~~ | 🧩 | v0.5.9 |
+| P3-53 | Micro-batch concurrent query embeddings | 🧱 | v1.8 |
 
 ---
 
@@ -362,7 +371,9 @@ latency on every search/ingest/delete.~~
 
 - Define embedder/store separation contract (P3-26).
 - ~~Activate embedder factory cache (P1-30; superseded by P1-29b).~~
-- Per-collection embeddings (P1-32).
+- ~~Per-collection embeddings + `display_name` + admin move/update
+  APIs; `vector_space_key` surfaced on detail/listing; `pave.slugify`
+  client-side helper (P1-32).~~
 - Per-collection hot caches with isolation (P1-22).
 - Embedded/library mode: import `pave` and use the store
   in-process — no server required. Lowers the install friction
@@ -386,32 +397,53 @@ latency on every search/ingest/delete.~~
     `pave/backends`, `pave/embedders`, catalog, and
     `pave/service.py` public functions. Powers `mkdocstrings`
     when the docs site lands at v1.1 (P1-53d).
-- Dev vs prod config defaults (P1-25).
+- ~~Dev vs prod config defaults: code defaults are prod-safe, the dev
+  convenience overlay lives in the Makefile/env, enforced by
+  `enforce_policy` fail-fast (P1-25).~~
 - ~~Explicit config bootstrap for pip installs (`pavecli init`,
   `--home`, explicit runtime paths) (P1-34).~~
-- Add capability-based filter pushdown with parity checks against
-  canonical post-filter semantics (P1-35).
-- Admin key auto-generate + persist (P1-27).
 - Config reference doc + CI drift check — lands as a side effect
   of P1-53c (P1-26).
 - Publish `pip freeze` snapshot as release artifact (P3-40).
 - ~~List tenants and collections via API (CLI parity) (P2-12).~~
-- HTTP request metrics middleware: single middleware records
-  per-endpoint count + latency histogram labeled by method,
-  path template, and status class. Removes per-handler `inc`
-  sprawl. Adds `# HELP`/`# TYPE` metadata and standard
-  histogram buckets to `/metrics`. Prometheus parity baseline
-  (P1-49).
-- Product-signal metrics: zero-match search rate, filter-usage
-  split, common-merge count, search timeout count, query-log
-  rows + oldest-entry age, embedder counters, sidecar drift
-  gauges. Signals competitors don't expose; directly ties
-  metrics to the inspectability thesis (P1-50).
-- Concurrency chaos test (Level 1): N-thread random-interleave
-  fuzz over create/delete/rename/ingest/search/dump/restore with
-  post-run catalog↔disk invariants. Locks in the lock-lattice
-  hardening done during the v0.9 rc cycle; turns races
-  bench-stress catches into non-flaky CI checks (P1-52).
+- HTTP request metrics middleware (v1.0 slice): single middleware
+  records per-endpoint count labeled by method, path template, and
+  status class. Removes the 20+ per-handler `inc("requests_total")`
+  call sites. Histogram + `# HELP`/`# TYPE` metadata refactor
+  bundles with P1-50 at v1.1 (P1-49).
+- Chroma comparison benchmark: optional local bench, off the
+  default dependency path, comparing PaveDB and Chroma on the same
+  corpus/model and comparable create/upsert/delete/search workload.
+  Use exact metadata filters only; wildcard metadata filters remain
+  PaveDB-specific unless a true Chroma-equivalent operator exists
+  (P1-56).
+- Convention-based embedder dispatch: factory becomes a thin
+  `importlib` dispatcher; each embedder module exports
+  `build_embedder(cfg, **overrides)` and its own `CONFIG_KEYS` /
+  `SPACE_KEYS` tuples. New embedders drop in with zero factory
+  edits. Lands before P2-50 so OllamaEmbedder ships as the first
+  validation of the abstraction (P3-49).
+- Ollama embedder: thin OpenAI-compatible wrapper for the local
+  Ollama daemon. Defaults `base_url=http://localhost:11434/v1`,
+  `api_key="ollama"`, sensible default embedding model;
+  daemon-up probe at construction raises `embedder_unavailable`
+  with a clear "daemon not reachable" message. Lowers adoption
+  friction for the local-LLM dev loop (P2-50).
+- Default-embedder warmup knob: top-level boolean
+  `embedder.warmup_default` (default `true`) drives a single
+  `.encode(["warmup"])` call against `store._embedder` at server
+  lifespan startup. Restores v0.9.0 behavior after the lazy refactor
+  and fail-fast checks API key/network for openai-class embedders.
+  Per-embedder warmup switches arrive at v1.7 alongside the
+  multi-embedder registry (P1-58) (P3-48 v1.0 slice).
+
+**Deferred from v1.0** (to lean the path; pulled in by next
+release, see v1.1 and v1.2 sections): P1-27 admin key auto-gen,
+P1-35 filter pushdown parity harness, P1-50 product-signal
+metrics + P1-49 histogram polish, P1-52 concurrency chaos test.
+None block the SDK-contract promise that defines v1.0; each
+lands where it has more impact (alongside docs / SDK / docs
+site).
 
 ### PaveDB v1.1 — Adoption
 
@@ -424,7 +456,20 @@ latency on every search/ingest/delete.~~
   in-process library mode (v1.0) and an HTTP client for remote
   instances behind the same interface. Same package, two transports
   (P1-24).
-- Batch ingest endpoint (list of documents in one call).
+- Batch ingest endpoint (list of documents in one call) (P1-16).
+- Admin key auto-generate + persist on first boot; CLI rotate /
+  show; mode-`0600` enforced (P1-27).
+- HTTP metrics polish + product-signal metrics: histogram refactor
+  with `# HELP`/`# TYPE` metadata (deferred P1-49 slice) plus
+  zero-match search rate, filter usage, common-merge count, search
+  timeout count, query-log rows + oldest-entry age, embedder
+  counters, sidecar drift gauges. Bundled with the docs site so
+  the new signals are discoverable, not buried (P1-49 / P1-50).
+- Concurrency chaos test (Level 1) lands as a nightly GitLab job
+  (not a release gate). N-thread random-interleave fuzz over
+  create/delete/move/ingest/search/dump/restore with post-run
+  catalog↔disk invariants. Regression net for the lock lattice
+  hardened during the v0.9 rc cycle (P1-52).
 
 ### PaveDB v1.2 — Control
 
@@ -435,6 +480,12 @@ latency on every search/ingest/delete.~~
   architecture, service/store/embedder seams, plugin contract,
   internals. Versioned via `mike`, custom domain, search,
   dark/light theme. Seeds future language translations (P1-47).
+- Filter pushdown parity harness: synthetic corpus + filter
+  corpus, soundness invariant always asserted (pushdown ⊆
+  canonical), completeness invariant where pushdown claims the
+  capability. Lands alongside the first new pushdown family
+  (wildcard or range) so the harness has something to guard
+  (P1-35).
 - Honor `meta.priority` boosts during scoring (P2-11).
 - Add hybrid reranking (vector similarity + BM25/token
   matching) (P1-07).
@@ -453,25 +504,23 @@ latency on every search/ingest/delete.~~
 
 - `pavecli --host`: route CLI commands through the HTTP client
   instead of the service layer directly; depends on Python client.
-  CLI becomes a thin wrapper.
+  CLI becomes a thin wrapper (P2-32).
 - JavaScript/TypeScript client: typed, bootstrapped from OpenAPI
-  spec, published to npm. Covers web frontends and Node.js backends.
+  spec, published to npm. Covers web frontends and Node.js backends
+  (P2-33).
 - LangChain `VectorStore` + `Retriever` adapter (covers LangGraph
-  + CrewAI).
-- MCP server (expose search/ingest/list as MCP tools).
-- LlamaIndex `VectorStore` adapter.
+  + CrewAI) (P2-34).
+- MCP server (expose search/ingest/list as MCP tools) (P2-35).
+- LlamaIndex `VectorStore` adapter (P2-36).
 
 ### PaveDB v1.4 — Polish
 
-- Default tenant/collection selectors in Swagger UI.
-- Collection-level structured log export for analytics.
-- Alive test in CI pipeline (post-deploy health check).
-- Docs website (public docs, API reference).
-- Full-surface stress profile for every public endpoint,
-  off by default (P2-48).
-- Revamp UI.
-- Multilingual UI/errors/docs.
-- Usage stats to mothership (opt-in/anon).
+- Default tenant/collection selectors in Swagger UI (P3-41).
+- Collection-level structured log export for analytics (P2-13).
+- Alive test in CI pipeline (post-deploy health check) (P3-42).
+- Revamp UI (P3-24).
+- Multilingual UI/errors/docs (P3-25).
+- Usage stats to mothership (opt-in/anon) (P2-22).
 
 ### PaveDB v1.5 — Lifecycle
 
@@ -480,7 +529,13 @@ latency on every search/ingest/delete.~~
 - Per-tenant storage limit (P2-21).
 - Per-collection storage accounting: `document_bytes` exposed for
   quota surfaces; `chunk_bytes` admin-only (P2-47).
-- Collection version tagging (P2-25).
+- Collection version tagging (P2-25) — prerequisite for safe
+  archive restore.
+- Per-collection archive (dump + same-version restore): admin
+  endpoints carrying `manifest.json` + `meta.db` + FAISS index +
+  sidecars. Embedder spec validated locally before restore touches
+  disk. Cross-version restore waits on P3-37 migration tooling
+  (P1-54).
 - Formalize collection independence from tenant (P2-31).
 
 ### PaveDB v1.6 — Governance
@@ -488,44 +543,69 @@ latency on every search/ingest/delete.~~
 - Tenant key management API: `POST /admin/tenants/{tenant}/keys`,
   `DELETE /admin/tenants/{tenant}/keys/{id}`. Seed `tenants.yml`
   into SQL on first boot; SQL becomes source of truth for keys
-  and limits thereafter.
+  and limits thereafter (P2-38).
 - OIDC/JWT as opt-in alternative auth (`auth.oidc.issuer` config);
   API keys remain permanently supported. PaveDB accepts either on
-  any request.
+  any request (P3-17).
 - Tenant profiles: manifest-driven resource limits (memory,
   storage, concurrency, models available), profile templates
   (e.g. free/paid tiers); PaveDB enforces limits, does not
-  handle billing or onboarding.
+  handle billing or onboarding (P2-26).
+- Embedder credential refs: allow multiple runtime instances for
+  the same provider/model without storing or returning raw keys in
+  collection config. Credential identity participates in the
+  embedder cache key, not the vector-space key (P2-49).
 - Extensible ingest plugin architecture (stable plugin interface
-  for custom preprocessors and future media types).
+  for custom preprocessors and future media types) (P3-28).
+- Per-collection reindex: admin job that rebuilds vectors against
+  a new embedder spec. Job model is interruptible and
+  status-trackable — splits cleanly from PATCH (label edit) and
+  `move` (slug/path move) since it's the only operation that rewrites
+  stored vectors (P1-55).
 - Delete by ID list and delete by metadata query
-  (single-collection scope first).
+  (single-collection scope first) (P2-24).
 - Commit to independence principle: auth, tenant profiles,
   collections, and server config are orthogonal — no coupling
-  between layers.
+  between layers (P3-45).
 
 ### PaveDB v1.7 — Maturity
 
-- Document versioning, rebuild tooling.
+- Document versioning, rebuild tooling (P2-14).
 - Collection migration tooling: detect version mismatches,
-  provide upgrade path across PaveDB/FAISS version changes.
-- Persistent metrics in the UI.
+  provide upgrade path across PaveDB/FAISS version changes
+  (P3-37).
+- Persistent metrics in the UI (P3-44).
+- Explicit embedder warmup policy — enum expansion: `embedder.warmup`
+  accepts `default` / `none` / `all` / list-of-keys. Adds per-embedder
+  `warmup` switch under each spec in the v1.6 multi-embedder registry
+  (P1-58). v1.0's `warmup_default` boolean remains as the canonical
+  default-only knob (P3-48).
 
 ### PaveDB v1.8 — Scale
 
-- Async ingest, parallel purge.
-- Horizontal scalability, tenant groups, sub-index routing.
+- Async ingest, parallel purge (P3-15).
+- Horizontal scalability, tenant groups, sub-index routing
+  (P3-16).
 - Retain original uploaded files, opt-in (originals + versioning
-  hooks).
-- Async ingest jobs with status tracking API.
-- Per-tenant parallel ingest limits.
+  hooks) (P3-30).
+- Async ingest jobs with status tracking API (P3-31).
+- Per-tenant parallel ingest limits (P3-32).
+- Micro-batch concurrent query embeddings: coalesce in-flight search
+  encodes that share a `vector_space_key` into batched `encode()` calls,
+  lifting the embed-CPU throughput ceiling that caps concurrent search
+  latency under load (flat p50≈p99 saturation observed at concurrency
+  ~40). A request-coalescing layer in front of the embedder seam; lands
+  in the Scale release since it is a throughput optimization, not a GA
+  blocker, and groups batches by embedder identity so it depends on the
+  multi-embedder registry (P1-58, v1.6) (P3-53).
 - Matrix CI builds (Python 3.10/3.11/3.12 × core ML versions)
-  as pre-2.0 compatibility gate.
+  as pre-2.0 compatibility gate (P3-46).
 
 ### PaveDB v2.0 — Ground Truth
 
-- Lock routes, publish final OpenAPI spec, ship SDK clients.
-- Audit logs for admin actions.
+- Lock routes, publish final OpenAPI spec, ship SDK clients
+  (P3-18).
+- Audit logs for admin actions (P2-37).
 
 ### PaveDB post-2.0 backlog (no IDs yet)
 - Additional media types (image, audio/video, graphic/geom,
@@ -897,11 +977,11 @@ Freeze the response shape in v0.5.7. Add new fields (`latency_ms`, `match_reason
 2. **Document delete by ID** (P1-6) — LangChain's `delete()` method
 requires this. Without it, the LangChain adapter ships incomplete.
 
-3. **Per-collection embedding config** (v1.0) — LangChain's `from_texts()`
+3. ~~**Per-collection embedding config** (v1.0)~~ — LangChain's `from_texts()`
 passes an `embedding` parameter. PaveDB must be able to accept external
 embeddings OR let the caller specify which model to use per collection.
 Embedder factory (v0.5.9) provides the foundation; per-collection config
-wiring lands in v1.0 (P1-32).
+wiring lands in v1.0 (P1-32). Status: done for model/config selection.
 
 4. ~~**List collections** (P2-12)~~ — Both LangChain and MCP need enumeration.
 Status: done.

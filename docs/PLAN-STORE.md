@@ -388,9 +388,9 @@ internal SQLite overhead on every search. The biggest wins are:
   raw FAISS `index.search()` call avoids txtai's SQL parsing,
   content-store round-trip, and Python-side result
   deserialization.
-- **health p95** drops from 503ms to 19ms. The health probe calls
-  `load_or_init("_system", "health")` — same collection-create
-  path, same speedup.
+- **health p95** drops from 503ms to 19ms. The old health probe
+  used the same collection-create path; current startup no longer
+  warms `_system/health` implicitly.
 - **Tail latency** improves across the board: search p99 drops
   48% under mixed load. Ingest p50 drops 32-49% because FAISS
   `add_with_ids` is cheaper than txtai's `upsert` pipeline.
@@ -623,7 +623,7 @@ class LocalStore(BaseStore):
     # Collection lifecycle
     def create_collection(self, tenant, name): ...
     def delete_collection(self, tenant, name): ...
-    def rename_collection(self, tenant, old, new): ...
+    def move_collection(self, tenant, old, new): ...
     def list_tenants(self) -> list[str]: ...
     def list_collections(self, tenant) -> list[str]: ...
     def catalog_metrics(self) -> dict[str, int]: ...
@@ -879,7 +879,7 @@ tracked as roadmap item `P1-33`.
 
 ---
 
-## Step 6 — Per-collection embeddings (v0.6, resolves P1-32)
+## Step 6 — Per-collection embeddings (v1.0, resolves P1-32)
 
 ### Problem
 
@@ -891,22 +891,42 @@ model config is a hard requirement for multi-model deployments.
 With the orchestrator (Step 4) and `CatalogDB` (Step 5) in place:
 
 1. `create_collection(tenant, name, embed_model="...")` stores
-   model spec in `CatalogDB.collections.embed_model`.
-2. `_load_or_init` reads `embed_model` from `CatalogDB`, calls
-   `embedder_factory.get(model_spec)` to resolve the model,
-   creates `FaissBackend` with the right dimension.
+   model spec in `CatalogDB.collections.embed_model` only after
+   the embedder can be instantiated and its dimension probed.
+   Failed validation leaves no catalog row and no collection
+   directory.
+2. `_load_or_init` reads the persisted embedder spec from
+   `CatalogDB`, resolves the model, and creates `FaissBackend`
+   with the right dimension on first use or immediately after
+   successful create validation.
 3. Collections without explicit `embed_model` use the instance
    default.
-4. The embedder factory caches model instances — collections
-   sharing a model share the embedder.
+4. `LocalStore` caches embedder instances by type, model, and
+   runtime config — collections sharing the same operational spec
+   share the embedder.
+5. Vector compatibility is narrower than runtime identity:
+   `model` and geometric keys define `vector_space_key`; operational
+   keys such as `base_url` and `batch_size` affect the embedder cache
+   but do not imply reindex.
+6. Raw provider secrets are not collection config. OpenAI uses the
+   global/env key in v1.0; multi-key deployments wait for credential
+   refs (P2-49), where credential identity affects runtime cache
+   identity but is never returned as a secret.
+
+Startup does not warm embedder models implicitly. Future opt-in
+warmup is tracked separately (P3-48) so multi-model deployments do
+not pay startup cost for every collection.
 
 ### Validation
 
-- Reject search across collections with incompatible embeddings
-  (dimensionality mismatch).
-- `embed_model` is immutable after creation (changing it
+- Reject merged search across collections with incompatible
+  embedder specs.
+- The embedder spec is immutable after creation (changing it
   invalidates all stored vectors). Re-embedding requires delete
-  + recreate.
+  + recreate until an explicit reindex operation exists.
+- Missing model dependencies or remote embedder outages surface as
+  `embedder_unavailable` at create/search/ingest time. Bad spec
+  shape remains `invalid_embedder_config`.
 
 ---
 
@@ -969,9 +989,9 @@ Store-plan-owned items (revised):
 | P1-29b | ~~Clean protocol + FaissBackend + Embedder~~ | 🔧 | v0.5.9 | P1-29 |
 | P1-29c | ~~CollectionDB k/v metadata for filtering~~ | 🔧 | v0.5.9 | — |
 | P1-30 | ~~Activate embedder factory + model caching~~ | — | — | superseded by P1-29b |
-| P1-37 | Pre-orchestrator cleanup | 🔧 | v0.5.9 | P1-29c |
-| P1-31 | LocalStore orchestrator | 🧱 | v0.5.9 | P1-37 |
-| P1-32 | Per-collection embeddings | 🧱 | v0.6 | P1-31, P1-33 |
+| P1-37 | ~~Pre-orchestrator cleanup~~ | 🔧 | v0.5.9 | P1-29c |
+| P1-31 | ~~LocalStore orchestrator~~ | 🧱 | v0.5.9 | P1-37 |
+| P1-32 | ~~Per-collection embeddings~~ | 🧱 | v1.0 | P1-31, P1-33 |
 
 Existing items affected:
 - **P1-33** (CatalogDB + catalog separation) owned by PLAN-SQLITE.
