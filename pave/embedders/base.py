@@ -3,10 +3,13 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Any, Protocol
 
 import numpy as np
 from numpy.typing import NDArray
+
+
+EmbedderConfig = dict[str, Any]
 
 
 class Embedder(Protocol):

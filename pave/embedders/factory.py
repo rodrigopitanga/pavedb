@@ -3,13 +3,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 import json
 from threading import Lock
-from typing import Any
+from typing import Any, TypedDict
 
-from .base import Embedder
+from .base import Embedder, EmbedderConfig
 from ..config import CFG
+
+
+class EmbedderSpec(TypedDict):
+    embedder_type: str
+    embed_model: str
+    embedder_config: EmbedderConfig
 
 
 def _embedder_module(etype: str):
@@ -65,7 +71,7 @@ def resolve_setting(
     cfg: CFG,
     etype: str,
     key: str,
-    spec: dict[str, Any],
+    spec: Mapping[str, Any],
     default: Any = None,
 ) -> Any:
     """Read an embedder config field from spec first, falling back to global cfg.
@@ -83,8 +89,8 @@ def resolve_embedder_spec(
     *,
     embedder_type: str | None = None,
     model: str | None = None,
-    embedder_config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+    embedder_config: Mapping[str, Any] | None = None,
+) -> EmbedderSpec:
     etype = str(
         embedder_type or cfg.get("embedder.type")
     ).strip().lower()
@@ -100,7 +106,7 @@ def resolve_embedder_spec(
     if not resolved_model:
         raise ValueError(f"no model configured for embedder.{etype}.model")
 
-    resolved_config: dict[str, Any] = {}
+    resolved_config: EmbedderConfig = {}
     for key in allowed_keys:
         val = cfg.get(f"embedder.{etype}.{key}")
         if val is not None and val != "":
@@ -126,7 +132,7 @@ def resolve_embedder_spec(
     }
 
 
-def embedder_cache_key(spec: dict[str, Any]) -> tuple[str, str, str]:
+def embedder_cache_key(spec: Mapping[str, Any]) -> tuple[str, str, str]:
     return (
         str(spec.get("embedder_type") or ""),
         str(spec.get("embed_model") or ""),
@@ -138,7 +144,7 @@ def embedder_cache_key(spec: dict[str, Any]) -> tuple[str, str, str]:
     )
 
 
-def _space_config(spec: dict[str, Any]) -> dict[str, Any]:
+def _space_config(spec: Mapping[str, Any]) -> EmbedderConfig:
     etype = str(spec.get("embedder_type") or "")
     cfg = dict(spec.get("embedder_config") or {})
     schema = _embedder_schema(etype)
@@ -151,7 +157,7 @@ def _space_config(spec: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def embedder_space_key(spec: dict[str, Any]) -> tuple[str, str, str]:
+def embedder_space_key(spec: Mapping[str, Any]) -> tuple[str, str, str]:
     return (
         str(spec.get("embedder_type") or ""),
         str(spec.get("embed_model") or ""),
@@ -161,7 +167,7 @@ def embedder_space_key(spec: dict[str, Any]) -> tuple[str, str, str]:
     )
 
 
-def vector_space_key(spec: dict[str, Any]) -> str:
+def vector_space_key(spec: Mapping[str, Any]) -> str:
     """Stable, human-readable opaque key identifying the vector space.
 
     Two collections with identical `vector_space_key` are guaranteed to
@@ -180,7 +186,7 @@ def get_embedder(
     *,
     embedder_type: str | None = None,
     model: str | None = None,
-    embedder_config: dict[str, Any] | None = None,
+    embedder_config: Mapping[str, Any] | None = None,
 ) -> Embedder:
     etype = str(
         embedder_type or cfg.get("embedder.type")

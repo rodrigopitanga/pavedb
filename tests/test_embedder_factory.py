@@ -15,7 +15,7 @@ _DEFAULT_SBERT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
 
 class _DummyCFG:
-    def __init__(self, values: dict[str, object]) -> None:
+    def __init__(self, values: dict[str, object]):
         self._values = values
 
     def get(self, key: str, default=None):
@@ -38,7 +38,7 @@ def _fake_module(monkeypatch, name: str, **attrs):
     return module
 
 
-def test_lazy_embedder_defers_factory_until_used() -> None:
+def test_lazy_embedder_defers_factory_until_used():
     factory = _reload_factory()
     calls = {"factory": 0}
 
@@ -77,11 +77,11 @@ def _patch_platform(monkeypatch, platform):
     monkeypatch.setattr(sbert_mod.sys, "platform", platform)
 
 
-def test_factory_uses_process_mode_when_explicitly_requested(monkeypatch) -> None:
+def test_factory_uses_process_mode_when_explicitly_requested(monkeypatch):
     factory = _reload_factory()
 
     class FakeProcessSbert:
-        def __init__(self, **kwargs) -> None:
+        def __init__(self, **kwargs):
             self.kwargs = kwargs
 
     _patch_platform(monkeypatch, "linux")
@@ -106,11 +106,11 @@ def test_factory_uses_process_mode_when_explicitly_requested(monkeypatch) -> Non
     assert emb.kwargs["model_name"] == "sentence-transformers/all-MiniLM-L6-v2"
 
 
-def test_factory_uses_none_mode_for_direct_sbert(monkeypatch) -> None:
+def test_factory_uses_none_mode_for_direct_sbert(monkeypatch):
     factory = _reload_factory()
 
     class FakeSbert:
-        def __init__(self, **kwargs) -> None:
+        def __init__(self, **kwargs):
             self.kwargs = kwargs
 
     _patch_platform(monkeypatch, "darwin")
@@ -132,11 +132,11 @@ def test_factory_uses_none_mode_for_direct_sbert(monkeypatch) -> None:
 
 def test_factory_uses_process_sbert_for_auto_mode_on_darwin_faiss(
     monkeypatch,
-) -> None:
+):
     factory = _reload_factory()
 
     class FakeProcessSbert:
-        def __init__(self, **kwargs) -> None:
+        def __init__(self, **kwargs):
             self.kwargs = kwargs
 
     _patch_platform(monkeypatch, "darwin")
@@ -162,11 +162,11 @@ def test_factory_uses_process_sbert_for_auto_mode_on_darwin_faiss(
 
 def test_factory_uses_direct_sbert_for_auto_mode_off_darwin(
     monkeypatch,
-) -> None:
+):
     factory = _reload_factory()
 
     class FakeSbert:
-        def __init__(self, **kwargs) -> None:
+        def __init__(self, **kwargs):
             self.kwargs = kwargs
 
     _patch_platform(monkeypatch, "linux")
@@ -186,12 +186,12 @@ def test_factory_uses_direct_sbert_for_auto_mode_off_darwin(
     assert isinstance(emb, FakeSbert)
 
 
-def test_factory_passes_explicit_sbert_spec(monkeypatch) -> None:
+def test_factory_passes_explicit_sbert_spec(monkeypatch):
     factory = _reload_factory()
     seen: dict[str, object] = {}
 
     class FakeSbert:
-        def __init__(self, **kwargs) -> None:
+        def __init__(self, **kwargs):
             seen.update(kwargs)
 
     _patch_platform(monkeypatch, "linux")
@@ -217,12 +217,12 @@ def test_factory_passes_explicit_sbert_spec(monkeypatch) -> None:
     }
 
 
-def test_factory_passes_explicit_openai_spec(monkeypatch) -> None:
+def test_factory_passes_explicit_openai_spec(monkeypatch):
     factory = _reload_factory()
     seen: dict[str, object] = {}
 
     class FakeOpenAI:
-        def __init__(self, **kwargs) -> None:
+        def __init__(self, **kwargs):
             seen.update(kwargs)
 
     _patch_openai_class(monkeypatch, FakeOpenAI)
@@ -249,7 +249,7 @@ def test_factory_passes_explicit_openai_spec(monkeypatch) -> None:
     }
 
 
-def test_embedder_space_key_ignores_sbert_runtime_knobs() -> None:
+def test_embedder_space_key_ignores_sbert_runtime_knobs():
     factory = _reload_factory()
 
     first = factory.embedder_space_key(
@@ -278,7 +278,7 @@ def test_embedder_space_key_ignores_sbert_runtime_knobs() -> None:
     assert first == second
 
 
-def test_embedder_space_key_includes_openai_vector_shape() -> None:
+def test_embedder_space_key_includes_openai_vector_shape():
     factory = _reload_factory()
 
     first = factory.embedder_space_key(
@@ -299,7 +299,7 @@ def test_embedder_space_key_includes_openai_vector_shape() -> None:
     assert first != second
 
 
-def test_resolve_openai_spec_requires_dim() -> None:
+def test_resolve_openai_spec_requires_dim():
     factory = _reload_factory()
 
     with pytest.raises(ValueError, match="embedder.openai.dim"):
@@ -310,7 +310,7 @@ def test_resolve_openai_spec_requires_dim() -> None:
         )
 
 
-def test_embedder_space_key_ignores_openai_base_url() -> None:
+def test_embedder_space_key_ignores_openai_base_url():
     """base_url is operational, not geometric — same vector space."""
     factory = _reload_factory()
 
@@ -332,7 +332,7 @@ def test_embedder_space_key_ignores_openai_base_url() -> None:
     assert first == second
 
 
-def test_vector_space_key_format() -> None:
+def test_vector_space_key_format():
     factory = _reload_factory()
 
     sbert_key = factory.vector_space_key(
@@ -354,7 +354,7 @@ def test_vector_space_key_format() -> None:
     assert openai_key == "openai:bge-m3:dim=1024"
 
 
-def test_vector_space_key_unknown_type_is_conservative() -> None:
+def test_vector_space_key_unknown_type_is_conservative():
     """Unknown embedder types include every config key in the space."""
     factory = _reload_factory()
 
@@ -375,7 +375,7 @@ def test_vector_space_key_unknown_type_is_conservative() -> None:
     assert a != b
 
 
-def test_factory_rejects_unknown_sbert_mode() -> None:
+def test_factory_rejects_unknown_sbert_mode():
     factory = _reload_factory()
 
     with pytest.raises(RuntimeError, match="Unknown embedder.sbert.runtime"):

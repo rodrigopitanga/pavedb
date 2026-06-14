@@ -89,8 +89,8 @@ def sanitized_store(tmp_path) -> tuple[LocalStore, str, str, str, str]:
 
 
 def test_sqlish_doc_metadata_exact_filter_matches_with_and_without_pushdown(
-    sanitized_store: tuple[LocalStore, str, str, str, str],
-) -> None:
+    sanitized_store,
+):
     store, tenant, collection, exact_value, _wildcard_value = sanitized_store
     filters = {"so urce": exact_value}
 
@@ -114,8 +114,8 @@ def test_sqlish_doc_metadata_exact_filter_matches_with_and_without_pushdown(
 
 
 def test_sqlish_chunk_metadata_exact_filter_matches_with_and_without_pushdown(
-    sanitized_store: tuple[LocalStore, str, str, str, str],
-) -> None:
+    sanitized_store,
+):
     store, tenant, collection, exact_value, _wildcard_value = sanitized_store
     filters = {"na me": exact_value}
 
@@ -136,8 +136,8 @@ def test_sqlish_chunk_metadata_exact_filter_matches_with_and_without_pushdown(
 
 
 def test_sqlish_chunk_metadata_wildcard_filter_matches_with_and_without_pushdown(
-    sanitized_store: tuple[LocalStore, str, str, str, str],
-) -> None:
+    sanitized_store,
+):
     store, tenant, collection, _exact_value, wildcard_value = sanitized_store
     filters = {"ta g": f"*{wildcard_value}*"}
 

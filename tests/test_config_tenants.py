@@ -6,7 +6,7 @@ from pathlib import Path
 from pave.config import Config
 
 
-def _write(path: Path, text: str) -> None:
+def _write(path: Path, text: str):
     path.write_text(text, encoding="utf-8")
 
 

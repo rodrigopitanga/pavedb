@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any
 
 from pave.config import get_logger
-from pave.stores.base import MetadataValidationError
+from pave.stores.base import FilterSpec, Metadata, MetadataValidationError
 
 log = get_logger()
 
@@ -45,7 +45,7 @@ def sanit_field(name: Any) -> str:
     return "".join(safe)
 
 
-def lookup_meta(meta: dict[str, Any] | None, key: str) -> Any:
+def lookup_meta(meta: Metadata | None, key: str) -> Any:
     if not meta:
         return None
     if key in meta:
@@ -70,11 +70,11 @@ def _sanit_meta_value(value: Any, *, path: str = "metadata") -> Any:
 
 
 def sanit_meta_dict(
-    meta: dict[str, Any] | None,
+    meta: Metadata | None,
     *,
     path: str = "metadata",
-) -> dict[str, Any]:
-    safe: dict[str, Any] = {}
+) -> Metadata:
+    safe: Metadata = {}
     if not isinstance(meta, dict):
         return safe
     seen: dict[str, str] = {}
@@ -102,8 +102,8 @@ def sanit_meta_dict(
 
 
 def matches_filters(
-    m: dict[str, Any],
-    filters: dict[str, Any] | None,
+    m: Metadata,
+    filters: FilterSpec | None,
 ) -> bool:
     if not filters:
         return True

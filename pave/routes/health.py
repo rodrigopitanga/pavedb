@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import os
-from typing import Any
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -19,8 +18,8 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
     def current_store(request: Request) -> BaseStore:
         return request.app.state.store
 
-    def readiness_check(request: Request) -> dict[str, Any]:
-        details: dict[str, Any] = {
+    def readiness_check(request: Request):
+        details = {
             "data_dir": cfg.get("data_dir"),
             "vector_store": cfg.get("vector_store.type"),
             "writable": False,

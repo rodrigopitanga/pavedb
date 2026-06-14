@@ -11,12 +11,12 @@ import pave.embedders.sbert_worker as worker_mod
 
 
 class _FakeConn:
-    def __init__(self, responses: list[object]) -> None:
+    def __init__(self, responses: list[object]):
         self._responses = list(responses)
         self.sent: list[object] = []
         self.closed = False
 
-    def send(self, msg) -> None:
+    def send(self, msg):
         self.sent.append(msg)
 
     def poll(self, timeout=None) -> bool:
@@ -30,12 +30,12 @@ class _FakeConn:
             raise item
         return item
 
-    def close(self) -> None:
+    def close(self):
         self.closed = True
 
 
 class _FakeProc:
-    def __init__(self) -> None:
+    def __init__(self):
         self.alive = True
         self.join_calls: list[float | None] = []
         self.terminated = 0
@@ -43,15 +43,15 @@ class _FakeProc:
     def is_alive(self) -> bool:
         return self.alive
 
-    def terminate(self) -> None:
+    def terminate(self):
         self.terminated += 1
         self.alive = False
 
-    def join(self, timeout=None) -> None:
+    def join(self, timeout=None):
         self.join_calls.append(timeout)
 
 
-def test_process_sbert_restarts_after_connection_drop(monkeypatch) -> None:
+def test_process_sbert_restarts_after_connection_drop(monkeypatch):
     factory = importlib.reload(worker_mod)
 
     first_proc = _FakeProc()

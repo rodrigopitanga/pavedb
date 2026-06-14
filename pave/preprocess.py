@@ -8,8 +8,12 @@ from collections.abc import Iterable, Iterator
 from typing import Any
 from pypdf import PdfReader
 
+from pave.stores.base import Metadata
+
 TXT_CHUNK_SIZE = int(CFG.get("preprocess.txt_chunk_size"))
 TXT_CHUNK_OVERLAP = int(CFG.get("preprocess.txt_chunk_overlap"))
+
+CsvOptions = dict[str, Any]
 
 def _chunks(text: str, size: int = TXT_CHUNK_SIZE, overlap: int = TXT_CHUNK_OVERLAP):
     text = text or ""
@@ -34,10 +38,14 @@ def _csv_parse_col_spec(spec: str) -> tuple[list[str], list[int]]:
             names.append(tok)
     return names, idxs
 
-def _csv_stringify_row(row: dict[str, Any], keys: list[str]) -> str:
+def _csv_stringify_row(row: Metadata, keys: list[str]) -> str:
     return "\n".join(f"{k}: {'' if row.get(k) is None else row.get(k)}" for k in keys)
 
-def _preprocess_csv(filename: str, content: bytes, csv_options: dict[str, Any]) -> Iterator[tuple[str, str, dict[str, Any]]]:
+def _preprocess_csv(
+    filename: str,
+    content: bytes,
+    csv_options: CsvOptions,
+) -> Iterator[tuple[str, str, Metadata]]:
     has_header = (csv_options.get("has_header") or "auto").lower()  # auto|yes|no
     meta_spec = csv_options.get("meta_cols") or ""
     inc_spec  = csv_options.get("include_cols") or ""
@@ -126,8 +134,8 @@ def _preprocess_csv(filename: str, content: bytes, csv_options: dict[str, Any]) 
         extra["has_header"] = bool(header_row is not None)
         yield (f"row_{rowno-1}", text_part, extra)
 
-def preprocess(filename: str, content: bytes, csv_options: dict[str, Any] \
-               | None = None) -> Iterator[tuple[str, str, dict[str, Any]]]:
+def preprocess(filename: str, content: bytes, csv_options: CsvOptions \
+               | None = None) -> Iterator[tuple[str, str, Metadata]]:
     """
     Yields (local_id, text, extra_meta):
     - PDF: one chunk per page

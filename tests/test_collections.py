@@ -10,7 +10,7 @@ from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
 
-def _mk_collections_with_store(store, tenant: str, *collections: str) -> None:
+def _mk_collections_with_store(store, tenant: str, *collections: str):
     for collection in collections:
         store.create_collection(tenant, collection)
 

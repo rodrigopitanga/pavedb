@@ -301,7 +301,7 @@ def test_local_store_log_query_reopen_is_serialized(tmp_path, monkeypatch):
 
     monkeypatch.setattr(CollectionDB, "open", tracked_open)
 
-    def write_query(i: int) -> None:
+    def write_query(i: int):
         store.log_query(
             query_id=f"qid-{i}",
             tenant="acme",

@@ -29,8 +29,16 @@ from pave.filters import lookup_meta, matches_filters, sanit_field, sanit_meta_d
 from pave.metadb import CatalogDB, CollectionDB, UnsupportedSchemaVersionError
 from pave.stores.base import (
     BaseStore,
+    ChunkInfo,
+    CollectionInfo,
+    DocumentInfo,
+    EmbedderConfig,
+    FilterSpec,
     IndexResult,
+    Metadata,
     MetadataValidationError,
+    QueryHomeEntry,
+    QueryLogEntry,
     Record,
     SearchOutput,
     SearchResult,
@@ -38,6 +46,8 @@ from pave.stores.base import (
 from pave.config import get_cfg, get_logger
 
 log = get_logger()
+
+CollectionConfig = dict[str, Any]
 
 
 class _StoreStateLock:
@@ -173,7 +183,7 @@ class LocalStore(BaseStore):
         embedder: Embedder,
         cat_db: CatalogDB | None = None,
         embedder_factory: (
-            Callable[[str, str, dict[str, Any]], Embedder] | None
+            Callable[[str, str, EmbedderConfig], Embedder] | None
         ) = None,
     ) -> None:
         self._data_dir = data_dir
@@ -200,7 +210,7 @@ class LocalStore(BaseStore):
     def _make_embedder(
         embedder_type: str,
         embed_model: str,
-        embedder_config: dict[str, Any],
+        embedder_config: EmbedderConfig,
     ) -> Embedder:
         return embedder_factory_mod.get_embedder(
             embedder_type=embedder_type,
@@ -282,8 +292,8 @@ class LocalStore(BaseStore):
         *,
         embedder_type: str | None = None,
         embed_model: str | None = None,
-        embedder_config: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
+        embedder_config: EmbedderConfig | None = None,
+    ) -> CollectionConfig:
         cfg = get_cfg()
         backend_type = str(cfg.get("vector_store.type")).lower()
         embedder_spec = embedder_factory_mod.resolve_embedder_spec(
@@ -298,13 +308,13 @@ class LocalStore(BaseStore):
             **embedder_spec,
         }
 
-    def _default_collection_config(self) -> dict[str, Any]:
+    def _default_collection_config(self) -> CollectionConfig:
         return self._resolve_collection_config()
 
     def _effective_collection_config(
         self,
-        stored: dict[str, Any] | None,
-    ) -> dict[str, Any]:
+        stored: CollectionConfig | None,
+    ) -> CollectionConfig:
         if stored is None:
             return self._default_collection_config()
         return self._resolve_collection_config(
@@ -396,7 +406,7 @@ class LocalStore(BaseStore):
         self,
         tenant: str,
         name: str,
-        cfg: dict[str, Any] | None = None,
+        cfg: CollectionConfig | None = None,
         display_name: str | None = None,
     ) -> None:
         resolved = cfg or self._default_collection_config()
@@ -418,7 +428,7 @@ class LocalStore(BaseStore):
         self,
         tenant: str,
         collection: str,
-    ) -> dict[str, Any]:
+    ) -> CollectionConfig:
         stored = self._with_catalog_retry(
             "get_collection_config",
             lambda catalog: catalog.get_collection_config(tenant, collection),
@@ -428,7 +438,7 @@ class LocalStore(BaseStore):
             self._register_catalog_collection(tenant, collection, cfg)
         return cfg
 
-    def _get_embedder_for_config(self, cfg: dict[str, Any]) -> Embedder:
+    def _get_embedder_for_config(self, cfg: CollectionConfig) -> Embedder:
         key = embedder_factory_mod.embedder_cache_key(cfg)
         embedder = self._embedder_cache.get(key)
         if embedder is None:
@@ -451,7 +461,7 @@ class LocalStore(BaseStore):
 
     def _embedder_dim_for_config(
         self,
-        cfg: dict[str, Any],
+        cfg: CollectionConfig,
         embedder: Embedder,
     ) -> int:
         try:
@@ -472,7 +482,7 @@ class LocalStore(BaseStore):
                 f"{cfg.get('embed_model')!s} dimension unavailable: {exc}"
             ) from exc
 
-    def _validate_embedder_for_config(self, cfg: dict[str, Any]) -> None:
+    def _validate_embedder_for_config(self, cfg: CollectionConfig) -> None:
         embedder = self._get_embedder_for_config(cfg)
         self._embedder_dim_for_config(cfg, embedder)
 
@@ -481,7 +491,7 @@ class LocalStore(BaseStore):
         tenant: str,
         collection: str,
         *,
-        collection_config: dict[str, Any] | None = None,
+        collection_config: CollectionConfig | None = None,
     ) -> None:
         key = (tenant, collection)
         if (
@@ -545,9 +555,9 @@ class LocalStore(BaseStore):
         *,
         embedder_type: str | None = None,
         embed_model: str | None = None,
-        embedder_config: dict[str, Any] | None = None,
+        embedder_config: EmbedderConfig | None = None,
         display_name: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> CollectionInfo:
         requested = self._resolve_collection_config(
             embedder_type=embedder_type,
             embed_model=embed_model,
@@ -657,7 +667,7 @@ class LocalStore(BaseStore):
         name: str,
         *,
         display_name: str | None = None,
-    ) -> dict[str, Any] | None:
+    ) -> CollectionInfo | None:
         with self._collection_write_lock(tenant, name):
             if not os.path.isdir(self._base_path(tenant, name)):
                 raise ValueError(f"collection '{name}' does not exist")
@@ -832,7 +842,7 @@ class LocalStore(BaseStore):
 
     def _read_meta_batch_safe(
         self, tenant: str, collection: str, rids: list[str]
-    ) -> dict[str, dict[str, Any]]:
+    ) -> dict[str, Metadata]:
         if not rids:
             return {}
         return self._read_collection_db(
@@ -843,12 +853,12 @@ class LocalStore(BaseStore):
             reader=lambda db: db.get_meta_batch(rids),
         )
 
-    def list_collections(self, tenant: str) -> list[dict[str, Any]]:
+    def list_collections(self, tenant: str) -> list[CollectionInfo]:
         summaries = self._with_catalog_retry(
             "list_collection_summaries",
             lambda catalog: catalog.list_collection_summaries(tenant),
         )
-        out: list[dict[str, Any]] = []
+        out: list[CollectionInfo] = []
         for row in summaries:
             row["vector_space_key"] = embedder_factory_mod.vector_space_key(
                 {
@@ -864,7 +874,7 @@ class LocalStore(BaseStore):
         self,
         tenant: str,
         name: str,
-    ) -> dict[str, Any] | None:
+    ) -> CollectionInfo | None:
         cfg = self._with_catalog_retry(
             "get_collection_config",
             lambda catalog: catalog.get_collection_config(tenant, name),
@@ -901,7 +911,7 @@ class LocalStore(BaseStore):
         self,
         tenant: str,
         collection: str,
-    ) -> dict[str, Any] | None:
+    ) -> CollectionConfig | None:
         return self._with_catalog_retry(
             "get_collection_config",
             lambda catalog: catalog.get_collection_config(tenant, collection),
@@ -916,7 +926,7 @@ class LocalStore(BaseStore):
         actor: str,
         query_text: str,
         k: int,
-        filters: dict[str, Any] | None = None,
+        filters: FilterSpec | None = None,
         include_common: bool = False,
         common_tenant: str | None = None,
         common_collection: str | None = None,
@@ -971,7 +981,7 @@ class LocalStore(BaseStore):
         tenant: str,
         collection: str,
         query_id: str,
-    ) -> dict[str, Any] | None:
+    ) -> QueryLogEntry | None:
         return self._read_collection_db(
             tenant,
             collection,
@@ -986,7 +996,7 @@ class LocalStore(BaseStore):
         collection: str,
         limit: int = 50,
         offset: int = 0,
-    ) -> list[dict[str, Any]]:
+    ) -> list[QueryLogEntry]:
         return self._read_collection_db(
             tenant,
             collection,
@@ -1034,7 +1044,7 @@ class LocalStore(BaseStore):
         collection: str | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> list[dict[str, Any]]:
+    ) -> list[QueryHomeEntry]:
         return self._with_catalog_retry(
             "list_query_homes",
             lambda catalog: catalog.list_query_homes(
@@ -1095,7 +1105,7 @@ class LocalStore(BaseStore):
         tenant: str,
         collection: str,
         docid: str,
-    ) -> dict[str, Any] | None:
+    ) -> DocumentInfo | None:
         return self._read_collection_db(
             tenant,
             collection,
@@ -1109,7 +1119,7 @@ class LocalStore(BaseStore):
         tenant: str,
         collection: str,
         docid: str,
-    ) -> list[dict[str, Any]]:
+    ) -> list[ChunkInfo]:
         return self._read_collection_db(
             tenant,
             collection,
@@ -1123,7 +1133,7 @@ class LocalStore(BaseStore):
         tenant: str,
         collection: str,
         rid: str,
-    ) -> dict[str, Any] | None:
+    ) -> ChunkInfo | None:
         chunk = self._read_collection_db(
             tenant,
             collection,
@@ -1142,7 +1152,7 @@ class LocalStore(BaseStore):
         tenant: str,
         collection: str,
         rid: str,
-    ) -> dict[str, Any] | None:
+    ) -> ChunkInfo | None:
         chunk = self.get_chunk(tenant, collection, rid)
         if chunk is None:
             return None
@@ -1158,7 +1168,7 @@ class LocalStore(BaseStore):
         self,
         tenant: str,
         collection: str,
-    ) -> list[dict[str, Any]]:
+    ) -> list[DocumentInfo]:
         return self._read_collection_db(
             tenant,
             collection,
@@ -1237,7 +1247,7 @@ class LocalStore(BaseStore):
 
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],
-                      doc_meta: dict[str, Any] | None = None
+                      doc_meta: Metadata | None = None
                       ) -> IndexResult:
         """
         Ingests records as (rid, text, meta). Guarantees non-null text, coerces
@@ -1270,7 +1280,7 @@ class LocalStore(BaseStore):
                 safe_doc_meta = {"docid": docid}
             rids_to_add: list[str] = []
             texts_to_encode: list[str] = []
-            chunk_rows: list[tuple[str, str | None, dict[str, Any]]] = []
+            chunk_rows: list[tuple[str, str | None, Metadata]] = []
 
             for r in records:
                 if isinstance(r, dict):
@@ -1348,7 +1358,7 @@ class LocalStore(BaseStore):
         return IndexResult(indexed_chunks=chunk_count, purged_chunks=purged)
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
-               filters: dict[str, Any] | None = None) -> SearchOutput:
+               filters: FilterSpec | None = None) -> SearchOutput:
         """
         Queries the FAISS backend for top-k and keeps overfetch inside the
         store.
@@ -1494,8 +1504,8 @@ class LocalStore(BaseStore):
         )
 
     def _build_match_reason(self, query: str, score: float,
-                            filters: dict[str, Any] | None,
-                            meta: dict[str, Any] | None) -> str:
+                            filters: FilterSpec | None,
+                            meta: Metadata | None) -> str:
         """Build a human-readable explanation of why a result matched."""
         parts = []
 

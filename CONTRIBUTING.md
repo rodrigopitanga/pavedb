@@ -65,7 +65,26 @@ production-like stack, or call the wrapper script directly:
   and update [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
 - For non-trivial new files or substantial edits, update/add copyright headers as needed.
 - Add SPDX identifiers when creating new files.
-- Use Python 3.10+ syntax (e.g. `dict` instead of `Dict`)
+- Use Python 3.10+ syntax (e.g. `dict` instead of `Dict`).
+
+### Typing style
+
+- Type public contracts and cross-module boundaries: schemas, protocols, ABCs,
+  dataclasses, store/backend/embedder interfaces, and functions with non-obvious
+  return shapes.
+- Prefer useful annotations over full coverage. Small private helpers, local
+  callbacks, tests, fixtures, and FastAPI route handlers do not need annotations
+  when the value is obvious from the body or framework declaration.
+- Avoid adding `dict[str, Any]` mechanically. Use a named alias, `TypedDict`,
+  Pydantic model, dataclass, or a more precise collection type when the shape is
+  stable and important.
+- Treat loose JSON-like aliases as vocabulary, not strong typing. Future Python
+  client types should come from `pave/schemas.py`, OpenAPI, or SDK-specific
+  request/response types, not internal store/service aliases.
+- Keep `-> None` on public side-effect methods and lifecycle hooks. Do not add it
+  just to satisfy annotation coverage in small tests or one-off helpers.
+- Let local variables be inferred unless an annotation makes a mixed or nullable
+  value easier to understand.
 
 ## Commit messages
 

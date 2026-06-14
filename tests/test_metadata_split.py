@@ -6,7 +6,7 @@ import json
 from pave.service import ingest_document as svc_ingest_document
 
 
-def _ingest_txt(app, tenant: str, collection: str, docid: str) -> None:
+def _ingest_txt(app, tenant: str, collection: str, docid: str):
     response = svc_ingest_document(
         app.state.store,
         tenant,

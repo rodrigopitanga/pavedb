@@ -8,8 +8,17 @@ from dataclasses import dataclass, asdict, field
 import os
 from typing import Any
 
+from pave.embedders.base import EmbedderConfig
 
-Record = tuple[str, str, dict[str, Any]]  # (rid, text, meta)
+
+Metadata = dict[str, Any]
+FilterSpec = dict[str, Any]
+CollectionInfo = dict[str, Any]
+DocumentInfo = dict[str, Any]
+ChunkInfo = dict[str, Any]
+QueryLogEntry = dict[str, Any]
+QueryHomeEntry = dict[str, Any]
+Record = tuple[str, str, Metadata]  # (rid, text, meta)
 
 
 class MetadataValidationError(ValueError):
@@ -24,7 +33,7 @@ class SearchResult:
     text: str | None
     tenant: str
     collection: str
-    meta: dict[str, Any]
+    meta: Metadata
     match_reason: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -79,9 +88,9 @@ class BaseStore(ABC):
         *,
         embedder_type: str | None = None,
         embed_model: str | None = None,
-        embedder_config: dict[str, Any] | None = None,
+        embedder_config: EmbedderConfig | None = None,
         display_name: str | None = None,
-    ) -> dict[str, Any] | None: ...
+    ) -> CollectionInfo | None: ...
 
     @abstractmethod
     def delete_collection(self, tenant: str, collection: str) -> None: ...
@@ -93,7 +102,7 @@ class BaseStore(ABC):
         name: str,
         *,
         display_name: str | None = None,
-    ) -> dict[str, Any] | None: ...
+    ) -> CollectionInfo | None: ...
 
     @abstractmethod
     def move_collection(self, tenant: str, old_name: str, new_name: str) -> None:
@@ -101,7 +110,7 @@ class BaseStore(ABC):
         ...
 
     @abstractmethod
-    def list_collections(self, tenant: str) -> list[dict[str, Any]]:
+    def list_collections(self, tenant: str) -> list[CollectionInfo]:
         """List collection summaries for a tenant."""
         ...
 
@@ -110,7 +119,7 @@ class BaseStore(ABC):
         self,
         tenant: str,
         name: str,
-    ) -> dict[str, Any] | None: ...
+    ) -> CollectionInfo | None: ...
 
     @abstractmethod
     def list_tenants(self) -> list[str]:
@@ -123,14 +132,14 @@ class BaseStore(ABC):
         tenant: str,
         collection: str,
         docid: str,
-    ) -> dict[str, Any] | None: ...
+    ) -> DocumentInfo | None: ...
 
     @abstractmethod
     def list_documents(
         self,
         tenant: str,
         collection: str,
-    ) -> list[dict[str, Any]]: ...
+    ) -> list[DocumentInfo]: ...
 
     @abstractmethod
     def list_chunks(
@@ -138,7 +147,7 @@ class BaseStore(ABC):
         tenant: str,
         collection: str,
         docid: str,
-    ) -> list[dict[str, Any]]: ...
+    ) -> list[ChunkInfo]: ...
 
     @abstractmethod
     def get_chunk(
@@ -146,7 +155,7 @@ class BaseStore(ABC):
         tenant: str,
         collection: str,
         rid: str,
-    ) -> dict[str, Any] | None: ...
+    ) -> ChunkInfo | None: ...
 
     @abstractmethod
     def get_chunk_content(
@@ -154,7 +163,7 @@ class BaseStore(ABC):
         tenant: str,
         collection: str,
         rid: str,
-    ) -> dict[str, Any] | None: ...
+    ) -> ChunkInfo | None: ...
 
     @abstractmethod
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int: ...
@@ -162,12 +171,12 @@ class BaseStore(ABC):
     @abstractmethod
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],
-                      doc_meta: dict[str, Any] | None = None
+                      doc_meta: Metadata | None = None
                       ) -> IndexResult: ...
 
     @abstractmethod
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
-               filters: dict[str, Any] | None = None) -> SearchOutput:
+               filters: FilterSpec | None = None) -> SearchOutput:
         """Search for similar documents."""
         ...
 
@@ -181,7 +190,7 @@ class BaseStore(ABC):
         actor: str,
         query_text: str,
         k: int,
-        filters: dict[str, Any] | None = None,
+        filters: FilterSpec | None = None,
         include_common: bool = False,
         common_tenant: str | None = None,
         common_collection: str | None = None,
@@ -199,7 +208,7 @@ class BaseStore(ABC):
         tenant: str,
         collection: str,
         query_id: str,
-    ) -> dict[str, Any] | None: ...
+    ) -> QueryLogEntry | None: ...
 
     @abstractmethod
     def list_query_logs(
@@ -208,7 +217,7 @@ class BaseStore(ABC):
         collection: str,
         limit: int = 50,
         offset: int = 0,
-    ) -> list[dict[str, Any]]: ...
+    ) -> list[QueryLogEntry]: ...
 
     @abstractmethod
     def put_query_home(
@@ -238,7 +247,7 @@ class BaseStore(ABC):
         collection: str | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> list[dict[str, Any]]: ...
+    ) -> list[QueryHomeEntry]: ...
 
     def catalog_metrics(self) -> dict[str, int]:
         """Return store-level catalog counters for admin/metrics endpoints.

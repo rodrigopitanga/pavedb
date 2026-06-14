@@ -231,7 +231,7 @@ def test_public_profile_matches_bruteforce_baseline(
     model_cfg: dict[str, Any],
     profile_cfg: dict[str, Any],
     tmp_path,
-) -> None:
+):
     rows = _profile_rows(str(profile_cfg["id"]))
     k = int(profile_cfg.get("expected_k", 5))
     embedder = SbertEmbedder(model_name=str(model_cfg["model"]))

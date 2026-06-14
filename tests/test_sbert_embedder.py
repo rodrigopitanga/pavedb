@@ -18,7 +18,7 @@ import pave.embedders.sbert as sbert_mod  # noqa: E402
 
 
 class _DummyCFG:
-    def __init__(self, values: dict[str, object]) -> None:
+    def __init__(self, values: dict[str, object]):
         self._values = values
 
     def get(self, key: str, default=None):
@@ -31,7 +31,7 @@ def _install_fake_deps(
     *,
     cuda: bool = False,
     mps: bool = False,
-) -> None:
+):
     fake_st = types.ModuleType("sentence_transformers")
     fake_st.SentenceTransformer = fake_model
     monkeypatch.setitem(sys.modules, "sentence_transformers", fake_st)
@@ -44,11 +44,11 @@ def _install_fake_deps(
     monkeypatch.setitem(sys.modules, "torch", fake_torch)
 
 
-def test_encode_returns_float32_ndarray(monkeypatch) -> None:
+def test_encode_returns_float32_ndarray(monkeypatch):
     seen: dict[str, object] = {}
 
     class FakeModel:
-        def __init__(self, model_name: str, *, device: str) -> None:
+        def __init__(self, model_name: str, *, device: str):
             seen["model_name"] = model_name
             seen["device"] = device
 
@@ -97,11 +97,11 @@ def test_encode_returns_float32_ndarray(monkeypatch) -> None:
     assert seen["convert_to_numpy"] is True
 
 
-def test_auto_device_resolves_to_cpu_when_no_accelerator(monkeypatch) -> None:
+def test_auto_device_resolves_to_cpu_when_no_accelerator(monkeypatch):
     seen: dict[str, object] = {}
 
     class FakeModel:
-        def __init__(self, model_name: str, *, device: str) -> None:
+        def __init__(self, model_name: str, *, device: str):
             seen["model_name"] = model_name
             seen["device"] = device
 
@@ -131,11 +131,11 @@ def test_auto_device_resolves_to_cpu_when_no_accelerator(monkeypatch) -> None:
     assert seen["device"] == "cpu"
 
 
-def test_dim_reads_model_dimension_without_probe(monkeypatch) -> None:
+def test_dim_reads_model_dimension_without_probe(monkeypatch):
     calls = {"encode": 0}
 
     class FakeModel:
-        def __init__(self, *_args, **_kwargs) -> None:
+        def __init__(self, *_args, **_kwargs):
             pass
 
         def get_embedding_dimension(self) -> int:
@@ -167,11 +167,11 @@ def test_dim_reads_model_dimension_without_probe(monkeypatch) -> None:
     assert calls["encode"] == 0
 
 
-def test_dim_probes_when_model_dimension_missing(monkeypatch) -> None:
+def test_dim_probes_when_model_dimension_missing(monkeypatch):
     seen: dict[str, object] = {}
 
     class FakeModel:
-        def __init__(self, *_args, **_kwargs) -> None:
+        def __init__(self, *_args, **_kwargs):
             pass
 
         def get_sentence_embedding_dimension(self) -> int:
@@ -200,11 +200,11 @@ def test_dim_probes_when_model_dimension_missing(monkeypatch) -> None:
     assert seen["texts"] == ["_"]
 
 
-def test_explicit_model_overrides_cfg(monkeypatch) -> None:
+def test_explicit_model_overrides_cfg(monkeypatch):
     seen: dict[str, object] = {}
 
     class FakeModel:
-        def __init__(self, model_name: str, *, device: str) -> None:
+        def __init__(self, model_name: str, *, device: str):
             seen["model_name"] = model_name
             seen["device"] = device
 

@@ -121,6 +121,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-54 | Per-collection archive (dump + restore) | 🧱 | Admin-only `GET`/`POST` archive endpoints for a single collection. Carries `manifest.json` (PaveDB version, embedder spec, schema version), `meta.db`, FAISS index, sidecars. Restore must verify embedder spec is resolvable locally before touching disk. Same-version restore only at v1.5; cross-version waits on P3-37. Depends on P2-25. | v1.5 |
 | P1-55 | Per-collection reindex | 🧱 | Admin-only operation: rebuild vectors against a new embedder spec. Needs a job model (interruptible, resumable, status-trackable). Splits cleanly from PATCH (cheap label edit) and `move` (slug/path move + disk move) because it's the only one that rewrites stored vectors. | v1.6 |
 | P1-56 | Chroma comparison benchmark | 🔧 | Optional local compare bench for PaveDB vs Chroma using the same corpus, same sentence-transformers model, comparable create/upsert/delete/search operations, exact metadata filters only, and consolidated latency/stress output. Keep Chroma deps off the default install/test path. | v1.0 |
+| P1-57 | ~~Typing policy + SDK-ready type vocabulary~~ | 🧩 | Boundary-focused typing rules, named internal JSON vocabulary, and lighter test annotations without duplicating API/client schemas | v1.0 |
 | P1-58 | Multi-embedder config registry | 🧱 | List-of-specs config replacing single-default-per-type; `embedder.default` accepts a full or partial `vector_space_key` with auto-disambiguation; new `GET /v1/admin/embedders`; collection-create accepts an `embedder` shorthand. Pairs with P2-49 credential refs; unblocks the v1.7 per-embedder warmup enum. Depends on P1-32 (done) | v1.6 |
 
 ### P2 — Enables enterprise use cases and competitive moat
@@ -417,6 +418,11 @@ latency on every search/ingest/delete.~~
   Use exact metadata filters only; wildcard metadata filters remain
   PaveDB-specific unless a true Chroma-equivalent operator exists
   (P1-56).
+- ~~Typing policy + SDK-ready type vocabulary: document gradual typing
+  rules, name internal JSON-like store/service shapes, keep embedder
+  config ownership in `pave.embedders`, and leave future Python client
+  types to OpenAPI/Pydantic/SDK-specific request-response contracts
+  (P1-57).~~
 - Convention-based embedder dispatch: factory becomes a thin
   `importlib` dispatcher; each embedder module exports
   `build_embedder(cfg, **overrides)` and its own `CONFIG_KEYS` /

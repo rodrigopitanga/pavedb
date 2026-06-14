@@ -46,7 +46,7 @@ def test_create_collection_uses_collection_lock(monkeypatch, temp_data_dir):
     events: list[tuple[str, str, str]] = []
 
     class _SpyLock:
-        def __init__(self, tenant: str, collection: str) -> None:
+        def __init__(self, tenant: str, collection: str):
             self.tenant = tenant
             self.collection = collection
 
@@ -179,12 +179,12 @@ def test_restore_archive_waits_for_active_collection_operation(temp_data_dir):
     release = threading.Event()
     restored = threading.Event()
 
-    def hold_collection() -> None:
+    def hold_collection():
         with store._collection_write_lock("acme", "busy"):
             entered.set()
             release.wait(timeout=2.0)
 
-    def restore() -> None:
+    def restore():
         store.restore_archive(archive.getvalue())
         restored.set()
 
@@ -217,12 +217,12 @@ def test_restore_archive_waits_for_active_collection_read(temp_data_dir):
     release = threading.Event()
     restored = threading.Event()
 
-    def hold_collection_read() -> None:
+    def hold_collection_read():
         with store._collection_read_lock("acme", "busy"):
             entered.set()
             release.wait(timeout=2.0)
 
-    def restore() -> None:
+    def restore():
         store.restore_archive(archive.getvalue())
         restored.set()
 
@@ -260,12 +260,12 @@ def test_dump_archive_waits_for_active_collection_operation(temp_data_dir):
     archive_path: list[str] = []
     tmp_dir: list[str | None] = []
 
-    def hold_collection() -> None:
+    def hold_collection():
         with store._collection_write_lock("acme", "busy"):
             entered.set()
             release.wait(timeout=2.0)
 
-    def dump() -> None:
+    def dump():
         path, tmp = store.dump_archive()
         archive_path.append(path)
         tmp_dir.append(tmp)

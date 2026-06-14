@@ -3,8 +3,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import numpy as np
 import pytest
 
@@ -15,13 +13,13 @@ def _v(*rows: list[float]) -> np.ndarray:
     return np.array(rows, dtype=np.float32)
 
 
-def test_search_empty_index_returns_empty(tmp_path: Path) -> None:
+def test_search_empty_index_returns_empty(tmp_path):
     backend = FaissBackend(4, storage_dir=tmp_path / "idx")
     hits = backend.search(_v([1, 0, 0, 0])[0], 5)
     assert hits == []
 
 
-def test_add_search_delete_roundtrip(tmp_path: Path) -> None:
+def test_add_search_delete_roundtrip(tmp_path):
     backend = FaissBackend(4, storage_dir=tmp_path / "idx")
     backend.add(["r1", "r2"], _v([1, 0, 0, 0], [0, 1, 0, 0]))
 
@@ -33,7 +31,7 @@ def test_add_search_delete_roundtrip(tmp_path: Path) -> None:
     assert [rid for rid, _ in hits_after] == ["r2"]
 
 
-def test_add_reindex_keeps_unique_rids(tmp_path: Path) -> None:
+def test_add_reindex_keeps_unique_rids(tmp_path):
     backend = FaissBackend(4, storage_dir=tmp_path / "idx")
     backend.add(["same", "other"], _v([1, 0, 0, 0], [0, 0, 1, 0]))
     assert int(backend._index.ntotal) == 2
@@ -45,7 +43,7 @@ def test_add_reindex_keeps_unique_rids(tmp_path: Path) -> None:
     assert hits[0][0] == "same"
 
 
-def test_add_does_not_mutate_input_vectors(tmp_path: Path) -> None:
+def test_add_does_not_mutate_input_vectors(tmp_path):
     backend = FaissBackend(3, storage_dir=tmp_path / "idx")
     vectors = _v([3, 4, 0], [0, 5, 12])
     before = vectors.copy()
@@ -54,7 +52,7 @@ def test_add_does_not_mutate_input_vectors(tmp_path: Path) -> None:
     assert np.array_equal(vectors, before)
 
 
-def test_flush_and_initialize_restore_index_state(tmp_path: Path) -> None:
+def test_flush_and_initialize_restore_index_state(tmp_path):
     storage = tmp_path / "idx"
 
     b1 = FaissBackend(4, storage_dir=storage)
@@ -75,7 +73,7 @@ def test_flush_and_initialize_restore_index_state(tmp_path: Path) -> None:
     assert hits2[0][0] == "r3"
 
 
-def test_initialize_raises_on_dimension_mismatch(tmp_path: Path) -> None:
+def test_initialize_raises_on_dimension_mismatch(tmp_path):
     storage = tmp_path / "idx"
     b1 = FaissBackend(4, storage_dir=storage)
     b1.add(["r1"], _v([1, 0, 0, 0]))

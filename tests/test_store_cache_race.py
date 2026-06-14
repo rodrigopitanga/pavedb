@@ -104,7 +104,7 @@ def test_search_final_cache_retry_does_not_run_under_write_lock(temp_data_dir):
     done = threading.Event()
     result: dict[str, object] = {}
 
-    def run_search() -> None:
+    def run_search():
         result["hits"] = store.search(tenant, collection, "retry", k=1)
         done.set()
 

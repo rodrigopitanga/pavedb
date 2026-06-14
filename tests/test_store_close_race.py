@@ -63,7 +63,7 @@ def test_delete_collection_evicts_cache_before_close(temp_data_dir):
     seen: dict[str, bool] = {}
     orig_close = col_db.close
 
-    def _spy_close() -> None:
+    def _spy_close():
         seen["present_during_close"] = key in store._dbs
         orig_close()
 
@@ -83,7 +83,7 @@ def test_move_collection_evicts_old_cache_before_close(temp_data_dir):
     seen: dict[str, bool] = {}
     orig_close = col_db.close
 
-    def _spy_close() -> None:
+    def _spy_close():
         seen["present_during_close"] = old_key in store._dbs
         orig_close()
 

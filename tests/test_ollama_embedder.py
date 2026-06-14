@@ -13,7 +13,7 @@ from pave.embedders import EmbedderUnavailableError
 
 
 class _DummyCFG:
-    def __init__(self, values: dict[str, object]) -> None:
+    def __init__(self, values: dict[str, object]):
         self._values = values
 
     def get(self, key: str, default=None):
@@ -58,7 +58,7 @@ def test_ollama_dispatched_via_convention(monkeypatch):
     seen: dict[str, object] = {}
 
     class FakeOpenAI:
-        def __init__(self, **kwargs) -> None:
+        def __init__(self, **kwargs):
             seen.update(kwargs)
 
     monkeypatch.setattr(ollama_mod, "OllamaEmbedder", FakeOpenAI, raising=True)

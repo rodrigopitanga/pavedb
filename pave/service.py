@@ -15,25 +15,34 @@ import zipfile
 from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone as tz
 from pathlib import Path
-from collections.abc import Iterable, Iterator
+from collections.abc import Iterable, Iterator, Mapping
 from typing import Any
 
 import time as _time
 from pave.config import get_cfg, get_logger
 from pave.embedders import EmbedderUnavailableError
-from pave.embedders.factory import embedder_space_key, resolve_embedder_spec
+from pave.embedders.base import EmbedderConfig
+from pave.embedders.factory import (
+    embedder_space_key,
+    resolve_embedder_spec,
+)
 from pave.metrics import (
     inc as m_inc, timed as m_timed, record_latency as m_record_latency
 )
-from pave.preprocess import preprocess
+from pave.preprocess import CsvOptions, preprocess
 from pave.stores.base import (
     BaseStore,
+    FilterSpec,
+    Metadata,
     MetadataValidationError,
+    QueryLogEntry,
     SearchOutput,
     SearchResult,
 )
 
 log = get_logger()
+
+ServiceResult = dict[str, Any]
 
 # Pure-ish service functions operating on a store adapter
 class ServiceError(RuntimeError):
@@ -109,8 +118,8 @@ def create_collection(
     display_name: str | None = None,
     embedder_type: str | None = None,
     embed_model: str | None = None,
-    embedder_config: dict[str, Any] | None = None,
-) -> dict[str, Any]:
+    embedder_config: EmbedderConfig | None = None,
+) -> ServiceResult:
     try:
         resolved_name = _validate_collection_name(name)
         resolved_display_name = _normalize_display_name(
@@ -201,7 +210,7 @@ def update_collection(
     name: str,
     *,
     display_name: str | None = None,
-) -> dict[str, Any]:
+) -> ServiceResult:
     try:
         resolved_name = _validate_collection_name(name)
         if display_name is None:
@@ -276,7 +285,9 @@ def _sum_timing(*timings: dict[str, float]) -> dict[str, float]:
     }
 
 
-def _embedder_key_from_config(cfg: dict[str, Any] | None) -> tuple | None:
+def _embedder_key_from_config(
+    cfg: Mapping[str, Any] | None,
+) -> tuple[str, str, str] | None:
     if not cfg:
         return None
     return embedder_space_key(cfg)
@@ -303,7 +314,7 @@ def _require_compatible_embeddings(
             "embedder configs",
         )
 
-def delete_collection(store, tenant: str, name: str) -> dict[str, Any]:
+def delete_collection(store, tenant: str, name: str) -> ServiceResult:
     try:
         store.delete_collection(tenant, name)
         m_inc("collections_deleted_total", 1.0)
@@ -324,7 +335,7 @@ def delete_collection(store, tenant: str, name: str) -> dict[str, Any]:
         }
 
 def move_collection(store, tenant: str,
-                    old_name: str, new_name: str) -> dict[str, Any]:
+                    old_name: str, new_name: str) -> ServiceResult:
     try:
         resolved_old = _validate_collection_name(old_name)
         resolved_new = _validate_collection_name(new_name)
@@ -402,7 +413,7 @@ def move_collection(store, tenant: str,
             "error_type": "failed",
         }
 
-def delete_document(store, tenant: str, collection: str, docid: str) -> dict[str, Any]:
+def delete_document(store, tenant: str, collection: str, docid: str) -> ServiceResult:
     try:
         purged = store.purge_doc(tenant, collection, docid)
         if purged:
@@ -433,7 +444,7 @@ def get_document(
     tenant: str,
     collection: str,
     docid: str,
-) -> dict[str, Any]:
+) -> ServiceResult:
     try:
         doc = store.get_document(tenant, collection, docid)
         if doc is None:
@@ -471,7 +482,7 @@ def list_chunks(
     tenant: str,
     collection: str,
     docid: str,
-) -> dict[str, Any]:
+) -> ServiceResult:
     try:
         chunks = store.list_chunks(tenant, collection, docid)
         return {
@@ -499,7 +510,7 @@ def get_chunk(
     tenant: str,
     collection: str,
     rid: str,
-) -> dict[str, Any]:
+) -> ServiceResult:
     try:
         chunk = store.get_chunk(tenant, collection, rid)
         if chunk is None:
@@ -532,7 +543,7 @@ def get_chunk_content(
     tenant: str,
     collection: str,
     rid: str,
-) -> dict[str, Any]:
+) -> ServiceResult:
     try:
         content = store.get_chunk_content(tenant, collection, rid)
         if content is None:
@@ -564,7 +575,7 @@ def list_documents(
     store,
     tenant: str,
     collection: str,
-) -> dict[str, Any]:
+) -> ServiceResult:
     try:
         docs = store.list_documents(tenant, collection)
         return {
@@ -599,8 +610,8 @@ def _default_docid(filename: str) -> str:
     return "PVDOC_"+str(uuid.uuid4())
 
 def ingest_document(store, tenant: str, collection: str, filename: str, content: bytes,
-                    docid: str | None, metadata: dict[str, Any] | None,
-                    csv_options: dict[str, Any] | None = None) -> dict[str, Any]:
+                    docid: str | None, metadata: Metadata | None,
+                    csv_options: CsvOptions | None = None) -> ServiceResult:
     _t0 = _time.perf_counter()
     with m_timed("ingest"):
         try:
@@ -688,14 +699,14 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             }
 
 def search(store, tenant: str, collection: str, q: str, k: int = 5,
-           filters: dict[str, Any] | None = None,
+           filters: FilterSpec | None = None,
            include_common: bool = False,
            common_tenant: str | None = None,
            common_collection: str | None = None,
            *,
            request_id: str | None = None,
            actor: str,
-           _log: bool = True) -> dict[str, Any]:
+           _log: bool = True) -> ServiceResult:
     start = _time.perf_counter()
     m_inc("search_total", 1.0)
     try:
@@ -806,12 +817,12 @@ def dump_archive(
     return store.dump_archive(output_path)
 
 
-def restore_archive(store: BaseStore, archive_bytes: bytes) -> dict[str, Any]:
+def restore_archive(store: BaseStore, archive_bytes: bytes) -> ServiceResult:
     store.restore_archive(archive_bytes)
     return {"ok": True}
 
 
-def list_tenants(store) -> dict[str, Any]:
+def list_tenants(store) -> ServiceResult:
     try:
         tenants = sorted(store.list_tenants())
         return {
@@ -827,7 +838,7 @@ def list_tenants(store) -> dict[str, Any]:
             "error": str(e),
         }
 
-def list_collections(store, tenant: str) -> dict[str, Any]:
+def list_collections(store, tenant: str) -> ServiceResult:
     try:
         collections = store.list_collections(tenant)
         return {
@@ -848,7 +859,7 @@ def list_collections(store, tenant: str) -> dict[str, Any]:
         }
 
 
-def _query_not_found(query_id: str) -> dict[str, Any]:
+def _query_not_found(query_id: str) -> ServiceResult:
     return {
         "ok": False,
         "code": "query_not_found",
@@ -879,7 +890,7 @@ def get_query_log_entry_scoped(
     tenant: str,
     collection: str,
     query_id: str,
-) -> dict[str, Any]:
+) -> ServiceResult:
     try:
         if _scoped_query_home_mismatch(store, tenant, collection, query_id):
             return _query_not_found(query_id)
@@ -898,7 +909,7 @@ def get_query_log_entry_scoped(
 def get_query_log_entry(
     store,
     query_id: str,
-) -> dict[str, Any]:
+) -> ServiceResult:
     try:
         home = resolve_query_home(store, query_id)
         if home is None:
@@ -924,7 +935,7 @@ def list_query_logs(
     collection: str,
     limit: int = 50,
     offset: int = 0,
-) -> dict[str, Any]:
+) -> ServiceResult:
     try:
         logs = store.list_query_logs(tenant, collection, limit, offset)
         return {
@@ -948,7 +959,7 @@ def list_query_homes(
     collection: str | None = None,
     limit: int = 50,
     offset: int = 0,
-) -> dict[str, Any]:
+) -> ServiceResult:
     try:
         logs = store.list_query_homes(
             tenant=tenant,
@@ -973,13 +984,13 @@ def list_query_homes(
 
 def execute_replay(
     store,
-    entry: dict[str, Any],
+    entry: QueryLogEntry,
     tenant: str,
     collection: str,
     *,
     request_id: str | None = None,
     actor: str,
-) -> dict[str, Any]:
+) -> ServiceResult:
     query_id = str(entry["query_id"])
     try:
         result = search(
@@ -1047,7 +1058,7 @@ def replay_query_scoped(
     *,
     request_id: str | None = None,
     actor: str,
-) -> dict[str, Any]:
+) -> ServiceResult:
     try:
         if _scoped_query_home_mismatch(store, tenant, collection, query_id):
             return _query_not_found(query_id)
@@ -1074,7 +1085,7 @@ def replay_query(
     *,
     request_id: str | None = None,
     actor: str,
-) -> dict[str, Any]:
+) -> ServiceResult:
     try:
         home = resolve_query_home(store, query_id)
         if home is None:
@@ -1101,7 +1112,7 @@ def get_collection_detail(
     store,
     tenant: str,
     name: str,
-) -> dict[str, Any]:
+) -> ServiceResult:
     try:
         detail = store.get_collection_detail(tenant, name)
         if detail is None:

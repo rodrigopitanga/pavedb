@@ -10,7 +10,7 @@ from pave.main import build_app
 from pave.ui import attach_ui
 
 
-def _mk_collection(store, base: Path, tenant: str, collection: str) -> None:
+def _mk_collection(store, base: Path, tenant: str, collection: str):
     store._data_dir = str(base)
     store.create_collection(tenant, collection)
 

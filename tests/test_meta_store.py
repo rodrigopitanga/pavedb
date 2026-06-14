@@ -84,13 +84,13 @@ def test_close_waits_for_inflight_writer(tmp_path, db_cls, path_fn):
     close_done = threading.Event()
     close_errors: list[Exception] = []
 
-    def _writer() -> None:
+    def _writer():
         with db._writer() as conn, conn:
             conn.execute("SELECT 1")
             writer_entered.set()
             assert release_writer.wait(timeout=1.0)
 
-    def _closer() -> None:
+    def _closer():
         try:
             db.close()
         except Exception as exc:  # pragma: no cover - regression capture

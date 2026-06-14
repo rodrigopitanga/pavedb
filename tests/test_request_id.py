@@ -4,7 +4,7 @@
 from uuid import UUID
 
 
-def _assert_uuid(value: str) -> None:
+def _assert_uuid(value: str):
     assert value
     UUID(value)
 
