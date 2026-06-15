@@ -128,7 +128,7 @@ breakdown:
 
 **Two tags max**, most relevant first: `[api][cli] Add delete document endpoint`
 
-**Feature plan reference:** when a commit implements work tracked in `docs/`,
+**Feature plan reference:** when a commit implements work tracked in `docs/design/`,
 include the plan ID in parentheses at the end of the first line:
 
 ```
@@ -155,7 +155,7 @@ within a few days of claiming.
 
 ## Feature plans
 
-Substantial features are designed in `docs/` before implementation. Read the
+Substantial features are designed in `docs/design/` before implementation. Read the
 relevant plan before picking up a task from [`ROADMAP.md`](ROADMAP.md).
 Plan links are maintained in the `Plan Docs` section of [`ROADMAP.md`](ROADMAP.md).
 

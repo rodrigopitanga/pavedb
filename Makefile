@@ -114,6 +114,9 @@ else
   RELEASE_CPU_MODE := both
 endif
 
+DOC_REF_TARGETS := docs-ref-cli
+DOC_REF_CHECK_TARGETS := docs-ref-check-cli
+
 .ONESHELL:
 # With .ONESHELL enabled, keep recipe failure semantics strict so later
 # status messages do not run after an earlier command has already failed.
@@ -138,6 +141,10 @@ help:
 	echo "  package          Build source archives to ./artifacts (git-suffixed unless release)"; \
 	echo "  docker-build     Build Docker image (VERSION=x.y.z)"; \
 	echo "  docker-check     Run alive check against a prebuilt local Docker image"; \
+	echo ""; \
+	echo "Docs:"; \
+	echo "  docs-refresh     Regenerate committed reference markdown"; \
+	echo "  docs-ref-check   Check committed reference markdown is current"; \
 	echo ""; \
 	echo "Verify:"; \
 	echo "  $${B}test$${R}            Run pytest (full suite)"; \
@@ -251,6 +258,18 @@ cli: install
 	  PYTHONPATH=. \
 	  PAVEDB_DATA_DIR=$(DATA_DIR) \
 	  $(PYTHON_BIN) -m $(PKG_INTERNAL).cli $(ARGS)
+
+.PHONY: docs-refresh $(DOC_REF_TARGETS)
+docs-refresh: $(DOC_REF_TARGETS)
+
+docs-ref-cli: venv
+	PYTHONPATH=. $(PYTHON_BIN) scripts/cli_to_markdown.py
+
+.PHONY: docs-ref-check $(DOC_REF_CHECK_TARGETS)
+docs-ref-check: $(DOC_REF_CHECK_TARGETS)
+
+docs-ref-check-cli: venv
+	PYTHONPATH=. $(PYTHON_BIN) scripts/cli_to_markdown.py --check
 
 # -------- bump --------
 .PHONY: bump
@@ -390,6 +409,8 @@ release:
 	echo "Bumping to $(VERSION) via 'make bump'..."; \
 	$(MAKE) bump VERSION=$(VERSION) || { echo "Version bump failed."; revert_changes; exit 1; }; \
 	$(MAKE) changelog-write VERSION=$(VERSION) || { echo "Changelog generation failed."; revert_changes; exit 1; }; \
+	echo "Checking generated reference docs..."; \
+	$(MAKE) docs-ref-check || { echo "Reference docs are stale."; revert_changes; exit 1; }; \
 	echo "Running tests..."; \
 	$(MAKE) test || { echo "Tests failed."; revert_changes; exit 1; }; \
 	if [ "$(PYPI_BUILD)" = "1" ]; then \

@@ -117,6 +117,8 @@ config file. For alternate instances, use `pavecli init /path/to/instance` and
 then point commands at that root with `pavesrv --home=/path/to/instance` or
 `pavecli <command> ... --home /path/to/instance`.
 
+Full command reference: [`docs/reference/cli.md`](docs/reference/cli.md).
+
 ### 🌐 REST API and Web UI usage
 
 When the server is running (either via Docker or `pavesrv`), the API listens on
@@ -220,6 +222,10 @@ Building from source relies on `Makefile` shortcuts (`make install-dev`, `make s
 The full contributor workflow, target reference, and coding style live in
 [CONTRIBUTING.md](CONTRIBUTING.md). Performance benchmarks are documented in
 [README-benchmarks.md](README-benchmarks.md).
+
+### 📚 Reference
+
+- CLI: [`docs/reference/cli.md`](docs/reference/cli.md)
 
 ## Logging
 

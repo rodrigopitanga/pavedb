@@ -78,49 +78,50 @@ Alternatives considered:
 
 ```
 pavedb/
-  docs/
-    PLAN-*.md              # design plans (existing, untouched)
-    site/                  # new — published site source
-      mkdocs.yml
-      index.md             # landing page
-      user/                # user-facing section
-        quickstart.md
-        concepts.md
-        auth.md
-        ingest.md
-        search.md
-        filters.md
-        inspect.md         # NEW — showcases observability
-        operations.md
-      dev/                 # developer-facing section
-        architecture.md
-        service-layer.md
-        store-layer.md
-        embedder.md
-        plugins.md
-        internals.md
-      reference/
-        api.md             # auto-generated from OpenAPI
-        config.md          # auto-generated from _DEFAULTS
-        cli.md             # auto-generated from pavecli --help
-      release-notes.md
-      assets/
-        favicon.svg        # reused from pave/assets/
-        logo.svg
+  docs/                    # docs_dir for mkdocs
+    mkdocs.yml             # site config
+    index.md               # landing page
+    design/                # design plans (internal) — excluded from site nav
+      PLAN-*.md
+      ISSUE-*.md
+    user/                  # user-facing section
+      quickstart.md
+      concepts.md
+      auth.md
+      ingest.md
+      search.md
+      filters.md
+      inspect.md           # NEW — showcases observability
+      operations.md
+    dev/                   # developer-facing section
+      architecture.md
+      service-layer.md
+      store-layer.md
+      embedder.md
+      plugins.md
+      internals.md
+    reference/
+      api.md               # auto-generated from OpenAPI
+      config.md            # auto-generated from _DEFAULTS
+      cli.md               # auto-generated from pavecli --help
+    release-notes.md
+    assets/
+      favicon.svg          # reused from pave/assets/
+      logo.svg
 ```
 
-The `site/` subdir keeps the new markdown separated from
-`PLAN-*.md` design docs. PLAN docs stay as internal specs,
-not shipped. Some PLAN content may be rewritten into the
-`dev/` section — but only by hand and only when the feature
-is shipped.
+`design/` holds internal specs (`PLAN-*.md`, `ISSUE-*.md`) and
+is excluded from the published site nav, not shipped. Some
+design content may be rewritten into the `dev/` section — but
+only by hand and only when the feature is shipped. Everything
+else under `docs/` is the published site (`docs_dir: docs`).
 
 ## Phase 0 — P1-53a–d (v1.0 source-of-truth plumbing)
 
 **Goal:** make the codebase the single source of truth for
 every reference fact (API surface, CLI surface, config keys,
 architectural seams). The result is a set of in-repo
-`reference/*.md` files that are auto-generated from source and
+`docs/reference/*.md` files that are auto-generated from source and
 committed; no MkDocs site is required for these to ship.
 
 This phase is the cheapest insurance against the worst docs
@@ -133,8 +134,8 @@ exist (Phase 1), it renders from already-correct sources.
 | Sub-item | Output | Source |
 |---|---|---|
 | P1-53a | OpenAPI completeness pass on every route + Pydantic model | `summary` / `description` / `tags` / `responses` on routes; `Field(..., description=, examples=)` on models. Endpoint is `/openapi.json`. |
-| P1-53b | `reference/cli.md` committed in-repo | Every subcommand gets `help` / `epilog`-with-example. `scripts/cli_to_markdown.py` walks subparsers and renders the page. |
-| P1-53c | `reference/config.md` committed in-repo + `config.yml.example` rendered from same source | Single (key, default, description, env_var) list in `pave/config.py`; `_DEFAULTS` derived from it. Closes P1-26 (drift CI check) as a side effect. |
+| P1-53b | `docs/reference/cli.md` committed in-repo | Every subcommand gets `help` / `epilog`-with-example. `scripts/cli_to_markdown.py` walks subparsers and renders the page. |
+| P1-53c | `docs/reference/config.md` committed in-repo + `config.yml.example` rendered from same source | Single (key, default, description, env_var) list in `pave/config.py`; `_DEFAULTS` derived from it. Closes P1-26 (drift CI check) as a side effect. |
 | P1-53d | Module + class docstrings on public seams | `pave/stores`, `pave/backends`, `pave/embedders`, `pave/metadb` (`CatalogDB`, `CollectionDB`), `pave/service.py` public functions. Powers `mkdocstrings` in Phase 2. |
 
 ### Deliverables checklist (P1-53a–d)
@@ -142,17 +143,17 @@ exist (Phase 1), it renders from already-correct sources.
 1. OpenAPI completeness audit — every route + Pydantic model
    passes a "spec has summary/description/examples" lint that
    runs in CI (P1-53a).
-2. `scripts/cli_to_markdown.py` + `reference/cli.md` checked
+2. `scripts/cli_to_markdown.py` + `docs/reference/cli.md` checked
    in; `make docs-refresh` regenerates it; CI fails if
    committed file is stale (P1-53b).
 3. Single source for `_DEFAULTS` + `config.yml.example` +
-   `reference/config.md`, with a CI drift check (P1-53c,
+   `docs/reference/config.md`, with a CI drift check (P1-53c,
    closes P1-26).
 4. Module-level docstring on every file in `pave/stores`,
    `pave/backends`, `pave/embedders`, `pave/metadb`, and
    public functions in `pave/service.py` (P1-53d).
 5. Updated `README.md`: shrink to one screen, point at the
-   three `reference/*.md` files + OpenAPI / `--help`. No
+   three `docs/reference/*.md` files + OpenAPI / `--help`. No
    quickstart duplicated from a future docs site.
 
 ## Phase 1 — P1-46 (v1.1 docs site preview)
@@ -173,9 +174,9 @@ remain (intro, concepts, inspect walkthrough).
 | `user/auth.md` | NEW | API keys, admin key, `X-Request-ID` header |
 | `user/ingest.md` | NEW | TXT/CSV/PDF, size limits, timeout guidance |
 | `user/search.md` | NEW | body + filters + common merge |
-| `reference/api.md` | imported | render Phase 0's OpenAPI via `mkdocs-render-swagger-plugin` or equivalent |
-| `reference/cli.md` | imported | committed by Phase 0; site just publishes it |
-| `reference/config.md` | imported | committed by Phase 0; site just publishes it |
+| `docs/reference/api.md` | imported | render Phase 0's OpenAPI via `mkdocs-render-swagger-plugin` or equivalent |
+| `docs/reference/cli.md` | imported | committed by Phase 0; site just publishes it |
+| `docs/reference/config.md` | imported | committed by Phase 0; site just publishes it |
 | `release-notes.md` | NEW | v0.9 + v1.0 + v1.1 highlights, upgrade notes |
 
 Not in phase 1: full dev section, custom domain, versioning.
@@ -186,7 +187,7 @@ Those land in P1-47.
 - **Local preview:** `mkdocs serve` → localhost:8000.
 - **CI job:** new `docs` stage in `gitlab-ci.yml`:
   - Runs on default branch and tags.
-  - `pip install -r docs/site/requirements.txt`.
+  - `pip install -r docs/requirements.txt`.
   - `mkdocs build --strict` (fails on broken links).
   - Publishes to GitLab Pages.
 - **URL:** GitLab Pages default
@@ -195,17 +196,17 @@ Those land in P1-47.
 
 ### Deliverables checklist (P1-46)
 
-1. `docs/site/mkdocs.yml` configured with the nav above, the
+1. `docs/mkdocs.yml` configured with the nav above, the
    Material theme, search, dark/light toggle.
 2. Seven hand-written markdown pages (above table).
 3. `reference/{api,cli,config}.md` imported from Phase 0
    (already in-repo, no auto-render required at site build
    time beyond OpenAPI rendering).
-4. `docs/site/requirements.txt` pinning `mkdocs` and
+4. `docs/requirements.txt` pinning `mkdocs` and
    `mkdocs-material`.
 5. `gitlab-ci.yml` `docs` stage with Pages deploy.
 6. `README.md` gains a "Docs: <url>" line near the top
-   (currently it points at the in-repo `reference/*.md`).
+   (currently it points at the in-repo `docs/reference/*.md`).
 7. `make docs-serve` target for local preview.
 8. AGPL header in every new source file (yaml, md).
 
@@ -266,9 +267,9 @@ Those land in P1-47.
 
 ### P1-53a–d (Phase 0)
 
-1. `make docs-refresh` regenerates `reference/cli.md` and
-   `reference/config.md`; CI fails on a stale committed copy.
-2. `reference/config.md` and `config.yml.example` both derive
+1. `make docs-refresh` regenerates `docs/reference/cli.md` and
+   `docs/reference/config.md`; CI fails on a stale committed copy.
+2. `docs/reference/config.md` and `config.yml.example` both derive
    from the same source list in `pave/config.py`; a unit test
    asserts they cannot diverge.
 3. OpenAPI lint: every route has `summary` + `description`;
@@ -284,13 +285,13 @@ Those land in P1-47.
 ### P1-46 (Phase 1)
 
 1. `make docs-serve` → localhost:8000 renders the seven hand-
-   written pages plus the three imported `reference/*.md`
+   written pages plus the three imported `docs/reference/*.md`
    files with working nav and search.
 2. `mkdocs build --strict` → zero warnings.
 3. GitLab Pages pipeline deploys on tag `v1.1.0`.
 4. `curl <pages-url>/user/inspect/` returns the inspect page
    HTML.
-5. `rg -n 'google-analytics|gtag|cookie' docs/site/` → no
+5. `rg -n 'google-analytics|gtag|cookie' docs/` → no
    matches.
 
 ### P1-47 (Phase 2)
@@ -299,7 +300,7 @@ Those land in P1-47.
 2. Dev section covers every seam in `pave/` (one page per
    module boundary), driven by `mkdocstrings` against the
    docstrings landed in P1-53d.
-3. `reference/config.md` matches `_DEFAULTS` (CI drift check
+3. `docs/reference/config.md` matches `_DEFAULTS` (CI drift check
    already enforced from Phase 0).
 4. Version selector shows at least one prior minor and
    `latest`.

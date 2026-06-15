@@ -5,7 +5,7 @@
 
 tl;dr: This roadmap tracks production readiness and integration milestones. To claim a
 task, open an issue titled `claim: <task ID>` and link your branch or PR.
-Detailed design plans live under `docs/` and are indexed after the task tables.
+Detailed design plans live under `docs/design/` and are indexed after the task tables.
 
 > PaveDB is a general-purpose vector search engine. The roadmap that follows is
 > driven by production readiness for its first downstream consumer — an application
@@ -115,8 +115,8 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-51 | ~~Admin query-home resolver + shortcut routes + CLI rework~~ | 🧩 | Bare-`query_id` lookup/replay for admin via `query_home` table in `catalog.db` | v0.9 |
 | P1-52 | Concurrency chaos test (Level 1) | 🔧 | N-thread random-interleave fuzz over create/delete/move/ingest/search/dump/restore with post-run catalog↔disk invariants. Regression net for the lock lattice hardened during the v0.9 rc cycle; bench-stress finds races, this turns them into non-flaky CI checks. Ships as nightly job at v1.1 (not a v1.0 release gate). | v1.1 |
 | P1-53a | Reference-source plumbing: OpenAPI completeness pass | 🔧 | Every route gets `summary`/`description`/`tags`/`responses`; every Pydantic `Field` gets `description` + at least one example. Unblocks an auto-rendered API reference. | v1.0 |
-| P1-53b | Reference-source plumbing: CLI completeness + dumper | 🔧 | Every subcommand gets `help`/`epilog`-example; `scripts/cli_to_markdown.py` renders `reference/cli.md` committed in-repo. | v1.0 |
-| P1-53c | Reference-source plumbing: config schema refactor | 🔧 | Single (key, default, description, env_var) source for `_DEFAULTS`, `config.yml.example`, and `reference/config.md`. Closes P1-26 (drift check) as a side effect. | v1.0 |
+| P1-53b | ~~Reference-source plumbing: CLI completeness + dumper~~ | 🔧 | Every subcommand gets `help`/`epilog`-example; `scripts/cli_to_markdown.py` renders `docs/reference/cli.md` committed in-repo. | v1.0 |
+| P1-53c | Reference-source plumbing: config schema refactor | 🔧 | Single (key, default, description, env_var) source for `_DEFAULTS`, `config.yml.example`, and `docs/reference/config.md`. Closes P1-26 (drift check) as a side effect. | v1.0 |
 | P1-53d | Reference-source plumbing: module/class docstrings on public seams | 🔧 | `pave/stores`, `pave/backends`, `pave/embedders`, catalog, `pave/service.py` public functions. Powers `mkdocstrings` once the docs site lands. | v1.0 |
 | P1-54 | Per-collection archive (dump + restore) | 🧱 | Admin-only `GET`/`POST` archive endpoints for a single collection. Carries `manifest.json` (PaveDB version, embedder spec, schema version), `meta.db`, FAISS index, sidecars. Restore must verify embedder spec is resolvable locally before touching disk. Same-version restore only at v1.5; cross-version waits on P3-37. Depends on P2-25. | v1.5 |
 | P1-55 | Per-collection reindex | 🧱 | Admin-only operation: rebuild vectors against a new embedder spec. Needs a job model (interruptible, resumable, status-trackable). Splits cleanly from PATCH (cheap label edit) and `move` (slug/path move + disk move) because it's the only one that rewrites stored vectors. | v1.6 |
@@ -203,15 +203,15 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 
 ## Plan Docs
 
-Substantial features are specified under `docs/` before implementation.
+Substantial features are specified under `docs/design/` before implementation.
 
 | File | Plan ID | Feature |
 |---|---|---|
-| [`docs/PLAN-OPS-LOG.md`](docs/PLAN-OPS-LOG.md) | P2-28 | Structured log emission — ops JSON stream |
-| [`docs/PLAN-SQLITE.md`](docs/PLAN-SQLITE.md) | P1-09 / P1-33 | Internal SQLite metadata and global catalog store |
-| [`docs/PLAN-STORE.md`](docs/PLAN-STORE.md) | P1-29/P1-29b/P1-29c/P1-31/P1-32 | Store split; P1-30 superseded by P1-29b |
-| [`docs/PLAN-OBSERVABILITY.md`](docs/PLAN-OBSERVABILITY.md) | P0-03, P1-11/14/17/23/40/41/42/43/44/45/48, P2-23/28/40/41 | Inspectability surface — request correlation, timing, query log, replay, chunk inspector |
-| [`docs/PLAN-DOCS.md`](docs/PLAN-DOCS.md) | P1-46 / P1-47 | Docs site plan (preview for v0.9, full for v1.0) |
+| [`docs/design/PLAN-OPS-LOG.md`](docs/design/PLAN-OPS-LOG.md) | P2-28 | Structured log emission — ops JSON stream |
+| [`docs/design/PLAN-SQLITE.md`](docs/design/PLAN-SQLITE.md) | P1-09 / P1-33 | Internal SQLite metadata and global catalog store |
+| [`docs/design/PLAN-STORE.md`](docs/design/PLAN-STORE.md) | P1-29/P1-29b/P1-29c/P1-31/P1-32 | Store split; P1-30 superseded by P1-29b |
+| [`docs/design/PLAN-OBSERVABILITY.md`](docs/design/PLAN-OBSERVABILITY.md) | P0-03, P1-11/14/17/23/40/41/42/43/44/45/48, P2-23/28/40/41 | Inspectability surface — request correlation, timing, query log, replay, chunk inspector |
+| [`docs/design/PLAN-DOCS.md`](docs/design/PLAN-DOCS.md) | P1-46 / P1-47 | Docs site plan (preview for v0.9, full for v1.0) |
 
 ---
 
@@ -387,12 +387,12 @@ latency on every search/ingest/delete.~~
     tags/responses; every Pydantic Field gets description + at
     least one example. Unblocks an auto-rendered API reference
     (P1-53a).
-  - CLI completeness + dumper: every subcommand gets help and
+  - ~~CLI completeness + dumper: every subcommand gets help and
     an epilog example; `scripts/cli_to_markdown.py` renders
-    `reference/cli.md` committed in-repo (P1-53b).
+    `docs/reference/cli.md` committed in-repo (P1-53b).~~
   - Config schema refactor: single (key, default, description,
     env_var) source feeds `_DEFAULTS`, `config.yml.example`, and
-    `reference/config.md`. Closes the P1-26 drift check as a
+    `docs/reference/config.md`. Closes the P1-26 drift check as a
     side effect (P1-53c).
   - Module/class docstrings on public seams: `pave/stores`,
     `pave/backends`, `pave/embedders`, catalog, and
