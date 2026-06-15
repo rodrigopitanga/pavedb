@@ -30,6 +30,15 @@ would render is correct and stable.
 
 ## Principles
 
+- **Audience voice — devs, but still users.** Reference content
+  speaks the user's vocabulary (tenant, collection, document,
+  chunk, search, query log, archive), never the implementation's
+  (store, warm, catalog probe, vector backend, pushdown,
+  hydrate, executor). A reader who has never seen the source
+  must understand every summary, description, and field doc.
+- **Terse, not bibles.** One-line summaries, one-sentence
+  descriptions, short field docs. Examples concrete and small.
+  Say it once.
 - **Text-first.** Long-form prose and reference tables, not
   marketing hero sections, testimonial carousels, or splash
   animations. Reference sites: PostgreSQL, SQLite, Caddy,
@@ -131,12 +140,22 @@ exist (Phase 1), it renders from already-correct sources.
 
 ### Scope
 
-| Sub-item | Output | Source |
-|---|---|---|
-| P1-53a | OpenAPI completeness pass on every route + Pydantic model | `summary` / `description` / `tags` / `responses` on routes; `Field(..., description=, examples=)` on models. Endpoint is `/openapi.json`. |
-| P1-53b | `docs/reference/cli.md` committed in-repo | Every subcommand gets `help` / `epilog`-with-example. `scripts/cli_to_markdown.py` walks subparsers and renders the page. |
-| P1-53c | `docs/reference/config.md` committed in-repo + `config.yml.example` rendered from same source | Single (key, default, description, env_var) list in `pave/config.py`; `_DEFAULTS` derived from it. Closes P1-26 (drift CI check) as a side effect. |
-| P1-53d | Module + class docstrings on public seams | `pave/stores`, `pave/backends`, `pave/embedders`, `pave/metadb` (`CatalogDB`, `CollectionDB`), `pave/service.py` public functions. Powers `mkdocstrings` in Phase 2. |
+- **P1-53a — OpenAPI completeness pass.** Every route gets
+  `summary`, `description`, `tags`, and `responses`; every
+  Pydantic model field gets `Field(..., description=, examples=)`.
+  Endpoint is `/openapi.json`.
+- **P1-53b — CLI reference.** Commit `docs/reference/cli.md`.
+  Every subcommand gets `help` / `epilog` examples;
+  `scripts/cli_to_markdown.py` walks subparsers and renders the
+  page.
+- **P1-53c — Config reference.** Commit `docs/reference/config.md`
+  and render `config.yml.example` from the same source. A single
+  `(key, default, description, env_var)` list in `pave/config.py`
+  feeds `_DEFAULTS`; closes P1-26 as a side effect.
+- **P1-53d — Public seam docs.** Add module/class docstrings on
+  `pave/stores`, `pave/backends`, `pave/embedders`, `pave/metadb`
+  (`CatalogDB`, `CollectionDB`), and public functions in
+  `pave/service.py`. Powers `mkdocstrings` in Phase 2.
 
 ### Deliverables checklist (P1-53a–d)
 
@@ -165,19 +184,19 @@ remain (intro, concepts, inspect walkthrough).
 
 ### Scope
 
-| Page | Status | Source |
-|---|---|---|
-| `index.md` | NEW | hand-written, ~200 words |
-| `user/quickstart.md` | NEW | install → ingest → search in 5 commands (library mode + server mode) |
-| `user/concepts.md` | NEW | tenants, collections, docs, chunks, metadata |
-| `user/inspect.md` | NEW | **the flagship page**: query log, replay, chunk inspector, request_id correlation, timing breakdown. Walks one query end-to-end from request to replay. |
-| `user/auth.md` | NEW | API keys, admin key, `X-Request-ID` header |
-| `user/ingest.md` | NEW | TXT/CSV/PDF, size limits, timeout guidance |
-| `user/search.md` | NEW | body + filters + common merge |
-| `docs/reference/api.md` | imported | render Phase 0's OpenAPI via `mkdocs-render-swagger-plugin` or equivalent |
-| `docs/reference/cli.md` | imported | committed by Phase 0; site just publishes it |
-| `docs/reference/config.md` | imported | committed by Phase 0; site just publishes it |
-| `release-notes.md` | NEW | v0.9 + v1.0 + v1.1 highlights, upgrade notes |
+- `index.md` — hand-written landing page, ~200 words.
+- `user/quickstart.md` — install → ingest → search in 5 commands,
+  covering library mode and server mode.
+- `user/concepts.md` — tenants, collections, docs, chunks, metadata.
+- `user/inspect.md` — flagship inspectability page covering query log,
+  replay, chunk inspector, request_id correlation, and timing breakdown.
+- `user/auth.md` — API keys, admin key, `X-Request-ID` header.
+- `user/ingest.md` — TXT/CSV/PDF, size limits, timeout guidance.
+- `user/search.md` — body, filters, and common merge.
+- `docs/reference/api.md` — imported from Phase 0 OpenAPI rendering.
+- `docs/reference/cli.md` — committed by Phase 0; site publishes it.
+- `docs/reference/config.md` — committed by Phase 0; site publishes it.
+- `release-notes.md` — v0.9 + v1.0 + v1.1 highlights, upgrade notes.
 
 Not in phase 1: full dev section, custom domain, versioning.
 Those land in P1-47.
@@ -274,7 +293,10 @@ Those land in P1-47.
    asserts they cannot diverge.
 3. OpenAPI lint: every route has `summary` + `description`;
    every Pydantic model field has `description`; at least one
-   example per request/response model.
+   example per request/response model. The lint also rejects
+   internals parlance (catalog, pushdown, hydrate, warmup,
+   executor, vector store/backend, …) in summaries and field
+   descriptions per the audience-voice principle.
 4. `pavecli <subcommand> --help` exit-code zero for every
    subcommand; help text is non-empty and includes an example
    in `epilog`.

@@ -1,7 +1,40 @@
 # (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import inspect
+
+from pydantic import BaseModel
+
+import pave.schemas as schemas
 from pave.main import VERSION
+
+# Implementation terms that must not leak into user-facing API docs.
+# See the audience-voice principle in docs/design/PLAN-DOCS.md.
+BANNED_DOC_TERMS = (
+    "catalog probe",
+    "pushdown",
+    "hydrate",
+    "warmup",
+    "executor",
+    "subprocess",
+    "sqlite",
+    "vector store",
+    "vector backend",
+)
+
+
+def _our_schema_names():
+    names = set()
+    for _, obj in inspect.getmembers(schemas, inspect.isclass):
+        if issubclass(obj, BaseModel) and obj.__module__ == schemas.__name__:
+            names.add(obj.__name__)
+    return names
+
+
+def _assert_no_banned(text, where):
+    blob = text.lower()
+    for term in BANNED_DOC_TERMS:
+        assert term not in blob, (where, term)
 
 def test_ui_renders_instance_strings(client, app, cfg):
     cfg.set("instance.name", "PV-a-name")
@@ -156,3 +189,42 @@ def test_ui_home_has_no_tab_hint_row(client):
 def test_favicon_status(client):
     r = client.get("/favicon.ico")
     assert r.status_code == 200
+
+
+def test_openapi_every_route_is_documented(client):
+    doc = client.get("/openapi.json").json()
+    for path, methods in doc.get("paths", {}).items():
+        for method, op in methods.items():
+            where = (method, path)
+            summary = (op.get("summary") or "").strip()
+            description = (op.get("description") or "").strip()
+            tags = op.get("tags") or []
+            assert summary, where
+            assert description, where
+            assert tags, where
+            _assert_no_banned(f"{summary} {description}", where)
+            _assert_no_banned(" ".join(tags), where)
+
+
+def test_openapi_schema_fields_documented_with_examples(client):
+    doc = client.get("/openapi.json").json()
+    component_schemas = doc.get("components", {}).get("schemas", {})
+    ours = _our_schema_names()
+
+    checked = 0
+    for name, schema in component_schemas.items():
+        if name not in ours:
+            continue
+        props = schema.get("properties", {})
+        assert props, name
+        has_example = False
+        for prop_name, prop in props.items():
+            desc = (prop.get("description") or "").strip()
+            assert desc, (name, prop_name)
+            _assert_no_banned(desc, (name, prop_name))
+            if "examples" in prop or "example" in prop:
+                has_example = True
+        assert has_example, name
+        checked += 1
+
+    assert checked, "no pave schemas found in OpenAPI components"

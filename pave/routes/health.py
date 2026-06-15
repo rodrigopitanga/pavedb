@@ -59,7 +59,12 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
             set_error(f"store_metrics: {e}")
             return {}
 
-    @router.get("/health")
+    @router.get(
+        "/health",
+        summary="Health check",
+        description="Returns ready or degraded, plus the running version.",
+        tags=["Health"],
+    )
     def health(request: Request):
         inc("requests_total")
         d = readiness_check(request)
@@ -69,7 +74,12 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
             request,
         )
 
-    @router.get("/health/live")
+    @router.get(
+        "/health/live",
+        summary="Liveness check",
+        description="Always succeeds while the process is running.",
+        tags=["Health"],
+    )
     def health_live(request: Request):
         inc("requests_total")
         return trace(
@@ -77,14 +87,24 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
             request,
         )
 
-    @router.get("/health/ready")
+    @router.get(
+        "/health/ready",
+        summary="Readiness check",
+        description="Returns 503 until storage and embeddings are usable.",
+        tags=["Health"],
+    )
     def health_ready(request: Request):
         inc("requests_total")
         d = readiness_check(request)
         code = 200 if d.get("ok") else 503
         return JSONResponse(trace(d, request), status_code=code)
 
-    @router.get("/health/metrics")
+    @router.get(
+        "/health/metrics",
+        summary="Metrics snapshot",
+        description="Counters, version, and hardware info as JSON.",
+        tags=["Health"],
+    )
     def health_metrics(
         request: Request,
         store: BaseStore = Depends(current_store),
@@ -99,7 +119,12 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
         extra.update(store_metrics(store))
         return trace(snapshot(extra), request)
 
-    @router.get("/metrics")
+    @router.get(
+        "/metrics",
+        summary="Prometheus metrics",
+        description="The same counters in Prometheus exposition format.",
+        tags=["Health"],
+    )
     def metrics_prom(store: BaseStore = Depends(current_store)):
         inc("requests_total")
         extra = store_metrics(store)

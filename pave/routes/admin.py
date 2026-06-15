@@ -44,6 +44,8 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
 
     @router.get(
         "/admin/archive",
+        summary="Download an archive",
+        description="Streams the whole dataset as a zip; requires the admin key.",
         response_class=FileResponse,
         responses=resp(401, 403, 404, 500),
         tags=["Instance Admin"],
@@ -103,6 +105,11 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
 
     @router.put(
         "/admin/archive",
+        summary="Restore an archive",
+        description=(
+            "Overwrites current data with the uploaded zip; requires the "
+            "admin key."
+        ),
         response_model=RestoreArchiveResponse,
         responses=resp(400, 401, 403, 500),
         tags=["Instance Admin"],
@@ -150,6 +157,8 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
 
     @router.delete(
         "/admin/metrics",
+        summary="Reset metrics",
+        description="Zeroes request counters; requires the admin key.",
         response_model=ResetMetricsResponse,
         responses=resp(401, 403),
         tags=["Instance Admin"],
@@ -173,6 +182,8 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
 
     @router.get(
         "/admin/tenants",
+        summary="List tenants",
+        description="Names every tenant on the instance; requires the admin key.",
         response_model=ListTenantsResponse,
         responses=resp(401, 403, 500),
         tags=["Instance Admin"],
@@ -206,6 +217,8 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
 
     @router.post(
         "/admin/collections/{tenant}/{name}/move",
+        summary="Rename a collection",
+        description="Changes the slug, and therefore the URL; requires the admin key.",
         response_model=MoveCollectionResponse,
         responses=resp(400, 401, 403, 404, 409, 500),
         tags=["Instance Admin"],
@@ -256,6 +269,11 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
 
     @router.get(
         "/admin/queries/{query_id}",
+        summary="Get any logged search",
+        description=(
+            "Finds a search by id without knowing its tenant; requires the "
+            "admin key."
+        ),
         response_model=GetQueryLogResponse,
         responses=resp(401, 403, 404, 500),
         tags=["Query Admin"],
@@ -307,6 +325,11 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
 
     @router.post(
         "/admin/queries/{query_id}/replay",
+        summary="Replay any logged search",
+        description=(
+            "Re-runs a search found by id in any tenant; requires the "
+            "admin key."
+        ),
         response_model=QueryReplayResponse,
         responses=resp(401, 403, 404, 429, 500, 503),
         tags=["Query Admin"],

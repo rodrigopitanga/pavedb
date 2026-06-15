@@ -42,6 +42,8 @@ def build_search_router(
 
     @router.get(
         "/collections/{tenant}/{name}/queries",
+        summary="List logged searches",
+        description="Most recent first; omits result bodies, which one-by-id returns.",
         response_model=ListQueryLogsResponse,
         responses=resp(401, 403, 429, 500),
         tags=["Query Inspection"],
@@ -81,6 +83,8 @@ def build_search_router(
 
     @router.get(
         "/collections/{tenant}/{name}/queries/{query_id}",
+        summary="Get a logged search",
+        description="Includes the query text, filters, and the chunk ids it returned.",
         response_model=GetQueryLogResponse,
         responses=resp(401, 403, 404, 429, 500),
         tags=["Query Inspection"],
@@ -122,6 +126,11 @@ def build_search_router(
 
     @router.post(
         "/collections/{tenant}/{name}/queries/{query_id}/replay",
+        summary="Replay a logged search",
+        description=(
+            "Re-runs the original query against current data; recorded as a "
+            "new entry."
+        ),
         response_model=QueryReplayResponse,
         responses=resp(401, 403, 404, 429, 500, 503),
         tags=["Query Inspection"],
@@ -157,6 +166,8 @@ def build_search_router(
 
     @router.post(
         "/collections/{tenant}/{name}/search",
+        summary="Search a collection",
+        description="Ranked semantic matches with provenance and per-phase timing.",
         response_model=SearchResponse,
         responses=resp(401, 403, 429, 500, 503),
         tags=["Scoped Search"],
@@ -203,6 +214,11 @@ def build_search_router(
 
     @router.get(
         "/collections/{tenant}/{name}/search",
+        summary="Search a collection",
+        description=(
+            "Query-string form of the search; metadata filters are not "
+            "accepted."
+        ),
         response_model=SearchResponse,
         responses=resp(401, 403, 429, 500, 503),
         tags=["Scoped Search"],
@@ -250,6 +266,8 @@ def build_search_router(
 
     @router.post(
         "/search",
+        summary="Search shared collections",
+        description="Searches the shared scope; empty when that scope is disabled.",
         response_model=SearchResponse,
         responses=resp(401, 403, 500, 503),
         tags=["Global Search"],
@@ -306,6 +324,8 @@ def build_search_router(
 
     @router.get(
         "/search",
+        summary="Search shared collections",
+        description="Query-string form of the shared search; filters are not accepted.",
         response_model=SearchResponse,
         responses=resp(401, 403, 500, 503),
         tags=["Global Search"],

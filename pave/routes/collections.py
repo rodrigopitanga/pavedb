@@ -35,6 +35,8 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
 
     @router.get(
         "/collections/{tenant}",
+        summary="List collections",
+        description="One entry per collection, with display name and embedding model.",
         response_model=ListCollectionsResponse,
         responses=resp(401, 403, 429, 500),
         tags=["Collection Catalog"],
@@ -61,6 +63,8 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
 
     @router.get(
         "/collections/{tenant}/{name}/detail",
+        summary="Get collection detail",
+        description="Settings plus document and chunk counts.",
         response_model=CollectionDetailResponse,
         responses=resp(401, 403, 404, 429, 500),
         tags=["Collection Catalog"],
@@ -98,6 +102,11 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
     @router.post(
         "/collections/{tenant}/{name}",
         status_code=201,
+        summary="Create a collection",
+        description=(
+            "Optionally sets the display name and embedding model; returns "
+            "201."
+        ),
         response_model=CreateCollectionResponse,
         responses=resp(400, 401, 403, 429, 500, 503),
         tags=["Collection Catalog"],
@@ -140,6 +149,8 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
 
     @router.patch(
         "/collections/{tenant}/{name}",
+        summary="Update a collection",
+        description="Changes editable metadata only; does not re-index documents.",
         response_model=UpdateCollectionResponse,
         responses=resp(400, 401, 403, 404, 429, 500),
         tags=["Collection Catalog"],
@@ -183,6 +194,8 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
 
     @router.delete(
         "/collections/{tenant}/{name}",
+        summary="Delete a collection",
+        description="Permanently removes the collection and every document in it.",
         response_model=DeleteCollectionResponse,
         responses=resp(401, 403, 429, 500),
         tags=["Collection Catalog"],

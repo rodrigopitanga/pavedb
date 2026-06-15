@@ -43,6 +43,8 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
 
     @router.get(
         "/collections/{tenant}/{collection}/documents",
+        summary="List documents",
+        description="One entry per document, with version and chunk count.",
         response_model=ListDocumentsResponse,
         responses=resp(401, 403, 429, 500),
         tags=["Documents"],
@@ -75,6 +77,11 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
     @router.post(
         "/collections/{tenant}/{collection}/documents",
         status_code=201,
+        summary="Ingest a document",
+        description=(
+            "Chunks, embeds, and indexes the file; reusing a docid replaces "
+            "it."
+        ),
         response_model=IngestDocumentResponse,
         responses=resp(400, 401, 403, 413, 429, 500, 503),
         tags=["Documents"],
@@ -215,6 +222,8 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
 
     @router.delete(
         "/collections/{tenant}/{collection}/documents/{docid}",
+        summary="Delete a document",
+        description="Removes the document and all chunks derived from it.",
         response_model=DeleteDocumentResponse,
         responses=resp(401, 403, 429, 500),
         tags=["Documents"],
@@ -248,6 +257,8 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
 
     @router.get(
         "/collections/{tenant}/{collection}/documents/{docid}/chunks",
+        summary="List document chunks",
+        description="Chunks in document order, with provenance metadata.",
         response_model=ListChunksResponse,
         responses=resp(401, 403, 429, 500),
         tags=["Chunk Inspection"],
@@ -280,6 +291,8 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
 
     @router.get(
         "/collections/{tenant}/{collection}/documents/{docid}",
+        summary="Get a document",
+        description="Includes stored metadata, version, and its chunk ids.",
         response_model=GetDocumentResponse,
         responses=resp(401, 403, 404, 429, 500),
         tags=["Documents"],
@@ -318,6 +331,8 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
 
     @router.get(
         "/collections/{tenant}/{collection}/chunks/{rid}",
+        summary="Get a chunk",
+        description="Returns the chunk's provenance and metadata, not its text.",
         response_model=GetChunkResponse,
         responses=resp(401, 403, 404, 429, 500),
         tags=["Chunk Inspection"],
@@ -351,6 +366,8 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
 
     @router.get(
         "/collections/{tenant}/{collection}/chunks/{rid}/content",
+        summary="Get chunk content",
+        description="Returns the chunk's raw text as the response body.",
         response_class=Response,
         responses=resp(401, 403, 404, 429, 500),
         tags=["Chunk Inspection"],
