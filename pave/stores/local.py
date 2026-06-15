@@ -208,6 +208,22 @@ class LocalStore(BaseStore):
             embedder_config=embedder_config,
         )
 
+    def warm(self) -> None:
+        """Load the default embedder and pay FAISS' one-time process init.
+
+        Single `.encode` covers model load + first inference. A throwaway
+        FaissBackend in a temp dir triggers FAISS' library-level setup
+        (BLAS, threading) without persisting any catalog row or index.
+        """
+        self._embedder.encode(["warmup"])
+        with tempfile.TemporaryDirectory(prefix="pavedb-warm-") as td:
+            sentinel = FaissBackend(
+                int(self._embedder.dim),
+                storage_dir=Path(td),
+            )
+            sentinel.initialize()
+            sentinel.close()
+
     def _get_collection_lock(self, key: str) -> _CollectionReadWriteLock:
         if key not in self._collection_locks:
             with self._collection_locks_guard:

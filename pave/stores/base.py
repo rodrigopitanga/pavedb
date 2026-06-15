@@ -62,6 +62,15 @@ class IndexResult:
 
 
 class BaseStore(ABC):
+    def warm(self) -> None:
+        """Warm runtime caches without persisting any collection state.
+
+        Default no-op. Concrete stores override to load default embedder
+        weights, trigger backend-library one-time process init, etc., so
+        the first user request doesn't pay those costs.
+        """
+        return None
+
     @abstractmethod
     def create_collection(
         self,

@@ -107,6 +107,12 @@ embedder:
   # openai — OpenAI embeddings API (requires API key, adds latency).
   type: sbert
 
+  # Warm the default embedder at server startup with one .encode call.
+  # Avoids paying the model-load / API-handshake cost on the first request.
+  # Set to false in multi-model deployments where the default is not the
+  # most-used embedder (per-embedder warmup arrives at v1.7 with P1-58).
+  warmup_default: true
+
   # Used by type=sbert.
   sbert:
     runtime: auto   # auto | process | direct

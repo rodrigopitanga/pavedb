@@ -70,14 +70,12 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        if str(cfg.get("embedder.type", "sbert")).lower() == "sbert":
-            # Eagerly load the local sentence-transformer model so the first
-            # request doesn't pay the cold-start penalty.
+        if cfg.get("embedder.warmup_default", True):
             try:
-                app.state.store.create_collection("_system", "health")
-                log.info("Embedding model warm-up complete")
-            except Exception as e:
-                log.warning(f"Embedding model warm-up failed: {e}")
+                app.state.store.warm()
+                log.info("Default store warm-up complete")
+            except Exception as exc:
+                log.warning(f"Default store warm-up failed: {exc}")
         yield
         metrics_flush()
         ops_log.close()

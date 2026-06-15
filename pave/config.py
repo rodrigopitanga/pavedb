@@ -68,6 +68,7 @@ _DEFAULTS = {
     "vector_store": {"type": "faiss"},
     "embedder": {
         "type": "sbert",
+        "warmup_default": True,
         "sbert": {
             "runtime": "auto",
             "model": "sentence-transformers/all-MiniLM-L6-v2",
