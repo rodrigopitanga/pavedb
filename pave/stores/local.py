@@ -1432,12 +1432,9 @@ class LocalStore(BaseStore):
         def _search_loaded(
             backend: VectorBackend,
             col_db: CollectionDB,
-            embedder: Embedder,
+            q_vec: Any,
+            embed_ms: float,
         ) -> SearchOutput:
-            t0 = _perf()
-            q_vec = embedder.encode([query])[0]
-            embed_ms = _ms_since(t0)
-
             t0 = _perf()
             raw = backend.search(q_vec, fetch_k)
             candidate_rids = [rid for rid, _ in raw if rid]
@@ -1511,33 +1508,49 @@ class LocalStore(BaseStore):
             )
 
         key = (tenant, collection)
-        for attempt in range(3):
+
+        def _try_search() -> SearchOutput | None:
+            """One search attempt against the cached collection state.
+
+            Returns None if the caches aren't loaded (caller reloads and
+            retries). The embed runs *outside* the collection lock: it only
+            needs the query and the stable per-collection embedder, touching
+            neither the FAISS backend, col_db, nor chunk files. Keeping it out
+            of the lock shrinks the read-lock hold to the FAISS search + filter
+            + hydrate, so concurrent ingest/delete/move writers and embed-CPU
+            contention stop serializing on the search path.
+            """
             with self._collection_read_lock(tenant, collection):
                 backend = self._emb.get(key)
                 col_db = self._dbs.get(key)
                 embedder = self._collection_embedders.get(key)
-                if (
-                    backend is not None
-                    and col_db is not None
-                    and embedder is not None
-                ):
-                    return _search_loaded(backend, col_db, embedder)
+            if backend is None or col_db is None or embedder is None:
+                return None
 
+            t0 = _perf()
+            q_vec = embedder.encode([query])[0]
+            embed_ms = _ms_since(t0)
+
+            with self._collection_read_lock(tenant, collection):
+                backend = self._emb.get(key)
+                col_db = self._dbs.get(key)
+                if backend is not None and col_db is not None:
+                    return _search_loaded(backend, col_db, q_vec, embed_ms)
+            # Collection drained between encode and search (concurrent
+            # delete/move); signal the caller to reload and retry.
+            return None
+
+        for attempt in range(3):
+            out = _try_search()
+            if out is not None:
+                return out
             with self._collection_write_lock(tenant, collection):
                 self._load_or_init(tenant, collection)
-
             # The collection may have been deleted between initialization and
             # reacquiring the shared read lock. Loop back and re-check caches.
-        with self._collection_read_lock(tenant, collection):
-            backend = self._emb.get(key)
-            col_db = self._dbs.get(key)
-            embedder = self._collection_embedders.get(key)
-            if (
-                backend is not None
-                and col_db is not None
-                and embedder is not None
-            ):
-                return _search_loaded(backend, col_db, embedder)
+        out = _try_search()
+        if out is not None:
+            return out
         # Caches drained across every retry — overwhelmingly means a
         # concurrent delete/move removed the collection. Surface as a
         # not-found ValueError so the service layer translates it to 404
