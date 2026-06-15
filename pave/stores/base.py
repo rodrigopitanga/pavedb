@@ -249,6 +249,15 @@ class BaseStore(ABC):
         offset: int = 0,
     ) -> list[QueryHomeEntry]: ...
 
+    def catalog_probe(self) -> None:
+        """Lightweight readiness probe: confirm the catalog is reachable.
+
+        Unlike `catalog_metrics`, this does no per-collection work, so
+        liveness/readiness checks stay cheap and lock-free. Backends should
+        override with the cheapest catalog read available. Raises on failure.
+        """
+        self.list_tenants()
+
     def catalog_metrics(self) -> dict[str, int]:
         """Return store-level catalog counters for admin/metrics endpoints.
 

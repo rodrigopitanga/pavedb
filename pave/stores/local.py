@@ -49,6 +49,12 @@ log = get_logger()
 
 CollectionConfig = dict[str, Any]
 
+# `catalog_metrics()` walks every collection under its read lock to count
+# docs/chunks, so its result is memoized for this many seconds. Keeps
+# concurrent /metrics scrapers from each re-running the walk and stampeding
+# the per-collection locks under load.
+_CATALOG_METRICS_TTL_S = 5.0
+
 
 class _StoreStateLock:
     """Reentrant reader/writer lock for whole-data-dir replacement.
@@ -200,6 +206,8 @@ class LocalStore(BaseStore):
         self._collection_locks: dict[str, _CollectionReadWriteLock] = {}
         self._collection_locks_guard = Lock()
         self._state_lock = _StoreStateLock()
+        self._catalog_metrics_lock = Lock()
+        self._catalog_metrics_cache: tuple[float, dict[str, int]] | None = None
         default_key = embedder_factory_mod.embedder_cache_key(
             self._default_collection_config()
         )
@@ -1073,8 +1081,43 @@ class LocalStore(BaseStore):
             reader=lambda db: db.get_doc_chunk_counts(),
         )
 
+    def catalog_probe(self) -> None:
+        """Cheap readiness probe: confirm the catalog is reachable.
+
+        Unlike `catalog_metrics`, this touches no per-collection locks — it
+        runs a single catalog-level count so liveness/readiness checks don't
+        contend with in-flight ingest/search/delete. Raises on failure.
+        """
+        self._with_catalog_retry(
+            "catalog_probe",
+            lambda catalog: catalog.collection_count(),
+        )
+
     def catalog_metrics(self) -> dict[str, int]:
-        """Return tenant/collection/doc/chunk counters from store metadata."""
+        """Return tenant/collection/doc/chunk counters from store metadata.
+
+        Doc/chunk counts require walking every collection under its read
+        lock, so the result is memoized for `_CATALOG_METRICS_TTL_S`. At most
+        one walk runs per window; concurrent callers block on the lock and
+        share the fresh result rather than each repeating the walk.
+        """
+        cached = self._catalog_metrics_cache
+        if cached is not None:
+            ts, value = cached
+            if _time.monotonic() - ts < _CATALOG_METRICS_TTL_S:
+                return dict(value)
+
+        with self._catalog_metrics_lock:
+            cached = self._catalog_metrics_cache
+            if cached is not None:
+                ts, value = cached
+                if _time.monotonic() - ts < _CATALOG_METRICS_TTL_S:
+                    return dict(value)
+            metrics = self._compute_catalog_metrics()
+            self._catalog_metrics_cache = (_time.monotonic(), metrics)
+            return dict(metrics)
+
+    def _compute_catalog_metrics(self) -> dict[str, int]:
         doc_count = 0
         chunk_count = 0
 

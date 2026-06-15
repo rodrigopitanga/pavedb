@@ -819,6 +819,10 @@ class SpyStore(BaseStore):
         self.calls.append(("list_tenants",))
         return self.impl.list_tenants()
 
+    def catalog_probe(self) -> None:
+        self.calls.append(("catalog_probe",))
+        return self.impl.catalog_probe()
+
     def catalog_metrics(self) -> dict[str, int]:
         self.calls.append(("catalog_metrics",))
         return self.impl.catalog_metrics()

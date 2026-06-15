@@ -40,3 +40,53 @@ def test_catalog_metrics_counts_docs_and_chunks(cfg, tmp_path):
     assert snap["chunk_count"] == 4
 
 
+def test_catalog_metrics_memoized_within_ttl(cfg, tmp_path, monkeypatch):
+    cfg.set("data_dir", str(tmp_path))
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.index_records(
+        "acme", "c1", "doc1", [("0", "alpha", {"lang": "en"})]
+    )
+
+    calls = {"n": 0}
+    real = store._compute_catalog_metrics
+
+    def counting():
+        calls["n"] += 1
+        return real()
+
+    monkeypatch.setattr(store, "_compute_catalog_metrics", counting)
+
+    first = store.catalog_metrics()
+    second = store.catalog_metrics()
+    assert calls["n"] == 1  # second call served from cache
+    assert first == second
+
+    # Returned dict is a copy: mutating it must not poison the cache.
+    second["doc_count"] = 999
+    assert store.catalog_metrics()["doc_count"] == first["doc_count"]
+    assert calls["n"] == 1
+
+    # Once the TTL window lapses, the next call recomputes.
+    ts, value = store._catalog_metrics_cache
+    store._catalog_metrics_cache = (ts - 3600.0, value)
+    store.catalog_metrics()
+    assert calls["n"] == 2
+
+
+def test_catalog_probe_does_not_walk_collections(cfg, tmp_path):
+    cfg.set("data_dir", str(tmp_path))
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+
+    # Succeeds on an empty catalog.
+    assert store.catalog_probe() is None
+
+    store.index_records(
+        "acme", "c1", "doc1", [("0", "alpha", {"lang": "en"})]
+    )
+
+    # Unlike catalog_metrics, the probe never opens a collection's meta.db,
+    # so a closed cached CollectionDB handle must not affect it.
+    store._dbs[("acme", "c1")].close()
+    assert store.catalog_probe() is None
+
+
