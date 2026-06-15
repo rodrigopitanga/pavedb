@@ -357,7 +357,29 @@ def cmd_get_collection(args):
     )
 
 
-def main_cli(argv=None):
+def _command(
+    subparsers,
+    name,
+    *,
+    help,
+    description,
+    example,
+    parents=None,
+):
+    examples = (example,) if isinstance(example, str) else example
+    epilog = "example:\n" if len(examples) == 1 else "examples:\n"
+    epilog += "\n".join(f"  {line}" for line in examples)
+    return subparsers.add_parser(
+        name,
+        parents=parents or [],
+        help=help,
+        description=description,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=epilog,
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="pavecli",
         description="PaveDB CLI",
@@ -371,31 +393,30 @@ def main_cli(argv=None):
     runtime = argparse.ArgumentParser(add_help=False)
     runtime.add_argument(
         "--home",
-        help="Use an instance home dir",
+        help="Instance home directory (holds config.yml, tenants.yml, data/)",
     )
     runtime.add_argument("--config", help="Explicit config.yml path")
     runtime.add_argument("--tenants", help="Explicit tenants.yml path")
     runtime.add_argument("--data-dir", dest="data_dir", help="Explicit data directory")
 
-    p_init = sub.add_parser(
+    p_init = _command(
+        sub,
         "init",
-        parents=[runtime],
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=(
-            "examples:\n"
-            "  pavecli init                        "
-            "  # ~/pavedb (default)\n"
-            "  pavecli init ~/pavedb-staging        "
-            "  # separate instance\n"
-            "  pavecli init --config /etc/pavedb/"
-            "config.yml \\\n"
-            "    --tenants /var/pavedb/tenants.yml"
-            " \\\n"
-            "    --data-dir /var/pavedb/data         "
-            " # distro layout"
+        help="Create a PaveDB instance config and data directory.",
+        description=(
+            "Create config.yml, tenants.yml, and the data directory for an "
+            "instance."
         ),
+        example=(
+            "pavecli init",
+            "pavecli init ~/pavedb-staging",
+            "pavecli init --config /etc/pavedb/config.yml \\\n"
+            "  --tenants /var/pavedb/tenants.yml \\\n"
+            "  --data-dir /var/pavedb/data",
+        ),
+        parents=[runtime],
     )
-    p_init.add_argument("root", nargs="?", help="Instance home dir")
+    p_init.add_argument("root", nargs="?", help="Instance home directory")
     p_init.add_argument(
         "--force",
         action="store_true",
@@ -403,25 +424,60 @@ def main_cli(argv=None):
     )
     p_init.set_defaults(func=cmd_init)
 
-    p_create = sub.add_parser("create-collection", parents=[runtime])
-    p_create.add_argument("tenant")
-    p_create.add_argument("collection")
-    p_create.add_argument("--display-name")
-    p_create.add_argument("--embedder-type")
-    p_create.add_argument("--embed-model")
-    p_create.add_argument("--embedder-config")
+    p_create = _command(
+        sub,
+        "create-collection",
+        help="Create a collection.",
+        description=(
+            "Create a collection, optionally with display and embedder "
+            "configuration."
+        ),
+        example='pavecli create-collection demo books --display-name "Books"',
+        parents=[runtime],
+    )
+    p_create.add_argument("tenant", help="Tenant namespace")
+    p_create.add_argument(
+        "collection",
+        help=(
+            "Collection slug: lowercase letters, digits, and hyphens; must "
+            "start with a letter or digit; max 63 chars"
+        ),
+    )
+    p_create.add_argument("--display-name", help="Human-readable collection label")
+    p_create.add_argument(
+        "--embedder-type",
+        help="Embedder type, such as sbert, openai, or ollama",
+    )
+    p_create.add_argument("--embed-model", help="Embedding model name")
+    p_create.add_argument(
+        "--embedder-config",
+        help="JSON object with embedder-specific config",
+    )
     p_create.set_defaults(func=cmd_create)
 
-    p_ingest = sub.add_parser("ingest", parents=[runtime])
-    p_ingest.add_argument("tenant")
-    p_ingest.add_argument("collection")
-    p_ingest.add_argument("file")
-    p_ingest.add_argument("--docid")
-    p_ingest.add_argument("--metadata")
+    p_ingest = _command(
+        sub,
+        "ingest",
+        help="Index a file into a collection.",
+        description="Preprocess and index a TXT, CSV, or PDF file into a collection.",
+        example=(
+            "pavecli ingest demo books ./book.txt --docid book-1 "
+            "--metadata '{\"lang\":\"en\"}'"
+        ),
+        parents=[runtime],
+    )
+    p_ingest.add_argument("tenant", help="Tenant namespace")
+    p_ingest.add_argument("collection", help="Collection name")
+    p_ingest.add_argument("file", help="Path to TXT, CSV, or PDF input")
+    p_ingest.add_argument(
+        "--docid",
+        help="Stable document ID; defaults from filename when omitted",
+    )
+    p_ingest.add_argument("--metadata", help="JSON object attached to the document")
 
     # --- CSV controls ---
     p_ingest.add_argument("--csv-has-header", choices=["auto", "yes", "no"],
-                          help="CSV header handling: auto (sniff), yes, or no")
+                          help="CSV header handling: auto, yes, or no")
     p_ingest.add_argument(
         "--csv-meta-cols",
         help="CSV columns for metadata only (not indexed). "
@@ -433,109 +489,296 @@ def main_cli(argv=None):
 
     p_ingest.set_defaults(func=cmd_ingest)
 
-    p_search = sub.add_parser("search", parents=[runtime])
-    p_search.add_argument("tenant")
-    p_search.add_argument("collection")
-    p_search.add_argument("query")
-    p_search.add_argument("-k", type=int, default=5)
+    p_search = _command(
+        sub,
+        "search",
+        help="Search a collection.",
+        description=(
+            "Run semantic search over a collection and print the response "
+            "envelope."
+        ),
+        example='pavecli search demo books "captain nemo" -k 3',
+        parents=[runtime],
+    )
+    p_search.add_argument("tenant", help="Tenant namespace")
+    p_search.add_argument("collection", help="Collection name")
+    p_search.add_argument("query", help="Natural-language search query")
+    p_search.add_argument("-k", type=int, default=5, help="Number of matches to return")
     p_search.add_argument(
         "--merge-common",
         choices=["true", "false"],
         default="false",
+        help="Merge configured common collection results when set to true",
     )
     p_search.add_argument("--filters", help='JSON object, e.g. {"docid":"DOC-1"}')
     p_search.set_defaults(func=cmd_search)
 
-    p_list_queries = sub.add_parser("list-queries", parents=[runtime])
-    p_list_queries.add_argument("--tenant")
-    p_list_queries.add_argument("--collection")
-    p_list_queries.add_argument("--limit", type=int, default=50)
-    p_list_queries.add_argument("--offset", type=int, default=0)
+    p_list_queries = _command(
+        sub,
+        "list-queries",
+        help="List logged query IDs.",
+        description=(
+            "List logged query IDs, optionally scoped to a tenant or "
+            "collection."
+        ),
+        example="pavecli list-queries --tenant demo --collection books --limit 20",
+        parents=[runtime],
+    )
+    p_list_queries.add_argument("--tenant", help="Filter by tenant")
+    p_list_queries.add_argument("--collection", help="Filter by collection")
+    p_list_queries.add_argument(
+        "--limit",
+        type=int,
+        default=50,
+        help="Maximum entries to return",
+    )
+    p_list_queries.add_argument("--offset", type=int, default=0, help="Entries to skip")
     p_list_queries.set_defaults(func=cmd_list_queries)
 
-    p_get_query = sub.add_parser("get-query", parents=[runtime])
-    p_get_query.add_argument("query_id")
+    p_get_query = _command(
+        sub,
+        "get-query",
+        help="Fetch a logged query by ID.",
+        description=(
+            "Resolve a query_id through the catalog and print the stored query "
+            "log entry."
+        ),
+        example="pavecli get-query 6f7cfd26-7d7f-4e5d-942b-f2a516f515a6",
+        parents=[runtime],
+    )
+    p_get_query.add_argument("query_id", help="Query ID to fetch")
     p_get_query.set_defaults(func=cmd_get_query)
 
-    p_replay_query = sub.add_parser("replay-query", parents=[runtime])
-    p_replay_query.add_argument("query_id")
+    p_replay_query = _command(
+        sub,
+        "replay-query",
+        help="Replay a logged query by ID.",
+        description=(
+            "Resolve a query_id through the catalog and run the stored query "
+            "again."
+        ),
+        example="pavecli replay-query 6f7cfd26-7d7f-4e5d-942b-f2a516f515a6",
+        parents=[runtime],
+    )
+    p_replay_query.add_argument("query_id", help="Query ID to replay")
     p_replay_query.set_defaults(func=cmd_replay_query)
 
-    p_list_docs = sub.add_parser("list-documents", parents=[runtime])
-    p_list_docs.add_argument("tenant")
-    p_list_docs.add_argument("collection")
+    p_list_docs = _command(
+        sub,
+        "list-documents",
+        help="List documents in a collection.",
+        description="Print indexed documents and their collection metadata.",
+        example="pavecli list-documents demo books",
+        parents=[runtime],
+    )
+    p_list_docs.add_argument("tenant", help="Tenant namespace")
+    p_list_docs.add_argument("collection", help="Collection name")
     p_list_docs.set_defaults(func=cmd_list_documents)
 
-    p_get_doc = sub.add_parser("get-document", parents=[runtime])
-    p_get_doc.add_argument("tenant")
-    p_get_doc.add_argument("collection")
-    p_get_doc.add_argument("docid")
+    p_get_doc = _command(
+        sub,
+        "get-document",
+        help="Fetch one document by ID.",
+        description="Print document metadata and chunk summary for one document.",
+        example="pavecli get-document demo books book-1",
+        parents=[runtime],
+    )
+    p_get_doc.add_argument("tenant", help="Tenant namespace")
+    p_get_doc.add_argument("collection", help="Collection name")
+    p_get_doc.add_argument("docid", help="Document ID")
     p_get_doc.set_defaults(func=cmd_get_document)
 
-    p_list_chunks = sub.add_parser("list-chunks", parents=[runtime])
-    p_list_chunks.add_argument("tenant")
-    p_list_chunks.add_argument("collection")
-    p_list_chunks.add_argument("docid")
+    p_list_chunks = _command(
+        sub,
+        "list-chunks",
+        help="List chunks for a document.",
+        description="Print chunk metadata for a document without chunk text content.",
+        example="pavecli list-chunks demo books book-1",
+        parents=[runtime],
+    )
+    p_list_chunks.add_argument("tenant", help="Tenant namespace")
+    p_list_chunks.add_argument("collection", help="Collection name")
+    p_list_chunks.add_argument("docid", help="Document ID")
     p_list_chunks.set_defaults(func=cmd_list_chunks)
 
-    p_get_chunk = sub.add_parser("get-chunk", parents=[runtime])
-    p_get_chunk.add_argument("tenant")
-    p_get_chunk.add_argument("collection")
-    p_get_chunk.add_argument("rid")
+    p_get_chunk = _command(
+        sub,
+        "get-chunk",
+        help="Fetch chunk metadata.",
+        description="Print metadata for one chunk by record ID.",
+        example="pavecli get-chunk demo books book-1::chunk_0",
+        parents=[runtime],
+    )
+    p_get_chunk.add_argument("tenant", help="Tenant namespace")
+    p_get_chunk.add_argument("collection", help="Collection name")
+    p_get_chunk.add_argument("rid", help="Chunk record ID")
     p_get_chunk.set_defaults(func=cmd_get_chunk)
 
-    p_get_chunk_content = sub.add_parser("get-chunk-content", parents=[runtime])
-    p_get_chunk_content.add_argument("tenant")
-    p_get_chunk_content.add_argument("collection")
-    p_get_chunk_content.add_argument("rid")
+    p_get_chunk_content = _command(
+        sub,
+        "get-chunk-content",
+        help="Print raw chunk text.",
+        description="Write one chunk's text content to stdout.",
+        example="pavecli get-chunk-content demo books book-1::chunk_0",
+        parents=[runtime],
+    )
+    p_get_chunk_content.add_argument("tenant", help="Tenant namespace")
+    p_get_chunk_content.add_argument("collection", help="Collection name")
+    p_get_chunk_content.add_argument("rid", help="Chunk record ID")
     p_get_chunk_content.set_defaults(func=cmd_get_chunk_content)
 
-    p_delete = sub.add_parser("delete-collection", parents=[runtime])
-    p_delete.add_argument("tenant")
-    p_delete.add_argument("collection")
+    p_delete = _command(
+        sub,
+        "delete-collection",
+        help="Delete a collection.",
+        description=(
+            "Remove a collection, including its local metadata and vector "
+            "index."
+        ),
+        example="pavecli delete-collection demo books",
+        parents=[runtime],
+    )
+    p_delete.add_argument("tenant", help="Tenant namespace")
+    p_delete.add_argument("collection", help="Collection name")
     p_delete.set_defaults(func=cmd_delete)
 
-    p_move = sub.add_parser("move-collection", parents=[runtime])
-    p_move.add_argument("tenant")
-    p_move.add_argument("old_name")
-    p_move.add_argument("new_name")
+    p_move = _command(
+        sub,
+        "move-collection",
+        help="Move a collection to a new name.",
+        description=(
+            "Rename the collection slug and move its catalog/query-home "
+            "records."
+        ),
+        example="pavecli move-collection demo old-books books",
+        parents=[runtime],
+    )
+    p_move.add_argument("tenant", help="Tenant namespace")
+    p_move.add_argument("old_name", help="Current collection name")
+    p_move.add_argument(
+        "new_name",
+        help=(
+            "New collection slug: lowercase letters, digits, and hyphens; "
+            "must start with a letter or digit; max 63 chars"
+        ),
+    )
     p_move.set_defaults(func=cmd_move)
 
-    p_update_collection = sub.add_parser("update-collection", parents=[runtime])
-    p_update_collection.add_argument("tenant")
-    p_update_collection.add_argument("collection")
-    p_update_collection.add_argument("--display-name", required=True)
+    p_update_collection = _command(
+        sub,
+        "update-collection",
+        help="Update collection metadata.",
+        description=(
+            "Update collection metadata such as the display name, without "
+            "re-indexing."
+        ),
+        example='pavecli update-collection demo books --display-name "Books"',
+        parents=[runtime],
+    )
+    p_update_collection.add_argument("tenant", help="Tenant namespace")
+    p_update_collection.add_argument("collection", help="Collection name")
+    p_update_collection.add_argument(
+        "--display-name",
+        required=True,
+        help="New human-readable collection label",
+    )
     p_update_collection.set_defaults(func=cmd_update_collection)
 
-    p_delete_doc = sub.add_parser("delete-document", parents=[runtime])
-    p_delete_doc.add_argument("tenant")
-    p_delete_doc.add_argument("collection")
-    p_delete_doc.add_argument("docid")
+    p_delete_doc = _command(
+        sub,
+        "delete-document",
+        help="Delete a document by ID.",
+        description="Remove one document and its chunks from a collection.",
+        example="pavecli delete-document demo books book-1",
+        parents=[runtime],
+    )
+    p_delete_doc.add_argument("tenant", help="Tenant namespace")
+    p_delete_doc.add_argument("collection", help="Collection name")
+    p_delete_doc.add_argument("docid", help="Document ID")
     p_delete_doc.set_defaults(func=cmd_delete_document)
 
-    p_dump = sub.add_parser("dump-archive", parents=[runtime])
+    p_dump = _command(
+        sub,
+        "dump-archive",
+        help="Export the instance data archive.",
+        description=(
+            "Write a zip archive containing the current instance data "
+            "directory."
+        ),
+        example="pavecli dump-archive --output pavedb-data.zip",
+        parents=[runtime],
+    )
     p_dump.add_argument("--output", help="Destination ZIP file path")
     p_dump.set_defaults(func=cmd_dump_archive)
 
-    p_restore = sub.add_parser("restore-archive", parents=[runtime])
-    p_restore.add_argument("file")
+    p_restore = _command(
+        sub,
+        "restore-archive",
+        help="Restore an instance data archive.",
+        description="Replace the instance data directory from a zip archive.",
+        example="pavecli restore-archive pavedb-data.zip",
+        parents=[runtime],
+    )
+    p_restore.add_argument("file", help="Archive zip file path")
     p_restore.set_defaults(func=cmd_restore_archive)
 
-    p_reset_metrics = sub.add_parser("reset-metrics", parents=[runtime])
+    p_reset_metrics = _command(
+        sub,
+        "reset-metrics",
+        help="Reset persisted metrics.",
+        description=(
+            "Clear the local metrics counters for the configured data "
+            "directory."
+        ),
+        example="pavecli reset-metrics",
+        parents=[runtime],
+    )
     p_reset_metrics.set_defaults(func=cmd_reset_metrics)
 
-    p_list_tenants = sub.add_parser("list-tenants", parents=[runtime])
+    p_list_tenants = _command(
+        sub,
+        "list-tenants",
+        help="List tenants with cataloged collections.",
+        description="Print tenants currently present in the collection catalog.",
+        example="pavecli list-tenants",
+        parents=[runtime],
+    )
     p_list_tenants.set_defaults(func=cmd_list_tenants)
 
-    p_list_collections = sub.add_parser("list-collections", parents=[runtime])
-    p_list_collections.add_argument("tenant")
+    p_list_collections = _command(
+        sub,
+        "list-collections",
+        help="List collections for a tenant.",
+        description=(
+            "Print collection names, display labels, and embedder labels for "
+            "a tenant."
+        ),
+        example="pavecli list-collections demo",
+        parents=[runtime],
+    )
+    p_list_collections.add_argument("tenant", help="Tenant namespace")
     p_list_collections.set_defaults(func=cmd_list_collections)
 
-    p_get_collection = sub.add_parser("get-collection", parents=[runtime])
-    p_get_collection.add_argument("tenant")
-    p_get_collection.add_argument("collection")
+    p_get_collection = _command(
+        sub,
+        "get-collection",
+        help="Fetch collection details.",
+        description=(
+            "Print catalog, embedder, vector-space, document, and chunk "
+            "details for a collection."
+        ),
+        example="pavecli get-collection demo books",
+        parents=[runtime],
+    )
+    p_get_collection.add_argument("tenant", help="Tenant namespace")
+    p_get_collection.add_argument("collection", help="Collection name")
     p_get_collection.set_defaults(func=cmd_get_collection)
 
+    return p
+
+
+def main_cli(argv=None):
+    p = build_parser()
     args = p.parse_args(argv)
     if args.cmd != "init":
         _prepare_runtime(args)
