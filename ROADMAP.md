@@ -78,8 +78,8 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-12 | ~~Ingest timeout guidance~~ | 🧩 | Avoid client timeouts | v0.5.8 |
 | P1-13 | ~~Ingest size limits~~ | 🧩 | Fail fast on huge uploads | v0.5.8 |
 | P1-14 | ~~Response envelope standardization~~ | 🧱 | SDK-friendly API | v0.9 |
-| P1-15 | Embedded/library mode | 🧱 | In-app use, adoption | v1.0 |
-| P1-16 | Batch ingest endpoint | 🧩 | Throughput, DX | v1.1 |
+| P1-15 | Embedded/library mode | 🧱 | In-app use, adoption. Handle-based `Client`/`Collection` over `service.py`; `pave.connect()` dispatches local/ephemeral/HTTP by scheme; raises typed `PaveError`. Canonical interface every transport implements. See `docs/design/PLAN-CLIENT.md` | v1.0 |
+| P1-16 | Batch + JSON text ingest endpoint | 🧩 | Throughput, DX. JSON body for raw-text ingest (single + batch), no multipart — the native HTTP shape the v1.1 client's `add(text)` maps to. Library `add(text)` ships in P1-15; until this lands the HTTP client can wrap text as a `.txt` upload to the existing documents endpoint, so client parity isn't blocked. | v1.1 |
 | P1-17 | ~~Get document by ID~~ | 🧩 | Visibility, library mode | v0.9 |
 | P1-18 | ~~Error code standardization~~ | 🧩 | Consistent API errors | v0.5.8 |
 | P1-19 | ~~`build_app()` lazy init~~ | 🧩 | Testability, startup safety | v0.5.8 |
@@ -114,10 +114,11 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-50 | Product-signal metrics + metrics polish | 🧩 | Zero-match searches, filter usage, query-log readiness, embedder counters, sidecar drift — competitor gap. Bundled with P1-49's histogram + HELP/TYPE refactor and docs-site coverage so the new gauges are discoverable | v1.1 |
 | P1-51 | ~~Admin query-home resolver + shortcut routes + CLI rework~~ | 🧩 | Bare-`query_id` lookup/replay for admin via `query_home` table in `catalog.db` | v0.9 |
 | P1-52 | Concurrency chaos test (Level 1) | 🔧 | N-thread random-interleave fuzz over create/delete/move/ingest/search/dump/restore with post-run catalog↔disk invariants. Regression net for the lock lattice hardened during the v0.9 rc cycle; bench-stress finds races, this turns them into non-flaky CI checks. Ships as nightly job at v1.1 (not a v1.0 release gate). | v1.1 |
-| P1-53a | Reference-source plumbing: OpenAPI completeness pass | 🔧 | Every route gets `summary`/`description`/`tags`/`responses`; every Pydantic `Field` gets `description` + at least one example. Unblocks an auto-rendered API reference. | v1.0 |
+| P1-53a | ~~Reference-source plumbing: OpenAPI completeness pass~~ | 🔧 | Every route gets `summary`/`description`/`tags`/`responses`; every Pydantic `Field` gets `description` + at least one example. Unblocks an auto-rendered API reference. | v1.0 |
 | P1-53b | ~~Reference-source plumbing: CLI completeness + dumper~~ | 🔧 | Every subcommand gets `help`/`epilog`-example; `scripts/cli_to_markdown.py` renders `docs/reference/cli.md` committed in-repo. | v1.0 |
 | P1-53c | Reference-source plumbing: config schema refactor | 🔧 | Single (key, default, description, env_var) source for `_DEFAULTS`, `config.yml.example`, and `docs/reference/config.md`. Closes P1-26 (drift check) as a side effect. | v1.0 |
 | P1-53d | Reference-source plumbing: module/class docstrings on public seams | 🔧 | `pave/stores`, `pave/backends`, `pave/embedders`, catalog, `pave/service.py` public functions. Powers `mkdocstrings` once the docs site lands. | v1.0 |
+| P1-53e | API contract snapshot + drift check | 🔧 | Commit `openapi.json` as a checked-in snapshot; `docs-ref-openapi` dump + drift check (mirrors P1-53b's CLI gate) enforces the P1-43 "frozen at v1.0, additive-after" contract — breaking changes fail CI. Depends on P1-53a. | v1.0 |
 | P1-54 | Per-collection archive (dump + restore) | 🧱 | Admin-only `GET`/`POST` archive endpoints for a single collection. Carries `manifest.json` (PaveDB version, embedder spec, schema version), `meta.db`, FAISS index, sidecars. Restore must verify embedder spec is resolvable locally before touching disk. Same-version restore only at v1.5; cross-version waits on P3-37. Depends on P2-25. | v1.5 |
 | P1-55 | Per-collection reindex | 🧱 | Admin-only operation: rebuild vectors against a new embedder spec. Needs a job model (interruptible, resumable, status-trackable). Splits cleanly from PATCH (cheap label edit) and `move` (slug/path move + disk move) because it's the only one that rewrites stored vectors. | v1.6 |
 | P1-56 | Chroma comparison benchmark | 🔧 | Optional local compare bench for PaveDB vs Chroma using the same corpus, same sentence-transformers model, comparable create/upsert/delete/search operations, exact metadata filters only, and consolidated latency/stress output. Keep Chroma deps off the default install/test path. | v1.0 |
@@ -198,6 +199,11 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-51 | ~~`make docker-check`: alive test against prebuilt Docker image~~ | 🧩 | v0.5.9 |
 | P3-52 | ~~`make build-check`: install from local wheel in temp venv, alive test~~ | 🧩 | v0.5.9 |
 | P3-53 | Micro-batch concurrent query embeddings | 🧱 | v1.8 |
+
+P3-18 includes a checked-in `openapi.json` snapshot plus a
+`docs-ref-openapi` dump and drift check, mirroring P1-53b's CLI gate.
+Any unintended public API change should fail CI after the freeze; the
+current spec is complete as of P1-53a.
 
 ---
 
@@ -376,17 +382,20 @@ latency on every search/ingest/delete.~~
   APIs; `vector_space_key` surfaced on detail/listing; `pave.slugify`
   client-side helper (P1-32).~~
 - Per-collection hot caches with isolation (P1-22).
-- Embedded/library mode: import `pave` and use the store
-  in-process — no server required. Lowers the install friction
-  bar (Chroma-like first impression) without sacrificing the
-  inspectability surface (P1-15).
+- Embedded/library mode: `import pave; db = pave.connect("./data")`
+  — handle-based `Client`/`Collection` over the service layer, no
+  server required. Lowers the install friction bar (a few lines to
+  first search) without sacrificing the inspectability surface.
+  The library API is the canonical interface the v1.1 Python HTTP
+  client mirrors 1:1. Design in `docs/design/PLAN-CLIENT.md`
+  (P1-15).
 - Reference-source plumbing pass — the docs site slips to v1.1,
   but v1.0 lands the source-of-truth so reference content can be
   rendered from code without re-writing it later:
-  - OpenAPI completeness: every route gets summary/description/
+  - ~~OpenAPI completeness: every route gets summary/description/
     tags/responses; every Pydantic Field gets description + at
     least one example. Unblocks an auto-rendered API reference
-    (P1-53a).
+    (P1-53a).~~
   - ~~CLI completeness + dumper: every subcommand gets help and
     an epilog example; `scripts/cli_to_markdown.py` renders
     `docs/reference/cli.md` committed in-repo (P1-53b).~~
@@ -398,6 +407,9 @@ latency on every search/ingest/delete.~~
     `pave/backends`, `pave/embedders`, catalog, and
     `pave/service.py` public functions. Powers `mkdocstrings`
     when the docs site lands at v1.1 (P1-53d).
+  - API contract snapshot: commit `openapi.json` and add a dump +
+    drift check that enforces the P1-43 frozen-at-1.0,
+    additive-after contract — breaking changes fail CI (P1-53e).
 - ~~Dev vs prod config defaults: code defaults are prod-safe, the dev
   convenience overlay lives in the Makefile/env, enforced by
   `enforce_policy` fail-fast (P1-25).~~
