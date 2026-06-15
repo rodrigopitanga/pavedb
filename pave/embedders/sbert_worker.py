@@ -117,16 +117,12 @@ class ProcessSbertEmbedder:
         ).strip()
         if not self.model_name:
             raise RuntimeError("embedder.sbert.model must be configured")
-        self.device = str(
-            device
-            if device is not None
-            else CFG.get("embedder.sbert.device", "auto")
-        )
-        self.batch_size = int(
-            batch_size
-            if batch_size is not None
-            else CFG.get("embedder.sbert.batch_size", 64)
-        )
+        if device is None:
+            device = CFG.get("embedder.sbert.device")
+        self.device = str(device if device is not None else "auto")
+        if batch_size is None:
+            batch_size = CFG.get("embedder.sbert.batch_size")
+        self.batch_size = int(batch_size if batch_size is not None else 64)
         self._lock = Lock()
         self._proc: mp.Process | None = None
         self._conn: Any = None

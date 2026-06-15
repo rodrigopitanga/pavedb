@@ -76,18 +76,12 @@ class SbertEmbedder:
         ).strip()
         if not model_name:
             raise RuntimeError("embedder.sbert.model must be configured")
-        device = self._resolve_device(
-            torch,
-            device if device is not None else CFG.get(
-                "embedder.sbert.device",
-                "auto",
-            ),
-        )
-        self.batch_size = int(
-            batch_size
-            if batch_size is not None
-            else CFG.get("embedder.sbert.batch_size", 64)
-        )
+        if device is None:
+            device = CFG.get("embedder.sbert.device")
+        device = self._resolve_device(torch, device if device is not None else "auto")
+        if batch_size is None:
+            batch_size = CFG.get("embedder.sbert.batch_size")
+        self.batch_size = int(batch_size if batch_size is not None else 64)
         self.model = SentenceTransformer(model_name, device=device)
         try:
             get_dim = getattr(

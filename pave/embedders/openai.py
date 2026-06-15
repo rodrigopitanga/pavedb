@@ -69,11 +69,9 @@ class OpenAIEmbedder:
         ).strip()
         if not self.model:
             raise RuntimeError("embedder.openai.model must be configured")
-        self.batch_size = int(
-            batch_size
-            if batch_size is not None
-            else CFG.get("embedder.openai.batch_size", 256)
-        )
+        if batch_size is None:
+            batch_size = CFG.get("embedder.openai.batch_size")
+        self.batch_size = int(batch_size if batch_size is not None else 256)
         self._dim = dim if dim is not None else CFG.get("embedder.openai.dim")
         resolved_key = (
             api_key
@@ -83,12 +81,9 @@ class OpenAIEmbedder:
         if not resolved_key:
             raise RuntimeError("OpenAI API key not configured")
         client_kwargs = {"api_key": resolved_key}
-        resolved_base_url = str(
-            base_url
-            if base_url is not None
-            else CFG.get("embedder.openai.base_url", "")
-            or ""
-        ).strip()
+        if base_url is None:
+            base_url = CFG.get("embedder.openai.base_url")
+        resolved_base_url = str(base_url if base_url is not None else "").strip()
         if resolved_base_url:
             client_kwargs["base_url"] = resolved_base_url
         self.client = OpenAI(**client_kwargs)
