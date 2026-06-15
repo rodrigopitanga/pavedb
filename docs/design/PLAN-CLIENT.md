@@ -102,9 +102,8 @@ wrap the same `service.py`. The only CLI commands the library
 omits are environment/ops (`init`, `reset-metrics`).
 
 **Core — collections + search**
-- `Client`: `create_collection`, `get_or_create_collection`,
-  `collection(name)`, `list_collections`, `list_tenants`,
-  `delete_collection`
+- `Client`: `create_collection`, `collection(name)`,
+  `list_collections`, `list_tenants`, `delete_collection`
 - `Collection`: `ingest(file)`, `add(text)`, `search(q, k,
   filters=, include_common=)`, `get(docid)`, `list_documents`,
   `delete(docid)`
@@ -131,15 +130,14 @@ omits are environment/ops (`init`, `reset-metrics`).
   P1-54, reindex P1-55).
 
 `add(text)` for in-memory strings has no CLI equivalent but is the
-key embedded ergonomic (REPL: add a string, search it); it wraps
-the text as a `.txt` doc through the same ingest path.
+key embedded ergonomic (REPL: add a string, search it). It calls
+the service-layer raw text ingest path and stores no filename
+metadata.
 
-The HTTP transport needs no new endpoint for parity: the v1.1
-`HttpClient.add(text)` can wrap the string as a `.txt` upload to
-the existing documents endpoint. A native JSON text-ingest
-endpoint (single + batch, no multipart) is independently worth it
-for direct HTTP/curl DX and is scheduled into P1-16 (v1.1) — the
-HTTP `add(text)` repoints to it once it lands.
+The HTTP transport needs the native JSON text-ingest endpoint
+scheduled into P1-16 (v1.1) for parity. Until then, raw text
+ingest is library-only; do not emulate it through fake file
+uploads.
 
 ## CLI port — deferred, not now
 

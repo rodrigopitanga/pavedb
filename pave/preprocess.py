@@ -159,3 +159,9 @@ def preprocess(filename: str, content: bytes, csv_options: CsvOptions \
         return
     else:
         raise ValueError(f"unsupported file type: {ext or 'unknown'}")
+
+
+def preprocess_text(text: str) -> Iterator[tuple[str, str, Metadata]]:
+    step = max(TXT_CHUNK_SIZE - TXT_CHUNK_OVERLAP, 1)
+    for i, chunk in enumerate(_chunks(text)):
+        yield f"chunk_{i}", chunk, {"offset": i * step}

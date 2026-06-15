@@ -29,7 +29,7 @@ from pave.embedders.factory import (
 from pave.metrics import (
     inc as m_inc, timed as m_timed, record_latency as m_record_latency
 )
-from pave.preprocess import CsvOptions, preprocess
+from pave.preprocess import CsvOptions, preprocess, preprocess_text
 from pave.stores.base import (
     BaseStore,
     FilterSpec,
@@ -609,6 +609,29 @@ def _default_docid(filename: str) -> str:
     if base != '': return base
     return "PVDOC_"+str(uuid.uuid4())
 
+def _index_records_result(store, tenant: str, collection: str, baseid: str,
+                          records, doc_meta, t0: float, label: str) -> ServiceResult:
+    """Shared tail for ingest paths: index records, metrics, log, envelope."""
+    result = store.index_records(tenant, collection, baseid, records, doc_meta)
+    if result.purged_chunks:
+        m_inc("purge_total", float(result.purged_chunks))
+    m_inc("documents_indexed_total", 1.0)
+    m_inc("chunks_indexed_total", float(result.indexed_chunks))
+    latency_ms = round((_time.perf_counter() - t0) * 1000, 2)
+    log.info(
+        f"{label} tenant={tenant} coll={collection} "
+        f"docid={baseid} indexed_chunks={result.indexed_chunks} "
+        f"ms={latency_ms:.2f}"
+    )
+    return {
+        "ok": True,
+        "tenant": tenant,
+        "collection": collection,
+        "docid": baseid,
+        "chunks": result.indexed_chunks,
+    }
+
+
 def ingest_document(store, tenant: str, collection: str, filename: str, content: bytes,
                     docid: str | None, metadata: Metadata | None,
                     csv_options: CsvOptions | None = None) -> ServiceResult:
@@ -642,30 +665,9 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
                     "error": "no text extracted",
                 }
             stage = "index_records"
-            result = store.index_records(
-                tenant,
-                collection,
-                baseid,
-                records,
-                doc_meta,
+            return _index_records_result(
+                store, tenant, collection, baseid, records, doc_meta, _t0, "ingest"
             )
-            if result.purged_chunks:
-                m_inc("purge_total", float(result.purged_chunks))
-            m_inc("documents_indexed_total", 1.0)
-            m_inc("chunks_indexed_total", float(result.indexed_chunks))
-            latency_ms = round((_time.perf_counter() - _t0) * 1000, 2)
-            log.info(
-                f"ingest tenant={tenant} coll={collection} "
-                f"docid={baseid} indexed_chunks={result.indexed_chunks} "
-                f"ms={latency_ms:.2f}"
-            )
-            return {
-                "ok": True,
-                "tenant": tenant,
-                "collection": collection,
-                "docid": baseid,
-                "chunks": result.indexed_chunks,
-            }
         except ServiceError:
             raise
         except MetadataValidationError as exc:
@@ -697,6 +699,80 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
                 "code": "ingest_failed",
                 "error": str(e),
             }
+
+
+def ingest_text(
+    store,
+    tenant: str,
+    collection: str,
+    text: str,
+    docid: str | None,
+    metadata: Metadata | None,
+) -> ServiceResult:
+    _t0 = _time.perf_counter()
+    with m_timed("ingest"):
+        try:
+            baseid = docid or _default_docid("")
+            meta_from_call = metadata or {}
+            now = datetime.now(tz.utc).isoformat(timespec="seconds")
+            now = now.replace("+00:00", "Z")
+            doc_meta = {
+                "docid": baseid,
+                "ingested_at": now,
+                **meta_from_call,
+            }
+            records = [
+                (f"{baseid}::{local_id}", chunk, extra)
+                for local_id, chunk, extra in preprocess_text(text)
+            ]
+            if not records:
+                log.info(
+                    "ingest_text no_text_extracted tenant=%s "
+                    "coll=%s docid=%s",
+                    tenant, collection, baseid,
+                )
+                return {
+                    "ok": False,
+                    "code": "no_text_extracted",
+                    "error": "no text extracted",
+                }
+            return _index_records_result(
+                store,
+                tenant,
+                collection,
+                baseid,
+                records,
+                doc_meta,
+                _t0,
+                "ingest_text",
+            )
+        except ServiceError:
+            raise
+        except MetadataValidationError as exc:
+            raise ServiceError("invalid_metadata_keys", str(exc)) from exc
+        except EmbedderUnavailableError as exc:
+            log.warning(
+                "ingest_text embedder_unavailable tenant=%s coll=%s "
+                "docid=%s: %s",
+                tenant, collection, baseid, exc,
+            )
+            return {
+                "ok": False,
+                "code": "embedder_unavailable",
+                "error": str(exc),
+            }
+        except Exception as e:
+            log.warning(
+                "ingest_text failed tenant=%s coll=%s docid=%s: %s",
+                tenant, collection, baseid, e,
+                exc_info=True,
+            )
+            return {
+                "ok": False,
+                "code": "ingest_failed",
+                "error": str(e),
+            }
+
 
 def search(store, tenant: str, collection: str, q: str, k: int = 5,
            filters: FilterSpec | None = None,
