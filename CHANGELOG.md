@@ -1,6 +1,30 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
+## 0.9.1 — 2026-06-15
+
+### Core
+- Move embedder specs onto embedder modules (P1-32)
+- Convention-based embedder dispatch (P3-49)
+- Add OllamaEmbedder as a thin OpenAI-compatible wrapper for a local Ollama dae...
+- Replace startup warmup with store.warm() behind a config knob (P3-48)
+- Align typing policy with SDK boundaries (P1-57)
+
+### Store
+- [fix] Treat concurrent-delete race in search as 404
+- [fix] Stop persisting embedder defaults that bust the load cache
+- Remove _system tenant carve-outs
+- [fix] Keep health probes off the per-collection lock walk
+- Hoist query embedding out of the collection read lock
+
+### API
+- Add collection model specs and move/update APIs (P1-32)
+- Return 503 for unavailable embedders (P1-32)
+
+### Performance
+- Cover collection update and move APIs (P1-32)
+
+---
 ## 0.9.0 — 2026-06-11
 
 ### API
