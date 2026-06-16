@@ -78,8 +78,8 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-12 | ~~Ingest timeout guidance~~ | 🧩 | Avoid client timeouts | v0.5.8 |
 | P1-13 | ~~Ingest size limits~~ | 🧩 | Fail fast on huge uploads | v0.5.8 |
 | P1-14 | ~~Response envelope standardization~~ | 🧱 | SDK-friendly API | v0.9 |
-| P1-15 | Embedded/library mode | 🧱 | In-app use, adoption. Handle-based `Client`/`Collection` over `service.py`; `pave.connect()` dispatches local/ephemeral/HTTP by scheme; raises typed `PaveError`. Canonical interface every transport implements. See `docs/design/PLAN-CLIENT.md` | v1.0 |
-| P1-16 | Batch document ingest endpoint | 🧩 | Throughput, DX. Ingest a list of documents in one request. JSON items carry `text`, optional `docid`, and metadata; Python exposes `add_many`, HTTP exposes `documents:batch`, CLI exposes `ingest-batch`. File upload remains single-document until async jobs. | v1.1 |
+| P1-15 | ~~Embedded/library mode~~ | 🧱 | In-app use, adoption. Handle-based `Client`/`Collection` over `service.py`; `pave.connect()` dispatches local/ephemeral/HTTP by scheme; raises typed `PaveError`. Canonical interface every transport implements. See `docs/design/PLAN-CLIENT.md` | v1.0 |
+| P1-16 | ~~JSON + batch document ingest~~ | 🧩 | Throughput, DX. `POST /documents` accepts multipart files or JSON text documents; `POST /documents:batch` ingests a list of JSON text documents. Python exposes `add_many`; CLI exposes `ingest-text` and `ingest-batch`. Multi-file batch waits for async jobs. | v1.1 |
 | P1-17 | ~~Get document by ID~~ | 🧩 | Visibility, library mode | v0.9 |
 | P1-18 | ~~Error code standardization~~ | 🧩 | Consistent API errors | v0.5.8 |
 | P1-19 | ~~`build_app()` lazy init~~ | 🧩 | Testability, startup safety | v0.5.8 |
@@ -382,13 +382,13 @@ latency on every search/ingest/delete.~~
   APIs; `vector_space_key` surfaced on detail/listing; `pave.slugify`
   client-side helper (P1-32).~~
 - Per-collection hot caches with isolation (P1-22).
-- Embedded/library mode: `import pave; db = pave.connect("./data")`
+- ~~Embedded/library mode: `import pave; db = pave.connect("./data")`
   — handle-based `Client`/`Collection` over the service layer, no
   server required. Lowers the install friction bar (a few lines to
   first search) without sacrificing the inspectability surface.
   The library API is the canonical interface the v1.1 Python HTTP
   client mirrors 1:1. Design in `docs/design/PLAN-CLIENT.md`
-  (P1-15).
+  (P1-15).~~
 - Reference-source plumbing pass — the docs site slips to v1.1,
   but v1.0 lands the source-of-truth so reference content can be
   rendered from code without re-writing it later:
@@ -474,7 +474,7 @@ site).
   in-process library mode (v1.0) and an HTTP client for remote
   instances behind the same interface. Same package, two transports
   (P1-24).
-- Batch ingest endpoint (list of documents in one call) (P1-16).
+- ~~Batch ingest endpoint (list of documents in one call) (P1-16).~~
 - Admin key auto-generate + persist on first boot; CLI rotate /
   show; mode-`0600` enforced (P1-27).
 - HTTP metrics polish + product-signal metrics: histogram refactor

@@ -35,6 +35,7 @@ pavecli [-h] [--compact] <command> ...
 | `create-collection` | Create a collection. |
 | `ingest` | Index a file into a collection. |
 | `ingest-batch` | Index raw-text documents into a collection. |
+| `ingest-text` | Index raw text into a collection. |
 | `search` | Search a collection. |
 | `list-queries` | List logged query IDs. |
 | `get-query` | Fetch a logged query by ID. |
@@ -188,6 +189,37 @@ pavecli ingest-batch demo books ./documents.json
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection name
 - `file` (required): JSON batch input file
+
+## `ingest-text`
+
+Index one raw-text document.
+
+### Usage
+
+```bash
+pavecli ingest-text [-h] [--home HOME] [--config CONFIG]
+                           [--tenants TENANTS] [--data-dir DATA_DIR]
+                           [--docid DOCID] [--metadata METADATA]
+                           tenant collection text
+```
+
+### Example
+
+```bash
+pavecli ingest-text demo books "Captain Nemo" --docid note-1
+```
+
+### Arguments And Options
+
+- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
+- `--config` (optional): Explicit config.yml path
+- `--tenants` (optional): Explicit tenants.yml path
+- `--data-dir` (optional): Explicit data directory
+- `tenant` (required): Tenant namespace
+- `collection` (required): Collection name
+- `text` (required): Raw text to index
+- `--docid` (optional): Stable document ID; generated when omitted
+- `--metadata` (optional): JSON object attached to the document
 
 ## `search`
 

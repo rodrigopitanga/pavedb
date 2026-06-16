@@ -465,6 +465,24 @@ class IngestDocumentResponse(OkResponse):
     chunks: int = Field(description="Number of chunks created.", examples=[42])
 
 
+class IngestTextDocumentBody(BaseModel):
+    """Raw-text document ingest request."""
+    text: str = Field(
+        description="Raw text to index as one document.",
+        examples=["Captain Nemo commands the Nautilus."],
+    )
+    docid: str | None = Field(
+        default=None,
+        description="Optional stable document id; generated when omitted.",
+        examples=["note-1"],
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional user metadata stored with the document.",
+        examples=[{"source": "manual"}],
+    )
+
+
 class BatchDocumentInput(BaseModel):
     """One raw-text document in a batch ingest request."""
     text: str = Field(

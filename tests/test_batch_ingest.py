@@ -4,6 +4,34 @@
 from __future__ import annotations
 
 
+def test_json_text_document_ingest_api(client):
+    create = client.post("/v1/collections/acme/jsondocs")
+    assert create.status_code == 201
+
+    response = client.post(
+        "/v1/collections/acme/jsondocs/documents",
+        json={
+            "text": "Captain Nemo commands the Nautilus.",
+            "docid": "NOTE-1",
+            "metadata": {"source": "json"},
+        },
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["ok"] is True
+    assert data["tenant"] == "acme"
+    assert data["collection"] == "jsondocs"
+    assert data["docid"] == "NOTE-1"
+    assert data["chunks"] == 1
+
+    doc = client.get("/v1/collections/acme/jsondocs/documents/NOTE-1")
+    assert doc.status_code == 200
+    metadata = doc.json()["metadata"]
+    assert metadata["source"] == "json"
+    assert "filename" not in metadata
+
+
 def test_batch_document_ingest_api(client):
     create = client.post("/v1/collections/acme/batchdocs")
     assert create.status_code == 201

@@ -8,6 +8,7 @@ import functools
 import json
 
 from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile
+from pydantic import ValidationError
 
 from pave.auth import AuthContext, tenant_rate_limit
 from pave.config import get_logger
@@ -20,6 +21,7 @@ from pave.schemas import (
     ListDocumentsResponse,
     GetDocumentResponse,
     IngestDocumentResponse,
+    IngestTextDocumentBody,
     GetChunkResponse,
     ListChunksResponse,
 )
@@ -31,6 +33,7 @@ from pave.service import (
     get_document as svc_get_document,
     ingest_documents_batch as svc_ingest_documents_batch,
     ingest_document as svc_ingest_document,
+    ingest_text as svc_ingest_text,
     list_chunks as svc_list_chunks,
     list_documents as svc_list_documents,
 )
@@ -82,8 +85,8 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         status_code=201,
         summary="Ingest a document",
         description=(
-            "Chunks, embeds, and indexes the file; reusing a docid replaces "
-            "it."
+            "Chunks, embeds, and indexes a multipart file or JSON raw-text "
+            "document; reusing a docid replaces it."
         ),
         response_model=IngestDocumentResponse,
         responses=resp(400, 401, 403, 413, 429, 500, 503),
@@ -104,7 +107,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         request: Request,
         tenant: str,
         collection: str,
-        file: UploadFile = File(...),
+        file: UploadFile | None = File(None),
         docid: str | None = Form(None),
         metadata: str | None = Form(None),
         csv_has_header: str | None = Query(None, pattern="^(auto|yes|no)$"),
@@ -115,8 +118,30 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         store: BaseStore = Depends(current_store),
     ):
         inc("requests_total")
+        is_json = (
+            request.headers.get("content-type", "")
+            .split(";", 1)[0]
+            .strip()
+            .lower()
+            == "application/json"
+        )
         meta_obj = None
-        if metadata:
+        content = b""
+        text_body: IngestTextDocumentBody | None = None
+        if is_json:
+            try:
+                text_body = IngestTextDocumentBody.model_validate(
+                    await request.json()
+                )
+            except (json.JSONDecodeError, ValidationError, ValueError) as e:
+                return error(
+                    400,
+                    "invalid_document_json",
+                    f"invalid document json: {e}",
+                    request=request,
+                    request_id=rid,
+                )
+        elif metadata:
             try:
                 meta_obj = json.loads(metadata)
             except Exception as e:
@@ -127,12 +152,25 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     request=request,
                     request_id=rid,
                 )
-
-        content = await file.read()
+        elif file is None:
+            return error(
+                400,
+                "missing_document_file",
+                "multipart document ingest requires a file",
+                request=request,
+                request_id=rid,
+            )
+        if file is not None:
+            content = await file.read()
 
         max_mb = float(cfg.get("ingest.max_file_size_mb"))
         max_bytes = int(max_mb * 1024 * 1024)
-        if max_bytes > 0 and len(content) > max_bytes:
+        content_len = (
+            len(text_body.text.encode("utf-8"))
+            if text_body is not None
+            else len(content)
+        )
+        if max_bytes > 0 and content_len > max_bytes:
             return error(
                 413,
                 "file_too_large",
@@ -175,9 +213,18 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         try:
             try:
                 loop = asyncio.get_running_loop()
-                result = await loop.run_in_executor(
-                    request.app.state.ingest_executor,
-                    functools.partial(
+                if text_body is not None:
+                    call = functools.partial(
+                        svc_ingest_text,
+                        store,
+                        tenant,
+                        collection,
+                        text_body.text,
+                        text_body.docid,
+                        text_body.metadata,
+                    )
+                else:
+                    call = functools.partial(
                         svc_ingest_document,
                         store,
                         tenant,
@@ -187,7 +234,10 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                         docid,
                         meta_obj,
                         csv_options=csv_opts,
-                    ),
+                    )
+                result = await loop.run_in_executor(
+                    request.app.state.ingest_executor,
+                    call,
                 )
                 if not result.get("ok"):
                     code = result.get("code", "ingest_failed")

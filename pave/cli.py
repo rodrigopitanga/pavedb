@@ -23,6 +23,7 @@ from pave.service import (
     get_query_log_entry as svc_get_query_log_entry,
     ingest_documents_batch as svc_ingest_documents_batch,
     ingest_document as svc_ingest_document,
+    ingest_text as svc_ingest_text,
     list_chunks as svc_list_chunks,
     list_tenants as svc_list_tenants,
     list_collections as svc_list_collections,
@@ -213,6 +214,18 @@ def cmd_ingest_batch(args):
         args.tenant,
         args.collection,
         documents,
+    )
+
+
+def cmd_ingest_text(args):
+    meta = json.loads(args.metadata) if args.metadata else {}
+    return svc_ingest_text(
+        _get_store(),
+        args.tenant,
+        args.collection,
+        args.text,
+        args.docid,
+        meta,
     )
 
 
@@ -529,6 +542,29 @@ def build_parser() -> argparse.ArgumentParser:
     p_ingest_batch.add_argument("collection", help="Collection name")
     p_ingest_batch.add_argument("file", help="JSON batch input file")
     p_ingest_batch.set_defaults(func=cmd_ingest_batch)
+
+    p_ingest_text = _command(
+        sub,
+        "ingest-text",
+        help="Index raw text into a collection.",
+        description="Index one raw-text document.",
+        example=(
+            'pavecli ingest-text demo books "Captain Nemo" --docid note-1'
+        ),
+        parents=[runtime],
+    )
+    p_ingest_text.add_argument("tenant", help="Tenant namespace")
+    p_ingest_text.add_argument("collection", help="Collection name")
+    p_ingest_text.add_argument("text", help="Raw text to index")
+    p_ingest_text.add_argument(
+        "--docid",
+        help="Stable document ID; generated when omitted",
+    )
+    p_ingest_text.add_argument(
+        "--metadata",
+        help="JSON object attached to the document",
+    )
+    p_ingest_text.set_defaults(func=cmd_ingest_text)
 
     p_search = _command(
         sub,
