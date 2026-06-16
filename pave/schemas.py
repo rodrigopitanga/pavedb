@@ -465,6 +465,79 @@ class IngestDocumentResponse(OkResponse):
     chunks: int = Field(description="Number of chunks created.", examples=[42])
 
 
+class BatchDocumentInput(BaseModel):
+    """One raw-text document in a batch ingest request."""
+    text: str = Field(
+        description="Raw text to index as one document.",
+        examples=["Captain Nemo commands the Nautilus."],
+    )
+    docid: str | None = Field(
+        default=None,
+        description="Optional stable document id; generated when omitted.",
+        examples=["note-1"],
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional user metadata stored with the document.",
+        examples=[{"source": "manual"}],
+    )
+
+
+class BatchIngestDocumentsBody(BaseModel):
+    """Batch raw-text document ingest request."""
+    documents: list[BatchDocumentInput] = Field(
+        description="Documents to ingest.",
+        min_length=1,
+        examples=[
+            [
+                {
+                    "text": "Captain Nemo commands the Nautilus.",
+                    "docid": "note-1",
+                    "metadata": {"source": "manual"},
+                }
+            ]
+        ],
+    )
+
+
+class BatchIngestDocumentResult(BaseModel):
+    """Per-document result for batch ingest."""
+    ok: bool = Field(description="Whether this document was ingested.")
+    index: int = Field(description="Zero-based item index.", examples=[0])
+    docid: str | None = Field(
+        default=None,
+        description="Document id, when known.",
+        examples=["note-1"],
+    )
+    chunks: int | None = Field(
+        default=None,
+        description="Number of chunks indexed on success.",
+        examples=[1],
+    )
+    code: str | None = Field(
+        default=None,
+        description="Failure code for this item.",
+        examples=["no_text_extracted"],
+    )
+    error: str | None = Field(
+        default=None,
+        description="Failure message for this item.",
+        examples=["no text extracted"],
+    )
+
+
+class BatchIngestDocumentsResponse(OkResponse):
+    """Result of ingesting several raw-text documents."""
+    tenant: str = Field(description="Tenant scope.", examples=["demo"])
+    collection: str = Field(description="Collection scope.", examples=["books"])
+    documents: list[BatchIngestDocumentResult] = Field(
+        description="Per-document ingest results.",
+    )
+    count: int = Field(description="Number of items processed.", examples=[2])
+    succeeded: int = Field(description="Number of successful items.", examples=[2])
+    failed: int = Field(description="Number of failed items.", examples=[0])
+
+
 class DeleteDocumentResponse(OkResponse):
     """Confirmation of a deleted document."""
     tenant: str = Field(

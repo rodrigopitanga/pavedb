@@ -774,6 +774,102 @@ def ingest_text(
             }
 
 
+def ingest_documents_batch(
+    store,
+    tenant: str,
+    collection: str,
+    documents: Iterable[Mapping[str, Any]],
+) -> ServiceResult:
+    items = list(documents)
+    if not items:
+        return {
+            "ok": False,
+            "code": "invalid_batch",
+            "error": "documents must not be empty",
+            "error_type": "invalid",
+        }
+
+    results: list[dict[str, Any]] = []
+    succeeded = 0
+    failed = 0
+    for index, item in enumerate(items):
+        if not isinstance(item, Mapping):
+            return {
+                "ok": False,
+                "code": "invalid_batch",
+                "error": f"documents[{index}] must be an object",
+                "error_type": "invalid",
+            }
+        text = item.get("text")
+        if not isinstance(text, str):
+            return {
+                "ok": False,
+                "code": "invalid_batch",
+                "error": f"documents[{index}].text must be a string",
+                "error_type": "invalid",
+            }
+        docid_value = item.get("docid")
+        if docid_value is not None and not isinstance(docid_value, str):
+            return {
+                "ok": False,
+                "code": "invalid_batch",
+                "error": f"documents[{index}].docid must be a string or null",
+                "error_type": "invalid",
+            }
+        metadata_value = item.get("metadata")
+        if metadata_value is not None and not isinstance(metadata_value, dict):
+            return {
+                "ok": False,
+                "code": "invalid_batch",
+                "error": f"documents[{index}].metadata must be an object or null",
+                "error_type": "invalid",
+            }
+
+    for index, item in enumerate(items):
+        try:
+            result = ingest_text(
+                store,
+                tenant,
+                collection,
+                str(item["text"]),
+                item.get("docid"),
+                item.get("metadata"),
+            )
+        except ServiceError as exc:
+            result = {
+                "ok": False,
+                "code": exc.code,
+                "error": exc.message,
+            }
+        if result.get("ok"):
+            succeeded += 1
+            results.append({
+                "ok": True,
+                "index": index,
+                "docid": result["docid"],
+                "chunks": result["chunks"],
+            })
+        else:
+            failed += 1
+            results.append({
+                "ok": False,
+                "index": index,
+                "docid": item.get("docid"),
+                "code": result.get("code", "ingest_failed"),
+                "error": result.get("error", "failed to ingest document"),
+            })
+
+    return {
+        "ok": True,
+        "tenant": tenant,
+        "collection": collection,
+        "documents": results,
+        "count": len(results),
+        "succeeded": succeeded,
+        "failed": failed,
+    }
+
+
 def search(store, tenant: str, collection: str, q: str, k: int = 5,
            filters: FilterSpec | None = None,
            include_common: bool = False,

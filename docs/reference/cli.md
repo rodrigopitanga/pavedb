@@ -34,6 +34,7 @@ pavecli [-h] [--compact] <command> ...
 | `init` | Create a PaveDB instance config and data directory. |
 | `create-collection` | Create a collection. |
 | `ingest` | Index a file into a collection. |
+| `ingest-batch` | Index raw-text documents into a collection. |
 | `search` | Search a collection. |
 | `list-queries` | List logged query IDs. |
 | `get-query` | Fetch a logged query by ID. |
@@ -159,6 +160,34 @@ pavecli ingest demo books ./book.txt --docid book-1 --metadata '{"lang":"en"}'
   1-based indices, comma-separated
 - `--csv-include-cols` (optional): CSV columns to index. Names or 1-based indices,
   comma-separated. Defaults to all non-meta columns
+
+## `ingest-batch`
+
+Index a JSON batch of raw-text documents.
+
+### Usage
+
+```bash
+pavecli ingest-batch [-h] [--home HOME] [--config CONFIG]
+                            [--tenants TENANTS] [--data-dir DATA_DIR]
+                            tenant collection file
+```
+
+### Example
+
+```bash
+pavecli ingest-batch demo books ./documents.json
+```
+
+### Arguments And Options
+
+- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
+- `--config` (optional): Explicit config.yml path
+- `--tenants` (optional): Explicit tenants.yml path
+- `--data-dir` (optional): Explicit data directory
+- `tenant` (required): Tenant namespace
+- `collection` (required): Collection name
+- `file` (required): JSON batch input file
 
 ## `search`
 

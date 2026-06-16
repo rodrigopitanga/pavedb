@@ -57,6 +57,42 @@ def test_cli_ingest_on_fresh_collection_with_empty_index_dir(cli_env, tmp_path):
                and c[3] == "DOC1" for c in store.calls)
 
 
+def test_cli_ingest_batch_indexes_raw_text_documents(cli_env, capsys):
+    pvcli, store, tmp_path = cli_env
+    tenant, coll = "acme", "batchcli"
+    batch = tmp_path / "batch.json"
+    batch.write_text(
+        json.dumps({
+            "documents": [
+                {
+                    "text": "Captain Nemo commands the Nautilus.",
+                    "docid": "NOTE-1",
+                    "metadata": {"source": "cli"},
+                },
+                {
+                    "text": "The Nautilus dives beneath the ice.",
+                    "docid": "NOTE-2",
+                },
+            ]
+        }),
+        encoding="utf-8",
+    )
+
+    pvcli.main_cli(["create-collection", tenant, coll])
+    capsys.readouterr()
+    rc = pvcli.main_cli(["ingest-batch", tenant, coll, str(batch)])
+
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["succeeded"] == 2
+    assert out["failed"] == 0
+    assert {
+        call[3]
+        for call in store.calls
+        if call[0] == "index_records" and call[1] == tenant and call[2] == coll
+    } == {"NOTE-1", "NOTE-2"}
+
+
 def test_cli_create_collection_accepts_embedder_args(cli_env, capsys):
     pvcli, store, _ = cli_env
     tenant, coll = "acme", "cfgcli"

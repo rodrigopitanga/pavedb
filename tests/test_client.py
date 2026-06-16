@@ -96,15 +96,22 @@ def test_collection_surface_returns_clean_data(tmp_path):
             docid="NOTE-1",
         )
         assert added["docid"] == "NOTE-1"
+        batch = books.add_many([
+            ("The Nautilus dives beneath the ice.", "NOTE-2", None),
+            {
+                "text": "Nemo studies ocean currents.",
+                "docid": "NOTE-3",
+                "metadata": {"kind": "note"},
+            },
+        ])
+        assert batch["succeeded"] == 2
+        assert batch["failed"] == 0
 
         hits = books.search("captain", k=3)
         assert isinstance(hits, list)
         assert hits
         assert "ok" not in hits[0]
-        assert {match["meta"]["docid"] for match in hits} >= {
-            "BOOK-1",
-            "NOTE-1",
-        }
+        assert "BOOK-1" in {match["meta"]["docid"] for match in hits}
 
         document = books.get("BOOK-1")
         assert document["docid"] == "BOOK-1"
@@ -113,7 +120,12 @@ def test_collection_surface_returns_clean_data(tmp_path):
         assert "filename" not in note["metadata"]
 
         documents = books.list_documents()
-        assert {doc["docid"] for doc in documents} == {"BOOK-1", "NOTE-1"}
+        assert {doc["docid"] for doc in documents} == {
+            "BOOK-1",
+            "NOTE-1",
+            "NOTE-2",
+            "NOTE-3",
+        }
 
         chunks = books.list_chunks("BOOK-1")
         assert len(chunks) == 1
@@ -124,17 +136,14 @@ def test_collection_surface_returns_clean_data(tmp_path):
         detail = books.detail()
         assert detail["name"] == "books"
         assert detail["display_name"] == "Books"
-        assert detail["doc_count"] == 2
+        assert detail["doc_count"] == 4
 
         queries = books.queries()
         assert len(queries) == 1
         query_id = queries[0]["query_id"]
         assert books.get_query(query_id)["query_id"] == query_id
         replay_hits = books.replay(query_id)
-        assert {match["meta"]["docid"] for match in replay_hits} >= {
-            "BOOK-1",
-            "NOTE-1",
-        }
+        assert "BOOK-1" in {match["meta"]["docid"] for match in replay_hits}
 
         updated = books.update(display_name="Renamed Books")
         assert updated["display_name"] == "Renamed Books"

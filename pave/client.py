@@ -25,6 +25,7 @@ from pave.service import (
     get_collection_detail as svc_get_collection_detail,
     get_document as svc_get_document,
     get_query_log_entry as svc_get_query_log_entry,
+    ingest_documents_batch as svc_ingest_documents_batch,
     ingest_document as svc_ingest_document,
     ingest_text as svc_ingest_text,
     list_chunks as svc_list_chunks,
@@ -110,6 +111,31 @@ def _store_for_path(path: str | os.PathLike[str]) -> BaseStore:
     return LocalStore(
         data_dir=str(path),
         embedder=LazyEmbedder(embedders.get_embedder),
+    )
+
+
+def _batch_item(document: object) -> dict[str, Any]:
+    if isinstance(document, str):
+        return {"text": document}
+    if isinstance(document, Mapping):
+        return {
+            "text": document.get("text"),
+            "docid": document.get("docid"),
+            "metadata": document.get("metadata"),
+        }
+    if isinstance(document, (tuple, list)):
+        if not 1 <= len(document) <= 3:
+            raise InvalidRequest(
+                "invalid_batch_item",
+                "batch items must be text, (text, docid, metadata), or a dict",
+            )
+        text = document[0]
+        docid = document[1] if len(document) > 1 else None
+        metadata = document[2] if len(document) > 2 else None
+        return {"text": text, "docid": docid, "metadata": metadata}
+    raise InvalidRequest(
+        "invalid_batch_item",
+        "batch items must be text, (text, docid, metadata), or a dict",
     )
 
 
@@ -287,6 +313,20 @@ class LocalClient:
         )
         return _unwrap(result)
 
+    def _add_many(
+        self,
+        tenant: str,
+        collection: str,
+        documents: list[object],
+    ) -> dict:
+        result = self._call(
+            svc_ingest_documents_batch,
+            tenant,
+            collection,
+            [_batch_item(document) for document in documents],
+        )
+        return _unwrap(result)
+
     def _search(
         self,
         tenant: str,
@@ -453,6 +493,9 @@ class Collection:
             docid=docid,
             metadata=metadata,
         )
+
+    def add_many(self, documents: list[object]) -> dict:
+        return self.client._add_many(self.tenant, self.name, documents)
 
     def search(
         self,

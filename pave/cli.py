@@ -21,6 +21,7 @@ from pave.service import (
     get_collection_detail as svc_get_collection_detail,
     get_document as svc_get_document,
     get_query_log_entry as svc_get_query_log_entry,
+    ingest_documents_batch as svc_ingest_documents_batch,
     ingest_document as svc_ingest_document,
     list_chunks as svc_list_chunks,
     list_tenants as svc_list_tenants,
@@ -189,6 +190,31 @@ def cmd_ingest(args):
         _get_store(), args.tenant, args.collection, args.file, content,
         baseid if args.docid else None, meta, csv_options=csv_opts
     )
+
+
+def cmd_ingest_batch(args):
+    try:
+        payload = json.loads(_read(args.file).decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        return {
+            "ok": False,
+            "code": "invalid_batch_json",
+            "error": f"invalid batch json: {exc}",
+        }
+    documents = payload.get("documents") if isinstance(payload, dict) else payload
+    if not isinstance(documents, list):
+        return {
+            "ok": False,
+            "code": "invalid_batch",
+            "error": "batch input must be a JSON array or object with documents",
+        }
+    return svc_ingest_documents_batch(
+        _get_store(),
+        args.tenant,
+        args.collection,
+        documents,
+    )
+
 
 def cmd_search(args):
     cfg = get_cfg()
@@ -488,6 +514,21 @@ def build_parser() -> argparse.ArgumentParser:
              "comma-separated. Defaults to all non-meta columns")
 
     p_ingest.set_defaults(func=cmd_ingest)
+
+    p_ingest_batch = _command(
+        sub,
+        "ingest-batch",
+        help="Index raw-text documents into a collection.",
+        description="Index a JSON batch of raw-text documents.",
+        example=(
+            "pavecli ingest-batch demo books ./documents.json"
+        ),
+        parents=[runtime],
+    )
+    p_ingest_batch.add_argument("tenant", help="Tenant namespace")
+    p_ingest_batch.add_argument("collection", help="Collection name")
+    p_ingest_batch.add_argument("file", help="JSON batch input file")
+    p_ingest_batch.set_defaults(func=cmd_ingest_batch)
 
     p_search = _command(
         sub,

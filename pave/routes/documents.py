@@ -14,6 +14,8 @@ from pave.config import get_logger
 from pave.log import ops_event
 from pave.metrics import inc
 from pave.schemas import (
+    BatchIngestDocumentsBody,
+    BatchIngestDocumentsResponse,
     DeleteDocumentResponse,
     ListDocumentsResponse,
     GetDocumentResponse,
@@ -27,6 +29,7 @@ from pave.service import (
     get_chunk as svc_get_chunk,
     get_chunk_content as svc_get_chunk_content,
     get_document as svc_get_document,
+    ingest_documents_batch as svc_ingest_documents_batch,
     ingest_document as svc_ingest_document,
     list_chunks as svc_list_chunks,
     list_documents as svc_list_documents,
@@ -212,6 +215,112 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                 return error(
                     status_map.get(code, 500),
                     code,
+                    exc.message,
+                    request=request,
+                    request_id=rid,
+                )
+        finally:
+            if max_i > 0:
+                request.app.state.active_ingests -= 1
+
+    @router.post(
+        "/collections/{tenant}/{collection}/documents:batch",
+        status_code=201,
+        summary="Ingest documents in a batch",
+        description=(
+            "Indexes several raw-text documents in one request. Each item "
+            "may provide text, docid, and metadata."
+        ),
+        response_model=BatchIngestDocumentsResponse,
+        responses=resp(400, 401, 403, 429, 500, 503),
+        tags=["Documents"],
+    )
+    @ops_event(
+        "ingest_batch",
+        coll="collection",
+        chunks=lambda kw, r: (
+            sum(
+                item.get("chunks") or 0
+                for item in r.get("documents", [])
+            )
+            if isinstance(r, dict) and r.get("ok")
+            else None
+        ),
+        request_id="rid",
+    )
+    async def ingest_documents_batch(
+        body: BatchIngestDocumentsBody,
+        request: Request,
+        tenant: str,
+        collection: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(tenant_rate_limit),
+        store: BaseStore = Depends(current_store),
+    ):
+        inc("requests_total")
+        max_i = request.app.state.max_ingests
+        if max_i > 0:
+            if request.app.state.active_ingests >= max_i:
+                active = request.app.state.active_ingests
+                log.warning(
+                    "ingest batch capped tenant=%s collection=%s "
+                    "active=%s limit=%s path=%s request_id=%s",
+                    tenant,
+                    collection,
+                    active,
+                    max_i,
+                    request.url.path,
+                    rid,
+                )
+                return error(
+                    503,
+                    "ingest_overloaded",
+                    "ingest capped by instance-scoped ingest cap "
+                    f"(active={active}, limit={max_i})",
+                    request=request,
+                    request_id=rid,
+                )
+            request.app.state.active_ingests += 1
+        try:
+            try:
+                documents = [
+                    item.model_dump()
+                    for item in body.documents
+                ]
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    request.app.state.ingest_executor,
+                    functools.partial(
+                        svc_ingest_documents_batch,
+                        store,
+                        tenant,
+                        collection,
+                        documents,
+                    ),
+                )
+                if not result.get("ok"):
+                    code = result.get("code", "ingest_batch_failed")
+                    status_map = {
+                        "invalid_batch": 400,
+                        "ingest_batch_failed": 500,
+                    }
+                    return error(
+                        status_map.get(code, 500),
+                        code,
+                        result.get("error", "failed to ingest documents"),
+                        request=request,
+                        request_id=rid,
+                    )
+                return trace(result, request, request_id=rid)
+            except ServiceError as exc:
+                status_map = {
+                    "embedder_unavailable": 503,
+                    "invalid_metadata_keys": 400,
+                    "ingest_failed": 500,
+                }
+                return error(
+                    status_map.get(exc.code, 500),
+                    exc.code,
                     exc.message,
                     request=request,
                     request_id=rid,

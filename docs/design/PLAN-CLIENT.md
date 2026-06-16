@@ -104,9 +104,9 @@ omits are environment/ops (`init`, `reset-metrics`).
 **Core — collections + search**
 - `Client`: `create_collection`, `collection(name)`,
   `list_collections`, `list_tenants`, `delete_collection`
-- `Collection`: `ingest(file)`, `add(text)`, `search(q, k,
-  filters=, include_common=)`, `get(docid)`, `list_documents`,
-  `delete(docid)`
+- `Collection`: `ingest(file)`, `add(text)`, `add_many(docs)`,
+  `search(q, k, filters=, include_common=)`, `get(docid)`,
+  `list_documents`, `delete(docid)`
 
 **Inspectability** (the differentiator the roadmap protects)
 - `Collection`: `detail()`, `list_chunks(docid)`, `get_chunk(rid)`,
@@ -134,10 +134,11 @@ key embedded ergonomic (REPL: add a string, search it). It calls
 the service-layer raw text ingest path and stores no filename
 metadata.
 
-The HTTP transport needs the native JSON text-ingest endpoint
-scheduled into P1-16 (v1.1) for parity. Until then, raw text
-ingest is library-only; do not emulate it through fake file
-uploads.
+The future HTTP client maps `add(text)` and `add_many(docs)` to
+the batch document ingest work scheduled in P1-16 (v1.1). P1-16 is
+not a separate raw-text API; raw text is one document payload
+shape. Until then, raw text ingest is library-only; do not emulate
+it through fake file uploads.
 
 ## CLI port — deferred, not now
 

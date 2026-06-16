@@ -79,7 +79,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-13 | ~~Ingest size limits~~ | 🧩 | Fail fast on huge uploads | v0.5.8 |
 | P1-14 | ~~Response envelope standardization~~ | 🧱 | SDK-friendly API | v0.9 |
 | P1-15 | Embedded/library mode | 🧱 | In-app use, adoption. Handle-based `Client`/`Collection` over `service.py`; `pave.connect()` dispatches local/ephemeral/HTTP by scheme; raises typed `PaveError`. Canonical interface every transport implements. See `docs/design/PLAN-CLIENT.md` | v1.0 |
-| P1-16 | Batch + JSON text ingest endpoint | 🧩 | Throughput, DX. JSON body for raw-text ingest (single + batch), no multipart — the native HTTP shape the v1.1 client's `add(text)` maps to. Library `add(text)` ships in P1-15; until this lands the HTTP client can wrap text as a `.txt` upload to the existing documents endpoint, so client parity isn't blocked. | v1.1 |
+| P1-16 | Batch document ingest endpoint | 🧩 | Throughput, DX. Ingest a list of documents in one request. JSON items carry `text`, optional `docid`, and metadata; Python exposes `add_many`, HTTP exposes `documents:batch`, CLI exposes `ingest-batch`. File upload remains single-document until async jobs. | v1.1 |
 | P1-17 | ~~Get document by ID~~ | 🧩 | Visibility, library mode | v0.9 |
 | P1-18 | ~~Error code standardization~~ | 🧩 | Consistent API errors | v0.5.8 |
 | P1-19 | ~~`build_app()` lazy init~~ | 🧩 | Testability, startup safety | v0.5.8 |
