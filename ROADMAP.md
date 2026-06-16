@@ -185,7 +185,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-35 | ~~Rebranding phase 1 (PaveDB candidate); phase 2~~ | 🧱 | v0.5.9–v0.9 |
 | P3-36 | Multimodal collections (cross-modal search) | 🧱 | post-1.0 |
 | P3-37 | Collection migration tooling (version compat) | 🧱 | v1.7 |
-| P3-40 | Publish pip freeze snapshot | 🧩 | v1.0 |
+| P3-40 | Publish pip freeze snapshot + regenerate THIRD_PARTY_LICENSES | 🧩 | v1.0 |
 | P3-41 | Swagger UI tenant/collection defaults | 🧩 | v1.4 |
 | P3-42 | Alive test in CI | 🧩 | v1.4 |
 | P3-43 | Go client | 🧱 | post-1.8 |
@@ -417,7 +417,9 @@ latency on every search/ingest/delete.~~
   `--home`, explicit runtime paths) (P1-34).~~
 - Config reference doc + CI drift check — lands as a side effect
   of P1-53c (P1-26).
-- Publish `pip freeze` snapshot as release artifact (P3-40).
+- Publish `pip freeze` snapshot as release artifact; regenerate
+  `THIRD_PARTY_LICENSES.md` from the runtime-only closure (drops stale
+  dev-venv cruft) and keep `*.dist-info` in the Docker image (P3-40).
 - ~~List tenants and collections via API (CLI parity) (P2-12).~~
 - HTTP request metrics middleware (v1.0 slice): single middleware
   records per-endpoint count labeled by method, path template, and
