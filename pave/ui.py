@@ -10,6 +10,17 @@ from starlette.staticfiles import StaticFiles
 from pathlib import Path
 import copy
 
+from pave.version import (
+    LICENSE,
+    LICENSE_URL,
+    PRODUCT,
+    PRODUCT_EMOJI,
+    PRODUCT_FAVICON,
+    PRODUCT_ICON_PNG,
+    REPOSITORY_URL,
+    product_display_name,
+)
+
 _UI_TAGS = {
     "Scoped Search": {
         "name": "Scoped Search",
@@ -50,17 +61,20 @@ _FALLBACK_TMPL = """<!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<link rel="icon" href="/favicon.ico?v=__VERSION__" />
-<title>__INST_NAME__ • Search</title>
+<link rel="icon" type="image/png" sizes="192x192"
+      href="__PRODUCT_ICON_PNG__?v=__VERSION__" />
+<link rel="apple-touch-icon" href="__PRODUCT_ICON_PNG__?v=__VERSION__" />
+<link rel="icon" href="__PRODUCT_FAVICON__?v=__VERSION__" />
+<title>__DISPLAY_NAME__ • Search</title>
 </head>
 <body>
   <div class="tabs">
     <button class="tab active" data-target="search"
-            data-title="__INST_NAME__ • Search">Search</button>
+            data-title="__DISPLAY_NAME__ • Search">Search</button>
     <button class="tab" data-target="data"
-            data-title="__INST_NAME__ • Data">Data</button>
+            data-title="__DISPLAY_NAME__ • Data">Data</button>
     <button class="tab" data-target="admin"
-            data-title="__INST_NAME__ • Admin">Admin</button>
+            data-title="__DISPLAY_NAME__ • Admin">Admin</button>
     <div class="desc">__INST_DESC__</div>
   </div>
   <iframe id="search" class="frame active" src="/ui/search"
@@ -68,10 +82,10 @@ _FALLBACK_TMPL = """<!doctype html>
   <iframe id="data" class="frame" src="/ui/data" title="Data"></iframe>
   <iframe id="admin" class="frame" src="/ui/admin" title="Admin"></iframe>
   <div class="footer">
-    <span>🛣️ PaveDB v__VERSION__</span>
+    <span>__PRODUCT_EMOJI__ __PRODUCT__ v__VERSION__</span>
   </div>
 <script>
-  const TAB_KEY = 'pavedb.ui.tab';
+  const TAB_KEY = '__STORAGE_KEY__';
   const tabs = document.querySelectorAll('.tab');
   const frames = document.querySelectorAll('.frame');
   function tabNames(){
@@ -118,14 +132,18 @@ _FALLBACK_TMPL = """<!doctype html>
 </body></html>
 """
 
+
+def _display_name(cfg) -> str:
+    return product_display_name(cfg.get("instance.name", ""))
+
+
+def _storage_key() -> str:
+    return f"{PRODUCT.lower()}.ui.tab"
+
+
 def attach_ui(app: FastAPI):
     cfg = app.state.cfg
     version = app.state.version
-
-    # footer links
-    repo_url = "https://gitlab.com/flowlexi/pavedb"
-    license_name = "AGPL-3.0-or-later"
-    license_url = "https://www.gnu.org/licenses/agpl-3.0-standalone.html"
 
     # static + favicon (hardcoded path relative to this file)
     # never crash if dir missing.
@@ -136,7 +154,7 @@ def attach_ui(app: FastAPI):
         name="assets"
     )
 
-    @app.get("/favicon.ico", include_in_schema=False)
+    @app.get(PRODUCT_FAVICON, include_in_schema=False)
     def favicon():
         return FileResponse(
             str((Path(__file__).parent / "assets" / "favicon.ico").resolve()),
@@ -162,8 +180,8 @@ def attach_ui(app: FastAPI):
             }
             schema["security"] = [{"bearerAuth": []}]
             info = schema.setdefault("info", {})
-            info["x-repository"] = repo_url
-            info["license"] = {"name": license_name, "url": license_url}
+            info["x-repository"] = REPOSITORY_URL
+            info["license"] = {"name": LICENSE, "url": LICENSE_URL}
             _openapi_cache["doc"] = schema
         return _openapi_cache["doc"]
 
@@ -290,7 +308,7 @@ def attach_ui(app: FastAPI):
 
     @app.get("/ui/search", include_in_schema=False)
     def ui_search():
-        inst_name = cfg.get("instance.name", "PaveDB")
+        inst_name = _display_name(cfg)
         return get_swagger_ui_html(
             openapi_url="/openapi-search.json",
             title=f"{inst_name} • Search",
@@ -299,7 +317,7 @@ def attach_ui(app: FastAPI):
 
     @app.get("/ui/data", include_in_schema=False)
     def ui_data():
-        inst_name = cfg.get("instance.name", "PaveDB")
+        inst_name = _display_name(cfg)
         return get_swagger_ui_html(
             openapi_url="/openapi-data.json",
             title=f"{inst_name} • Data",
@@ -308,7 +326,7 @@ def attach_ui(app: FastAPI):
 
     @app.get("/ui/admin", include_in_schema=False)
     def ui_admin():
-        inst_name = cfg.get("instance.name", "PaveDB")
+        inst_name = _display_name(cfg)
         return get_swagger_ui_html(
             openapi_url="/openapi-admin.json",
             title=f"{inst_name} • Admin",
@@ -321,19 +339,22 @@ def attach_ui(app: FastAPI):
     @app.get("/ui", include_in_schema=False)
     def ui_home():
         # instance strings
-        inst_name = cfg.get("instance.name", "PaveDB")
+        display_name = _display_name(cfg)
         inst_desc = cfg.get("instance.desc", "Vector Search Microservice")
         try:
             html = tmpl_path.read_text(encoding="utf-8")
         except Exception:
             html = _FALLBACK_TMPL
         html = (
-            html.replace("__INST_NAME__", inst_name)
+            html.replace("__DISPLAY_NAME__", display_name)
+                .replace("__PRODUCT__", PRODUCT)
+                .replace("__PRODUCT_EMOJI__", PRODUCT_EMOJI)
+                .replace("__PRODUCT_ICON_PNG__", PRODUCT_ICON_PNG)
+                .replace("__PRODUCT_FAVICON__", PRODUCT_FAVICON)
                 .replace("__INST_DESC__", inst_desc)
                 .replace("__VERSION__", str(version))
-                .replace("__REPO_URL__", repo_url)
-                .replace("__LICENSE_NAME__", license_name)
-                .replace("__LICENSE_URL__", license_url)
+                .replace("__REPO_URL__", REPOSITORY_URL)
+                .replace("__STORAGE_KEY__", _storage_key())
         )
         return HTMLResponse(html)
 

@@ -20,12 +20,34 @@ pavecli search demo books "captain nemo" -k 3
 ## Usage
 
 ```bash
-pavecli [-h] [--compact] <command> ...
+pavecli [-h] [--compact] [--version] [--home HOME]
+        [--config CONFIG]
+        [--tenants TENANTS] [--data-dir DATA_DIR] <command> ...
 ```
+
+## Pre-1.0 Note
+
+Runtime selectors (--home, --config, --tenants, --data-dir) are global options.
+Pass them before the command, e.g. pavecli --home ./instance list-tenants.
+
+## Legal Notice
+
+PaveDB 0.9.2 (pavecli)
+Copyright (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+There is NO WARRANTY, to the extent permitted by law.
 
 ## Global Options
 
 - `--compact` (optional): Emit compact JSON for scripting
+- `--version` (optional): Print version, copyright, and license information
+- `--home` (optional): Instance home directory; no global default; init uses ~/pavedb
+  when no explicit path is passed
+- `--config` (optional): Explicit config.yml path; default comes from
+  PAVEDB_CONFIG/config search
+- `--tenants` (optional): Explicit tenants.yml path; default comes from
+  PAVEDB_AUTH__TENANTS_FILE/config
+- `--data-dir` (optional): Explicit data directory; default comes from
+  PAVEDB_DATA_DIR/config
 
 ## Commands
 
@@ -63,9 +85,7 @@ Create config.yml, tenants.yml, and the data directory for an instance.
 ### Usage
 
 ```bash
-pavecli init [-h] [--home HOME] [--config CONFIG] [--tenants TENANTS]
-                    [--data-dir DATA_DIR] [--force]
-                    [root]
+pavecli init [-h] [--force] [root]
 ```
 
 ### Examples
@@ -73,17 +93,13 @@ pavecli init [-h] [--home HOME] [--config CONFIG] [--tenants TENANTS]
 ```bash
 pavecli init
 pavecli init ~/pavedb-staging
-pavecli init --config /etc/pavedb/config.yml \
+pavecli --config /etc/pavedb/config.yml \
   --tenants /var/pavedb/tenants.yml \
-  --data-dir /var/pavedb/data
+  --data-dir /var/pavedb/data init
 ```
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `root` (optional): Instance home directory
 - `--force` (optional): Overwrite config and tenants files if they already exist
 
@@ -94,9 +110,7 @@ Create a collection, optionally with display and embedder configuration.
 ### Usage
 
 ```bash
-pavecli create-collection [-h] [--home HOME] [--config CONFIG]
-                                 [--tenants TENANTS] [--data-dir DATA_DIR]
-                                 [--display-name DISPLAY_NAME]
+pavecli create-collection [-h] [--display-name DISPLAY_NAME]
                                  [--embedder-type EMBEDDER_TYPE]
                                  [--embed-model EMBED_MODEL]
                                  [--embedder-config EMBEDDER_CONFIG]
@@ -111,10 +125,6 @@ pavecli create-collection demo books --display-name "Books"
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection slug: lowercase letters, digits, and hyphens; must
   start with a letter or digit; max 63 chars
@@ -130,9 +140,8 @@ Preprocess and index a TXT, CSV, or PDF file into a collection.
 ### Usage
 
 ```bash
-pavecli ingest [-h] [--home HOME] [--config CONFIG] [--tenants TENANTS]
-                      [--data-dir DATA_DIR] [--docid DOCID]
-                      [--metadata METADATA] [--csv-has-header {auto,yes,no}]
+pavecli ingest [-h] [--docid DOCID] [--metadata METADATA]
+                      [--csv-has-header {auto,yes,no}]
                       [--csv-meta-cols CSV_META_COLS]
                       [--csv-include-cols CSV_INCLUDE_COLS]
                       tenant collection file
@@ -146,10 +155,6 @@ pavecli ingest demo books ./book.txt --docid book-1 --metadata '{"lang":"en"}'
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection name
 - `file` (required): Path to TXT, CSV, or PDF input
@@ -169,9 +174,7 @@ Index a JSON batch of raw-text documents.
 ### Usage
 
 ```bash
-pavecli ingest-batch [-h] [--home HOME] [--config CONFIG]
-                            [--tenants TENANTS] [--data-dir DATA_DIR]
-                            tenant collection file
+pavecli ingest-batch [-h] tenant collection file
 ```
 
 ### Example
@@ -182,10 +185,6 @@ pavecli ingest-batch demo books ./documents.json
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection name
 - `file` (required): JSON batch input file
@@ -197,9 +196,7 @@ Index one raw-text document.
 ### Usage
 
 ```bash
-pavecli ingest-text [-h] [--home HOME] [--config CONFIG]
-                           [--tenants TENANTS] [--data-dir DATA_DIR]
-                           [--docid DOCID] [--metadata METADATA]
+pavecli ingest-text [-h] [--docid DOCID] [--metadata METADATA]
                            tenant collection text
 ```
 
@@ -211,10 +208,6 @@ pavecli ingest-text demo books "Captain Nemo" --docid note-1
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection name
 - `text` (required): Raw text to index
@@ -228,9 +221,8 @@ Run semantic search over a collection and print the response envelope.
 ### Usage
 
 ```bash
-pavecli search [-h] [--home HOME] [--config CONFIG] [--tenants TENANTS]
-                      [--data-dir DATA_DIR] [-k K]
-                      [--merge-common {true,false}] [--filters FILTERS]
+pavecli search [-h] [-k K] [--merge-common {true,false}]
+                      [--filters FILTERS]
                       tenant collection query
 ```
 
@@ -242,10 +234,6 @@ pavecli search demo books "captain nemo" -k 3
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection name
 - `query` (required): Natural-language search query
@@ -261,9 +249,7 @@ List logged query IDs, optionally scoped to a tenant or collection.
 ### Usage
 
 ```bash
-pavecli list-queries [-h] [--home HOME] [--config CONFIG]
-                            [--tenants TENANTS] [--data-dir DATA_DIR]
-                            [--tenant TENANT] [--collection COLLECTION]
+pavecli list-queries [-h] [--tenant TENANT] [--collection COLLECTION]
                             [--limit LIMIT] [--offset OFFSET]
 ```
 
@@ -275,10 +261,6 @@ pavecli list-queries --tenant demo --collection books --limit 20
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `--tenant` (optional): Filter by tenant
 - `--collection` (optional): Filter by collection
 - `--limit` (optional): Maximum entries to return (default: 50)
@@ -291,9 +273,7 @@ Resolve a query_id through the catalog and print the stored query log entry.
 ### Usage
 
 ```bash
-pavecli get-query [-h] [--home HOME] [--config CONFIG]
-                         [--tenants TENANTS] [--data-dir DATA_DIR]
-                         query_id
+pavecli get-query [-h] query_id
 ```
 
 ### Example
@@ -304,10 +284,6 @@ pavecli get-query 6f7cfd26-7d7f-4e5d-942b-f2a516f515a6
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `query_id` (required): Query ID to fetch
 
 ## `replay-query`
@@ -317,9 +293,7 @@ Resolve a query_id through the catalog and run the stored query again.
 ### Usage
 
 ```bash
-pavecli replay-query [-h] [--home HOME] [--config CONFIG]
-                            [--tenants TENANTS] [--data-dir DATA_DIR]
-                            query_id
+pavecli replay-query [-h] query_id
 ```
 
 ### Example
@@ -330,10 +304,6 @@ pavecli replay-query 6f7cfd26-7d7f-4e5d-942b-f2a516f515a6
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `query_id` (required): Query ID to replay
 
 ## `list-documents`
@@ -343,9 +313,7 @@ Print indexed documents and their collection metadata.
 ### Usage
 
 ```bash
-pavecli list-documents [-h] [--home HOME] [--config CONFIG]
-                              [--tenants TENANTS] [--data-dir DATA_DIR]
-                              tenant collection
+pavecli list-documents [-h] tenant collection
 ```
 
 ### Example
@@ -356,10 +324,6 @@ pavecli list-documents demo books
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection name
 
@@ -370,9 +334,7 @@ Print document metadata and chunk summary for one document.
 ### Usage
 
 ```bash
-pavecli get-document [-h] [--home HOME] [--config CONFIG]
-                            [--tenants TENANTS] [--data-dir DATA_DIR]
-                            tenant collection docid
+pavecli get-document [-h] tenant collection docid
 ```
 
 ### Example
@@ -383,10 +345,6 @@ pavecli get-document demo books book-1
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection name
 - `docid` (required): Document ID
@@ -398,9 +356,7 @@ Print chunk metadata for a document without chunk text content.
 ### Usage
 
 ```bash
-pavecli list-chunks [-h] [--home HOME] [--config CONFIG]
-                           [--tenants TENANTS] [--data-dir DATA_DIR]
-                           tenant collection docid
+pavecli list-chunks [-h] tenant collection docid
 ```
 
 ### Example
@@ -411,10 +367,6 @@ pavecli list-chunks demo books book-1
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection name
 - `docid` (required): Document ID
@@ -426,9 +378,7 @@ Print metadata for one chunk by record ID.
 ### Usage
 
 ```bash
-pavecli get-chunk [-h] [--home HOME] [--config CONFIG]
-                         [--tenants TENANTS] [--data-dir DATA_DIR]
-                         tenant collection rid
+pavecli get-chunk [-h] tenant collection rid
 ```
 
 ### Example
@@ -439,10 +389,6 @@ pavecli get-chunk demo books book-1::chunk_0
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection name
 - `rid` (required): Chunk record ID
@@ -454,9 +400,7 @@ Write one chunk's text content to stdout.
 ### Usage
 
 ```bash
-pavecli get-chunk-content [-h] [--home HOME] [--config CONFIG]
-                                 [--tenants TENANTS] [--data-dir DATA_DIR]
-                                 tenant collection rid
+pavecli get-chunk-content [-h] tenant collection rid
 ```
 
 ### Example
@@ -467,10 +411,6 @@ pavecli get-chunk-content demo books book-1::chunk_0
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection name
 - `rid` (required): Chunk record ID
@@ -482,9 +422,7 @@ Remove a collection, including its local metadata and vector index.
 ### Usage
 
 ```bash
-pavecli delete-collection [-h] [--home HOME] [--config CONFIG]
-                                 [--tenants TENANTS] [--data-dir DATA_DIR]
-                                 tenant collection
+pavecli delete-collection [-h] tenant collection
 ```
 
 ### Example
@@ -495,10 +433,6 @@ pavecli delete-collection demo books
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection name
 
@@ -509,9 +443,7 @@ Rename the collection slug and move its catalog/query-home records.
 ### Usage
 
 ```bash
-pavecli move-collection [-h] [--home HOME] [--config CONFIG]
-                               [--tenants TENANTS] [--data-dir DATA_DIR]
-                               tenant old_name new_name
+pavecli move-collection [-h] tenant old_name new_name
 ```
 
 ### Example
@@ -522,10 +454,6 @@ pavecli move-collection demo old-books books
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `old_name` (required): Current collection name
 - `new_name` (required): New collection slug: lowercase letters, digits, and hyphens;
@@ -538,9 +466,7 @@ Update collection metadata such as the display name, without re-indexing.
 ### Usage
 
 ```bash
-pavecli update-collection [-h] [--home HOME] [--config CONFIG]
-                                 [--tenants TENANTS] [--data-dir DATA_DIR]
-                                 --display-name DISPLAY_NAME
+pavecli update-collection [-h] --display-name DISPLAY_NAME
                                  tenant collection
 ```
 
@@ -552,10 +478,6 @@ pavecli update-collection demo books --display-name "Books"
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection name
 - `--display-name` (required): New human-readable collection label
@@ -567,9 +489,7 @@ Remove one document and its chunks from a collection.
 ### Usage
 
 ```bash
-pavecli delete-document [-h] [--home HOME] [--config CONFIG]
-                               [--tenants TENANTS] [--data-dir DATA_DIR]
-                               tenant collection docid
+pavecli delete-document [-h] tenant collection docid
 ```
 
 ### Example
@@ -580,10 +500,6 @@ pavecli delete-document demo books book-1
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection name
 - `docid` (required): Document ID
@@ -595,9 +511,7 @@ Write a zip archive containing the current instance data directory.
 ### Usage
 
 ```bash
-pavecli dump-archive [-h] [--home HOME] [--config CONFIG]
-                            [--tenants TENANTS] [--data-dir DATA_DIR]
-                            [--output OUTPUT]
+pavecli dump-archive [-h] [--output OUTPUT]
 ```
 
 ### Example
@@ -608,10 +522,6 @@ pavecli dump-archive --output pavedb-data.zip
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `--output` (optional): Destination ZIP file path
 
 ## `restore-archive`
@@ -621,9 +531,7 @@ Replace the instance data directory from a zip archive.
 ### Usage
 
 ```bash
-pavecli restore-archive [-h] [--home HOME] [--config CONFIG]
-                               [--tenants TENANTS] [--data-dir DATA_DIR]
-                               file
+pavecli restore-archive [-h] file
 ```
 
 ### Example
@@ -634,10 +542,6 @@ pavecli restore-archive pavedb-data.zip
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `file` (required): Archive zip file path
 
 ## `reset-metrics`
@@ -647,8 +551,7 @@ Clear the local metrics counters for the configured data directory.
 ### Usage
 
 ```bash
-pavecli reset-metrics [-h] [--home HOME] [--config CONFIG]
-                             [--tenants TENANTS] [--data-dir DATA_DIR]
+pavecli reset-metrics [-h]
 ```
 
 ### Example
@@ -657,13 +560,6 @@ pavecli reset-metrics [-h] [--home HOME] [--config CONFIG]
 pavecli reset-metrics
 ```
 
-### Arguments And Options
-
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
-
 ## `list-tenants`
 
 Print tenants currently present in the collection catalog.
@@ -671,8 +567,7 @@ Print tenants currently present in the collection catalog.
 ### Usage
 
 ```bash
-pavecli list-tenants [-h] [--home HOME] [--config CONFIG]
-                            [--tenants TENANTS] [--data-dir DATA_DIR]
+pavecli list-tenants [-h]
 ```
 
 ### Example
@@ -681,13 +576,6 @@ pavecli list-tenants [-h] [--home HOME] [--config CONFIG]
 pavecli list-tenants
 ```
 
-### Arguments And Options
-
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
-
 ## `list-collections`
 
 Print collection names, display labels, and embedder labels for a tenant.
@@ -695,9 +583,7 @@ Print collection names, display labels, and embedder labels for a tenant.
 ### Usage
 
 ```bash
-pavecli list-collections [-h] [--home HOME] [--config CONFIG]
-                                [--tenants TENANTS] [--data-dir DATA_DIR]
-                                tenant
+pavecli list-collections [-h] tenant
 ```
 
 ### Example
@@ -708,10 +594,6 @@ pavecli list-collections demo
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 
 ## `get-collection`
@@ -721,9 +603,7 @@ Print catalog, embedder, vector-space, document, and chunk details for a collect
 ### Usage
 
 ```bash
-pavecli get-collection [-h] [--home HOME] [--config CONFIG]
-                              [--tenants TENANTS] [--data-dir DATA_DIR]
-                              tenant collection
+pavecli get-collection [-h] tenant collection
 ```
 
 ### Example
@@ -734,9 +614,5 @@ pavecli get-collection demo books
 
 ### Arguments And Options
 
-- `--home` (optional): Instance home directory (holds config.yml, tenants.yml, data/)
-- `--config` (optional): Explicit config.yml path
-- `--tenants` (optional): Explicit tenants.yml path
-- `--data-dir` (optional): Explicit data directory
 - `tenant` (required): Tenant namespace
 - `collection` (required): Collection name

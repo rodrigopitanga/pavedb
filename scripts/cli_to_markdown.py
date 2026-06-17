@@ -4,18 +4,26 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
+import os
 from pathlib import Path
 import sys
 import textwrap
 
+# Pin argparse's usage wrapping width so generated output is deterministic
+# regardless of the terminal it runs in (argparse reads COLUMNS / terminal size).
+_USAGE_COLUMNS = "80"
+
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from pave.version import PRODUCT, PRODUCT_EMOJI
+
 DEFAULT_OUTPUT = ROOT / "docs" / "reference" / "cli.md"
-BRAND_ICON = "🛣️"
 
 
 def _load_cli_parser():
-    sys.path.insert(0, str(ROOT))
     from pave.cli import build_parser
 
     return build_parser()
@@ -45,11 +53,54 @@ def _visible_actions(parser):
     ]
 
 
+@contextlib.contextmanager
+def _fixed_usage_width():
+    previous = os.environ.get("COLUMNS")
+    os.environ["COLUMNS"] = _USAGE_COLUMNS
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("COLUMNS", None)
+        else:
+            os.environ["COLUMNS"] = previous
+
+
 def _usage(parser):
     if parser.prog == "pavecli":
-        return "pavecli [-h] [--compact] <command> ..."
-    usage = parser.format_usage().strip()
+        return (
+            "pavecli [-h] [--compact] [--version] [--home HOME]\n"
+            "        [--config CONFIG]\n"
+            "        [--tenants TENANTS] [--data-dir DATA_DIR] <command> ..."
+        )
+    with _fixed_usage_width():
+        usage = parser.format_usage().strip()
     return usage.removeprefix("usage: ").strip()
+
+
+def _top_level_sections(parser):
+    if not parser.epilog:
+        return [], []
+    sections = []
+    current = []
+    for raw in parser.epilog.splitlines():
+        line = raw.strip()
+        if line:
+            current.append(line)
+        elif current:
+            sections.append(current)
+            current = []
+    if current:
+        sections.append(current)
+
+    pre_release = []
+    legal = []
+    for section in sections:
+        if section[0].lower() == "pre-1.0 note:":
+            pre_release = section[1:]
+        else:
+            legal.extend(section)
+    return pre_release, legal
 
 
 def _escape(value):
@@ -146,7 +197,7 @@ def render_markdown(
         "<!-- (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->",
         "<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->",
         "",
-        f"# {BRAND_ICON} PaveDB CLI Reference",
+        f"# {PRODUCT_EMOJI} {PRODUCT} CLI Reference",
         "",
         "Command reference for `pavecli`, the local PaveDB administration and",
         "data-loading tool.",
@@ -170,6 +221,12 @@ def render_markdown(
         "```",
         "",
     ]
+
+    note, legal = _top_level_sections(parser)
+    if note:
+        lines.extend(["## Pre-1.0 Note", "", *note, ""])
+    if legal:
+        lines.extend(["## Legal Notice", "", *legal, ""])
 
     global_options = _options_block(parser)
     if global_options:

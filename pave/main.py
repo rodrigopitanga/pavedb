@@ -30,7 +30,14 @@ from pave.routes import (
 )
 from pave.ui import attach_ui
 from pave.runtime_paths import DEFAULT_HOME, apply_runtime_env
-from pave.version import VERSION
+from pave.version import (
+    COPYRIGHT,
+    VERSION,
+    help_notice,
+    product_display_name,
+    software_title,
+    version_banner,
+)
 import pave.log as ops_log
 
 
@@ -84,7 +91,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 _exec.shutdown(wait=False)
 
     app = FastAPI(
-        title=cfg.get("instance.name", "PaveDB"),
+        title=product_display_name(cfg.get("instance.name")),
         description=cfg.get("instance.desc", "PaveDB Vector Search Microservice"),
         lifespan=lifespan,
     )
@@ -371,14 +378,38 @@ def main_srv(argv=None):
     p = argparse.ArgumentParser(
         prog="pavesrv",
         description="Run the PaveDB HTTP server",
+        epilog=help_notice("pavesrv"),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p.add_argument(
+        "--version",
+        action="version",
+        version=version_banner("pavesrv"),
+        help="Print version, copyright, and license information",
     )
     p.add_argument(
         "--home",
-        help="Use an instance home dir",
+        help=(
+            "Instance home directory; no global default; maps config.yml, "
+            "tenants.yml, and data/ under that root"
+        ),
     )
-    p.add_argument("--config", help="Explicit config.yml path")
-    p.add_argument("--tenants", help="Explicit tenants.yml path")
-    p.add_argument("--data-dir", dest="data_dir", help="Explicit data directory")
+    p.add_argument(
+        "--config",
+        help="Explicit config.yml path; default comes from PAVEDB_CONFIG/config search",
+    )
+    p.add_argument(
+        "--tenants",
+        help=(
+            "Explicit tenants.yml path; default comes from "
+            "PAVEDB_AUTH__TENANTS_FILE/config"
+        ),
+    )
+    p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        help="Explicit data directory; default comes from PAVEDB_DATA_DIR/config",
+    )
     args = p.parse_args(argv)
     default_home = os.path.expanduser(DEFAULT_HOME)
     default_config = os.path.join(default_home, "config.yml")
@@ -440,7 +471,8 @@ def main_srv(argv=None):
     )
     _ops_dest = cfg.get("log.ops_log") or "null"
     _acc_dest = cfg.get("log.access_log")
-    log.info(f"┌─ Welcome to 🛣️  PaveDB v{VERSION}")
+    log.info(f"┌─ {software_title('pavesrv', emoji=True)}")
+    log.info(f"│  {COPYRIGHT}")
     log.info(
         f"│  auth={cfg.get('auth.mode','none')} "
         f"store={cfg.get('vector_store.type','faiss')} "
@@ -469,6 +501,9 @@ def main_srv(argv=None):
     _acc_val = str(_acc_dest).strip().lower() if _acc_dest else ""
     if _acc_val and _acc_val not in ("null", "none"):
         if _acc_val != "stdout":
+            access_dir = os.path.dirname(os.path.expanduser(str(_acc_dest)))
+            if access_dir:
+                os.makedirs(access_dir, exist_ok=True)
             logging.getLogger("uvicorn.access").addHandler(
                 logging.FileHandler(_acc_dest)
             )

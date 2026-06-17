@@ -29,8 +29,8 @@ endif
 
 PKG_NAME        := pavedb
 PYPI_DIST_NAME  ?= pavedb
-PKG_ICON	:= 🛣️
-PKG_LONGNAME    := $(PKG_ICON)  PaveDB
+PKG_EMOJI	:= 🛣️
+PKG_LONGNAME    := $(PKG_EMOJI)  PaveDB
 PKG_INTERNAL   	:= pave
 REGISTRY_HOST	?= registry.gitlab.com
 REGISTRY_GROUP	?= flowlexi

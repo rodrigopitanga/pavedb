@@ -43,6 +43,7 @@ from pave.runtime_paths import (
     resolve_runtime_paths,
 )
 from pave.slugify import slugify
+from pave.version import help_notice, version_banner
 
 store: BaseStore | None = None
 
@@ -106,7 +107,7 @@ def _write_text(path: pathlib.Path, text: str, *, force: bool) -> bool:
 
 def cmd_init(args):
     if args.root and args.home:
-        raise SystemExit("use either positional ROOT or --home, not both")
+        raise SystemExit("use either positional ROOT or global --home, not both")
     home = args.root or args.home
     if not home and not any((args.config, args.tenants, args.data_dir)):
         home = DEFAULT_HOME
@@ -419,24 +420,55 @@ def _command(
 
 
 def build_parser() -> argparse.ArgumentParser:
+    runtime_note = (
+        "pre-1.0 note:\n"
+        "  Runtime selectors (--home, --config, --tenants, --data-dir) "
+        "are global options.\n"
+        "  Pass them before the command, e.g. "
+        "pavecli --home ./instance list-tenants."
+    )
+    notice = help_notice("pavecli")
     p = argparse.ArgumentParser(
         prog="pavecli",
         description="PaveDB CLI",
+        epilog=runtime_note + (f"\n\n{notice}" if notice else ""),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
         "--compact",
         action="store_true",
         help="Emit compact JSON for scripting",
     )
-    sub = p.add_subparsers(dest="cmd", required=True)
-    runtime = argparse.ArgumentParser(add_help=False)
-    runtime.add_argument(
-        "--home",
-        help="Instance home directory (holds config.yml, tenants.yml, data/)",
+    p.add_argument(
+        "--version",
+        action="version",
+        version=version_banner("pavecli"),
+        help="Print version, copyright, and license information",
     )
-    runtime.add_argument("--config", help="Explicit config.yml path")
-    runtime.add_argument("--tenants", help="Explicit tenants.yml path")
-    runtime.add_argument("--data-dir", dest="data_dir", help="Explicit data directory")
+    p.add_argument(
+        "--home",
+        help=(
+            f"Instance home directory; no global default; init uses "
+            f"{DEFAULT_HOME} when no explicit path is passed"
+        ),
+    )
+    p.add_argument(
+        "--config",
+        help="Explicit config.yml path; default comes from PAVEDB_CONFIG/config search",
+    )
+    p.add_argument(
+        "--tenants",
+        help=(
+            "Explicit tenants.yml path; default comes from "
+            "PAVEDB_AUTH__TENANTS_FILE/config"
+        ),
+    )
+    p.add_argument(
+        "--data-dir",
+        dest="data_dir",
+        help="Explicit data directory; default comes from PAVEDB_DATA_DIR/config",
+    )
+    sub = p.add_subparsers(dest="cmd", required=True)
 
     p_init = _command(
         sub,
@@ -449,11 +481,10 @@ def build_parser() -> argparse.ArgumentParser:
         example=(
             "pavecli init",
             "pavecli init ~/pavedb-staging",
-            "pavecli init --config /etc/pavedb/config.yml \\\n"
+            "pavecli --config /etc/pavedb/config.yml \\\n"
             "  --tenants /var/pavedb/tenants.yml \\\n"
-            "  --data-dir /var/pavedb/data",
+            "  --data-dir /var/pavedb/data init",
         ),
-        parents=[runtime],
     )
     p_init.add_argument("root", nargs="?", help="Instance home directory")
     p_init.add_argument(
@@ -472,7 +503,6 @@ def build_parser() -> argparse.ArgumentParser:
             "configuration."
         ),
         example='pavecli create-collection demo books --display-name "Books"',
-        parents=[runtime],
     )
     p_create.add_argument("tenant", help="Tenant namespace")
     p_create.add_argument(
@@ -503,7 +533,6 @@ def build_parser() -> argparse.ArgumentParser:
             "pavecli ingest demo books ./book.txt --docid book-1 "
             "--metadata '{\"lang\":\"en\"}'"
         ),
-        parents=[runtime],
     )
     p_ingest.add_argument("tenant", help="Tenant namespace")
     p_ingest.add_argument("collection", help="Collection name")
@@ -536,7 +565,6 @@ def build_parser() -> argparse.ArgumentParser:
         example=(
             "pavecli ingest-batch demo books ./documents.json"
         ),
-        parents=[runtime],
     )
     p_ingest_batch.add_argument("tenant", help="Tenant namespace")
     p_ingest_batch.add_argument("collection", help="Collection name")
@@ -551,7 +579,6 @@ def build_parser() -> argparse.ArgumentParser:
         example=(
             'pavecli ingest-text demo books "Captain Nemo" --docid note-1'
         ),
-        parents=[runtime],
     )
     p_ingest_text.add_argument("tenant", help="Tenant namespace")
     p_ingest_text.add_argument("collection", help="Collection name")
@@ -575,7 +602,6 @@ def build_parser() -> argparse.ArgumentParser:
             "envelope."
         ),
         example='pavecli search demo books "captain nemo" -k 3',
-        parents=[runtime],
     )
     p_search.add_argument("tenant", help="Tenant namespace")
     p_search.add_argument("collection", help="Collection name")
@@ -599,7 +625,6 @@ def build_parser() -> argparse.ArgumentParser:
             "collection."
         ),
         example="pavecli list-queries --tenant demo --collection books --limit 20",
-        parents=[runtime],
     )
     p_list_queries.add_argument("--tenant", help="Filter by tenant")
     p_list_queries.add_argument("--collection", help="Filter by collection")
@@ -621,7 +646,6 @@ def build_parser() -> argparse.ArgumentParser:
             "log entry."
         ),
         example="pavecli get-query 6f7cfd26-7d7f-4e5d-942b-f2a516f515a6",
-        parents=[runtime],
     )
     p_get_query.add_argument("query_id", help="Query ID to fetch")
     p_get_query.set_defaults(func=cmd_get_query)
@@ -635,7 +659,6 @@ def build_parser() -> argparse.ArgumentParser:
             "again."
         ),
         example="pavecli replay-query 6f7cfd26-7d7f-4e5d-942b-f2a516f515a6",
-        parents=[runtime],
     )
     p_replay_query.add_argument("query_id", help="Query ID to replay")
     p_replay_query.set_defaults(func=cmd_replay_query)
@@ -646,7 +669,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="List documents in a collection.",
         description="Print indexed documents and their collection metadata.",
         example="pavecli list-documents demo books",
-        parents=[runtime],
     )
     p_list_docs.add_argument("tenant", help="Tenant namespace")
     p_list_docs.add_argument("collection", help="Collection name")
@@ -658,7 +680,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fetch one document by ID.",
         description="Print document metadata and chunk summary for one document.",
         example="pavecli get-document demo books book-1",
-        parents=[runtime],
     )
     p_get_doc.add_argument("tenant", help="Tenant namespace")
     p_get_doc.add_argument("collection", help="Collection name")
@@ -671,7 +692,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="List chunks for a document.",
         description="Print chunk metadata for a document without chunk text content.",
         example="pavecli list-chunks demo books book-1",
-        parents=[runtime],
     )
     p_list_chunks.add_argument("tenant", help="Tenant namespace")
     p_list_chunks.add_argument("collection", help="Collection name")
@@ -684,7 +704,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fetch chunk metadata.",
         description="Print metadata for one chunk by record ID.",
         example="pavecli get-chunk demo books book-1::chunk_0",
-        parents=[runtime],
     )
     p_get_chunk.add_argument("tenant", help="Tenant namespace")
     p_get_chunk.add_argument("collection", help="Collection name")
@@ -697,7 +716,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Print raw chunk text.",
         description="Write one chunk's text content to stdout.",
         example="pavecli get-chunk-content demo books book-1::chunk_0",
-        parents=[runtime],
     )
     p_get_chunk_content.add_argument("tenant", help="Tenant namespace")
     p_get_chunk_content.add_argument("collection", help="Collection name")
@@ -713,7 +731,6 @@ def build_parser() -> argparse.ArgumentParser:
             "index."
         ),
         example="pavecli delete-collection demo books",
-        parents=[runtime],
     )
     p_delete.add_argument("tenant", help="Tenant namespace")
     p_delete.add_argument("collection", help="Collection name")
@@ -728,7 +745,6 @@ def build_parser() -> argparse.ArgumentParser:
             "records."
         ),
         example="pavecli move-collection demo old-books books",
-        parents=[runtime],
     )
     p_move.add_argument("tenant", help="Tenant namespace")
     p_move.add_argument("old_name", help="Current collection name")
@@ -750,7 +766,6 @@ def build_parser() -> argparse.ArgumentParser:
             "re-indexing."
         ),
         example='pavecli update-collection demo books --display-name "Books"',
-        parents=[runtime],
     )
     p_update_collection.add_argument("tenant", help="Tenant namespace")
     p_update_collection.add_argument("collection", help="Collection name")
@@ -767,7 +782,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Delete a document by ID.",
         description="Remove one document and its chunks from a collection.",
         example="pavecli delete-document demo books book-1",
-        parents=[runtime],
     )
     p_delete_doc.add_argument("tenant", help="Tenant namespace")
     p_delete_doc.add_argument("collection", help="Collection name")
@@ -783,7 +797,6 @@ def build_parser() -> argparse.ArgumentParser:
             "directory."
         ),
         example="pavecli dump-archive --output pavedb-data.zip",
-        parents=[runtime],
     )
     p_dump.add_argument("--output", help="Destination ZIP file path")
     p_dump.set_defaults(func=cmd_dump_archive)
@@ -794,7 +807,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="Restore an instance data archive.",
         description="Replace the instance data directory from a zip archive.",
         example="pavecli restore-archive pavedb-data.zip",
-        parents=[runtime],
     )
     p_restore.add_argument("file", help="Archive zip file path")
     p_restore.set_defaults(func=cmd_restore_archive)
@@ -808,7 +820,6 @@ def build_parser() -> argparse.ArgumentParser:
             "directory."
         ),
         example="pavecli reset-metrics",
-        parents=[runtime],
     )
     p_reset_metrics.set_defaults(func=cmd_reset_metrics)
 
@@ -818,7 +829,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="List tenants with cataloged collections.",
         description="Print tenants currently present in the collection catalog.",
         example="pavecli list-tenants",
-        parents=[runtime],
     )
     p_list_tenants.set_defaults(func=cmd_list_tenants)
 
@@ -831,7 +841,6 @@ def build_parser() -> argparse.ArgumentParser:
             "a tenant."
         ),
         example="pavecli list-collections demo",
-        parents=[runtime],
     )
     p_list_collections.add_argument("tenant", help="Tenant namespace")
     p_list_collections.set_defaults(func=cmd_list_collections)
@@ -845,7 +854,6 @@ def build_parser() -> argparse.ArgumentParser:
             "details for a collection."
         ),
         example="pavecli get-collection demo books",
-        parents=[runtime],
     )
     p_get_collection.add_argument("tenant", help="Tenant namespace")
     p_get_collection.add_argument("collection", help="Collection name")

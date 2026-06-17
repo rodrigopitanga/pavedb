@@ -747,11 +747,22 @@ def test_cli_list_tenants_accepts_home_flag(cli_env, tmp_path, capsys):
     beta.touch()
     alpha.touch()
 
-    pvcli.main_cli(["list-tenants", "--home", str(home)])
+    pvcli.main_cli(["--home", str(home), "list-tenants"])
     out = json.loads(capsys.readouterr().out)
 
     assert out["ok"] is True
     assert out["tenants"] == ["alpha", "beta"]
+
+
+def test_cli_runtime_flags_are_global_only(cli_env, tmp_path, capsys):
+    pvcli, _, _ = cli_env
+
+    with pytest.raises(SystemExit) as excinfo:
+        pvcli.main_cli(["list-tenants", "--home", str(tmp_path)])
+
+    err = capsys.readouterr().err
+    assert excinfo.value.code == 2
+    assert "unrecognized arguments: --home" in err
 
 
 def test_cli_list_tenants_does_not_load_embedder(tmp_path, capsys, monkeypatch):
@@ -774,9 +785,9 @@ def test_cli_list_tenants_does_not_load_embedder(tmp_path, capsys, monkeypatch):
 
     rc = pvcli.main_cli([
         "--compact",
-        "list-tenants",
         "--data-dir",
         str(tmp_path),
+        "list-tenants",
     ])
     out = json.loads(capsys.readouterr().out)
 
