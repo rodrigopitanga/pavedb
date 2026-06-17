@@ -89,7 +89,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-23 | ~~Freeze search response schema~~ | 🧩 | SDK contract; `query_id` added additively after freeze | v0.9 |
 | P1-24 | Python client package | 🧱 | SDK foundation | v1.1 |
 | P1-25 | ~~Dev vs prod config defaults~~ | 🔧 | Safe defaults — code defaults are prod-safe (`auth.mode=none` refuses to boot outside dev); dev overlay lives in the `make serve` env | v1.0 |
-| P1-26 | Config reference + CI doc check | 🧩 | Config clarity | v1.0 |
+| P1-26 | ~~Config reference + CI doc check~~ | 🧩 | Config clarity | v1.0 |
 | P1-27 | Admin key auto-generate + persist | 🧩 | Secure bootstrap | v1.1 |
 | P1-28 | Moving-window rate limiting per tenant | 🔧 | req/min, req/hour — needs `rate_limit_buckets` table (Phase 3) | post-SQLite |
 | P1-29 | ~~VectorBackend protocol~~ | 🔧 | Initial backend seam for store split | v0.5.9 |
@@ -116,7 +116,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-52 | Concurrency chaos test (Level 1) | 🔧 | N-thread random-interleave fuzz over create/delete/move/ingest/search/dump/restore with post-run catalog↔disk invariants. Regression net for the lock lattice hardened during the v0.9 rc cycle; bench-stress finds races, this turns them into non-flaky CI checks. Ships as nightly job at v1.1 (not a v1.0 release gate). | v1.1 |
 | P1-53a | ~~Reference-source plumbing: OpenAPI completeness pass~~ | 🔧 | Every route gets `summary`/`description`/`tags`/`responses`; every Pydantic `Field` gets `description` + at least one example. Unblocks an auto-rendered API reference. | v1.0 |
 | P1-53b | ~~Reference-source plumbing: CLI completeness + dumper~~ | 🔧 | Every subcommand gets `help`/`epilog`-example; `scripts/cli_to_markdown.py` renders `docs/reference/cli.md` committed in-repo. | v1.0 |
-| P1-53c | Reference-source plumbing: config schema refactor | 🔧 | Single (key, default, description, env_var) source for `_DEFAULTS`, `config.yml.example`, and `docs/reference/config.md`. Closes P1-26 (drift check) as a side effect. | v1.0 |
+| P1-53c | ~~Reference-source plumbing: config schema refactor~~ | 🔧 | Single (key, default, description, env_var) source for `_DEFAULTS`, `config.yml.example`, and `docs/reference/config.md`. Closes P1-26 (drift check) as a side effect. | v1.0 |
 | P1-53d | Reference-source plumbing: module/class docstrings on public seams | 🔧 | `pave/stores`, `pave/backends`, `pave/embedders`, catalog, `pave/service.py` public functions. Powers `mkdocstrings` once the docs site lands. | v1.0 |
 | P1-53e | API contract snapshot + drift check | 🔧 | Commit `openapi.json` as a checked-in snapshot; `docs-ref-openapi` dump + drift check (mirrors P1-53b's CLI gate) enforces the P1-43 "frozen at v1.0, additive-after" contract — breaking changes fail CI. Depends on P1-53a. | v1.0 |
 | P1-54 | Per-collection archive (dump + restore) | 🧱 | Admin-only `GET`/`POST` archive endpoints for a single collection. Carries `manifest.json` (PaveDB version, embedder spec, schema version), `meta.db`, FAISS index, sidecars. Restore must verify embedder spec is resolvable locally before touching disk. Same-version restore only at v1.5; cross-version waits on P3-37. Depends on P2-25. | v1.5 |
@@ -399,10 +399,10 @@ latency on every search/ingest/delete.~~
   - ~~CLI completeness + dumper: every subcommand gets help and
     an epilog example; `scripts/cli_to_markdown.py` renders
     `docs/reference/cli.md` committed in-repo (P1-53b).~~
-  - Config schema refactor: single (key, default, description,
+  - ~~Config schema refactor: single (key, default, description,
     env_var) source feeds `_DEFAULTS`, `config.yml.example`, and
     `docs/reference/config.md`. Closes the P1-26 drift check as a
-    side effect (P1-53c).
+    side effect (P1-53c).~~
   - Module/class docstrings on public seams: `pave/stores`,
     `pave/backends`, `pave/embedders`, catalog, and
     `pave/service.py` public functions. Powers `mkdocstrings`
@@ -415,8 +415,8 @@ latency on every search/ingest/delete.~~
   `enforce_policy` fail-fast (P1-25).~~
 - ~~Explicit config bootstrap for pip installs (`pavecli init`,
   `--home`, explicit runtime paths) (P1-34).~~
-- Config reference doc + CI drift check — lands as a side effect
-  of P1-53c (P1-26).
+- ~~Config reference doc + CI drift check — lands as a side effect
+  of P1-53c (P1-26).~~
 - Publish `pip freeze` snapshot as release artifact; regenerate
   `THIRD_PARTY_LICENSES.md` from the runtime-only closure (drops stale
   dev-venv cruft) and keep `*.dist-info` in the Docker image (P3-40).

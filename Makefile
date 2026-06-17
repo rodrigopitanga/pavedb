@@ -114,8 +114,8 @@ else
   RELEASE_CPU_MODE := both
 endif
 
-DOC_REF_TARGETS := docs-ref-cli
-DOC_REF_CHECK_TARGETS := docs-ref-check-cli
+DOC_REF_TARGETS := docs-ref-cli docs-ref-config
+DOC_REF_CHECK_TARGETS := docs-ref-check-cli docs-ref-check-config
 
 .ONESHELL:
 # With .ONESHELL enabled, keep recipe failure semantics strict so later
@@ -265,11 +265,17 @@ docs-refresh: $(DOC_REF_TARGETS)
 docs-ref-cli: venv
 	PYTHONPATH=. $(PYTHON_BIN) scripts/cli_to_markdown.py
 
+docs-ref-config: venv
+	PYTHONPATH=. $(PYTHON_BIN) scripts/config_reference.py
+
 .PHONY: docs-ref-check $(DOC_REF_CHECK_TARGETS)
 docs-ref-check: $(DOC_REF_CHECK_TARGETS)
 
 docs-ref-check-cli: venv
 	PYTHONPATH=. $(PYTHON_BIN) scripts/cli_to_markdown.py --check
+
+docs-ref-check-config: venv
+	PYTHONPATH=. $(PYTHON_BIN) scripts/config_reference.py --check
 
 # -------- bump --------
 .PHONY: bump

@@ -69,9 +69,6 @@ def test_apply_runtime_env_sets_pavedb_vars(monkeypatch, tmp_path):
 
 
 def test_packaged_templates_match_repo_examples():
-    assert load_asset_text("config.yml.example") == Path("config.yml.example").read_text(
-        encoding="utf-8"
-    )
     assert load_asset_text("tenants.yml.example") == Path("tenants.yml.example").read_text(
         encoding="utf-8"
     )

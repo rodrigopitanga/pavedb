@@ -1,0 +1,219 @@
+{
+  "license": {
+    "copyright": "(C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>",
+    "spdx": "AGPL-3.0-or-later"
+  },
+  "note": "PaveDB configuration schema: the single source of truth for config keys, their defaults, and descriptions. Edit only to add or change a config field, then run `make docs-refresh` to regenerate config.yml.example and docs/reference/config.md. This is NOT an operator tuning file and is not meant to be edited while running: configure a live instance via config.yml or PAVEDB_* environment variables.",
+  "fields": [
+    {
+      "key": "data_dir",
+      "default": "~/pavedb/data",
+      "description": "Root directory for local catalog, metadata, document chunks, and indexes."
+    },
+    {
+      "key": "common_enabled",
+      "default": false,
+      "description": "Also search a shared common collection for every tenant request."
+    },
+    {
+      "key": "common_tenant",
+      "default": "global",
+      "description": "Tenant that owns the common collection."
+    },
+    {
+      "key": "common_collection",
+      "default": "common",
+      "description": "Collection name used for common shared results."
+    },
+    {
+      "key": "auth.mode",
+      "default": "none",
+      "description": "Authentication mode. Use static outside dev; none is accepted only under the startup policy's dev safeguards."
+    },
+    {
+      "key": "auth.default_access_tenant",
+      "default": null,
+      "description": "Tenant label assigned to unauthenticated requests when auth.mode is none."
+    },
+    {
+      "key": "auth.global_key",
+      "default": null,
+      "description": "Bearer token that grants admin access when auth.mode is static."
+    },
+    {
+      "key": "auth.api_keys",
+      "default": {},
+      "description": "Map of tenant name to bearer token when auth.mode is static."
+    },
+    {
+      "key": "auth.tenants_file",
+      "default": null,
+      "description": "Optional sidecar YAML file containing auth.api_keys and tenants.* values."
+    },
+    {
+      "key": "vector_store.type",
+      "default": "faiss",
+      "description": "Vector store backend used for local indexes."
+    },
+    {
+      "key": "embedder.type",
+      "default": "sbert",
+      "description": "Default embedder adapter for new collections."
+    },
+    {
+      "key": "embedder.warmup_default",
+      "default": true,
+      "description": "Warm the default embedder at server startup before the first query."
+    },
+    {
+      "key": "embedder.sbert.runtime",
+      "default": "auto",
+      "description": "SBERT runtime mode: auto, process, or direct."
+    },
+    {
+      "key": "embedder.sbert.model",
+      "default": "sentence-transformers/all-MiniLM-L6-v2",
+      "description": "Default sentence-transformers model for SBERT collections."
+    },
+    {
+      "key": "embedder.sbert.device",
+      "default": null,
+      "description": "Optional SBERT device override; null lets the adapter choose."
+    },
+    {
+      "key": "embedder.sbert.batch_size",
+      "default": null,
+      "description": "Optional SBERT encode batch size; null uses the adapter default."
+    },
+    {
+      "key": "embedder.openai.model",
+      "default": "text-embedding-3-small",
+      "description": "Default OpenAI embedding model."
+    },
+    {
+      "key": "embedder.openai.api_key",
+      "default": null,
+      "description": "OpenAI API key. OPENAI_API_KEY is also accepted by the adapter."
+    },
+    {
+      "key": "embedder.openai.base_url",
+      "default": null,
+      "description": "Optional OpenAI-compatible base URL override."
+    },
+    {
+      "key": "embedder.openai.dim",
+      "default": null,
+      "description": "Embedding dimension for OpenAI collections; required when the dimension cannot be inferred from collection input."
+    },
+    {
+      "key": "embedder.openai.batch_size",
+      "default": null,
+      "description": "Optional OpenAI request batch size; null uses the adapter default."
+    },
+    {
+      "key": "embedder.ollama.model",
+      "default": "nomic-embed-text",
+      "description": "Default Ollama embedding model."
+    },
+    {
+      "key": "embedder.ollama.base_url",
+      "default": "http://localhost:11434/v1",
+      "description": "OpenAI-compatible Ollama endpoint."
+    },
+    {
+      "key": "embedder.ollama.dim",
+      "default": 768,
+      "description": "Embedding dimension for the default Ollama model."
+    },
+    {
+      "key": "embedder.ollama.batch_size",
+      "default": null,
+      "description": "Optional Ollama request batch size; null uses the adapter default."
+    },
+    {
+      "key": "ingest.max_file_size_mb",
+      "default": 500,
+      "description": "Reject document uploads larger than this many megabytes; 0 disables the limit."
+    },
+    {
+      "key": "ingest.max_concurrent",
+      "default": 7,
+      "description": "Maximum number of concurrent ingest operations; 0 disables the cap."
+    },
+    {
+      "key": "search.max_concurrent",
+      "default": 42,
+      "description": "Maximum number of concurrent search operations; 0 disables the cap."
+    },
+    {
+      "key": "search.timeout_ms",
+      "default": 30000,
+      "description": "Per-search timeout in milliseconds; 0 disables the timeout."
+    },
+    {
+      "key": "preprocess.txt_chunk_size",
+      "default": 1000,
+      "description": "Plain-text chunk size in characters."
+    },
+    {
+      "key": "preprocess.txt_chunk_overlap",
+      "default": 200,
+      "description": "Plain-text chunk overlap in characters."
+    },
+    {
+      "key": "tenants.default_max_concurrent",
+      "default": 0,
+      "description": "Default per-tenant concurrent request cap; 0 disables the cap."
+    },
+    {
+      "key": "server.host",
+      "default": "127.0.0.1",
+      "description": "Default server bind host after startup policy enforcement."
+    },
+    {
+      "key": "server.port",
+      "default": 8086,
+      "description": "Default server bind port."
+    },
+    {
+      "key": "server.reload",
+      "default": false,
+      "description": "Enable uvicorn reload when running the packaged server."
+    },
+    {
+      "key": "server.workers",
+      "default": 1,
+      "description": "Number of uvicorn worker processes."
+    },
+    {
+      "key": "server.timeout_keep_alive",
+      "default": 75,
+      "description": "Uvicorn keep-alive timeout in seconds."
+    },
+    {
+      "key": "log.level",
+      "default": "INFO",
+      "description": "Base stderr log level."
+    },
+    {
+      "key": "log.ops_log",
+      "default": null,
+      "description": "Destination for structured operation logs: null, stdout, or a file path."
+    },
+    {
+      "key": "log.access_log",
+      "default": null,
+      "description": "Destination for uvicorn access logs: null, stdout, or a file path."
+    },
+    {
+      "key": "instance.name",
+      "default": "PaveDB",
+      "description": "Display name used by the API metadata and UI."
+    },
+    {
+      "key": "instance.desc",
+      "default": "PaveDB Vector Search Microservice",
+      "description": "Description used by the API metadata and UI."
+    }
+  ]
+}

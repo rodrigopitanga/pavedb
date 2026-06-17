@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from importlib import resources
 from pathlib import Path
 
+from .config.render import render_config_example
+
 DEFAULT_HOME = "~/pavedb"
 
 
@@ -73,7 +75,7 @@ def _yaml_quote(value: str) -> str:
 
 
 def render_config_template(*, data_dir: str, tenants_file: str) -> str:
-    text = load_asset_text("config.yml.example")
+    text = render_config_example()
     text = re.sub(
         r"^data_dir: .*$",
         f"data_dir: {_yaml_quote(data_dir)}",

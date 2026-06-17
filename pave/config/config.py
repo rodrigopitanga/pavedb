@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 from copy import deepcopy
+from dataclasses import dataclass
 import json
+import logging
 import os, re, threading
 from pathlib import Path
 from typing import Any
@@ -42,6 +44,112 @@ load_dotenv()
 _ENV_PREFIX = "PAVEDB_"
 
 
+@dataclass(frozen=True)
+class ConfigField:
+    key: str
+    default: Any
+    description: str
+    env_var: str
+
+
+def _env_var_for(key: str) -> str:
+    return _ENV_PREFIX + key.upper().replace(".", "__")
+
+
+def _config_field(
+    key: str,
+    default: Any,
+    description: str,
+    env_var: str | None = None,
+) -> ConfigField:
+    return ConfigField(
+        key=key,
+        default=default,
+        description=description,
+        env_var=env_var or _env_var_for(key),
+    )
+
+
+_CONFIG_FIELDS_PATH = Path(__file__).with_name("config_fields.json")
+_REQUIRED_FIELD_KEYS = ("key", "default", "description")
+
+
+def _load_config_fields(
+    path: Path = _CONFIG_FIELDS_PATH,
+) -> tuple[ConfigField, ...]:
+    # The config schema ships inside the package, so a failure here means a
+    # broken install or a bad edit, not operator misconfiguration. It is fatal:
+    # log at CRITICAL (stderr via the last-resort handler, since pave logging is
+    # not configured this early in import) and re-raise to abort startup.
+    log = logging.getLogger(__name__)
+
+    def fail(message: str) -> "NoReturn":
+        log.critical("Cannot load config schema: %s", message)
+        raise ValueError(message)
+
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        log.critical("Cannot load config schema %s: %s", path, exc)
+        raise
+
+    if not isinstance(raw, dict) or not isinstance(raw.get("fields"), list):
+        fail(f"{path.name} must be a JSON object with a 'fields' array")
+    fields: list[ConfigField] = []
+    for index, entry in enumerate(raw["fields"]):
+        if not isinstance(entry, dict):
+            fail(f"{path.name} fields[{index}] must be a JSON object")
+        missing = [key for key in _REQUIRED_FIELD_KEYS if key not in entry]
+        if missing:
+            fail(
+                f"{path.name} fields[{index}] is missing required keys: "
+                f"{', '.join(missing)}"
+            )
+        if not isinstance(entry["key"], str) or not entry["key"].strip():
+            fail(f"{path.name} fields[{index}].key must be a non-empty string")
+        if (
+            not isinstance(entry["description"], str)
+            or not entry["description"].strip()
+        ):
+            fail(
+                f"{path.name} fields[{index}].description must be a "
+                "non-empty string"
+            )
+        if "env_var" in entry and (
+            not isinstance(entry["env_var"], str)
+            or not entry["env_var"].strip()
+        ):
+            fail(
+                f"{path.name} fields[{index}].env_var must be a "
+                "non-empty string"
+            )
+        fields.append(
+            _config_field(
+                entry["key"],
+                entry["default"],
+                entry["description"],
+                entry.get("env_var"),
+            )
+        )
+    return tuple(fields)
+
+
+CONFIG_FIELDS: tuple[ConfigField, ...] = _load_config_fields()
+
+
+def _config_defaults(
+    fields: tuple[ConfigField, ...] = CONFIG_FIELDS,
+) -> dict[str, Any]:
+    defaults: dict[str, Any] = {}
+    for field in fields:
+        cur = defaults
+        parts = field.key.split(".")
+        for part in parts[:-1]:
+            cur = cur.setdefault(part, {})
+        cur[parts[-1]] = deepcopy(field.default)
+    return defaults
+
+
 def _env_flag(name: str) -> bool:
     value = os.environ.get(_ENV_PREFIX + name)
     if value is None:
@@ -58,37 +166,7 @@ def _default_config_path() -> str | None:
         return None
     return str(Path("~/pavedb/config.yml").expanduser())
 
-_DEFAULTS = {
-    "data_dir": "~/pavedb/data",
-    "common_enabled": False,
-    "common_tenant": "global",
-    "common_collection": "common",
-    # External tenant maps are opt-in; no tenants sidecar is loaded by default.
-    "auth": {"mode": "none", "api_keys": {}, "tenants_file": None},
-    "vector_store": {"type": "faiss"},
-    "embedder": {
-        "type": "sbert",
-        "warmup_default": True,
-        "sbert": {
-            "runtime": "auto",
-            "model": "sentence-transformers/all-MiniLM-L6-v2",
-        },
-        "openai": {
-            "model": "text-embedding-3-small",
-        },
-        "ollama": {
-            "model": "nomic-embed-text",
-            "base_url": "http://localhost:11434/v1",
-            "dim": 768,
-        },
-    },
-    "ingest": {"max_file_size_mb": 500, "max_concurrent": 7},
-    "search": {"max_concurrent": 42, "timeout_ms": 30000},
-    "preprocess": {"txt_chunk_size": 1000, "txt_chunk_overlap": 200},
-    "tenants": {"default_max_concurrent": 0},
-    "server": {"timeout_keep_alive": 75},
-    "log": {"level": "INFO", "ops_log": None, "access_log": None},
-}
+_DEFAULTS = _config_defaults()
 
 # Path-type config keys: ~ is expanded after the full config merge.
 # Supports dotted notation for nested keys (e.g. "log.ops_log").
@@ -299,6 +377,3 @@ def reload_cfg(path: str | None = None) -> Config:
     return _CFG_SINGLETON
 
 CFG = _CFG_SINGLETON
-
-# Dev stream (stderr) logger lives in pave.log — re-exported here for back-compat.
-from pave.log import get_logger, LOG  # noqa: E402

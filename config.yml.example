@@ -1,244 +1,209 @@
 # PaveDB sample configuration
-# Copy to config.yml and adjust.
-# Secrets (API keys) should live in a separate untracked file — see tenants.yml.example.
-#
-# Default user-install paths:
-#   config:  ~/pavedb/config.yml
-#   tenants: ~/pavedb/tenants.yml
-#   data:    ~/pavedb/data
-#
-# Distro-like install example:
-#   config:  /etc/pavedb/config.yml
-#   tenants: /var/pavedb/tenants.yml
-#   data:    /var/pavedb/data
+# Generated from pave.config.CONFIG_FIELDS.
+# Regenerate with: make docs-refresh
 #
 # Config file location override:
 #   PAVEDB_CONFIG=/etc/pavedb/config.yml
 #
-# In Docker/systemd deployments always set PAVEDB_CONFIG explicitly — the
-# default path expands ~ relative to the process user, which may not be what
-# you expect inside a container. Example compose snippet:
+# Every config key can also be overridden with an environment variable.
+# Nested keys use double underscores, for example:
+#   PAVEDB_AUTH__MODE=static
+#   PAVEDB_LOG__LEVEL=debug
 #
-#   environment:
-#     PAVEDB_CONFIG: /etc/pavedb/config.yml
-#   volumes:
-#     - ./config.yml:/etc/pavedb/config.yml:ro
-#
-# All keys can also be overridden inline via environment variables:
-#   PAVEDB_<KEY>=value          (top-level, e.g. PAVEDB_DATA_DIR)
-#   PAVEDB_<SECTION>__<KEY>=val (nested,    e.g. PAVEDB_LOG__LEVEL=debug)
-# `auth.tenants_file` is optional. If unset, its default is `None` and no
-# tenants sidecar file is loaded.
-# If set, PaveDB loads that sidecar first. Then inline tenant config is
-# applied with precedence:
+# Tenant sidecar precedence:
 #   env vars > config.yml > tenants.yml > defaults
-# Example: define tenant "acme" entirely from env:
-#   PAVEDB_AUTH__API_KEYS__acme=change-me
-#   PAVEDB_TENANTS__acme__MAX_CONCURRENT=5
 
 # ---------------------------------------------------------------------------
-# Storage
+# General
 # ---------------------------------------------------------------------------
-
-# Data directory — ~ is expanded at startup.
-# Default (library/dev): ~/pavedb/data
-# For distro-like installs use an absolute path, e.g. /var/pavedb/data.
-data_dir: ~/pavedb/data
-
-# ---------------------------------------------------------------------------
-# Common collection
-# ---------------------------------------------------------------------------
-# When enabled, every tenant search also queries a shared "common" collection
-# and merges the results. Useful for org-wide reference data (e.g. a shared
-# code/term dictionary) that should be visible to all tenants.
-# The common collection is owned by common_tenant and is never rate-limited.
-
+# Root directory for local catalog, metadata, document chunks, and indexes.
+# Env: PAVEDB_DATA_DIR
+data_dir: '~/pavedb/data'
+# Also search a shared common collection for every tenant request.
+# Env: PAVEDB_COMMON_ENABLED
 common_enabled: false
-common_tenant: global        # tenant that owns the common collection
-common_collection: common    # collection name within that tenant
+# Tenant that owns the common collection.
+# Env: PAVEDB_COMMON_TENANT
+common_tenant: 'global'
+# Collection name used for common shared results.
+# Env: PAVEDB_COMMON_COLLECTION
+common_collection: 'common'
+
 
 # ---------------------------------------------------------------------------
 # Authentication
 # ---------------------------------------------------------------------------
-
 auth:
-  # none   — no auth; all requests accepted. Dev/private deployments only.
-  #          enforce_policy() will reject auth=none on non-loopback interfaces.
-  # static — Bearer token per tenant; keys defined below or in tenants_file.
-  mode: static
-
-  # Default tenant name when auth.mode=none (no key required).
-  default_access_tenant: public
-
-  # Global admin key — grants access to all tenants and admin routes.
-  # Always read from the environment; never hardcode in committed files.
-  global_key: ${PAVEDB_GLOBAL_KEY}
-
-  # External tenant→key mapping file.
-  # Keep the same key paths there (`auth.api_keys`, `tenants.*`).
-  # User install default:  ~/pavedb/tenants.yml
-  # Distro-like install:   /var/pavedb/tenants.yml
-  # tenants_file: ~/pavedb/tenants.yml
-
-  # Inline tenant→key mapping (fallback; keep empty in the repo).
+  # Authentication mode. Use static outside dev; none is accepted only under the startup
+  # policy's dev safeguards.
+  # Env: PAVEDB_AUTH__MODE
+  mode: 'none'
+  # Tenant label assigned to unauthenticated requests when auth.mode is none.
+  # Env: PAVEDB_AUTH__DEFAULT_ACCESS_TENANT
+  # default_access_tenant: null
+  # Bearer token that grants admin access when auth.mode is static.
+  # Env: PAVEDB_AUTH__GLOBAL_KEY
+  # global_key: null
+  # Map of tenant name to bearer token when auth.mode is static.
+  # Env: PAVEDB_AUTH__API_KEYS
   api_keys: {}
+  # Optional sidecar YAML file containing auth.api_keys and tenants.* values.
+  # Env: PAVEDB_AUTH__TENANTS_FILE
+  # tenants_file: null
+
 
 # ---------------------------------------------------------------------------
-# Vector store
+# Vector Store
 # ---------------------------------------------------------------------------
-
 vector_store:
-  # faiss   — local FAISS index (built-in, no extra services required).
-  type: faiss
+  # Vector store backend used for local indexes.
+  # Env: PAVEDB_VECTOR_STORE__TYPE
+  type: 'faiss'
 
-  # Options for type=faiss.
-  faiss:
-    embed_model: sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
-    max_query_chars: 4000
 
 # ---------------------------------------------------------------------------
-# Embedder
+# Embedding
 # ---------------------------------------------------------------------------
-# Controls how text is converted to vectors before indexing and querying.
-# The embedder is shared across all collections (per-collection config: v0.6).
-
 embedder:
-  # sbert  — direct sentence-transformers (recommended local default).
-  # openai — OpenAI embeddings API (requires API key, adds latency).
-  type: sbert
-
-  # Warm the default embedder at server startup with one .encode call.
-  # Avoids paying the model-load / API-handshake cost on the first request.
-  # Set to false in multi-model deployments where the default is not the
-  # most-used embedder (per-embedder warmup arrives at v1.7 with P1-58).
+  # Default embedder adapter for new collections.
+  # Env: PAVEDB_EMBEDDER__TYPE
+  type: 'sbert'
+  # Warm the default embedder at server startup before the first query.
+  # Env: PAVEDB_EMBEDDER__WARMUP_DEFAULT
   warmup_default: true
-
-  # Used by type=sbert.
   sbert:
-    runtime: auto   # auto | process | direct
-    model: sentence-transformers/all-MiniLM-L6-v2
-    batch_size: 64
-    device: auto   # cpu | cuda | mps | auto
-
-  # Used by type=openai.
+    # SBERT runtime mode: auto, process, or direct.
+    # Env: PAVEDB_EMBEDDER__SBERT__RUNTIME
+    runtime: 'auto'
+    # Default sentence-transformers model for SBERT collections.
+    # Env: PAVEDB_EMBEDDER__SBERT__MODEL
+    model: 'sentence-transformers/all-MiniLM-L6-v2'
+    # Optional SBERT device override; null lets the adapter choose.
+    # Env: PAVEDB_EMBEDDER__SBERT__DEVICE
+    # device: null
+    # Optional SBERT encode batch size; null uses the adapter default.
+    # Env: PAVEDB_EMBEDDER__SBERT__BATCH_SIZE
+    # batch_size: null
   openai:
-    model: text-embedding-3-small
-    batch_size: 256
-    api_key: ${PAVEDB_OPENAI_API_KEY}
-    # base_url: ${PAVEDB_OPENAI_BASE_URL}   # override to hit a compatible endpoint
-    dim: 1536
-
-  # Used by type=ollama. Thin OpenAI-compatible wrapper for a local Ollama
-  # daemon. Probes /api/tags at construction; raises embedder_unavailable
-  # if the daemon is down.
+    # Default OpenAI embedding model.
+    # Env: PAVEDB_EMBEDDER__OPENAI__MODEL
+    model: 'text-embedding-3-small'
+    # OpenAI API key. OPENAI_API_KEY is also accepted by the adapter.
+    # Env: PAVEDB_EMBEDDER__OPENAI__API_KEY
+    # api_key: null
+    # Optional OpenAI-compatible base URL override.
+    # Env: PAVEDB_EMBEDDER__OPENAI__BASE_URL
+    # base_url: null
+    # Embedding dimension for OpenAI collections; required when the dimension cannot be
+    # inferred from collection input.
+    # Env: PAVEDB_EMBEDDER__OPENAI__DIM
+    # dim: null
+    # Optional OpenAI request batch size; null uses the adapter default.
+    # Env: PAVEDB_EMBEDDER__OPENAI__BATCH_SIZE
+    # batch_size: null
   ollama:
-    model: nomic-embed-text
-    # base_url: http://localhost:11434/v1   # override to point at a remote Ollama
+    # Default Ollama embedding model.
+    # Env: PAVEDB_EMBEDDER__OLLAMA__MODEL
+    model: 'nomic-embed-text'
+    # OpenAI-compatible Ollama endpoint.
+    # Env: PAVEDB_EMBEDDER__OLLAMA__BASE_URL
+    base_url: 'http://localhost:11434/v1'
+    # Embedding dimension for the default Ollama model.
+    # Env: PAVEDB_EMBEDDER__OLLAMA__DIM
     dim: 768
+    # Optional Ollama request batch size; null uses the adapter default.
+    # Env: PAVEDB_EMBEDDER__OLLAMA__BATCH_SIZE
+    # batch_size: null
+
 
 # ---------------------------------------------------------------------------
-# Ingest limits
+# Ingest
 # ---------------------------------------------------------------------------
-
 ingest:
-  # Reject uploads larger than this (MB). 0 = unlimited.
-  # Also set your reverse proxy: e.g. nginx client_max_body_size >= this value.
+  # Reject document uploads larger than this many megabytes; 0 disables the limit.
+  # Env: PAVEDB_INGEST__MAX_FILE_SIZE_MB
   max_file_size_mb: 500
+  # Maximum number of concurrent ingest operations; 0 disables the cap.
+  # Env: PAVEDB_INGEST__MAX_CONCURRENT
+  max_concurrent: 7
 
-  # Max parallel ingests; excess requests get 503 immediately.
-  # Ingest is CPU/memory heavy — keep this well below your core count.
-  # In-code default is 7 (conservative floor); 10 below is a typical-dev-host
-  # value. Rule of thumb: ~1× core count on dedicated hosts (e.g. 10 on a
-  # 10-core M-series, 16 on a 16-vCPU VM).
-  # 0 = unlimited (not recommended in production).
-  max_concurrent: 10
-
-# Reverse-proxy timeout guidance for ingest endpoints:
-# Ingest embeds the entire document before responding; large files can take
-# tens of seconds. Raise these nginx directives accordingly:
-#
-#   proxy_read_timeout   300;  # wait up to 5 min for upstream response
-#   client_body_timeout  120;  # wait up to 2 min for client to send body
-#
-# Your HTTP client read timeout should also be at least 300 s for ingest.
 
 # ---------------------------------------------------------------------------
-# Search limits
+# Search
 # ---------------------------------------------------------------------------
-
 search:
-  # Max parallel searches; excess requests get 503 immediately.
-  # In-code default is 42 (conservative floor); 48 below is a typical-dev-host
-  # value. Rule of thumb: ~4–5× core count on dedicated hosts; throughput
-  # plateaus past that and only latency grows.
-  # 0 = unlimited (not recommended in production).
-  max_concurrent: 48
-
-  # Per-search timeout in ms; returns 503 on expiry. 0 = no timeout.
+  # Maximum number of concurrent search operations; 0 disables the cap.
+  # Env: PAVEDB_SEARCH__MAX_CONCURRENT
+  max_concurrent: 42
+  # Per-search timeout in milliseconds; 0 disables the timeout.
+  # Env: PAVEDB_SEARCH__TIMEOUT_MS
   timeout_ms: 30000
 
-# ---------------------------------------------------------------------------
-# Per-tenant concurrency limits
-# ---------------------------------------------------------------------------
-# Applies to all tenant-scoped routes (search, ingest, collection ops).
-# Admin requests and global-key requests bypass these limits.
-# Per-tenant overrides can be set in tenants.yml (see tenants.yml.example).
-# Moving-window limits (max_rpm, max_rph) require SQLite — post-v0.5.8.
-
-tenants:
-  default_max_concurrent: 10  # applies to every tenant; 0 = unlimited
 
 # ---------------------------------------------------------------------------
-# Text preprocessing
+# Text Preprocessing
 # ---------------------------------------------------------------------------
-# Controls how plain-text (.txt) files are split into chunks before embedding.
-# Overlap ensures context is preserved across chunk boundaries.
-
 preprocess:
-  txt_chunk_size: 1000     # characters per chunk
-  txt_chunk_overlap: 200   # characters of overlap between adjacent chunks
+  # Plain-text chunk size in characters.
+  # Env: PAVEDB_PREPROCESS__TXT_CHUNK_SIZE
+  txt_chunk_size: 1000
+  # Plain-text chunk overlap in characters.
+  # Env: PAVEDB_PREPROCESS__TXT_CHUNK_OVERLAP
+  txt_chunk_overlap: 200
+
+
+# ---------------------------------------------------------------------------
+# Tenants
+# ---------------------------------------------------------------------------
+tenants:
+  # Default per-tenant concurrent request cap; 0 disables the cap.
+  # Env: PAVEDB_TENANTS__DEFAULT_MAX_CONCURRENT
+  default_max_concurrent: 0
+
 
 # ---------------------------------------------------------------------------
 # Server
 # ---------------------------------------------------------------------------
-# These defaults are overridden by env vars HOST / PORT / RELOAD / WORKERS.
-
 server:
-  host: 0.0.0.0
+  # Default server bind host after startup policy enforcement.
+  # Env: PAVEDB_SERVER__HOST
+  host: '127.0.0.1'
+  # Default server bind port.
+  # Env: PAVEDB_SERVER__PORT
   port: 8086
+  # Enable uvicorn reload when running the packaged server.
+  # Env: PAVEDB_SERVER__RELOAD
   reload: false
+  # Number of uvicorn worker processes.
+  # Env: PAVEDB_SERVER__WORKERS
   workers: 1
-
-  # Keep-alive timeout in seconds (passed to uvicorn --timeout-keep-alive).
-  # Must be lower than your reverse proxy's keepalive_timeout.
-  # nginx default is 75 s — set this to 65 when behind nginx.
+  # Uvicorn keep-alive timeout in seconds.
+  # Env: PAVEDB_SERVER__TIMEOUT_KEEP_ALIVE
   timeout_keep_alive: 75
+
 
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
-
 log:
-  # Dev log level (stderr). DEBUG | INFO | WARNING | ERROR — default INFO.
-  # Overridden by PAVEDB_LOG__LEVEL env var (e.g. in Makefile: debug).
-  # Per-namespace overrides: log.debug / log.watch / log.quiet (list of loggers).
-  level: INFO
+  # Base stderr log level.
+  # Env: PAVEDB_LOG__LEVEL
+  level: 'INFO'
+  # Destination for structured operation logs: null, stdout, or a file path.
+  # Env: PAVEDB_LOG__OPS_LOG
+  # ops_log: null
+  # Destination for uvicorn access logs: null, stdout, or a file path.
+  # Env: PAVEDB_LOG__ACCESS_LOG
+  # access_log: null
 
-  # Ops log — one structured JSON line per operation (search, ingest, delete…).
-  # Fields: ts, op, tenant, collection, latency_ms, status, error_code, hits.
-  # null (off) | stdout | /path/to/ops.jsonl
-  # stdout is recommended for Docker/12-factor; pave uses stderr for the dev log.
-  # File paths suit traditional deployments; no rotation is provided here.
-  ops_log: null
-
-  # Uvicorn access log destination.
-  # null (use uvicorn default) | stdout | /path/to/access.log
-  access_log: null
 
 # ---------------------------------------------------------------------------
-# Instance branding (optional)
+# Instance
 # ---------------------------------------------------------------------------
-
 instance:
-  name: PaveDB
-  desc: Vector Search Microservice (pluggable, functional)
+  # Display name used by the API metadata and UI.
+  # Env: PAVEDB_INSTANCE__NAME
+  name: 'PaveDB'
+  # Description used by the API metadata and UI.
+  # Env: PAVEDB_INSTANCE__DESC
+  desc: 'PaveDB Vector Search Microservice'
