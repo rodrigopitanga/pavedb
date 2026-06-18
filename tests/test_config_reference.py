@@ -13,6 +13,7 @@ from pave.config import (
     _config_defaults,
     _load_config_fields,
 )
+from pave.config.render import render_config_example
 from scripts.config_reference import render_outputs
 
 
@@ -63,3 +64,12 @@ def test_defaults_are_built_from_config_fields():
 def test_config_reference_outputs_are_current():
     for path, rendered in render_outputs().items():
         assert path.read_text(encoding="utf-8") == rendered
+
+
+def test_config_example_spacing_between_blocks():
+    text = render_config_example()
+
+    assert "auth:\n\n  # Authentication mode" in text
+    assert "mode: 'static'\n\n  # Tenant label" in text
+    assert "warmup_default: true\n\n  instances:" in text
+    assert "native:\n\n      # Built-in native embedder" in text

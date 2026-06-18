@@ -15,9 +15,12 @@ CONFIG_KEYS: tuple[str, ...] = ("runtime", "device", "batch_size")
 SPACE_KEYS: tuple[str, ...] = ()
 
 
-def build_embedder(cfg, *, model=None, embedder_config=None):
+def build_embedder(cfg, *, model=None, embedder_config=None, api_key=None):
     """Construct an sbert-family embedder; dispatches between in-process
     SbertEmbedder and subprocess ProcessSbertEmbedder per `runtime`.
+
+    `api_key` is accepted for a uniform factory signature and ignored; local
+    SBERT models need no credential.
     """
     from .factory import resolve_setting
 

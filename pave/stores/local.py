@@ -197,7 +197,7 @@ class LocalStore(BaseStore):
         self._embedder_factory = embedder_factory or self._make_embedder
         self._emb: dict[tuple[str, str], VectorBackend] = {}
         self._collection_embedders: dict[tuple[str, str], Embedder] = {}
-        self._embedder_cache: dict[tuple[str, str, str], Embedder] = {}
+        self._embedder_cache: dict[str, Embedder] = {}
         self._dbs: dict[tuple[str, str], CollectionDB] = {}
         self._catalog_factory = cat_db.__class__ if cat_db is not None else CatalogDB
         self._catalog = cat_db or self._catalog_factory()
@@ -208,10 +208,22 @@ class LocalStore(BaseStore):
         self._state_lock = _StoreStateLock()
         self._catalog_metrics_lock = Lock()
         self._catalog_metrics_cache: tuple[float, dict[str, int]] | None = None
-        default_key = embedder_factory_mod.embedder_cache_key(
-            self._default_collection_config()
+        configured_embedders = embedder_factory_mod.embedder_instances()
+        log.info(
+            "Configured embedders: %s",
+            ", ".join(
+                f"{instance.key}/{instance.vector_key}"
+                for instance in configured_embedders
+            ),
         )
-        self._embedder_cache[default_key] = embedder
+        default_resolution = embedder_factory_mod.resolve_default_embedder()
+        log.info(
+            "Default embedder resolved selector=%s vector_key=%s instances=%s",
+            default_resolution.selector,
+            default_resolution.vector_key,
+            ",".join(instance.key for instance in default_resolution.instances),
+        )
+        self._embedder_cache[default_resolution.vector_key] = embedder
         self._ensure_catalog()
 
     @staticmethod
@@ -310,10 +322,13 @@ class LocalStore(BaseStore):
             model=embed_model,
             embedder_config=embedder_config,
         )
+        stored_spec = embedder_factory_mod.persistable_embedder_spec(
+            embedder_spec
+        )
         return {
             "backend_type": backend_type,
             "backend_config": {},
-            **embedder_spec,
+            **stored_spec,
         }
 
     def _default_collection_config(self) -> CollectionConfig:
@@ -447,14 +462,18 @@ class LocalStore(BaseStore):
         return cfg
 
     def _get_embedder_for_config(self, cfg: CollectionConfig) -> Embedder:
-        key = embedder_factory_mod.embedder_cache_key(cfg)
+        key = embedder_factory_mod.vector_space_key(cfg)
         embedder = self._embedder_cache.get(key)
         if embedder is None:
             try:
+                runtime = embedder_factory_mod.runtime_embedder_spec_for_vector(
+                    get_cfg(),
+                    cfg,
+                )
                 embedder = self._embedder_factory(
-                    str(cfg["embedder_type"]),
-                    str(cfg["embed_model"]),
-                    dict(cfg.get("embedder_config") or {}),
+                    str(runtime["embedder_type"]),
+                    str(runtime["embed_model"]),
+                    dict(runtime.get("embedder_config") or {}),
                 )
             except EmbedderUnavailableError:
                 raise
@@ -476,13 +495,13 @@ class LocalStore(BaseStore):
             return int(embedder.dim)
         except EmbedderUnavailableError:
             self._embedder_cache.pop(
-                embedder_factory_mod.embedder_cache_key(cfg),
+                embedder_factory_mod.vector_space_key(cfg),
                 None,
             )
             raise
         except Exception as exc:
             self._embedder_cache.pop(
-                embedder_factory_mod.embedder_cache_key(cfg),
+                embedder_factory_mod.vector_space_key(cfg),
                 None,
             )
             raise EmbedderUnavailableError(

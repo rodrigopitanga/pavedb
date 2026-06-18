@@ -177,19 +177,22 @@ class DummyStore(BaseStore):
         embed_model: str | None = None,
         embedder_config: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        cfg = get_cfg()
-        resolved_type = str(
-            embedder_type or cfg.get("embedder.type") or "sbert"
-        ).lower()
-        resolved_model = str(
-            embed_model
-            or cfg.get(f"embedder.{resolved_type}.model")
-            or "fake"
+        from pave.embedders.factory import (
+            persistable_embedder_spec,
+            resolve_embedder_spec,
         )
+
+        spec = resolve_embedder_spec(
+            get_cfg(),
+            embedder_type=embedder_type,
+            model=embed_model,
+            embedder_config=embedder_config,
+        )
+        stored = persistable_embedder_spec(spec)
         return {
-            "embedder_type": resolved_type,
-            "embed_model": resolved_model,
-            "embedder_config": dict(embedder_config or {}),
+            "embedder_type": stored["embedder_type"],
+            "embed_model": stored["embed_model"],
+            "embedder_config": stored["embedder_config"],
         }
 
     def create_collection(

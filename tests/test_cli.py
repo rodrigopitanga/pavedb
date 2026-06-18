@@ -148,7 +148,7 @@ def test_cli_create_collection_accepts_embedder_args(cli_env, capsys):
     assert out["display_name"] == "cfgcli"
     assert out["embedder_type"] == "sbert"
     assert out["embed_model"] == "fake"
-    assert out["embedder_config"] == {"batch_size": 64}
+    assert out["embedder_config"] == {}
     assert ("create_collection", tenant, coll) in store.calls
 
 

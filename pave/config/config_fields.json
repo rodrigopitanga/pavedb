@@ -56,9 +56,9 @@
       "description": "Vector store backend used for local indexes."
     },
     {
-      "key": "embedder.type",
-      "default": "sbert",
-      "description": "Default embedder adapter for new collections."
+      "key": "embedder.default",
+      "default": null,
+      "description": "Default embedder selector. Use a user-defined instance key, type, type:model, or full vector key. Required when more than one embedder instance is configured."
     },
     {
       "key": "embedder.warmup_default",
@@ -66,69 +66,29 @@
       "description": "Warm the default embedder at server startup before the first query."
     },
     {
-      "key": "embedder.sbert.runtime",
+      "key": "embedder.instances.native.type",
+      "default": "sbert",
+      "description": "Built-in native embedder instance type. Native means PaveDB runs the embedder itself rather than calling an external service."
+    },
+    {
+      "key": "embedder.instances.native.model",
+      "default": "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+      "description": "Default sentence-transformers model for the native instance."
+    },
+    {
+      "key": "embedder.instances.native.config.runtime",
       "default": "auto",
-      "description": "SBERT runtime mode: auto, process, or direct."
+      "description": "Native SBERT runtime mode: auto, process, or direct."
     },
     {
-      "key": "embedder.sbert.model",
-      "default": "sentence-transformers/all-MiniLM-L6-v2",
-      "description": "Default sentence-transformers model for SBERT collections."
+      "key": "embedder.instances.native.config.device",
+      "default": "auto",
+      "description": "Optional native SBERT device override; cpu | cuda | mps | auto lets the adapter choose."
     },
     {
-      "key": "embedder.sbert.device",
+      "key": "embedder.instances.native.config.batch_size",
       "default": null,
-      "description": "Optional SBERT device override; null lets the adapter choose."
-    },
-    {
-      "key": "embedder.sbert.batch_size",
-      "default": null,
-      "description": "Optional SBERT encode batch size; null uses the adapter default."
-    },
-    {
-      "key": "embedder.openai.model",
-      "default": "text-embedding-3-small",
-      "description": "Default OpenAI embedding model."
-    },
-    {
-      "key": "embedder.openai.api_key",
-      "default": null,
-      "description": "OpenAI API key. OPENAI_API_KEY is also accepted by the adapter."
-    },
-    {
-      "key": "embedder.openai.base_url",
-      "default": null,
-      "description": "Optional OpenAI-compatible base URL override."
-    },
-    {
-      "key": "embedder.openai.dim",
-      "default": null,
-      "description": "Embedding dimension for OpenAI collections; required when the dimension cannot be inferred from collection input."
-    },
-    {
-      "key": "embedder.openai.batch_size",
-      "default": null,
-      "description": "Optional OpenAI request batch size; null uses the adapter default."
-    },
-    {
-      "key": "embedder.ollama.model",
-      "default": "nomic-embed-text",
-      "description": "Default Ollama embedding model."
-    },
-    {
-      "key": "embedder.ollama.base_url",
-      "default": "http://localhost:11434/v1",
-      "description": "OpenAI-compatible Ollama endpoint."
-    },
-    {
-      "key": "embedder.ollama.dim",
-      "default": 768,
-      "description": "Embedding dimension for the default Ollama model."
-    },
-    {
-      "key": "embedder.ollama.batch_size",
-      "default": null,
-      "description": "Optional Ollama request batch size; null uses the adapter default."
+      "description": "Optional native SBERT encode batch size; null uses the adapter default."
     },
     {
       "key": "ingest.max_file_size_mb",

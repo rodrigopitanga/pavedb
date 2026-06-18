@@ -40,7 +40,10 @@ def test_live_health_does_not_load_embedder(monkeypatch, tmp_path):
 
     cfg = get_cfg()
     cfg.set("data_dir", str(tmp_path))
-    cfg.set("embedder.type", "sbert")
+    cfg.set("embedder.default", "native")
+    cfg.set("embedder.instances.native.type", "sbert")
+    cfg.set("embedder.instances.native.model", "fake")
+    cfg.set("embedder.instances.native.config.runtime", "auto")
     cfg.set("auth.mode", "none")
 
     def fail_get_embedder():

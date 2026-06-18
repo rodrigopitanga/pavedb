@@ -65,9 +65,22 @@ def test_ollama_dispatched_via_convention(monkeypatch):
     monkeypatch.setattr(ollama_mod, "_probe_daemon", lambda _url: None)
 
     emb = factory_mod.get_embedder(
-        _DummyCFG({"embedder.type": "ollama"}),
+        _DummyCFG(
+            {
+                "embedder.default": "ollama",
+                "embedder.instances": {
+                    "ollama": {
+                        "type": "ollama",
+                        "model": "nomic-embed-text",
+                        "config": {
+                            "dim": 1024,
+                            "base_url": "http://x/v1",
+                        },
+                    },
+                },
+            }
+        ),
         embedder_type="ollama",
-        embedder_config={"dim": 1024, "base_url": "http://x/v1"},
     )
 
     assert isinstance(emb, FakeOpenAI)
@@ -75,3 +88,36 @@ def test_ollama_dispatched_via_convention(monkeypatch):
     assert seen["base_url"] == "http://x/v1"
     assert seen["dim"] == 1024
     assert seen["api_key"] == "ollama"
+
+
+def test_ollama_instance_api_key_overrides_dummy(monkeypatch):
+    """A per-instance api_key replaces the 'ollama' placeholder."""
+    importlib.reload(factory_mod)
+
+    seen: dict[str, object] = {}
+
+    class FakeOpenAI:
+        def __init__(self, **kwargs):
+            seen.update(kwargs)
+
+    monkeypatch.setattr(ollama_mod, "OllamaEmbedder", FakeOpenAI, raising=True)
+    monkeypatch.setattr(ollama_mod, "_probe_daemon", lambda _url: None)
+
+    factory_mod.get_embedder(
+        _DummyCFG(
+            {
+                "embedder.default": "gateway",
+                "embedder.instances": {
+                    "gateway": {
+                        "type": "ollama",
+                        "model": "nomic-embed-text",
+                        "api_key": "proxy-secret",
+                        "config": {"dim": 1024, "base_url": "http://x/v1"},
+                    },
+                },
+            }
+        ),
+        embedder_type="ollama",
+    )
+
+    assert seen["api_key"] == "proxy-secret"

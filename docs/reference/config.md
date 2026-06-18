@@ -78,11 +78,18 @@ replace dots with double underscores, so `auth.mode` becomes
 
 ## Embedding
 
-### `embedder.type`
+Embedder instances are configured under `embedder.instances`.
+Instance names are operator-defined. `config.yml.example`
+shows commented Ollama and OpenAI examples; only the
+`native` instance is active by default.
 
-- Default: `"sbert"`
-- Env var: `PAVEDB_EMBEDDER__TYPE`
-- Description: Default embedder adapter for new collections.
+### `embedder.default`
+
+- Default: `null`
+- Env var: `PAVEDB_EMBEDDER__DEFAULT`
+- Description: Default embedder selector. Use a user-defined instance key, type,
+  type:model, or full vector key. Required when more than one embedder instance is
+  configured.
 
 ### `embedder.warmup_default`
 
@@ -90,84 +97,37 @@ replace dots with double underscores, so `auth.mode` becomes
 - Env var: `PAVEDB_EMBEDDER__WARMUP_DEFAULT`
 - Description: Warm the default embedder at server startup before the first query.
 
-### `embedder.sbert.runtime`
+### `embedder.instances.native.type`
+
+- Default: `"sbert"`
+- Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__TYPE`
+- Description: Built-in native embedder instance type. Native means PaveDB runs the
+  embedder itself rather than calling an external service.
+
+### `embedder.instances.native.model`
+
+- Default: `"sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"`
+- Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__MODEL`
+- Description: Default sentence-transformers model for the native instance.
+
+### `embedder.instances.native.config.runtime`
 
 - Default: `"auto"`
-- Env var: `PAVEDB_EMBEDDER__SBERT__RUNTIME`
-- Description: SBERT runtime mode: auto, process, or direct.
+- Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__RUNTIME`
+- Description: Native SBERT runtime mode: auto, process, or direct.
 
-### `embedder.sbert.model`
+### `embedder.instances.native.config.device`
 
-- Default: `"sentence-transformers/all-MiniLM-L6-v2"`
-- Env var: `PAVEDB_EMBEDDER__SBERT__MODEL`
-- Description: Default sentence-transformers model for SBERT collections.
+- Default: `"auto"`
+- Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__DEVICE`
+- Description: Optional native SBERT device override; cpu | cuda | mps | auto lets the
+  adapter choose.
 
-### `embedder.sbert.device`
-
-- Default: `null`
-- Env var: `PAVEDB_EMBEDDER__SBERT__DEVICE`
-- Description: Optional SBERT device override; null lets the adapter choose.
-
-### `embedder.sbert.batch_size`
+### `embedder.instances.native.config.batch_size`
 
 - Default: `null`
-- Env var: `PAVEDB_EMBEDDER__SBERT__BATCH_SIZE`
-- Description: Optional SBERT encode batch size; null uses the adapter default.
-
-### `embedder.openai.model`
-
-- Default: `"text-embedding-3-small"`
-- Env var: `PAVEDB_EMBEDDER__OPENAI__MODEL`
-- Description: Default OpenAI embedding model.
-
-### `embedder.openai.api_key`
-
-- Default: `null`
-- Env var: `PAVEDB_EMBEDDER__OPENAI__API_KEY`
-- Description: OpenAI API key. OPENAI_API_KEY is also accepted by the adapter.
-
-### `embedder.openai.base_url`
-
-- Default: `null`
-- Env var: `PAVEDB_EMBEDDER__OPENAI__BASE_URL`
-- Description: Optional OpenAI-compatible base URL override.
-
-### `embedder.openai.dim`
-
-- Default: `null`
-- Env var: `PAVEDB_EMBEDDER__OPENAI__DIM`
-- Description: Embedding dimension for OpenAI collections; required when the dimension
-  cannot be inferred from collection input.
-
-### `embedder.openai.batch_size`
-
-- Default: `null`
-- Env var: `PAVEDB_EMBEDDER__OPENAI__BATCH_SIZE`
-- Description: Optional OpenAI request batch size; null uses the adapter default.
-
-### `embedder.ollama.model`
-
-- Default: `"nomic-embed-text"`
-- Env var: `PAVEDB_EMBEDDER__OLLAMA__MODEL`
-- Description: Default Ollama embedding model.
-
-### `embedder.ollama.base_url`
-
-- Default: `"http://localhost:11434/v1"`
-- Env var: `PAVEDB_EMBEDDER__OLLAMA__BASE_URL`
-- Description: OpenAI-compatible Ollama endpoint.
-
-### `embedder.ollama.dim`
-
-- Default: `768`
-- Env var: `PAVEDB_EMBEDDER__OLLAMA__DIM`
-- Description: Embedding dimension for the default Ollama model.
-
-### `embedder.ollama.batch_size`
-
-- Default: `null`
-- Env var: `PAVEDB_EMBEDDER__OLLAMA__BATCH_SIZE`
-- Description: Optional Ollama request batch size; null uses the adapter default.
+- Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__BATCH_SIZE`
+- Description: Optional native SBERT encode batch size; null uses the adapter default.
 
 ## Ingest
 

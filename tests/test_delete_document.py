@@ -91,8 +91,14 @@ def test_delete_document_cli(tmp_path, monkeypatch):
         "data_dir": str(tmp_path),
         "vector_store": {"type": "faiss"},
         "embedder": {
-            "type": "sbert",
-            "sbert": {"runtime": "auto", "model": "fake"},
+            "default": "native",
+            "instances": {
+                "native": {
+                    "type": "sbert",
+                    "model": "fake",
+                    "config": {"runtime": "auto"},
+                },
+            },
         },
         "auth": {"mode": "none"},
     })

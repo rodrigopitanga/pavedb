@@ -212,3 +212,49 @@ def test_tenants_sidecar_only_overlays_tenant_keys(tmp_path):
     assert cfg.get("search.max_concurrent") == 42
     assert cfg.get("auth.api_keys.acme") == "sidecar-key"
     assert cfg.get("tenants.acme.max_concurrent") == 4
+
+
+def test_custom_embedder_instances_replace_bundled_native(tmp_path):
+    config_path = tmp_path / "config.yml"
+    _write(
+        config_path,
+        "embedder:\n"
+        "  instances:\n"
+        "    ollama-a:\n"
+        "      type: ollama\n"
+        "      model: nomic-embed-text\n"
+        "      config:\n"
+        "        dim: 768\n"
+        "        base_url: http://ollama-a:11434/v1\n",
+    )
+
+    cfg = Config(path=config_path)
+
+    assert set(cfg.get("embedder.instances")) == {"ollama-a"}
+
+
+def test_explicit_native_instance_keeps_native_defaults_with_custom(tmp_path):
+    config_path = tmp_path / "config.yml"
+    _write(
+        config_path,
+        "embedder:\n"
+        "  instances:\n"
+        "    native:\n"
+        "      model: sentence-transformers/custom\n"
+        "    ollama-a:\n"
+        "      type: ollama\n"
+        "      model: nomic-embed-text\n"
+        "      config:\n"
+        "        dim: 768\n"
+        "        base_url: http://ollama-a:11434/v1\n",
+    )
+
+    cfg = Config(path=config_path)
+
+    assert set(cfg.get("embedder.instances")) == {"native", "ollama-a"}
+    assert cfg.get("embedder.instances.native.type") == "sbert"
+    assert cfg.get("embedder.instances.native.config.runtime") == "auto"
+    assert (
+        cfg.get("embedder.instances.native.model")
+        == "sentence-transformers/custom"
+    )

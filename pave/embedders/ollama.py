@@ -25,7 +25,7 @@ def validate_spec(resolved_config: dict) -> dict:
     return _openai_validate(resolved_config)
 
 
-def build_embedder(cfg, *, model=None, embedder_config=None):
+def build_embedder(cfg, *, model=None, embedder_config=None, api_key=None):
     from .factory import resolve_setting
 
     spec = dict(embedder_config or {})
@@ -37,7 +37,9 @@ def build_embedder(cfg, *, model=None, embedder_config=None):
     )
     batch_size = resolve_setting(cfg, "ollama", "batch_size", spec, None)
     dim = resolve_setting(cfg, "ollama", "dim", spec, _DEFAULT_DIM)
-    api_key = resolve_setting(cfg, "ollama", "api_key", spec, "ollama")
+    # Ollama's OpenAI-compatible endpoint ignores the key but the SDK requires
+    # a non-empty one; a per-instance api_key overrides the dummy default.
+    resolved_api_key = api_key if api_key else "ollama"
 
     _probe_daemon(base_url)
 
@@ -45,7 +47,7 @@ def build_embedder(cfg, *, model=None, embedder_config=None):
         model=resolved_model,
         batch_size=batch_size,
         dim=dim,
-        api_key=api_key,
+        api_key=resolved_api_key,
         base_url=base_url,
     )
 

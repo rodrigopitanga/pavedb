@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import sys
 import types
 
@@ -24,6 +25,29 @@ class _DummyCFG:
 
 def _reload_factory():
     return importlib.reload(factory_mod)
+
+
+def _registry_cfg(
+    *,
+    default="native",
+    runtime="auto",
+    model=_DEFAULT_SBERT_MODEL,
+    store="faiss",
+    instances=None,
+):
+    return _DummyCFG(
+        {
+            "embedder.default": default,
+            "embedder.instances": instances or {
+                "native": {
+                    "type": "sbert",
+                    "model": model,
+                    "config": {"runtime": runtime},
+                },
+            },
+            "vector_store.type": store,
+        }
+    )
 
 
 def _fake_module(monkeypatch, name: str, **attrs):
@@ -92,14 +116,7 @@ def test_factory_uses_process_mode_when_explicitly_requested(monkeypatch):
     )
 
     emb = factory.get_embedder(
-        _DummyCFG(
-            {
-                "embedder.type": "sbert",
-                "embedder.sbert.runtime": "process",
-                "embedder.sbert.model": _DEFAULT_SBERT_MODEL,
-                "vector_store.type": "qdrant",
-            }
-        )
+        _registry_cfg(runtime="process", store="qdrant")
     )
 
     assert isinstance(emb, FakeProcessSbert)
@@ -117,14 +134,7 @@ def test_factory_uses_none_mode_for_direct_sbert(monkeypatch):
     _patch_sbert_class(monkeypatch, FakeSbert)
 
     emb = factory.get_embedder(
-        _DummyCFG(
-            {
-                "embedder.type": "sbert",
-                "embedder.sbert.runtime": "direct",
-                "embedder.sbert.model": _DEFAULT_SBERT_MODEL,
-                "vector_store.type": "faiss",
-            }
-        )
+        _registry_cfg(runtime="direct")
     )
 
     assert isinstance(emb, FakeSbert)
@@ -147,14 +157,7 @@ def test_factory_uses_process_sbert_for_auto_mode_on_darwin_faiss(
     )
 
     emb = factory.get_embedder(
-        _DummyCFG(
-            {
-                "embedder.type": "sbert",
-                "embedder.sbert.runtime": "auto",
-                "embedder.sbert.model": _DEFAULT_SBERT_MODEL,
-                "vector_store.type": "faiss",
-            }
-        )
+        _registry_cfg(runtime="auto")
     )
 
     assert isinstance(emb, FakeProcessSbert)
@@ -173,14 +176,7 @@ def test_factory_uses_direct_sbert_for_auto_mode_off_darwin(
     _patch_sbert_class(monkeypatch, FakeSbert)
 
     emb = factory.get_embedder(
-        _DummyCFG(
-            {
-                "embedder.type": "sbert",
-                "embedder.sbert.runtime": "auto",
-                "embedder.sbert.model": _DEFAULT_SBERT_MODEL,
-                "vector_store.type": "faiss",
-            }
-        )
+        _registry_cfg(runtime="auto")
     )
 
     assert isinstance(emb, FakeSbert)
@@ -198,13 +194,7 @@ def test_factory_passes_explicit_sbert_spec(monkeypatch):
     _patch_sbert_class(monkeypatch, FakeSbert)
 
     factory.get_embedder(
-        _DummyCFG(
-            {
-                "embedder.type": "sbert",
-                "embedder.sbert.runtime": "direct",
-                "vector_store.type": "faiss",
-            }
-        ),
+        _registry_cfg(),
         embedder_type="sbert",
         model="sentence-transformers/custom",
         embedder_config={"batch_size": 7, "device": "cpu"},
@@ -227,11 +217,20 @@ def test_factory_passes_explicit_openai_spec(monkeypatch):
 
     _patch_openai_class(monkeypatch, FakeOpenAI)
 
+    cfg = _registry_cfg(
+        default="frontier",
+        instances={
+            "frontier": {
+                "type": "openai",
+                "model": "bge-m3",
+                "api_key": "instance-key",
+                "config": {"dim": 1024},
+            },
+        },
+    )
+
     factory.get_embedder(
-        _DummyCFG({
-            "embedder.type": "openai",
-            "embedder.openai.api_key": "global-key",
-        }),
+        cfg,
         embedder_type="openai",
         model="bge-m3",
         embedder_config={
@@ -244,7 +243,7 @@ def test_factory_passes_explicit_openai_spec(monkeypatch):
         "model": "bge-m3",
         "batch_size": None,
         "dim": 1024,
-        "api_key": "global-key",
+        "api_key": "instance-key",
         "base_url": "http://localhost:11434/v1",
     }
 
@@ -304,7 +303,7 @@ def test_resolve_openai_spec_requires_dim():
 
     with pytest.raises(ValueError, match="embedder.openai.dim"):
         factory.resolve_embedder_spec(
-            _DummyCFG({"embedder.type": "openai"}),
+            _DummyCFG({}),
             embedder_type="openai",
             model="bge-m3",
         )
@@ -380,11 +379,307 @@ def test_factory_rejects_unknown_sbert_mode():
 
     with pytest.raises(RuntimeError, match="Unknown embedder.sbert.runtime"):
         factory.get_embedder(
-            _DummyCFG(
-                {
-                    "embedder.type": "sbert",
-                    "embedder.sbert.runtime": "mystery",
-                    "embedder.sbert.model": _DEFAULT_SBERT_MODEL,
-                }
-            )
+            _registry_cfg(runtime="mystery")
         )
+
+
+def test_default_selector_resolves_compatible_instance_pool():
+    factory = _reload_factory()
+    cfg = _registry_cfg(
+        default="ollama",
+        instances={
+            "ollama-a": {
+                "type": "ollama",
+                "model": "nomic-embed-text",
+                "config": {"dim": 768, "base_url": "http://a/v1"},
+            },
+            "ollama-b": {
+                "type": "ollama",
+                "model": "nomic-embed-text",
+                "config": {"dim": 768, "base_url": "http://b/v1"},
+            },
+        },
+    )
+
+    resolved = factory.resolve_default_embedder(cfg)
+
+    assert resolved.selector == "ollama"
+    assert resolved.vector_key == "ollama:nomic-embed-text:dim=768"
+    assert [instance.key for instance in resolved.instances] == [
+        "ollama-a",
+        "ollama-b",
+    ]
+    assert factory.runtime_embedder_spec_for_vector(
+        cfg,
+        {
+            "embedder_type": "ollama",
+            "embed_model": "nomic-embed-text",
+            "embedder_config": {"dim": 768},
+        },
+    ) == {
+        "embedder_type": "ollama",
+        "embed_model": "nomic-embed-text",
+        "embedder_config": {
+            "dim": 768,
+            "base_url": "http://a/v1",
+        },
+    }
+
+
+def test_default_selector_accepts_user_defined_instance_key():
+    factory = _reload_factory()
+    cfg = _registry_cfg(
+        default="frontier-affordable",
+        instances={
+            "frontier-affordable": {
+                "type": "openai",
+                "model": "text-embedding-3-small",
+                "config": {"dim": 1536, "base_url": "http://a/v1"},
+            },
+            "frontier-backup": {
+                "type": "openai",
+                "model": "text-embedding-3-small",
+                "config": {"dim": 1536, "base_url": "http://b/v1"},
+            },
+        },
+    )
+
+    resolved = factory.resolve_default_embedder(cfg)
+
+    assert resolved.selector == "frontier-affordable"
+    assert resolved.vector_key == "openai:text-embedding-3-small:dim=1536"
+    assert [instance.key for instance in resolved.instances] == [
+        "frontier-affordable",
+        "frontier-backup",
+    ]
+
+
+def test_default_selector_ambiguous_hint_logs_useful_error(caplog):
+    factory = _reload_factory()
+    cfg = _registry_cfg(
+        default="ollama",
+        instances={
+            "ollama-a": {
+                "type": "ollama",
+                "model": "nomic-embed-text",
+                "config": {"dim": 768, "base_url": "http://a/v1"},
+            },
+            "ollama-b": {
+                "type": "ollama",
+                "model": "bge-m3",
+                "config": {"dim": 1024, "base_url": "http://b/v1"},
+            },
+        },
+    )
+
+    with caplog.at_level(logging.CRITICAL, logger="pave.embedders.factory"):
+        with pytest.raises(factory.EmbedderRegistryError) as exc:
+            factory.resolve_default_embedder(cfg)
+
+    message = str(exc.value)
+    assert "embedder.default='ollama' is ambiguous" in message
+    assert "ollama-a=ollama:nomic-embed-text:dim=768" in message
+    assert "ollama-b=ollama:bge-m3:dim=1024" in message
+    assert "Use a full vector key or a more specific selector" in message
+    assert any(record.levelno == logging.CRITICAL for record in caplog.records)
+
+
+def test_missing_default_with_multiple_instances_logs_actionable_error(caplog):
+    factory = _reload_factory()
+    cfg = _registry_cfg(
+        default=None,
+        instances={
+            "ollama-a": {
+                "type": "ollama",
+                "model": "nomic-embed-text",
+                "config": {"dim": 768, "base_url": "http://a/v1"},
+            },
+            "ollama-b": {
+                "type": "ollama",
+                "model": "nomic-embed-text",
+                "config": {"dim": 768, "base_url": "http://b/v1"},
+            },
+        },
+    )
+
+    with caplog.at_level(logging.CRITICAL, logger="pave.embedders.factory"):
+        with pytest.raises(factory.EmbedderRegistryError) as exc:
+            factory.resolve_default_embedder(cfg)
+
+    assert "embedder.default is required" in str(exc.value)
+    assert "ollama-a=ollama:nomic-embed-text:dim=768" in str(exc.value)
+    assert "ollama-b=ollama:nomic-embed-text:dim=768" in str(exc.value)
+    assert any(record.levelno == logging.CRITICAL for record in caplog.records)
+
+
+def test_single_configured_instance_can_be_default_without_selector():
+    factory = _reload_factory()
+    cfg = _registry_cfg(default=None)
+
+    resolved = factory.resolve_default_embedder(cfg)
+
+    assert resolved.selector is None
+    assert resolved.vector_key == (
+        "sbert:sentence-transformers/all-MiniLM-L6-v2:"
+    )
+
+
+def test_persistable_embedder_spec_strips_operational_config():
+    factory = _reload_factory()
+
+    spec = factory.persistable_embedder_spec(
+        {
+            "embedder_type": "ollama",
+            "embed_model": "nomic-embed-text",
+            "embedder_config": {
+                "dim": 768,
+                "base_url": "http://operator-box/v1",
+                "batch_size": 32,
+            },
+        }
+    )
+
+    assert spec == {
+        "embedder_type": "ollama",
+        "embed_model": "nomic-embed-text",
+        "embedder_config": {"dim": 768},
+    }
+
+
+def test_runtime_resolution_raises_embedder_unavailable_when_no_instance_encodes():
+    factory = _reload_factory()
+    cfg = _registry_cfg()  # one sbert instance only
+
+    with pytest.raises(factory.EmbedderUnavailableError) as exc:
+        factory.runtime_embedder_spec_for_vector(
+            cfg,
+            {
+                "embedder_type": "ollama",
+                "embed_model": "nomic-embed-text",
+                "embedder_config": {"dim": 768},
+            },
+        )
+
+    # Must not be a ValueError, or the service ingest path would mislabel it
+    # as invalid_csv_options instead of embedder_unavailable.
+    assert not isinstance(exc.value, ValueError)
+    assert "ollama:nomic-embed-text:dim=768" in str(exc.value)
+
+
+def test_runtime_resolution_raises_embedder_unavailable_when_type_fallback_ambiguous():
+    factory = _reload_factory()
+    cfg = _registry_cfg(
+        default="ollama",
+        instances={
+            "ollama-a": {
+                "type": "ollama",
+                "model": "nomic-embed-text",
+                "config": {"dim": 768, "base_url": "http://a/v1"},
+            },
+            "ollama-b": {
+                "type": "ollama",
+                "model": "bge-m3",
+                "config": {"dim": 1024, "base_url": "http://b/v1"},
+            },
+        },
+    )
+
+    with pytest.raises(factory.EmbedderUnavailableError) as exc:
+        factory.runtime_embedder_spec_for_vector(
+            cfg,
+            {
+                "embedder_type": "ollama",
+                "embed_model": "mxbai-embed-large",
+                "embedder_config": {"dim": 512},
+            },
+        )
+
+    assert not isinstance(exc.value, ValueError)
+    assert "ambiguous" in str(exc.value)
+
+
+def _openai_instance_cfg(api_key=None):
+    instance = {
+        "type": "openai",
+        "model": "text-embedding-3-small",
+        "config": {"dim": 1536},
+    }
+    if api_key is not None:
+        instance["api_key"] = api_key
+    return _registry_cfg(default="frontier", instances={"frontier": instance})
+
+
+def test_instance_api_key_is_sibling_not_part_of_vector_space():
+    factory = _reload_factory()
+    cfg = _openai_instance_cfg(api_key="sk-secret")
+
+    (instance,) = factory.embedder_instances(cfg)
+
+    assert instance.spec["api_key"] == "sk-secret"
+    # The credential rides alongside the spec but never inside the config bag,
+    # never in the persisted catalog row, never in the vector-space key.
+    assert "api_key" not in instance.spec["embedder_config"]
+    assert "api_key" not in factory.persistable_embedder_spec(instance.spec)[
+        "embedder_config"
+    ]
+    assert instance.vector_key == "openai:text-embedding-3-small:dim=1536"
+    assert "sk-secret" not in instance.vector_key
+
+
+def test_resolve_embedder_spec_surfaces_instance_api_key():
+    factory = _reload_factory()
+    cfg = _openai_instance_cfg(api_key="sk-secret")
+
+    spec = factory.resolve_embedder_spec(
+        cfg,
+        embedder_type="openai",
+        model="text-embedding-3-small",
+        embedder_config={"dim": 1536},
+    )
+
+    assert spec["api_key"] == "sk-secret"
+    assert "api_key" not in spec["embedder_config"]
+
+
+def test_resolve_embedder_spec_omits_api_key_when_instance_has_none():
+    factory = _reload_factory()
+    cfg = _openai_instance_cfg(api_key=None)
+
+    spec = factory.resolve_embedder_spec(
+        cfg,
+        embedder_type="openai",
+        model="text-embedding-3-small",
+        embedder_config={"dim": 1536},
+    )
+
+    # Absent → key is not present, so the openai SDK applies OPENAI_API_KEY.
+    assert "api_key" not in spec
+
+
+def test_api_key_inside_config_is_rejected():
+    factory = _reload_factory()
+    cfg = _registry_cfg(
+        default="frontier",
+        instances={
+            "frontier": {
+                "type": "openai",
+                "model": "text-embedding-3-small",
+                "config": {"dim": 1536, "api_key": "sk-secret"},
+            },
+        },
+    )
+
+    with pytest.raises(factory.EmbedderRegistryError) as exc:
+        factory.embedder_instances(cfg)
+
+    assert "api_key" in str(exc.value)
+
+
+def test_non_string_instance_api_key_is_rejected():
+    factory = _reload_factory()
+    cfg = _openai_instance_cfg(api_key=1234)
+
+    with pytest.raises(factory.EmbedderRegistryError) as exc:
+        factory.embedder_instances(cfg)
+
+    assert "api_key must be a string" in str(exc.value)

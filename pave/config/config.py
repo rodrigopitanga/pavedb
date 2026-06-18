@@ -247,6 +247,39 @@ def _tenant_overlay(cfg: dict[str, Any]) -> dict[str, Any]:
         out = _deep_merge(out, {"tenants": tenants})
     return out
 
+
+def _configured_embedder_instance_keys(cfg: dict[str, Any]) -> set[str]:
+    embedder = cfg.get("embedder")
+    if not isinstance(embedder, dict):
+        return set()
+    instances = embedder.get("instances")
+    if not isinstance(instances, dict):
+        return set()
+    return {str(key) for key in instances}
+
+
+def _base_defaults_for(
+    file_cfg: dict[str, Any],
+    env_cfg: dict[str, Any],
+) -> dict[str, Any]:
+    base = deepcopy(_DEFAULTS)
+    configured_keys = (
+        _configured_embedder_instance_keys(file_cfg)
+        | _configured_embedder_instance_keys(env_cfg)
+    )
+    default_keys = _configured_embedder_instance_keys(base)
+    if configured_keys and not configured_keys <= default_keys:
+        embedder = base.get("embedder")
+        if isinstance(embedder, dict):
+            instances = embedder.get("instances")
+            if isinstance(instances, dict):
+                embedder["instances"] = {
+                    key: deepcopy(instances[key])
+                    for key in configured_keys & default_keys
+                    if key in instances
+                }
+    return base
+
 # --------------- singleton wrapper ----------------
 class Config:
     """
@@ -288,7 +321,7 @@ class Config:
             )
         # Sidecar tenant data is loaded first as a base. Inline tenant config in
         # config.yml then overrides it, and env vars override both.
-        merged = _deep_merge(deepcopy(_DEFAULTS), sidecar_cfg)
+        merged = _deep_merge(_base_defaults_for(file_cfg, env_cfg), sidecar_cfg)
         merged = _deep_merge(merged, file_cfg)
         merged = _deep_merge(merged, env_cfg)
         for key in _PATH_KEYS:

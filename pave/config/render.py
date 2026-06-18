@@ -89,6 +89,11 @@ def _comment_lines(text: str, indent: int) -> list[str]:
     )
 
 
+def _append_blank(lines: list[str]) -> None:
+    if lines and lines[-1] != "":
+        lines.append("")
+
+
 def _emit_parent_lines(
     *,
     lines: list[str],
@@ -99,9 +104,57 @@ def _emit_parent_lines(
     for index, part in enumerate(parts[:-1]):
         path = ".".join(parts[: index + 1])
         if path not in seen_parents:
+            _append_blank(lines)
             lines.append(" " * (index * 2) + f"{part}:")
             seen_parents.add(path)
     return max(0, (len(parts) - 1) * 2)
+
+
+def _embedder_example_lines() -> list[str]:
+    return [
+        "    #",
+        "    # Additional instance examples. Keep these commented until the",
+        "    # provider is configured. If more than one instance is active, set",
+        "    # embedder.default above to an instance key or vector-space selector.",
+        "    #",
+        "    # Credentials live on the instance as a sibling of 'config' (never",
+        "    # inside it): 'api_key' is a secret and must not enter the vector-",
+        "    # space config. Reference an env var with ${VAR} so the secret stays",
+        "    # out of this file; each instance can carry its own key, so you can",
+        "    # point several instances at the same provider with different",
+        "    # credentials. If 'api_key' is omitted for an openai instance, the",
+        "    # OpenAI SDK falls back to the OPENAI_API_KEY environment variable.",
+        "    #",
+        "    # local-small:",
+        "    #   type: 'ollama'",
+        "    #   model: 'nomic-embed-text'",
+        "    #   config:",
+        "    #     dim: 768",
+        "    #     base_url: 'http://localhost:11434/v1'",
+        "    #",
+        "    # local-complex:",
+        "    #   type: 'ollama'",
+        "    #   model: 'bge-m3'",
+        "    #   config:",
+        "    #     dim: 1024",
+        "    #     base_url: 'http://localhost:11434/v1'",
+        "    #",
+        "    # frontier-affordable:",
+        "    #   type: 'openai'",
+        "    #   model: 'text-embedding-3-small'",
+        "    #   api_key: '${OPENAI_API_KEY_PRIMARY}'",
+        "    #   config:",
+        "    #     dim: 1536",
+        "    #     batch_size: 256",
+        "    #     # base_url: '${PAVEDB_OPENAI_BASE_URL}'",
+        "    #",
+        "    # frontier-secondary:",
+        "    #   type: 'openai'",
+        "    #   model: 'text-embedding-3-large'",
+        "    #   api_key: '${OPENAI_API_KEY_SECONDARY}'",
+        "    #   config:",
+        "    #     dim: 3072",
+    ]
 
 
 def render_config_example(
@@ -126,6 +179,7 @@ def render_config_example(
 
     for section, section_fields in _group_fields(fields).items():
         lines.extend(["", "# " + "-" * 75, f"# {section}", "# " + "-" * 75])
+        _append_blank(lines)
         seen_parents: set[str] = set()
         for field in section_fields:
             indent = _emit_parent_lines(
@@ -133,12 +187,16 @@ def render_config_example(
                 field=field,
                 seen_parents=seen_parents,
             )
+            _append_blank(lines)
             lines.extend(_comment_lines(field.description, indent))
             lines.append(" " * indent + f"# Env: {field.env_var}")
             key = field.key.split(".")[-1]
             rendered = _yaml_value(field.default)
             commented = "# " if field.default is None else ""
             lines.append(" " * indent + f"{commented}{key}: {rendered}")
+        if section == "Embedding":
+            _append_blank(lines)
+            lines.extend(_embedder_example_lines())
         lines.append("")
 
     return "\n".join(lines).rstrip() + "\n"
@@ -173,6 +231,14 @@ def render_markdown(
 
     for section, section_fields in _group_fields(fields).items():
         lines.extend([f"## {section}", ""])
+        if section == "Embedding":
+            lines.extend([
+                "Embedder instances are configured under `embedder.instances`.",
+                "Instance names are operator-defined. `config.yml.example`",
+                "shows commented Ollama and OpenAI examples; only the",
+                "`native` instance is active by default.",
+                "",
+            ])
         for field in section_fields:
             lines.extend([
                 f"### `{field.key}`",

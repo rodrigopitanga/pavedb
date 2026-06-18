@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 from __future__ import annotations
-import os
 
 import numpy as np
 
@@ -32,8 +31,13 @@ def validate_spec(resolved_config: dict) -> dict:
     return resolved_config
 
 
-def build_embedder(cfg, *, model=None, embedder_config=None):
-    """Construct an OpenAIEmbedder using cfg/spec resolution."""
+def build_embedder(cfg, *, model=None, embedder_config=None, api_key=None):
+    """Construct an OpenAIEmbedder using cfg/spec resolution.
+
+    `api_key` comes from the embedder instance (``embedder.instances.<name>.
+    api_key``). When omitted, the OpenAI SDK applies its native
+    ``OPENAI_API_KEY`` environment fallback.
+    """
     from .factory import resolve_setting
 
     spec = dict(embedder_config or {})
@@ -46,7 +50,7 @@ def build_embedder(cfg, *, model=None, embedder_config=None):
         model=model_name,
         batch_size=resolve_setting(cfg, "openai", "batch_size", spec, None),
         dim=resolve_setting(cfg, "openai", "dim", spec, None),
-        api_key=cfg.get("embedder.openai.api_key"),
+        api_key=api_key,
         base_url=resolve_setting(cfg, "openai", "base_url", spec, None),
     )
 
@@ -73,14 +77,11 @@ class OpenAIEmbedder:
             batch_size = CFG.get("embedder.openai.batch_size")
         self.batch_size = int(batch_size if batch_size is not None else 256)
         self._dim = dim if dim is not None else CFG.get("embedder.openai.dim")
-        resolved_key = (
-            api_key
-            or CFG.get("embedder.openai.api_key")
-            or os.environ.get("OPENAI_API_KEY")
-        )
-        if not resolved_key:
-            raise RuntimeError("OpenAI API key not configured")
-        client_kwargs = {"api_key": resolved_key}
+        # No explicit api_key → let the OpenAI SDK apply its own
+        # OPENAI_API_KEY env fallback (and raise if neither is present).
+        client_kwargs: dict = {}
+        if api_key:
+            client_kwargs["api_key"] = str(api_key)
         if base_url is None:
             base_url = CFG.get("embedder.openai.base_url")
         resolved_base_url = str(base_url if base_url is not None else "").strip()

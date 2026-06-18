@@ -16,15 +16,19 @@
 # ---------------------------------------------------------------------------
 # General
 # ---------------------------------------------------------------------------
+
 # Root directory for local catalog, metadata, document chunks, and indexes.
 # Env: PAVEDB_DATA_DIR
 data_dir: '~/pavedb/data'
+
 # Also search a shared common collection for every tenant request.
 # Env: PAVEDB_COMMON_ENABLED
 common_enabled: false
+
 # Tenant that owns the common collection.
 # Env: PAVEDB_COMMON_TENANT
 common_tenant: 'global'
+
 # Collection name used for common shared results.
 # Env: PAVEDB_COMMON_COLLECTION
 common_collection: 'common'
@@ -33,20 +37,26 @@ common_collection: 'common'
 # ---------------------------------------------------------------------------
 # Authentication
 # ---------------------------------------------------------------------------
+
 auth:
+
   # Authentication mode. Use static outside dev; none is accepted only under the startup
   # policy's dev safeguards.
   # Env: PAVEDB_AUTH__MODE
   mode: 'none'
+
   # Tenant label assigned to unauthenticated requests when auth.mode is none.
   # Env: PAVEDB_AUTH__DEFAULT_ACCESS_TENANT
   # default_access_tenant: null
+
   # Bearer token that grants admin access when auth.mode is static.
   # Env: PAVEDB_AUTH__GLOBAL_KEY
   # global_key: null
+
   # Map of tenant name to bearer token when auth.mode is static.
   # Env: PAVEDB_AUTH__API_KEYS
   api_keys: {}
+
   # Optional sidecar YAML file containing auth.api_keys and tenants.* values.
   # Env: PAVEDB_AUTH__TENANTS_FILE
   # tenants_file: null
@@ -55,7 +65,9 @@ auth:
 # ---------------------------------------------------------------------------
 # Vector Store
 # ---------------------------------------------------------------------------
+
 vector_store:
+
   # Vector store backend used for local indexes.
   # Env: PAVEDB_VECTOR_STORE__TYPE
   type: 'faiss'
@@ -64,65 +76,100 @@ vector_store:
 # ---------------------------------------------------------------------------
 # Embedding
 # ---------------------------------------------------------------------------
+
 embedder:
-  # Default embedder adapter for new collections.
-  # Env: PAVEDB_EMBEDDER__TYPE
-  type: 'sbert'
+
+  # Default embedder selector. Use a user-defined instance key, type, type:model, or
+  # full vector key. Required when more than one embedder instance is configured.
+  # Env: PAVEDB_EMBEDDER__DEFAULT
+  # default: null
+
   # Warm the default embedder at server startup before the first query.
   # Env: PAVEDB_EMBEDDER__WARMUP_DEFAULT
   warmup_default: true
-  sbert:
-    # SBERT runtime mode: auto, process, or direct.
-    # Env: PAVEDB_EMBEDDER__SBERT__RUNTIME
-    runtime: 'auto'
-    # Default sentence-transformers model for SBERT collections.
-    # Env: PAVEDB_EMBEDDER__SBERT__MODEL
-    model: 'sentence-transformers/all-MiniLM-L6-v2'
-    # Optional SBERT device override; null lets the adapter choose.
-    # Env: PAVEDB_EMBEDDER__SBERT__DEVICE
-    # device: null
-    # Optional SBERT encode batch size; null uses the adapter default.
-    # Env: PAVEDB_EMBEDDER__SBERT__BATCH_SIZE
-    # batch_size: null
-  openai:
-    # Default OpenAI embedding model.
-    # Env: PAVEDB_EMBEDDER__OPENAI__MODEL
-    model: 'text-embedding-3-small'
-    # OpenAI API key. OPENAI_API_KEY is also accepted by the adapter.
-    # Env: PAVEDB_EMBEDDER__OPENAI__API_KEY
-    # api_key: null
-    # Optional OpenAI-compatible base URL override.
-    # Env: PAVEDB_EMBEDDER__OPENAI__BASE_URL
-    # base_url: null
-    # Embedding dimension for OpenAI collections; required when the dimension cannot be
-    # inferred from collection input.
-    # Env: PAVEDB_EMBEDDER__OPENAI__DIM
-    # dim: null
-    # Optional OpenAI request batch size; null uses the adapter default.
-    # Env: PAVEDB_EMBEDDER__OPENAI__BATCH_SIZE
-    # batch_size: null
-  ollama:
-    # Default Ollama embedding model.
-    # Env: PAVEDB_EMBEDDER__OLLAMA__MODEL
-    model: 'nomic-embed-text'
-    # OpenAI-compatible Ollama endpoint.
-    # Env: PAVEDB_EMBEDDER__OLLAMA__BASE_URL
-    base_url: 'http://localhost:11434/v1'
-    # Embedding dimension for the default Ollama model.
-    # Env: PAVEDB_EMBEDDER__OLLAMA__DIM
-    dim: 768
-    # Optional Ollama request batch size; null uses the adapter default.
-    # Env: PAVEDB_EMBEDDER__OLLAMA__BATCH_SIZE
-    # batch_size: null
+
+  instances:
+
+    native:
+
+      # Built-in native embedder instance type. Native means PaveDB runs the embedder
+      # itself rather than calling an external service.
+      # Env: PAVEDB_EMBEDDER__INSTANCES__NATIVE__TYPE
+      type: 'sbert'
+
+      # Default sentence-transformers model for the native instance.
+      # Env: PAVEDB_EMBEDDER__INSTANCES__NATIVE__MODEL
+      model: 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
+
+      config:
+
+        # Native SBERT runtime mode: auto, process, or direct.
+        # Env: PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__RUNTIME
+        runtime: 'auto'
+
+        # Optional native SBERT device override; cpu | cuda | mps | auto lets the
+        # adapter choose.
+        # Env: PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__DEVICE
+        device: 'auto'
+
+        # Optional native SBERT encode batch size; null uses the adapter default.
+        # Env: PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__BATCH_SIZE
+        # batch_size: null
+
+    #
+    # Additional instance examples. Keep these commented until the
+    # provider is configured. If more than one instance is active, set
+    # embedder.default above to an instance key or vector-space selector.
+    #
+    # Credentials live on the instance as a sibling of 'config' (never
+    # inside it): 'api_key' is a secret and must not enter the vector-
+    # space config. Reference an env var with ${VAR} so the secret stays
+    # out of this file; each instance can carry its own key, so you can
+    # point several instances at the same provider with different
+    # credentials. If 'api_key' is omitted for an openai instance, the
+    # OpenAI SDK falls back to the OPENAI_API_KEY environment variable.
+    #
+    # local-small:
+    #   type: 'ollama'
+    #   model: 'nomic-embed-text'
+    #   config:
+    #     dim: 768
+    #     base_url: 'http://localhost:11434/v1'
+    #
+    # local-complex:
+    #   type: 'ollama'
+    #   model: 'bge-m3'
+    #   config:
+    #     dim: 1024
+    #     base_url: 'http://localhost:11434/v1'
+    #
+    # frontier-affordable:
+    #   type: 'openai'
+    #   model: 'text-embedding-3-small'
+    #   api_key: '${OPENAI_API_KEY_PRIMARY}'
+    #   config:
+    #     dim: 1536
+    #     batch_size: 256
+    #     # base_url: '${PAVEDB_OPENAI_BASE_URL}'
+    #
+    # frontier-secondary:
+    #   type: 'openai'
+    #   model: 'text-embedding-3-large'
+    #   api_key: '${OPENAI_API_KEY_SECONDARY}'
+    #   config:
+    #     dim: 3072
 
 
 # ---------------------------------------------------------------------------
 # Ingest
 # ---------------------------------------------------------------------------
+
 ingest:
+
   # Reject document uploads larger than this many megabytes; 0 disables the limit.
   # Env: PAVEDB_INGEST__MAX_FILE_SIZE_MB
   max_file_size_mb: 500
+
   # Maximum number of concurrent ingest operations; 0 disables the cap.
   # Env: PAVEDB_INGEST__MAX_CONCURRENT
   max_concurrent: 7
@@ -131,10 +178,13 @@ ingest:
 # ---------------------------------------------------------------------------
 # Search
 # ---------------------------------------------------------------------------
+
 search:
+
   # Maximum number of concurrent search operations; 0 disables the cap.
   # Env: PAVEDB_SEARCH__MAX_CONCURRENT
   max_concurrent: 42
+
   # Per-search timeout in milliseconds; 0 disables the timeout.
   # Env: PAVEDB_SEARCH__TIMEOUT_MS
   timeout_ms: 30000
@@ -143,10 +193,13 @@ search:
 # ---------------------------------------------------------------------------
 # Text Preprocessing
 # ---------------------------------------------------------------------------
+
 preprocess:
+
   # Plain-text chunk size in characters.
   # Env: PAVEDB_PREPROCESS__TXT_CHUNK_SIZE
   txt_chunk_size: 1000
+
   # Plain-text chunk overlap in characters.
   # Env: PAVEDB_PREPROCESS__TXT_CHUNK_OVERLAP
   txt_chunk_overlap: 200
@@ -155,7 +208,9 @@ preprocess:
 # ---------------------------------------------------------------------------
 # Tenants
 # ---------------------------------------------------------------------------
+
 tenants:
+
   # Default per-tenant concurrent request cap; 0 disables the cap.
   # Env: PAVEDB_TENANTS__DEFAULT_MAX_CONCURRENT
   default_max_concurrent: 0
@@ -164,19 +219,25 @@ tenants:
 # ---------------------------------------------------------------------------
 # Server
 # ---------------------------------------------------------------------------
+
 server:
+
   # Default server bind host after startup policy enforcement.
   # Env: PAVEDB_SERVER__HOST
   host: '127.0.0.1'
+
   # Default server bind port.
   # Env: PAVEDB_SERVER__PORT
   port: 8086
+
   # Enable uvicorn reload when running the packaged server.
   # Env: PAVEDB_SERVER__RELOAD
   reload: false
+
   # Number of uvicorn worker processes.
   # Env: PAVEDB_SERVER__WORKERS
   workers: 1
+
   # Uvicorn keep-alive timeout in seconds.
   # Env: PAVEDB_SERVER__TIMEOUT_KEEP_ALIVE
   timeout_keep_alive: 75
@@ -185,13 +246,17 @@ server:
 # ---------------------------------------------------------------------------
 # Logging
 # ---------------------------------------------------------------------------
+
 log:
+
   # Base stderr log level.
   # Env: PAVEDB_LOG__LEVEL
   level: 'INFO'
+
   # Destination for structured operation logs: null, stdout, or a file path.
   # Env: PAVEDB_LOG__OPS_LOG
   # ops_log: null
+
   # Destination for uvicorn access logs: null, stdout, or a file path.
   # Env: PAVEDB_LOG__ACCESS_LOG
   # access_log: null
@@ -200,10 +265,13 @@ log:
 # ---------------------------------------------------------------------------
 # Instance
 # ---------------------------------------------------------------------------
+
 instance:
+
   # Display name used by the API metadata and UI.
   # Env: PAVEDB_INSTANCE__NAME
   name: 'PaveDB'
+
   # Description used by the API metadata and UI.
   # Env: PAVEDB_INSTANCE__DESC
   desc: 'PaveDB Vector Search Microservice'

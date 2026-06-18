@@ -2,12 +2,27 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import json
+import logging
 
 from pave import cli as pvcli
 from pave.config import get_cfg
 from pave.metadb import CatalogDB, CollectionDB
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
+
+
+def _set_openai_instance(
+    key: str,
+    *,
+    dim: int,
+    model: str = "bge-m3",
+    base_url: str = "http://one/v1",
+) -> None:
+    cfg = get_cfg()
+    cfg.set(f"embedder.instances.{key}.type", "openai")
+    cfg.set(f"embedder.instances.{key}.model", model)
+    cfg.set(f"embedder.instances.{key}.config.dim", dim)
+    cfg.set(f"embedder.instances.{key}.config.base_url", base_url)
 
 
 def _mk_collections_with_store(store, tenant: str, *collections: str):
@@ -66,12 +81,13 @@ def test_create_collection_accepts_different_embed_model(client):
 
 
 def test_create_collection_accepts_different_embedder_type_and_config(client):
+    _set_openai_instance("openai-bge-1024", dim=1024)
     r = client.post(
         "/v1/collections/acme/contracts3",
         json={
             "embedder_type": "openai",
             "embed_model": "bge-m3",
-            "embedder_config": {"dim": 1024, "base_url": "http://x/v1"},
+            "embedder_config": {"dim": 1024},
         },
     )
 
@@ -81,7 +97,7 @@ def test_create_collection_accepts_different_embedder_type_and_config(client):
     assert data["display_name"] == "contracts3"
     assert data["embedder_type"] == "openai"
     assert data["embed_model"] == "bge-m3"
-    assert data["embedder_config"]["dim"] == 1024
+    assert data["embedder_config"] == {"dim": 1024}
 
 
 def test_create_collection_rejects_unknown_embedder_config_key(client):
@@ -309,7 +325,21 @@ def test_local_store_accepts_injected_catalog_db(tmp_path):
     assert cat_db.list_collections("acme") == ["docs"]
 
 
+def test_local_store_logs_configured_embedder_registry(tmp_path, caplog):
+    _set_openai_instance("frontier-affordable", dim=1536)
+
+    with caplog.at_level(logging.INFO, logger="pave"):
+        LocalStore(str(tmp_path), FakeEmbedder())
+
+    assert (
+        "native/sbert:fake:" in caplog.text
+        and "frontier-affordable/openai:bge-m3:dim=1536" in caplog.text
+    )
+
+
 def test_local_store_uses_collection_embedder_specs(tmp_path):
+    _set_openai_instance("openai-small", dim=8)
+    _set_openai_instance("openai-large", dim=16)
     created: list[tuple[str, str, dict]] = []
 
     def make_embedder(
@@ -329,7 +359,7 @@ def test_local_store_uses_collection_embedder_specs(tmp_path):
     spec = {
         "embedder_type": "openai",
         "embed_model": "bge-m3",
-        "embedder_config": {"dim": 8, "base_url": "http://one/v1"},
+        "embedder_config": {"dim": 8},
     }
     store.create_collection("acme", "small", **spec)
     store.create_collection(
@@ -337,7 +367,7 @@ def test_local_store_uses_collection_embedder_specs(tmp_path):
         "large",
         embedder_type="openai",
         embed_model="bge-m3",
-        embedder_config={"dim": 16, "base_url": "http://one/v1"},
+        embedder_config={"dim": 16},
     )
     store.create_collection("acme", "small2", **spec)
 
@@ -376,12 +406,14 @@ def test_vector_space_key_on_listing(client):
 
 def test_base_url_change_keeps_same_vector_space_key(client):
     """base_url is operational, not geometric."""
+    _set_openai_instance("openai-a", dim=1024, base_url="http://a/v1")
+    _set_openai_instance("openai-b", dim=1024, base_url="http://b/v1")
     a = client.post(
         "/v1/collections/acme/openai-a",
         json={
             "embedder_type": "openai",
             "embed_model": "bge-m3",
-            "embedder_config": {"dim": 1024, "base_url": "http://a/v1"},
+            "embedder_config": {"dim": 1024},
         },
     )
     b = client.post(
@@ -389,7 +421,7 @@ def test_base_url_change_keeps_same_vector_space_key(client):
         json={
             "embedder_type": "openai",
             "embed_model": "bge-m3",
-            "embedder_config": {"dim": 1024, "base_url": "http://b/v1"},
+            "embedder_config": {"dim": 1024},
         },
     )
     assert a.status_code == 201 and b.status_code == 201
@@ -401,12 +433,14 @@ def test_base_url_change_keeps_same_vector_space_key(client):
 
 
 def test_dim_change_changes_vector_space_key(client):
+    _set_openai_instance("openai-1024", dim=1024)
+    _set_openai_instance("openai-1536", dim=1536)
     a = client.post(
         "/v1/collections/acme/dim-1024",
         json={
             "embedder_type": "openai",
             "embed_model": "bge-m3",
-            "embedder_config": {"dim": 1024, "base_url": "http://x/v1"},
+            "embedder_config": {"dim": 1024},
         },
     )
     b = client.post(
@@ -414,7 +448,7 @@ def test_dim_change_changes_vector_space_key(client):
         json={
             "embedder_type": "openai",
             "embed_model": "bge-m3",
-            "embedder_config": {"dim": 1536, "base_url": "http://x/v1"},
+            "embedder_config": {"dim": 1536},
         },
     )
     assert a.status_code == 201 and b.status_code == 201
@@ -425,6 +459,8 @@ def test_dim_change_changes_vector_space_key(client):
 
 def test_embedder_unavailable_on_create(tmp_path):
     from pave.embedders import EmbedderUnavailableError
+
+    _set_openai_instance("openai-broken", dim=1024)
 
     def failing_factory(etype, model, cfg):
         raise EmbedderUnavailableError("OPENAI_API_KEY not set")
