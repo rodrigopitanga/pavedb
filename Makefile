@@ -53,6 +53,7 @@ PORT            ?= 8086
 WORKERS         ?= 1
 RELOAD          ?= 1
 LOG_LEVEL       ?= debug
+INSTANCE_NAME   ?= dev
 
 # Requirements flavor (gpu default)
 USE_CPU ?= 0
@@ -246,6 +247,9 @@ serve: install
 	  PAVEDB_LOG__LEVEL=$(LOG_LEVEL) \
 	  PAVEDB_SERVER__HOST=$(HOST) \
 	  PAVEDB_SERVER__PORT=$(PORT) \
+	  PAVEDB_SERVER__WORKERS=$(WORKERS) \
+	  PAVEDB_SERVER__RELOAD=$(RELOAD) \
+	  PAVEDB_INSTANCE__NAME=$(INSTANCE_NAME) \
 	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main
 
 .PHONY: cli
