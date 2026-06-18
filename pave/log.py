@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio, functools, json, logging, sys, threading, time
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 _dest: str | None = None
@@ -32,9 +33,19 @@ def configure(dest: str | None) -> None:
         return
 
     _dest = str(dest).strip()
-    if _dest != "stdout":
-        with _lock:
-            _handle = open(_dest, "a", encoding="utf-8", buffering=1)
+    if _dest == "stdout":
+        return
+    try:
+        path = Path(_dest).expanduser()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = path.open("a", encoding="utf-8", buffering=1)
+    except OSError as exc:
+        LOG.warning("ops log disabled: cannot open %s (%s)", _dest, exc)
+        _dest = None
+        return
+    _dest = str(path)
+    with _lock:
+        _handle = handle
 
 
 def emit(**fields) -> None:

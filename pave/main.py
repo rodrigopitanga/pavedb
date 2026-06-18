@@ -501,12 +501,18 @@ def main_srv(argv=None):
     _acc_val = str(_acc_dest).strip().lower() if _acc_dest else ""
     if _acc_val and _acc_val not in ("null", "none"):
         if _acc_val != "stdout":
-            access_dir = os.path.dirname(os.path.expanduser(str(_acc_dest)))
-            if access_dir:
-                os.makedirs(access_dir, exist_ok=True)
-            logging.getLogger("uvicorn.access").addHandler(
-                logging.FileHandler(_acc_dest)
-            )
+            try:
+                access_path = os.path.expanduser(str(_acc_dest))
+                access_dir = os.path.dirname(access_path)
+                if access_dir:
+                    os.makedirs(access_dir, exist_ok=True)
+                logging.getLogger("uvicorn.access").addHandler(
+                    logging.FileHandler(access_path)
+                )
+            except OSError as exc:
+                log.warning(
+                    "access log disabled: cannot open %s (%s)", _acc_dest, exc
+                )
     _access_log = True
 
     # run server

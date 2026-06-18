@@ -77,6 +77,15 @@ def test_configure_file(tmp_path):
     assert data["status"] == "ok"
 
 
+def test_configure_file_creates_parent_dirs(tmp_path):
+    path = tmp_path / "nested" / "logs" / "ops.jsonl"
+    ops_log.configure(str(path))
+    ops_log.emit(op="search", tenant="t", collection="c", status="ok")
+    ops_log.close()
+
+    assert path.is_file()
+
+
 def test_configure_file_multiple_lines(tmp_path):
     path = tmp_path / "ops.jsonl"
     ops_log.configure(str(path))
