@@ -33,6 +33,11 @@ common_tenant: 'global'
 # Env: PAVEDB_COMMON_COLLECTION
 common_collection: 'common'
 
+# Enable development startup behavior such as allowing auth.mode=none on loopback and
+# verbose PaveDB logging.
+# Env: PAVEDB_DEV
+dev: false
+
 
 # ---------------------------------------------------------------------------
 # Authentication
@@ -260,6 +265,18 @@ log:
   # Destination for uvicorn access logs: null, stdout, or a file path.
   # Env: PAVEDB_LOG__ACCESS_LOG
   access_log: '~/pavedb/access.log'
+
+  # Logger namespaces forced to DEBUG level.
+  # Env: PAVEDB_LOG__DEBUG
+  debug: []
+
+  # Logger namespaces made one level more verbose than the base log level.
+  # Env: PAVEDB_LOG__WATCH
+  watch: []
+
+  # Noisy dependency logger namespaces made one level quieter than the base log level.
+  # Env: PAVEDB_LOG__QUIET
+  quiet: ['uvicorn', 'uvicorn.access', 'uvicorn.error', 'fastapi', 'sqlalchemy', 'urllib3', 'httpx']
 
 
 # ---------------------------------------------------------------------------

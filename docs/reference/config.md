@@ -35,6 +35,13 @@ replace dots with double underscores, so `auth.mode` becomes
 - Env var: `PAVEDB_COMMON_COLLECTION`
 - Description: Collection name used for common shared results.
 
+### `dev`
+
+- Default: `false`
+- Env var: `PAVEDB_DEV`
+- Description: Enable development startup behavior such as allowing auth.mode=none on
+  loopback and verbose PaveDB logging.
+
 ## Authentication
 
 ### `auth.mode`
@@ -231,6 +238,25 @@ shows commented Ollama and OpenAI examples; only the
 - Default: `"~/pavedb/access.log"`
 - Env var: `PAVEDB_LOG__ACCESS_LOG`
 - Description: Destination for uvicorn access logs: null, stdout, or a file path.
+
+### `log.debug`
+
+- Default: `[]`
+- Env var: `PAVEDB_LOG__DEBUG`
+- Description: Logger namespaces forced to DEBUG level.
+
+### `log.watch`
+
+- Default: `[]`
+- Env var: `PAVEDB_LOG__WATCH`
+- Description: Logger namespaces made one level more verbose than the base log level.
+
+### `log.quiet`
+
+- Default: `['uvicorn', 'uvicorn.access', 'uvicorn.error', 'fastapi', 'sqlalchemy', 'urllib3', 'httpx']`
+- Env var: `PAVEDB_LOG__QUIET`
+- Description: Noisy dependency logger namespaces made one level quieter than the base
+  log level.
 
 ## Instance
 

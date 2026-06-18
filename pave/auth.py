@@ -57,11 +57,11 @@ def auth_ctx(
     credentials: HTTPAuthorizationCredentials | None = Security(bearer)
 ) -> AuthContext:
     # read from CFG.get so tests and env overrides work
-    mode = str(cfg.CFG.get("auth.mode", "none")).strip().lower()
+    mode = str(cfg.CFG.get("auth.mode")).strip().lower()
 
     if mode == "none":
         # open mode (dev): treat as admin
-        tenant = str(cfg.CFG.get("auth.default_access_tenant", None))
+        tenant = str(cfg.CFG.get("auth.default_access_tenant"))
         return AuthContext(tenant=tenant, is_admin=True)
 
     if mode == "static":
@@ -77,7 +77,7 @@ def auth_ctx(
             return AuthContext(tenant=None, is_admin=True)
 
         # per-tenant keys
-        api_keys: dict[str, str] = cfg.CFG.get("auth.api_keys", {}) or {}
+        api_keys: dict[str, str] = cfg.CFG.get("auth.api_keys") or {}
         for t, expected in api_keys.items():
             if token == str(expected):
                 return AuthContext(tenant=t, is_admin=False)
@@ -232,14 +232,14 @@ async def tenant_limit_gate(
 
 def _is_dev(cfg) -> bool:
     # check dev flag from config/env overlay
-    return bool(cfg.get("dev", False))
+    return bool(cfg.get("dev"))
 
 def enforce_policy(cfg) -> None:
     """
     Fail fast if auth is not configured in prod.
     Allow auth=none only in dev mode, force loopback bind.
     """
-    mode = str(cfg.get("auth.mode", "none")).strip().lower()
+    mode = str(cfg.get("auth.mode")).strip().lower()
     dev = _is_dev(cfg)
 
     if mode == "none":
@@ -248,7 +248,7 @@ def enforce_policy(cfg) -> None:
                 "auth.mode=none not allowed in production. "
                 "Set auth.mode=static with a key or run with PAVEDB_DEV=1 for dev."
             )
-        host = str(cfg.get("server.host", "127.0.0.1")).strip()
+        host = str(cfg.get("server.host")).strip()
         if host not in ("127.0.0.1", "localhost"):
             # enforce loopback in dev
             try:
@@ -266,6 +266,6 @@ def enforce_policy(cfg) -> None:
 
 def resolve_bind(cfg) -> tuple[str, int]:
     # return host/port after policy enforcement
-    host = str(cfg.get("server.host", "127.0.0.1"))
-    port = int(cfg.get("server.port", 8086))
+    host = str(cfg.get("server.host"))
+    port = int(cfg.get("server.port"))
     return host, port

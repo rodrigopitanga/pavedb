@@ -139,7 +139,7 @@ _FALLBACK_TMPL = """<!doctype html>
 
 
 def _display_name(cfg) -> str:
-    return product_display_name(cfg.get("instance.name", ""))
+    return product_display_name(cfg.get("instance.name"))
 
 
 def _storage_key() -> str:
@@ -349,7 +349,7 @@ def attach_ui(app: FastAPI):
     def ui_home():
         # instance strings
         display_name = _display_name(cfg)
-        inst_desc = cfg.get("instance.desc", "Vector Search Microservice")
+        inst_desc = cfg.get("instance.desc")
         try:
             html = tmpl_path.read_text(encoding="utf-8")
         except Exception:

@@ -26,6 +26,11 @@
       "description": "Collection name used for common shared results."
     },
     {
+      "key": "dev",
+      "default": false,
+      "description": "Enable development startup behavior such as allowing auth.mode=none on loopback and verbose PaveDB logging."
+    },
+    {
       "key": "auth.mode",
       "default": "static",
       "description": "Authentication mode. Use static outside dev; none is accepted only under the startup policy's dev safeguards."
@@ -164,6 +169,29 @@
       "key": "log.access_log",
       "default": "~/pavedb/access.log",
       "description": "Destination for uvicorn access logs: null, stdout, or a file path."
+    },
+    {
+      "key": "log.debug",
+      "default": [],
+      "description": "Logger namespaces forced to DEBUG level."
+    },
+    {
+      "key": "log.watch",
+      "default": [],
+      "description": "Logger namespaces made one level more verbose than the base log level."
+    },
+    {
+      "key": "log.quiet",
+      "default": [
+        "uvicorn",
+        "uvicorn.access",
+        "uvicorn.error",
+        "fastapi",
+        "sqlalchemy",
+        "urllib3",
+        "httpx"
+      ],
+      "description": "Noisy dependency logger namespaces made one level quieter than the base log level."
     },
     {
       "key": "instance.name",

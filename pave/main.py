@@ -77,7 +77,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        if cfg.get("embedder.warmup_default", True):
+        if cfg.get("embedder.warmup_default"):
             try:
                 app.state.store.warm()
                 log.info("Default store warm-up complete")
@@ -92,7 +92,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     app = FastAPI(
         title=product_display_name(cfg.get("instance.name")),
-        description=cfg.get("instance.desc", "Vector Search Microservice"),
+        description=cfg.get("instance.desc"),
         lifespan=lifespan,
     )
 
@@ -475,12 +475,12 @@ def main_srv(argv=None):
     cfg.set("server.port", port)
 
     # flags from CFG
-    reload = bool(cfg.get("server.reload", False))
-    workers = int(cfg.get("server.workers", 1))
+    reload = bool(cfg.get("server.reload"))
+    workers = int(cfg.get("server.workers"))
     log_level = str(cfg.get("log.level")).lower()
     timeout_keep_alive = int(cfg.get("server.timeout_keep_alive"))
 
-    if cfg.get("dev",0):
+    if cfg.get("dev"):
         log_level = "debug"
         log.setLevel(logging.DEBUG)
 
@@ -503,13 +503,13 @@ def main_srv(argv=None):
     _t_cap_label = (
         "unlimited (0 disables gate)" if _tcap == 0 else str(_tcap)
     )
-    _inst_desc = cfg.get("instance.desc", "Vector Search Microservice")
+    _inst_desc = cfg.get("instance.desc")
     log.info(f"┌─ {software_title('pavesrv', emoji=True)}")
     log.info(f"│  {product_display_name(cfg.get('instance.name'))} — {_inst_desc}")
     log.info(f"│  {COPYRIGHT}")
     _fields = [
-        f"auth={cfg.get('auth.mode','none')}",
-        f"store={cfg.get('vector_store.type','faiss')}",
+        f"auth={cfg.get('auth.mode')}",
+        f"store={cfg.get('vector_store.type')}",
         f"data_dir={cfg.get('data_dir')}",
         f"bind={host}:{port}",
         f"workers={workers}",

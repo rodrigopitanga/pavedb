@@ -106,7 +106,8 @@ def resolve_setting(
     """
     if key in spec and spec[key] is not None:
         return spec[key]
-    return cfg.get(f"embedder.{etype}.{key}", default)
+    value = cfg.get(f"embedder.{etype}.{key}")
+    return default if value is None else value
 
 
 def _registry_error(message: str) -> EmbedderRegistryError:

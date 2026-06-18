@@ -6,8 +6,8 @@ from pave.config import Config
 
 def test_overlay_get_set_snapshot(cfg):
     # baseline efetivo (sem depender de arquivo em dev)
-    assert cfg.get("auth.mode", "none") == "none"
-    assert cfg.get("vector_store.type", "xpto") == "faiss"
+    assert cfg.get("auth.mode") == "none"
+    assert cfg.get("vector_store.type") == "faiss"
 
     # runtime overlay supersedes codebase and data
     cfg.set("auth.mode", "static")

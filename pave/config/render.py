@@ -10,7 +10,7 @@ from .config import CONFIG_FIELDS, ConfigField
 
 
 def _section_for(key: str) -> str:
-    if key == "data_dir" or key.startswith("common_"):
+    if key in {"data_dir", "dev"} or key.startswith("common_"):
         return "General"
     if key.startswith("auth."):
         return "Authentication"

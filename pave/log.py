@@ -144,16 +144,15 @@ def _init_logger() -> logging.Logger:
     root.addHandler(handler)
 
     pave_log = logging.getLogger("pave")
-    pave_log.setLevel(logging.DEBUG if cfg.get("dev", 0) else base_level)
+    pave_log.setLevel(logging.DEBUG if cfg.get("dev") else base_level)
 
-    for ns in cfg.get("log.debug", []):
+    for ns in cfg.get("log.debug"):
         logging.getLogger(ns).setLevel(logging.DEBUG)
 
-    for ns in cfg.get("log.watch", []):
+    for ns in cfg.get("log.watch"):
         logging.getLogger(ns).setLevel(shift(base_level, -1))
 
-    for ns in cfg.get("log.quiet", ["uvicorn", "uvicorn.access", "uvicorn.error",
-                                     "fastapi", "sqlalchemy", "urllib3", "httpx"]):
+    for ns in cfg.get("log.quiet"):
         logging.getLogger(ns).setLevel(shift(base_level, +1))
 
     return pave_log

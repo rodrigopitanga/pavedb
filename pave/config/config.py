@@ -284,7 +284,8 @@ def _base_defaults_for(
 class Config:
     """
     Single backing dict; thread-safe. Can be constructed from a file path
-    or from a pre-built dict. `get(path, default)` persists default.
+    or from a pre-built dict overlaid on schema defaults.
+    `get(path, default)` persists default.
     """
     def __init__(
             self,
@@ -295,6 +296,8 @@ class Config:
             if path is None:
                 path = _default_config_path()
             data = self._load_dict(path)
+        else:
+            data = _deep_merge(_base_defaults_for(data, {}), data)
         self._cfg: dict[str, Any] = deepcopy(data)
         self._data = self._cfg  # back-compat alias for old tests
 
