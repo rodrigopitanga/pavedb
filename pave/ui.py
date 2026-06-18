@@ -8,9 +8,11 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import HTMLResponse, RedirectResponse, FileResponse
 from starlette.staticfiles import StaticFiles
 from pathlib import Path
+from urllib.parse import quote
 import copy
 
 from pave.version import (
+    CONTACT_EMAIL,
     LICENSE,
     LICENSE_URL,
     PRODUCT,
@@ -83,6 +85,9 @@ _FALLBACK_TMPL = """<!doctype html>
   <iframe id="admin" class="frame" src="/ui/admin" title="Admin"></iframe>
   <div class="footer">
     <span>__PRODUCT_EMOJI__ __PRODUCT__ v__VERSION__</span>
+    · <a href="__REPO_URL__" target="_blank" rel="noopener">Source</a>
+    · <a href="__LICENSE_URL__" target="_blank" rel="noopener">__LICENSE__</a>
+    · <a href="__CONTACT_URL__">Contact</a>
   </div>
 <script>
   const TAB_KEY = '__STORAGE_KEY__';
@@ -139,6 +144,10 @@ def _display_name(cfg) -> str:
 
 def _storage_key() -> str:
     return f"{PRODUCT.lower()}.ui.tab"
+
+
+def _contact_url() -> str:
+    return f"mailto:{CONTACT_EMAIL}?subject={quote(f'[{PRODUCT}]')}"
 
 
 def attach_ui(app: FastAPI):
@@ -354,6 +363,9 @@ def attach_ui(app: FastAPI):
                 .replace("__INST_DESC__", inst_desc)
                 .replace("__VERSION__", str(version))
                 .replace("__REPO_URL__", REPOSITORY_URL)
+                .replace("__LICENSE__", LICENSE)
+                .replace("__LICENSE_URL__", LICENSE_URL)
+                .replace("__CONTACT_URL__", _contact_url())
                 .replace("__STORAGE_KEY__", _storage_key())
         )
         return HTMLResponse(html)

@@ -6,15 +6,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<!-- favicon robusto -->
-<link rel="icon" type="image/png" sizes="32x32"
-      href="/assets/pavedb_icon_192.png?v=__VERSION__" />
 <link rel="icon" type="image/png" sizes="192x192"
-      href="/assets/pavedb_icon_192.png?v=__VERSION__" />
-<link rel="icon" href="/favicon.ico?v=__VERSION__" />
-<title>__INST_NAME__ • Search</title>
+      href="__PRODUCT_ICON_PNG__?v=__VERSION__" />
+<link rel="apple-touch-icon" href="__PRODUCT_ICON_PNG__?v=__VERSION__" />
+<link rel="icon" href="__PRODUCT_FAVICON__?v=__VERSION__" />
+<title>__DISPLAY_NAME__ • Search</title>
 <style>
-  /* Flowlexi docs palette with restrained PaveDB accents */
   :root{
     --bg:#F4F2ED; --panel:#FFFFFF; --text:#1E1E1E; --muted:#4B5563;
     --accent:#2ECC71; --border:#E5E7EB; --link:#11957D;
@@ -69,14 +66,14 @@
   <div class="bar">
     <div class="left">
       <button class="tab active" data-target="search"
-              data-title="__INST_NAME__ • Search">Search</button>
+              data-title="__DISPLAY_NAME__ • Search">Search</button>
       <button class="tab" data-target="data"
-              data-title="__INST_NAME__ • Data">Data</button>
+              data-title="__DISPLAY_NAME__ • Data">Data</button>
       <button class="tab" data-target="admin"
-              data-title="__INST_NAME__ • Admin">Admin</button>
+              data-title="__DISPLAY_NAME__ • Admin">Admin</button>
     </div>
     <div class="right">
-      <strong>__INST_NAME__</strong> — <small>__INST_DESC__</small>
+      <strong>__DISPLAY_NAME__</strong> — <small>__INST_DESC__</small>
     </div>
   </div>
 
@@ -87,12 +84,10 @@
   </div>
 
   <div class="footer">
-    © 2025, 2026
-    <a href="https://flowlexi.com" target="_blank"
-       rel="noopener">Flowlexi</a> •
-    <a href="__REPO_URL__" target="_blank"
-       rel="noopener">🛣️ PaveDB __VERSION__</a> •
-    <a href="__LICENSE_URL__" target="_blank" rel="noopener">__LICENSE_NAME__</a>
+    <span>__PRODUCT_EMOJI__ __PRODUCT__ __VERSION__</span>
+    · <a href="__REPO_URL__" target="_blank" rel="noopener">Source</a>
+    · <a href="__LICENSE_URL__" target="_blank" rel="noopener">__LICENSE__</a>
+    · <a href="__CONTACT_URL__">Contact</a>
   </div>
 <script>
   function activeFrame(){ return document.querySelector('.frame.active'); }
@@ -306,7 +301,7 @@
     }
   }
 
-  const TAB_KEY = 'pavedb.ui.tab';
+  const TAB_KEY = '__STORAGE_KEY__';
   const tabs = document.querySelectorAll('.tab');
   const frames = document.querySelectorAll('.frame');
 
