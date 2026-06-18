@@ -11,6 +11,7 @@ def test_main_srv_accepts_home_flag(monkeypatch, tmp_path):
     calls: dict[str, object] = {}
     home = tmp_path / "instance"
 
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
     monkeypatch.setattr(main_mod, "enforce_policy", lambda _cfg: None)
     monkeypatch.setattr(main_mod, "resolve_bind", lambda _cfg: ("127.0.0.1", 8086))
     monkeypatch.setattr(

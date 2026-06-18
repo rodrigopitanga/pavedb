@@ -39,14 +39,14 @@ replace dots with double underscores, so `auth.mode` becomes
 
 ### `auth.mode`
 
-- Default: `"none"`
+- Default: `"static"`
 - Env var: `PAVEDB_AUTH__MODE`
 - Description: Authentication mode. Use static outside dev; none is accepted only under
   the startup policy's dev safeguards.
 
 ### `auth.default_access_tenant`
 
-- Default: `null`
+- Default: `"public"`
 - Env var: `PAVEDB_AUTH__DEFAULT_ACCESS_TENANT`
 - Description: Tenant label assigned to unauthenticated requests when auth.mode is none.
 
@@ -176,7 +176,7 @@ shows commented Ollama and OpenAI examples; only the
 
 ### `tenants.default_max_concurrent`
 
-- Default: `0`
+- Default: `42`
 - Env var: `PAVEDB_TENANTS__DEFAULT_MAX_CONCURRENT`
 - Description: Default per-tenant concurrent request cap; 0 disables the cap.
 
@@ -222,13 +222,13 @@ shows commented Ollama and OpenAI examples; only the
 
 ### `log.ops_log`
 
-- Default: `null`
+- Default: `"~/pavedb/ops.jsonl"`
 - Env var: `PAVEDB_LOG__OPS_LOG`
 - Description: Destination for structured operation logs: null, stdout, or a file path.
 
 ### `log.access_log`
 
-- Default: `null`
+- Default: `"~/pavedb/access.log"`
 - Env var: `PAVEDB_LOG__ACCESS_LOG`
 - Description: Destination for uvicorn access logs: null, stdout, or a file path.
 
@@ -236,12 +236,12 @@ shows commented Ollama and OpenAI examples; only the
 
 ### `instance.name`
 
-- Default: `"PaveDB"`
+- Default: `null`
 - Env var: `PAVEDB_INSTANCE__NAME`
-- Description: Display name used by the API metadata and UI.
+- Description: Display instance name used by the API metadata and UI.
 
 ### `instance.desc`
 
-- Default: `"PaveDB Vector Search Microservice"`
+- Default: `"Vector Search Microservice"`
 - Env var: `PAVEDB_INSTANCE__DESC`
 - Description: Description used by the API metadata and UI.

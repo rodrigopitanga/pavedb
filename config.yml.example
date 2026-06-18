@@ -43,11 +43,11 @@ auth:
   # Authentication mode. Use static outside dev; none is accepted only under the startup
   # policy's dev safeguards.
   # Env: PAVEDB_AUTH__MODE
-  mode: 'none'
+  mode: 'static'
 
   # Tenant label assigned to unauthenticated requests when auth.mode is none.
   # Env: PAVEDB_AUTH__DEFAULT_ACCESS_TENANT
-  # default_access_tenant: null
+  default_access_tenant: 'public'
 
   # Bearer token that grants admin access when auth.mode is static.
   # Env: PAVEDB_AUTH__GLOBAL_KEY
@@ -213,7 +213,7 @@ tenants:
 
   # Default per-tenant concurrent request cap; 0 disables the cap.
   # Env: PAVEDB_TENANTS__DEFAULT_MAX_CONCURRENT
-  default_max_concurrent: 0
+  default_max_concurrent: 42
 
 
 # ---------------------------------------------------------------------------
@@ -255,11 +255,11 @@ log:
 
   # Destination for structured operation logs: null, stdout, or a file path.
   # Env: PAVEDB_LOG__OPS_LOG
-  # ops_log: null
+  ops_log: '~/pavedb/ops.jsonl'
 
   # Destination for uvicorn access logs: null, stdout, or a file path.
   # Env: PAVEDB_LOG__ACCESS_LOG
-  # access_log: null
+  access_log: '~/pavedb/access.log'
 
 
 # ---------------------------------------------------------------------------
@@ -268,10 +268,10 @@ log:
 
 instance:
 
-  # Display name used by the API metadata and UI.
+  # Display instance name used by the API metadata and UI.
   # Env: PAVEDB_INSTANCE__NAME
-  name: 'PaveDB'
+  # name: null
 
   # Description used by the API metadata and UI.
   # Env: PAVEDB_INSTANCE__DESC
-  desc: 'PaveDB Vector Search Microservice'
+  desc: 'Vector Search Microservice'

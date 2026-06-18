@@ -32,6 +32,8 @@ def _reset_cfg_between_tests(monkeypatch, temp_data_dir, request):
     cfg = get_cfg()
     cfg.set("data_dir", str(temp_data_dir))
     cfg.set("auth.mode", "none")
+    cfg.set("log.ops_log", None)
+    cfg.set("log.access_log", None)
     cfg.set("embedder.default", "native")
     cfg.set("embedder.instances.native.type", "sbert")
     cfg.set("embedder.instances.native.config.runtime", "auto")

@@ -57,7 +57,7 @@ def test_dev_mode_skips_default_user_config(monkeypatch, tmp_path):
 
     cfg = Config()
 
-    assert cfg.get("auth.mode") == "none"
+    assert cfg.get("auth.mode") == "static"
     assert cfg.get("vector_store.type") == "faiss"
     assert cfg.get("instance.name") != "User config"
 
