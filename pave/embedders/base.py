@@ -29,6 +29,3 @@ class EmbedderUnavailableError(RuntimeError):
     dedicated `embedder_unavailable` error code instead of wrapping in
     the generic failure envelope.
     """
-
-
-BaseEmbedder = Embedder  # deprecated alias

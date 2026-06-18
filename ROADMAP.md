@@ -165,7 +165,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-47 | Per-collection storage accounting | 🔧 | Separate document/chunk/index/meta bytes; expose `document_bytes` for quotas, keep `chunk_bytes` admin-only | v1.5 |
 | P2-48 | ~~`bench-stress-full` profile~~ | 🔧 | Off-by-default stress run covering every public endpoint; landed early as `STR_SUITE=critical/full` with `@_covers` decorator + OpenAPI startup gap warning | v0.9 |
 | P2-49 | Embedder credential refs | 🔧 | Multi-key embedder runtimes without storing or echoing raw secrets in collection config; credentials resolve from server config/secret store and affect runtime cache identity, not vector-space compatibility | v1.6 |
-| P2-50 | Ollama embedder | 🧩 | Thin OpenAI-compatible wrapper for the local Ollama daemon — default base_url `http://localhost:11434/v1`, daemon-up probe → `embedder_unavailable`, sane embedding-model defaults. Lowers adoption bar for devs already running Ollama for LLM workflows | v1.0 |
+| P2-50 | ~~Ollama embedder~~ | 🧩 | Thin OpenAI-compatible wrapper for the local Ollama daemon — default base_url `http://localhost:11434/v1`, daemon-up probe → `embedder_unavailable`, sane embedding-model defaults. Lowers adoption bar for devs already running Ollama for LLM workflows | v1.0 |
 
 ### P3 — Scale and long-term
 
@@ -195,8 +195,8 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-45 | Independence principle audit | 🔧 | v1.6 |
 | P3-46 | Matrix CI builds | 🧱 | v1.8 |
 | P3-47 | Additional media types | 🧱 | post-1.0 |
-| P3-48 | Explicit embedder warmup policy (v1.0: `warmup_default` bool; v1.7: enum + per-embedder switch + warmup-by-key list, depends on P1-58 registry) | 🧩 | v1.0 / v1.7 |
-| P3-49 | Convention-based embedder dispatch | 🔧 | v1.0 |
+| P3-48 | Explicit embedder warmup policy (v1.0: ~~`warmup_default` bool~~ done; v1.7: enum + per-embedder switch + warmup-by-key list, depends on P1-58 registry) | 🧩 | v1.0 / v1.7 |
+| P3-49 | ~~Convention-based embedder dispatch~~ | 🔧 | v1.0 |
 | P3-50 | ~~Split main.py routes into APIRouter modules (health, admin, collections, documents, search)~~ | 🧩 | v0.5.9 |
 | P3-51 | ~~`make docker-check`: alive test against prebuilt Docker image~~ | 🧩 | v0.5.9 |
 | P3-52 | ~~`make build-check`: install from local wheel in temp venv, alive test~~ | 🧩 | v0.5.9 |
@@ -439,25 +439,25 @@ latency on every search/ingest/delete.~~
   config ownership in `pave.embedders`, and leave future Python client
   types to OpenAPI/Pydantic/SDK-specific request-response contracts
   (P1-57).~~
-- Convention-based embedder dispatch: factory becomes a thin
+- ~~Convention-based embedder dispatch: factory becomes a thin
   `importlib` dispatcher; each embedder module exports
   `build_embedder(cfg, **overrides)` and its own `CONFIG_KEYS` /
   `SPACE_KEYS` tuples. New embedders drop in with zero factory
   edits. Lands before P2-50 so OllamaEmbedder ships as the first
-  validation of the abstraction (P3-49).
-- Ollama embedder: thin OpenAI-compatible wrapper for the local
+  validation of the abstraction (P3-49).~~
+- ~~Ollama embedder: thin OpenAI-compatible wrapper for the local
   Ollama daemon. Defaults `base_url=http://localhost:11434/v1`,
   `api_key="ollama"`, sensible default embedding model;
   daemon-up probe at construction raises `embedder_unavailable`
   with a clear "daemon not reachable" message. Lowers adoption
-  friction for the local-LLM dev loop (P2-50).
-- Default-embedder warmup knob: top-level boolean
+  friction for the local-LLM dev loop (P2-50).~~
+- ~~Default-embedder warmup knob: top-level boolean
   `embedder.warmup_default` (default `true`) drives a single
   `.encode(["warmup"])` call against `store._embedder` at server
   lifespan startup. Restores v0.9.0 behavior after the lazy refactor
   and fail-fast checks API key/network for openai-class embedders.
   Per-embedder warmup switches arrive at v1.7 alongside the
-  multi-embedder registry (P1-58) (P3-48 v1.0 slice).
+  multi-embedder registry (P1-58) (P3-48 v1.0 slice).~~
 
 **Deferred from v1.0** (to lean the path; pulled in by next
 release, see v1.1 and v1.2 sections): P1-27 admin key auto-gen,
@@ -659,8 +659,9 @@ well-tested. Production consumers already use it correctly.
 OR/AND). Real consumer code exercises most filter features.
 - **SQL injection prevention** (`_sanit_sql`, `_sanit_field`, `_sanit_meta_dict`)
 is thorough and has dedicated tests.
-- **Pluggable architecture** (BaseStore/BaseEmbedder ABCs, factory pattern) makes
-it straightforward to swap backends without touching consumers.
+- **Pluggable architecture** (BaseStore ABC, Embedder/VectorBackend protocols,
+factory pattern) makes it straightforward to swap backends without touching
+consumers.
 - **Chunk text sidecar storage** guarantees text is always retrievable even when
 the vector index loses content — a practical reliability win.
 - **Auth policy enforcement** (`enforce_policy`) correctly prevents auth=none in

@@ -7,7 +7,7 @@ PaveDB's store architecture was designed from day one as a
 layered system: embedder, vector index, metadata store, and
 service logic are independent concerns with typed contracts
 between them. The codebase already reflects this — `BaseStore`
-ABC, `BaseEmbedder` ABC, `CollectionDB`, the embedder factory,
+ABC, the `Embedder` protocol, `CollectionDB`, the embedder factory,
 `SearchResult` dataclass, and the service/store boundary have
 been in place since early versions. Each was shipped
 incrementally as the product matured.
@@ -17,6 +17,12 @@ dependency — which was the right bootstrapping choice — with
 PaveDB's own FAISS backend and activating the embedder layer
 that has been waiting in the wings. The seams are already cut.
 This plan connects them.
+
+Current status: this migration is complete. Runtime uses
+`LocalStore`, `FaissBackend`, `CollectionDB`, `CatalogDB`, and active
+embedders registered through `pave.embedders.factory`. The step text
+below is kept as design history; current seam contracts live in
+[`docs/reference/protocols.md`](../reference/protocols.md).
 
 ---
 
@@ -63,9 +69,9 @@ and `_emb` dicts directly, `_lock_indexes()` imports
 txtai_store's module-level lock registry. Archive ops are scattered
 between service and store.
 
-The embedder factory (`pave/embedders/`) exists but is dead code —
-never called by `TxtaiStore`, which creates its own `Embeddings`
-internally.
+At the time of this plan, the embedder factory (`pave/embedders/`)
+existed but was dead code — never called by `TxtaiStore`, which
+created its own `Embeddings` internally.
 
 Per-collection embeddings (P1-32) is impossible without resolving
 this: the model spec must be stored per-collection, the factory
@@ -80,6 +86,12 @@ Five interfaces define PaveDB's store stack. Each layer has a
 single responsibility and communicates with its neighbours through
 a typed contract. No layer bypasses another.
 
+> The frozen, authoritative contract for the `Embedder` and
+> `VectorBackend` seams lives in
+> [`docs/reference/protocols.md`](../reference/protocols.md). The
+> signatures sketched in this section are historical and may lag the
+> current code; treat `protocols.md` as the source of truth.
+
 ### 1. Embedder — text → vectors
 
 Converts a batch of texts into embedding vectors. Does not know
@@ -92,29 +104,29 @@ class Embedder(Protocol):
         """Encode texts into a (N, dim) matrix of unit vectors."""
         ...
     @property
-    def dimension(self) -> int:
+    def dim(self) -> int:
         """Embedding dimensionality (e.g. 384)."""
         ...
 ```
 
-Existing implementations (currently dead code, to be activated):
+Current in-tree implementations:
 
 | Class | Module | Backend |
 |-------|--------|---------|
-| `SbertEmbedder` | `pave/embedders/sbert_emb.py` | sentence-transformers |
-| `OpenAIEmbedder` | `pave/embedders/openai_emb.py` | OpenAI API |
-| `TxtaiEmbedder` | `pave/embedders/txtai_emb.py` | txtai (transitional) |
+| `SbertEmbedder` | `pave/embedders/sbert.py` | sentence-transformers |
+| `OpenAIEmbedder` | `pave/embedders/openai.py` | OpenAI API-compatible providers |
+| `OllamaEmbedder` | `pave/embedders/ollama.py` | Ollama OpenAI-compatible API |
 
 Factory: `get_embedder()` in `pave/embedders/factory.py` dispatches
-on `embedder.type` config key. Already written.
+through the convention-based embedder registry and returns lazy
+embedder instances.
 
-**Return type change**: current `encode()` returns
-`list[list[float]]`. Must change to `NDArray[np.float32]` —
-FAISS needs numpy, and the `.tolist()` round-trip is wasteful.
+**Return type**: `encode()` returns `NDArray[np.float32]`. FAISS
+needs numpy, and avoiding `.tolist()` round-trips keeps the vector
+path direct.
 
-**`dim` → `dimension`**: current property is `dim: int | None`.
-Must become `dimension: int` (non-optional; FAISS index creation
-requires it at construction time).
+**Dimension**: the current protocol property is `dim: int`.
+FAISS index creation requires the dimension at construction time.
 
 ### 2. VectorBackend — vectors → (rid, score) pairs
 
@@ -266,7 +278,7 @@ Step 2 completes `P1-29b`: finalize vector-native backend flow with
 ### File layout
 
 Backends live in `pave/backends/`, embedders in `pave/embedders/`.
-Current state and target end-state are:
+At the time of Step 2, the current state and target end-state were:
 
 ```
 pave/backends/
@@ -868,7 +880,7 @@ race fixes are useful for perf interpretation too:
 
 ## Step 5 — CatalogDB + catalog separation (owned by PLAN-SQLITE)
 
-This step is specified in `docs/PLAN-SQLITE.md` (Phase 2) and
+This step is specified in `PLAN-SQLITE.md` (Phase 2) and
 tracked as roadmap item `P1-33`.
 
 `PLAN-STORE` treats Step 5 as an external dependency:
@@ -883,8 +895,9 @@ tracked as roadmap item `P1-33`.
 
 ### Problem
 
-All collections use the same embedding model. Per-collection
-model config is a hard requirement for multi-model deployments.
+Before P1-32, all collections used the same embedding model.
+Per-collection model config was a hard requirement for multi-model
+deployments.
 
 ### How it works
 
@@ -948,9 +961,9 @@ read all vectors + IDs, write to `FaissBackend` format. Faster
 Path A is preferred — it's independent of txtai and validates the
 entire pipeline end-to-end.
 
-A `pavecli migrate-index` command handles the conversion. The
-server detects txtai-format indexes on startup and warns (does
-not auto-migrate).
+No automatic txtai migration path ships in the current codebase.
+Legacy txtai-format indexes must be recreated from source documents
+or chunk sidecars if an old install still has them.
 
 ---
 
@@ -972,10 +985,10 @@ Step 1  VectorBackend protocol (v0.5.9) ✓
                        └──→ Step 6  Per-collection embeddings
 ```
 
-Steps 2 and 3 are complete. Step 3b (P1-37) is housekeeping
-that unblocks Step 4: drops txtai dependency, renames
-TxtaiStore → FaissStore, simplifies filter path, removes dead
-code. Step 4 then replaces FaissStore with LocalStore.
+All steps in this dependency graph are complete. Step 3b (P1-37)
+dropped the txtai dependency, renamed the transitional store, and
+simplified the filter path. Step 4 replaced `FaissStore` with
+`LocalStore`.
 
 ---
 
@@ -1003,8 +1016,8 @@ Existing items affected:
 ## Risks
 
 1. **Migration friction**: Existing txtai indexes require
-   re-indexing. Mitigated by `pavecli migrate-index` and the fact
-   that chunk text sidecars guarantee no data loss.
+   re-indexing. Mitigated by the fact that chunk text sidecars
+   guarantee no data loss.
 
 2. **Test monkeypatching**: Tests monkeypatch
    `TxtaiVectorBackend` at module level. After Step 2, the target

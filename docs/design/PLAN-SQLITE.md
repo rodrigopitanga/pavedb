@@ -407,8 +407,8 @@ Column notes:
   `display_name` is the human label; renaming it does not
   affect paths.
 - `backend_type`, `backend_config_json`: backend identity and
-  constructor config. Populated with instance defaults on
-  creation; per-collection override is P1-32.
+  constructor config. Populated with instance defaults on creation;
+  later backend swaps build on these fields.
 - `embedder_type`, `embed_model`, `embed_config_json`: embedder
   identity and config. Same population strategy.
 - `meta_json`: operator metadata (description, tags, owner).
@@ -440,12 +440,12 @@ class CatalogDB:
     def register_collection(
         self, tenant: str, name: str,
         display_name: str | None = None,
-        meta_json: str | None = None,
+        meta: dict[str, Any] | None = None,
         backend_type: str | None = None,
-        backend_config_json: str | None = None,
+        backend_config: dict[str, Any] | None = None,
         embedder_type: str | None = None,
         embed_model: str | None = None,
-        embed_config_json: str | None = None,
+        embed_config: dict[str, Any] | None = None,
     ) -> None
     def unregister_collection(
         self, tenant: str, name: str,
@@ -466,8 +466,9 @@ class CatalogDB:
     def tenant_count(self) -> int
 ```
 
-One `threading.Lock` inside CatalogDB for catalog writes.
-WAL mode for concurrent reads.
+CatalogDB uses separate read/write SQLite connections with internal
+reader/writer gates. WAL mode allows concurrent catalog reads while
+writes are serialized.
 
 ### Bootstrap and repair
 
@@ -503,9 +504,11 @@ All integration is against `LocalStore`
   doc/chunk counts still from per-collection `meta.db`
   (opened read-only, same as today).
 
-**Locking:** per-collection lock model unchanged. CatalogDB has
-its own write lock — never held while holding a collection
-lock (no nested lock risk).
+**Locking:** per-collection lock model unchanged. Catalog writes
+happen inside the relevant per-collection write lock so concurrent
+create/delete/move/restore paths cannot leave disk and catalog state
+inconsistent. CatalogDB still owns its internal reader/writer gates;
+store code does not take those directly.
 
 ### Failure model
 
@@ -513,21 +516,23 @@ Filesystem is the **durable truth** for collection payloads.
 `catalog.db` is the control-plane index.
 
 For create/delete/rename:
-1. Perform the filesystem change (already atomic for rename).
-2. Update CatalogDB.
-3. On CatalogDB failure after successful filesystem op: fail
-   loudly (log error, propagate exception). Do **not** attempt
-   filesystem rollback — startup reconciliation will heal the
-   catalog on next boot.
+1. Validate conflicts under the relevant collection write lock.
+2. Perform the filesystem change (already atomic for rename).
+3. Update CatalogDB before releasing the collection lock.
+4. On CatalogDB failure after successful filesystem op: fail
+   loudly (log error, propagate exception). Create paths clean up
+   partial collection state; other orphaned catalog/disk state is
+   repaired by startup reconciliation.
 
-### P1-32 preparation
+### P1-32 preparation (historical)
 
 `get_collection_config()` exists and reads persisted
-backend/embedder settings from `catalog.db`. `LocalStore`
-still uses instance defaults initially (all collections share
-the same `FaissBackend` + embedder), but the schema and read
-path are in place so P1-32 (per-collection embeddings) does
-not require another catalog migration.
+backend/embedder settings from `catalog.db`. In the original Phase 2
+landing, `LocalStore` still used instance defaults; the schema and
+read path were put in place so P1-32 (per-collection embeddings) did
+not require another catalog migration. P1-32 has since landed, and
+`LocalStore` now resolves per-collection embedder specs from the
+catalog.
 
 ### Test plan
 
@@ -545,14 +550,14 @@ not require another catalog migration.
 ## Phase 3 — Operational State (auth, tenant profiles, rate limits, metrics,
 log retention)
 
-**Target: v0.7 / v0.8**
+**Original target: v0.7 / v0.8**
 
 ### Auth progression
 
 `tenants.yml` is the source of truth for API keys until Phase 3 ships:
 
 ```
-tenants.yml (now)  →  SQL key store (Phase 3)  →  + OIDC/JWT opt-in (P3-17, v0.8)
+tenants.yml (now)  →  SQL key store (Phase 3)  →  + OIDC/JWT opt-in (P3-17)
 ```
 
 API keys (`api_keys` table) are a permanent first-class auth method — simple
@@ -596,7 +601,7 @@ needed. The global bootstrap key (`PAVEDB_GLOBAL_KEY` env var) stays outside
 SQL permanently — it is the credential used to access the system before any
 tenant is provisioned.
 
-**Key management API** (new endpoints, v0.8):
+**Key management API** (future endpoints; currently tracked by P2-38):
 - `POST /admin/tenants` — provision tenant (slug, display_name, limits)
 - `POST /admin/tenants/{tenant}/keys` — generate key, returns plaintext once
 - `DELETE /admin/tenants/{tenant}/keys/{id}` — revoke key
@@ -674,7 +679,7 @@ ALTER TABLE collections ADD COLUMN embed_config_json TEXT;
 
 ## Phase 4 — Governance (syndicates, audit, versioning, usage, jobs)
 
-**Target: v0.8 / v1.0**
+**Original target: v0.8 / v1.0**
 
 ### Collection versioning
 
@@ -687,7 +692,8 @@ ALTER TABLE collections ADD COLUMN schema_version    INTEGER;
 ALTER TABLE collections ADD COLUMN created_at        TEXT;
 ```
 
-`created_at` not tracked today; added here when we start recording it.
+`created_at` is already tracked for catalog rows. PaveDB and schema
+version columns remain future governance work.
 
 ### Document versioning
 
