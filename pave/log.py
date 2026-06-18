@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import asyncio, functools, json, logging, sys, threading, time
+import asyncio, functools, json, logging, os, sys, threading, time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -144,7 +144,8 @@ def _init_logger() -> logging.Logger:
     root.addHandler(handler)
 
     pave_log = logging.getLogger("pave")
-    pave_log.setLevel(logging.DEBUG if cfg.get("dev") else base_level)
+    dev_forces_debug = cfg.get("dev") and "PAVEDB_LOG__LEVEL" not in os.environ
+    pave_log.setLevel(logging.DEBUG if dev_forces_debug else base_level)
 
     for ns in cfg.get("log.debug"):
         logging.getLogger(ns).setLevel(logging.DEBUG)

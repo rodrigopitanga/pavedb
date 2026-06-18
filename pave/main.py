@@ -480,9 +480,9 @@ def main_srv(argv=None):
     log_level = str(cfg.get("log.level")).lower()
     timeout_keep_alive = int(cfg.get("server.timeout_keep_alive"))
 
-    if cfg.get("dev"):
+    if cfg.get("dev") and "PAVEDB_LOG__LEVEL" not in os.environ:
         log_level = "debug"
-        log.setLevel(logging.DEBUG)
+    log.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 
     _s_cap = int(cfg.get("search.max_concurrent"))
     _s_to = int(cfg.get("search.timeout_ms"))
@@ -539,7 +539,7 @@ def main_srv(argv=None):
                 log.warning(
                     "access log disabled: cannot open %s (%s)", _acc_dest, exc
                 )
-    _access_log = True
+    _access_log = _acc_val not in ("", "null", "none")
 
     # run server
     uvicorn.run("pave.main:app",

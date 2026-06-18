@@ -53,6 +53,8 @@ PORT            ?= 8086
 WORKERS         ?= 1
 RELOAD          ?= 1
 LOG_LEVEL       ?= debug
+OPS_LOG         ?= null
+ACCESS_LOG      ?= null
 INSTANCE_NAME   ?= dev
 
 # Requirements flavor (gpu default)
@@ -922,6 +924,10 @@ BENCH_API_KEY     ?=
 LAT_LENGTH        ?= 1200
 LAT_CONCUR        ?= 42
 LAT_FILTERS       ?= none,exact,wildcard,mixed
+BENCH_EMBEDDER_MODEL ?= sentence-transformers/all-MiniLM-L6-v2
+BENCH_EMBEDDER_RUNTIME ?= auto
+BENCH_EMBEDDER_DEVICE ?= auto
+BENCH_TENANT_MAX_CONCURRENT ?= 0
 STR_LENGTH        ?= 90
 STR_CONCUR        ?= 8
 STR_SUITE         ?= base
@@ -969,7 +975,13 @@ _bench-with-server:
 	  PAVEDB_DEV=1 \
 	  PAVEDB_DATA_DIR="$$data_dir" \
 	  PAVEDB_AUTH__MODE=none \
+	  PAVEDB_EMBEDDER__INSTANCES__NATIVE__MODEL=$(BENCH_EMBEDDER_MODEL) \
+	  PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__RUNTIME=$(BENCH_EMBEDDER_RUNTIME) \
+	  PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__DEVICE=$(BENCH_EMBEDDER_DEVICE) \
 	  PAVEDB_LOG__LEVEL=$(_server_log_level) \
+	  PAVEDB_LOG__OPS_LOG=$(OPS_LOG) \
+	  PAVEDB_LOG__ACCESS_LOG=$(ACCESS_LOG) \
+	  PAVEDB_TENANTS__DEFAULT_MAX_CONCURRENT=$(BENCH_TENANT_MAX_CONCURRENT) \
 	  PAVEDB_SERVER__HOST=$(_ephemeral_host) \
 	  PAVEDB_SERVER__PORT=$(_ephemeral_port) \
 	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main >"$$log_file" 2>&1 & \
@@ -987,7 +999,13 @@ _bench-with-server:
 	  PAVEDB_DEV=1 \
 	  PAVEDB_DATA_DIR="$$data_dir" \
 	  PAVEDB_AUTH__MODE=none \
+	  PAVEDB_EMBEDDER__INSTANCES__NATIVE__MODEL=$(BENCH_EMBEDDER_MODEL) \
+	  PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__RUNTIME=$(BENCH_EMBEDDER_RUNTIME) \
+	  PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__DEVICE=$(BENCH_EMBEDDER_DEVICE) \
 	  PAVEDB_LOG__LEVEL=$(_server_log_level) \
+	  PAVEDB_LOG__OPS_LOG=$(OPS_LOG) \
+	  PAVEDB_LOG__ACCESS_LOG=$(ACCESS_LOG) \
+	  PAVEDB_TENANTS__DEFAULT_MAX_CONCURRENT=$(BENCH_TENANT_MAX_CONCURRENT) \
 	  PAVEDB_SERVER__HOST=$(_ephemeral_host) \
 	  PAVEDB_SERVER__PORT=$(_ephemeral_port) \
 	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main >"$$log_file" 2>&1 & \
@@ -1062,19 +1080,22 @@ bench-latency: install-dev
 	    _ts="$(_ts)" \
 	    _bench-with-server; \
 	done; \
-	awk -F'|' ' \
-	  BEGIN { \
-	    s=""; for(i=1;i<=108;i++) s=s"="; print "\n" s; \
-	    print "  SEARCH LATENCY — consolidated"; print s; \
-	    h="%-18s %6s %6s %8s %11s %9s %9s %9s %9s %9s %9s\n"; \
-	    printf h,"Variant","Count","OK","Hits","Err (%)","Min","p50","p95","p99","Max","Ops/s"; \
-	    gsub(/=/,"-",s); print s \
-	  } \
-	  { e=sprintf("%d (%.1f%%)",$$5,$$6); \
-	    printf "%-18s %6d %6d %8d %11s %8.1fms %8.1fms %8.1fms %8.1fms %8.1fms %8.1f\n", \
-	      $$1,$$2,$$3,$$4,e,$$7,$$8,$$9,$$10,$$11,$$12 } \
-	  END { s=""; for(i=1;i<=108;i++) s=s"-"; print s }' \
-	  $$summary; \
+	rows=$$(awk 'END { print NR + 0 }' "$$summary"); \
+	if [ "$$rows" -gt 1 ]; then \
+	  awk -F'|' ' \
+	    BEGIN { \
+	      s=""; for(i=1;i<=108;i++) s=s"="; print "\n" s; \
+	      print "  SEARCH LATENCY — consolidated"; print s; \
+	      h="%-18s %6s %6s %8s %11s %9s %9s %9s %9s %9s %9s\n"; \
+	      printf h,"Variant","Count","OK","Hits","Err (%)","Min","p50","p95","p99","Max","Ops/s"; \
+	      gsub(/=/,"-",s); print s \
+	    } \
+	    { e=sprintf("%d (%.1f%%)",$$5,$$6); \
+	      printf "%-18s %6d %6d %8d %11s %8.1fms %8.1fms %8.1fms %8.1fms %8.1fms %8.1f\n", \
+	        $$1,$$2,$$3,$$4,e,$$7,$$8,$$9,$$10,$$11,$$12 } \
+	    END { s=""; for(i=1;i<=108;i++) s=s"-"; print s }' \
+	    $$summary; \
+	fi; \
 	rm -f $$summary
 
 bench-latency-run:
