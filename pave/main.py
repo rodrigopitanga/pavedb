@@ -92,7 +92,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     app = FastAPI(
         title=product_display_name(cfg.get("instance.name")),
-        description=cfg.get("instance.desc", "PaveDB Vector Search Microservice"),
+        description=cfg.get("instance.desc", "Vector Search Microservice"),
         lifespan=lifespan,
     )
 
@@ -370,6 +370,29 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     return app
 
+
+def _wrap_banner_fields(
+    fields: list[str], prefix: str = "│  ", width: int = 88
+) -> list[str]:
+    """Pack key=value tokens into prefixed lines no wider than `width`.
+
+    Each token is kept atomic (values may contain spaces), so the only break
+    points are between tokens.
+    """
+    lines: list[str] = []
+    current = prefix
+    for token in fields:
+        candidate = current + (" " if current != prefix else "") + token
+        if len(candidate) > width and current != prefix:
+            lines.append(current)
+            current = prefix + token
+        else:
+            current = candidate
+    if current != prefix:
+        lines.append(current)
+    return lines
+
+
 def main_srv(argv=None):
     """
     HTTP server entrypoint.
@@ -471,14 +494,6 @@ def main_srv(argv=None):
     )
     _ops_dest = cfg.get("log.ops_log") or "null"
     _acc_dest = cfg.get("log.access_log")
-    log.info(f"┌─ {software_title('pavesrv', emoji=True)}")
-    log.info(f"│  {COPYRIGHT}")
-    log.info(
-        f"│  auth={cfg.get('auth.mode','none')} "
-        f"store={cfg.get('vector_store.type','faiss')} "
-        f"data_dir={cfg.get('data_dir')} "
-        f"bind={host}:{port} workers={workers}"
-    )
     _s_cap_label = (
         "unlimited (0 disables gate)" if _s_cap == 0 else str(_s_cap)
     )
@@ -488,13 +503,24 @@ def main_srv(argv=None):
     _t_cap_label = (
         "unlimited (0 disables gate)" if _tcap == 0 else str(_tcap)
     )
-    log.info(
-        f"│  search.max_concurrent={_s_cap_label} "
-        f"search.timeout_ms={_s_to} "
-        f"ingest.max_concurrent={_i_cap_label} "
-        f"tenants.default_max_concurrent={_t_cap_label} "
-        f"ops_log={_ops_dest}"
-    )
+    _inst_desc = cfg.get("instance.desc", "Vector Search Microservice")
+    log.info(f"┌─ {software_title('pavesrv', emoji=True)}")
+    log.info(f"│  {product_display_name(cfg.get('instance.name'))} — {_inst_desc}")
+    log.info(f"│  {COPYRIGHT}")
+    _fields = [
+        f"auth={cfg.get('auth.mode','none')}",
+        f"store={cfg.get('vector_store.type','faiss')}",
+        f"data_dir={cfg.get('data_dir')}",
+        f"bind={host}:{port}",
+        f"workers={workers}",
+        f"search.max_concurrent={_s_cap_label}",
+        f"search.timeout_ms={_s_to}",
+        f"ingest.max_concurrent={_i_cap_label}",
+        f"tenants.default_max_concurrent={_t_cap_label}",
+        f"ops_log={_ops_dest}",
+    ]
+    for _line in _wrap_banner_fields(_fields):
+        log.info(_line)
     log.info("└" + "─" * 40)
 
     # Access log routing
