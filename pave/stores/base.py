@@ -1,6 +1,20 @@
 # (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+"""Store contract.
+
+Defines `BaseStore` — the abstract surface every concrete store
+implementation honors — together with the dataclasses that flow
+across the store/service boundary (`SearchResult`, `SearchOutput`,
+`IndexResult`) and the typed-alias shorthands used in their
+signatures.
+
+`BaseStore` owns collection lifecycle (create/delete/move/update),
+document ingest, search, archive dump/restore, and the query log.
+Concurrency and per-collection isolation are implementation
+concerns of the concrete store, not part of the contract.
+"""
+
 from __future__ import annotations
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
@@ -71,6 +85,13 @@ class IndexResult:
 
 
 class BaseStore(ABC):
+    """Abstract orchestrator for a single PaveDB instance.
+
+    Composes embedder + vector backend + metadata store behind one
+    tenant/collection-scoped interface. The service layer depends
+    only on this surface; transport (HTTP, CLI, library) never
+    talks to embedders, backends, or SQLite directly.
+    """
     def warm(self) -> None:
         """Warm runtime caches without persisting any collection state.
 

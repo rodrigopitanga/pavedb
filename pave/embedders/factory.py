@@ -1,6 +1,16 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+"""Embedder registry and instance factory.
+
+Drives convention-based dispatch (`pave.embedders.<type>`) plus the
+configured-instances registry introduced by P1-58: parsing
+`embedder.instances` from config, resolving the `embedder.default`
+selector, computing the `vector_space_key` used for cross-collection
+compatibility, and stripping credentials before persistence. Heavy
+embedder modules stay deferred until a specific instance is built.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -17,6 +27,14 @@ log = logging.getLogger(__name__)
 
 
 class EmbedderSpec(TypedDict):
+    """Canonical embedder spec persisted on a collection.
+
+    `embedder_type` + `embed_model` + `embedder_config` together
+    fully identify the runtime to build. `api_key` is carried
+    alongside but never participates in vector-space identity; it
+    is stripped before persistence and ignored by
+    `vector_space_key`.
+    """
     embedder_type: str
     embed_model: str
     embedder_config: EmbedderConfig
@@ -27,6 +45,12 @@ class EmbedderSpec(TypedDict):
 
 @dataclass(frozen=True)
 class EmbedderInstance:
+    """Configured embedder instance from `embedder.instances`.
+
+    `key` is the operator-facing name; `vector_key` is the
+    deterministic vector-space identifier; `spec` is the persistable
+    shape used by collections that adopt this instance.
+    """
     key: str
     spec: EmbedderSpec
     vector_key: str
@@ -34,6 +58,12 @@ class EmbedderInstance:
 
 @dataclass(frozen=True)
 class DefaultEmbedderResolution:
+    """Result of resolving `embedder.default` against the registry.
+
+    `selector` echoes the configured selector (or `None`); `vector_key`
+    is the resolved vector space; `instances` is the ordered list of
+    configured instances that match (first one wins for routing).
+    """
     selector: str | None
     vector_key: str
     instances: tuple[EmbedderInstance, ...]
@@ -72,6 +102,13 @@ def _embedder_schema(etype: str) -> tuple[tuple[str, ...], tuple[str, ...]] | No
 
 
 class LazyEmbedder:
+    """Defers embedder construction until first `encode` / `dim` use.
+
+    Keeps server startup, library `connect()`, and test fixtures
+    cheap when no embedding is actually needed. Thread-safe: the
+    first caller through pays the construction cost; subsequent
+    callers see the cached instance.
+    """
     def __init__(self, factory: Callable[[], Embedder]) -> None:
         self._factory = factory
         self._embedder: Embedder | None = None

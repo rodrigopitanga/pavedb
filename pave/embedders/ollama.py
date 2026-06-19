@@ -1,6 +1,14 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+"""Ollama embedder.
+
+Thin `OpenAIEmbedder` adapter pointed at a local Ollama daemon's
+OpenAI-compatible endpoint. Adds a daemon-up probe so an unreachable
+daemon surfaces as `EmbedderUnavailableError` at construction time
+rather than at first encode.
+"""
+
 from __future__ import annotations
 
 import urllib.error

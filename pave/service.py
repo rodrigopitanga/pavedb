@@ -1,6 +1,21 @@
 # (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+"""Service layer.
+
+Sits between the transport layers (HTTP routes, CLI, library
+client) and `BaseStore`. Owns validation, embedder-config
+resolution, file-format dispatch on ingest, error envelope shape,
+and the structured-ops logging decorator hooks. Never touches
+embedders, vector backends, or SQLite directly — everything goes
+through the store.
+
+Return contract: each public function returns a `ServiceResult`
+dict carrying `ok: bool` plus operation-specific fields. Hard
+errors raise `ServiceError(code, message)`; the route layer maps
+both into the HTTP response envelope.
+"""
+
 from __future__ import annotations
 
 import errno
@@ -46,6 +61,13 @@ ServiceResult = dict[str, Any]
 
 # Pure-ish service functions operating on a store adapter
 class ServiceError(RuntimeError):
+    """Hard failure inside a service operation.
+
+    Carries a machine-readable `code` (mapped to HTTP status in the
+    route layer) and a human-readable `message`. Raised when an
+    operation cannot complete; soft failures are reported through
+    the `ServiceResult` envelope's `ok=False` path instead.
+    """
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code

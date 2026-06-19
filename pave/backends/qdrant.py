@@ -1,6 +1,12 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+"""Qdrant backend stub.
+
+Placeholder kept to preserve the `VectorBackend` shape across
+remote backends. No production code path constructs this class.
+"""
+
 from __future__ import annotations
 
 import numpy as np

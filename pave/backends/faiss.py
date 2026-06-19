@@ -1,6 +1,14 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+"""FAISS vector backend.
+
+`FaissBackend` is the in-tree `VectorBackend` implementation. It
+wraps `faiss.IndexIDMap2` over `IndexFlatIP` (cosine similarity
+on normalized vectors) and persists the index plus an
+`rid → faiss_id` mapping under its storage directory.
+"""
+
 from __future__ import annotations
 
 import json
@@ -14,6 +22,12 @@ from .base import SearchHit
 
 
 class FaissBackend:
+    """FAISS-backed `VectorBackend` for cosine similarity search.
+
+    Uses `IndexFlatIP` (inner product) over normalized vectors.
+    Persists index state and the string-id mapping under
+    `storage_dir`. Single-process: callers serialize writes.
+    """
     def __init__(
         self,
         dimension: int,

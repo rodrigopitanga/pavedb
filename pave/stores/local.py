@@ -1,6 +1,19 @@
 # (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+"""On-disk store implementation.
+
+`LocalStore` is the default `BaseStore` for single-instance
+deployments. It owns the data directory layout
+(`{data_dir}/{tenant}/{collection}/{meta.db, index/, chunks/}`),
+the per-collection read/write lock lattice, the catalog
+(`pave.metadb.CatalogDB`) bootstrap pass, and the embedder
+instance cache keyed by `vector_space_key`.
+
+See `docs/reference/protocols.md` for the frozen v1.0 contract on
+the embedder and vector-backend seams this store composes.
+"""
+
 from __future__ import annotations
 import errno
 import json
@@ -183,6 +196,16 @@ class _CollectionReadWriteLock:
 
 
 class LocalStore(BaseStore):
+    """Default `BaseStore` implementation backed by local files.
+
+    Each collection maps to a directory holding a SQLite metadata DB,
+    a FAISS index, and chunk-text sidecars. Collection lifecycle and
+    document writes acquire a per-collection write lock; reads take
+    a shared read lock and pin cached handles against concurrent
+    writers. The embedder instance cache is keyed by
+    `vector_space_key` so collections that share a spec share the
+    runtime model.
+    """
     def __init__(
         self,
         data_dir: str,

@@ -1,6 +1,14 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+"""Sentence-Transformers embedder.
+
+In-process `SbertEmbedder` (used in tests, library mode, and CPU
+servers) plus the subprocess `ProcessSbertEmbedder` (default on
+macOS to isolate the torch fork-safety hazard from the API
+process). `build_embedder` dispatches on the `runtime` setting.
+"""
+
 from __future__ import annotations
 
 import sys
@@ -62,6 +70,13 @@ def build_embedder(cfg, *, model=None, embedder_config=None, api_key=None):
 
 
 class SbertEmbedder:
+    """In-process Sentence-Transformers `Embedder`.
+
+    Loads a local SBERT model and encodes batches with
+    `convert_to_numpy=True, normalize_embeddings=True`. `device`
+    accepts `"auto"`, `"cpu"`, or any torch device string;
+    `batch_size` controls the per-call batching inside ST.
+    """
     def __init__(
         self,
         *,

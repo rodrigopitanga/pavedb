@@ -117,14 +117,14 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-53a | ~~Reference-source plumbing: OpenAPI completeness pass~~ | 🔧 | Every route gets `summary`/`description`/`tags`/`responses`; every Pydantic `Field` gets `description` + at least one example. Unblocks an auto-rendered API reference. | v1.0 |
 | P1-53b | ~~Reference-source plumbing: CLI completeness + dumper~~ | 🔧 | Every subcommand gets `help`/`epilog`-example; `scripts/cli_to_markdown.py` renders `docs/reference/cli.md` committed in-repo. | v1.0 |
 | P1-53c | ~~Reference-source plumbing: config schema refactor~~ | 🔧 | Single (key, default, description, env_var) source for `_DEFAULTS`, `config.yml.example`, and `docs/reference/config.md`. Closes P1-26 (drift check) as a side effect. | v1.0 |
-| P1-53d | Reference-source plumbing: module/class docstrings on public seams | 🔧 | `pave/stores`, `pave/backends`, `pave/embedders`, catalog, `pave/service.py` public functions. Powers `mkdocstrings` once the docs site lands. | v1.0 |
+| P1-53d | ~~Reference-source plumbing: module/class docstrings on public seams~~ | 🔧 | `pave/stores`, `pave/backends`, `pave/embedders`, catalog, `pave/service.py` public functions. Powers `mkdocstrings` once the docs site lands. | v1.0 |
 | P1-53e | API contract snapshot + drift check | 🔧 | Commit `openapi.json` as a checked-in snapshot; `docs-ref-openapi` dump + drift check (mirrors P1-53b's CLI gate) enforces the P1-43 "frozen at v1.0, additive-after" contract — breaking changes fail CI. Depends on P1-53a. | v1.0 |
 | P1-54 | Per-collection archive (dump + restore) | 🧱 | Admin-only `GET`/`POST` archive endpoints for a single collection. Carries `manifest.json` (PaveDB version, embedder spec, schema version), `meta.db`, FAISS index, sidecars. Restore must verify embedder spec is resolvable locally before touching disk. Same-version restore only at v1.5; cross-version waits on P3-37. Depends on P2-25. | v1.5 |
 | P1-55 | Per-collection reindex | 🧱 | Admin-only operation: rebuild vectors against a new embedder spec. Needs a job model (interruptible, resumable, status-trackable). Splits cleanly from PATCH (cheap label edit) and `move` (slug/path move + disk move) because it's the only one that rewrites stored vectors. | v1.6 |
 | P1-56 | Chroma comparison benchmark | 🔧 | Optional local compare bench for PaveDB vs Chroma using the same corpus, same sentence-transformers model, comparable create/upsert/delete/search operations, exact metadata filters only, and consolidated latency/stress output. Keep Chroma deps off the default install/test path. | v1.0 |
 | P1-57 | ~~Typing policy + SDK-ready type vocabulary~~ | 🧩 | Boundary-focused typing rules, named internal JSON vocabulary, and lighter test annotations without duplicating API/client schemas | v1.0 |
 | P1-58 | ~~Embedder instance registry core~~ | 🧩 | Registry-shaped config with keyed instances, `embedder.default` as instance/type/type:model/vector-key selector, useful CRITICAL failures for missing or ambiguous defaults, deterministic first compatible runtime instance, and catalog persistence limited to vector-space identity. Depends on P1-32 (done) | v1.0 |
-| P1-59 | Admin embedder inventory endpoint | 🧩 | `GET /v1/admin/embedders` exposes configured instance keys, vector-space keys, default resolution, and readiness without credentials or raw secrets. Builds on P1-58; pairs with P2-49 credential refs. | v1.6 |
+| P1-59 | Admin embedder inventory endpoint | 🧩 | v1.0 slice: admin-only `GET /v1/admin/embedders` surfaces configured instance keys, vector-space keys, types, models, and default resolution. No credentials, no readiness probe. Mirrored by `Client.embedders()` (library + future HTTP transport) and `pavecli list-embedders`. v1.6 expansion: readiness probe + credential-ref identity per P2-49. Per-tenant embedder assignment (and per-tenant inventory) stays a post-1.0 direction once tenant profiles (P2-26) land. Builds on P1-58. | v1.0 / v1.6 |
 | P1-60 | Embedder selection shorthand + routing policy | 🧱 | Collection create accepts an `embedder` selector shorthand; compatible instance routing grows from deterministic first configured to explicit policy (`first`, `round_robin`, weighted/failover). Any pinning is operational config, not catalog state. | v1.7 |
 
 ### P2 — Enables enterprise use cases and competitive moat
@@ -178,7 +178,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-23 | ~~Docs website (superseded by P1-46/P1-47)~~ | 🧩 | v1.1–v1.2 |
 | P3-24 | Revamp UI | 🧱 | v1.4 |
 | P3-25 | Multilingual UI/errors/docs | 🧱 | v1.4 |
-| P3-26 | Embedder/store contract | 🧱 | v1.0 |
+| P3-26 | ~~Embedder/store contract~~ | 🧱 | v1.0 |
 | P3-28 | Extensible ingest plugin architecture | 🧱 | v1.6 |
 | P3-30 | Retain original uploaded files (opt-in) + content inspector | 🧱 | v1.8 |
 | P3-31 | Async ingest jobs + job status API | 🧱 | v1.8 |
@@ -378,7 +378,7 @@ latency on every search/ingest/delete.~~
 
 ### PaveDB v1.0 — Stability
 
-- Define embedder/store separation contract (P3-26).
+- ~~Define embedder/store separation contract (P3-26).~~
 - ~~Activate embedder factory cache (P1-30; superseded by P1-29b).~~
 - ~~Per-collection embeddings + `display_name` + admin move/update
   APIs; `vector_space_key` surfaced on detail/listing; `pave.slugify`
@@ -405,13 +405,23 @@ latency on every search/ingest/delete.~~
     env_var) source feeds `_DEFAULTS`, `config.yml.example`, and
     `docs/reference/config.md`. Closes the P1-26 drift check as a
     side effect (P1-53c).~~
-  - Module/class docstrings on public seams: `pave/stores`,
+  - ~~Module/class docstrings on public seams: `pave/stores`,
     `pave/backends`, `pave/embedders`, catalog, and
     `pave/service.py` public functions. Powers `mkdocstrings`
-    when the docs site lands at v1.1 (P1-53d).
+    when the docs site lands at v1.1 (P1-53d).~~
   - API contract snapshot: commit `openapi.json` and add a dump +
     drift check that enforces the P1-43 frozen-at-1.0,
     additive-after contract — breaking changes fail CI (P1-53e).
+- Admin embedder inventory (P1-59 v1.0 slice): admin-only
+  `GET /v1/admin/embedders` lists configured instance keys,
+  vector-space keys, types, models, and default resolution
+  (no credentials, no readiness probe). Mirrored by
+  `Client.embedders()` so the library mode and the v1.1 HTTP
+  client answer the same question through one handle method,
+  plus `pavecli list-embedders`. Per-tenant assignment and the
+  associated per-tenant inventory stay a post-1.0 direction
+  (waits on tenant profiles, P2-26); readiness + credential-ref
+  expansion still lands at v1.6 alongside P2-49.
 - ~~Dev vs prod config defaults: code defaults are prod-safe, the dev
   convenience overlay lives in the Makefile/env, enforced by
   `enforce_policy` fail-fast (P1-25).~~

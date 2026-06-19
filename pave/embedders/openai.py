@@ -1,6 +1,15 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+"""OpenAI-compatible embedder.
+
+`OpenAIEmbedder` targets the OpenAI Embeddings API and any
+compatible OpenAI-shaped surface (Azure OpenAI, vLLM, Ollama via
+`pave.embedders.ollama`). `dim` participates in `vector_space_key`
+because providers return different dimensions for the same
+model name.
+"""
+
 from __future__ import annotations
 
 import numpy as np
@@ -56,6 +65,15 @@ def build_embedder(cfg, *, model=None, embedder_config=None, api_key=None):
 
 
 class OpenAIEmbedder:
+    """OpenAI-shaped `Embedder` over the v1 SDK.
+
+    Wraps `client.embeddings.create(model=..., input=...)` and
+    returns a normalized float32 matrix. `base_url` redirects the
+    SDK at any OpenAI-compatible surface (Azure, vLLM, Ollama).
+    Raises `EmbedderUnavailableError` when the SDK reports network
+    or auth failures so the service layer can return
+    `embedder_unavailable` instead of a generic 500.
+    """
     def __init__(
         self,
         *,

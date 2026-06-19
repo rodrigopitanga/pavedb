@@ -1,6 +1,13 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+"""Subprocess SBERT worker.
+
+Hosts `SbertEmbedder` in a separate Python process so the API
+process never imports `torch` / `sentence-transformers`. Used on
+macOS to sidestep the torch fork-safety hazard.
+"""
+
 from __future__ import annotations
 
 import multiprocessing as mp

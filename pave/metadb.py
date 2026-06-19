@@ -1,12 +1,22 @@
 # (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-"""
-CollectionDB — impl2: read/write split connections.
+"""SQLite metadata stores.
 
-Two persistent connections (check_same_thread=False):
-  _rconn: read connection (WAL, serialized by _read_lock)
-  _wconn: write connection (serialized by _write_lock)
+Two stores live here:
+
+- `CollectionDB`: per-collection SQLite that holds documents,
+  chunks, the write-once `chunk_meta` k/v filter index, and the
+  query log. Uses a read/write connection split (both
+  `check_same_thread=False`) serialized by separate locks.
+- `CatalogDB`: global SQLite catalog mapping tenants/collections to
+  their configured embedder spec and display label. Source of truth
+  for collection listings; bootstraps itself from the data
+  directory layout on first open.
+
+Both stores enable WAL mode and run their own schema migrations.
+The store layer (`pave.stores.local`) opens them; nothing else
+touches their connection state.
 """
 
 from __future__ import annotations
