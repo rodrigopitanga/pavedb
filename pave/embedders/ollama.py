@@ -6,7 +6,6 @@ from __future__ import annotations
 import urllib.error
 import urllib.request
 
-from ..config import CFG
 from .base import EmbedderUnavailableError
 from .openai import OpenAIEmbedder
 

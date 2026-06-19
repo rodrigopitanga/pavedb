@@ -396,7 +396,7 @@ def _wrap_banner_fields(
 def main_srv(argv=None):
     """
     HTTP server entrypoint.
-    Precedence: CFG (reads env first) > defaults.
+    Precedence: active config (env first) > defaults.
     """
     p = argparse.ArgumentParser(
         prog="pavesrv",
@@ -474,7 +474,7 @@ def main_srv(argv=None):
     cfg.set("server.host", host)
     cfg.set("server.port", port)
 
-    # flags from CFG
+    # flags from active config
     reload = bool(cfg.get("server.reload"))
     workers = int(cfg.get("server.workers"))
     log_level = str(cfg.get("log.level")).lower()

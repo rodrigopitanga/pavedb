@@ -159,7 +159,8 @@ class DummyStore(BaseStore):
         self._collection_configs: dict[tuple[str, str], dict[str, Any]] = {}
 
     def _dir(self, tenant: str, collection: str) -> str:
-        return os.path.join(get_cfg().get("data_dir"), tenant, collection)
+        cfg = get_cfg()
+        return os.path.join(cfg.get("data_dir"), tenant, collection)
 
     def _load_or_init(self, tenant: str, collection: str) -> None:
         os.makedirs(os.path.join(self._dir(tenant, collection), "index"), exist_ok=True)
@@ -246,7 +247,8 @@ class DummyStore(BaseStore):
 
     def list_collections(self, tenant: str) -> list[dict[str, Any]]:
         from pave.embedders.factory import vector_space_key
-        tenant_path = os.path.join(get_cfg().get("data_dir"), tenant)
+        runtime_cfg = get_cfg()
+        tenant_path = os.path.join(runtime_cfg.get("data_dir"), tenant)
         if not os.path.isdir(tenant_path):
             return []
         collections: list[dict[str, Any]] = []
@@ -285,7 +287,8 @@ class DummyStore(BaseStore):
 
     def list_tenants(self) -> list[str]:
         from pathlib import Path
-        data_dir_path = Path(get_cfg().get("data_dir")).resolve()
+        runtime_cfg = get_cfg()
+        data_dir_path = Path(runtime_cfg.get("data_dir")).resolve()
         if not data_dir_path.is_dir():
             return []
         tenants: list[str] = []
@@ -526,7 +529,8 @@ class DummyStore(BaseStore):
         import zipfile
         from pathlib import Path
 
-        data_dir = Path(get_cfg().get("data_dir")).resolve()
+        runtime_cfg = get_cfg()
+        data_dir = Path(runtime_cfg.get("data_dir")).resolve()
         if output_path is None:
             tmp_dir = Path(tempfile.mkdtemp(prefix="dummy-export_"))
             archive_path = tmp_dir / "pavedb-data.zip"
@@ -548,7 +552,8 @@ class DummyStore(BaseStore):
         import zipfile
         from pathlib import Path
 
-        data_dir = Path(get_cfg().get("data_dir")).resolve()
+        runtime_cfg = get_cfg()
+        data_dir = Path(runtime_cfg.get("data_dir")).resolve()
         if data_dir.exists():
             shutil.rmtree(data_dir)
         data_dir.mkdir(parents=True, exist_ok=True)

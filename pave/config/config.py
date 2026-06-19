@@ -299,7 +299,7 @@ class Config:
         else:
             data = _deep_merge(_base_defaults_for(data, {}), data)
         self._cfg: dict[str, Any] = deepcopy(data)
-        self._data = self._cfg  # back-compat alias for old tests
+        self._data = self._cfg  # shared backing store for child views/tests
 
     # --- main loader, now a static/class member ---
     @staticmethod
@@ -380,14 +380,14 @@ class Config:
     def snapshot(self) -> dict[str, Any]:
         return self.as_dict()
 
-    # replace all config in place (keeps object identity for back-compat)
+    # replace all config in place while keeping object identity for live refs
     def replace(self, data: dict[str, Any] | None = None,
                 path: str | Path | None = None) -> None:
         fresh = Config(data=data, path=path)
         with self._lock:
             self._cfg.clear()
             self._cfg.update(fresh._cfg)
-            self._data = self._cfg  # keep the back-compat alias valid
+            self._data = self._cfg
 
     # attribute sugar (cfg.instance_name, cfg.auth, ...)
     def __getattr__(self, item):
@@ -408,8 +408,6 @@ def get_cfg() -> Config:
     return _CFG_SINGLETON
 
 def reload_cfg(path: str | None = None) -> Config:
-    # hard reload from disk/env; keep the same object for back-compat
+    # hard reload from disk/env; keep the same object for live references
     _CFG_SINGLETON.replace(path=path)
     return _CFG_SINGLETON
-
-CFG = _CFG_SINGLETON

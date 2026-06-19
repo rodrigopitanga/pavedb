@@ -3,15 +3,16 @@
 
 from __future__ import annotations
 import io, csv, mimetypes
-from .config import CFG
+from .config import get_cfg
 from collections.abc import Iterable, Iterator
 from typing import Any
 from pypdf import PdfReader
 
 from pave.stores.base import Metadata
 
-TXT_CHUNK_SIZE = int(CFG.get("preprocess.txt_chunk_size"))
-TXT_CHUNK_OVERLAP = int(CFG.get("preprocess.txt_chunk_overlap"))
+_cfg = get_cfg()
+TXT_CHUNK_SIZE = int(_cfg.get("preprocess.txt_chunk_size"))
+TXT_CHUNK_OVERLAP = int(_cfg.get("preprocess.txt_chunk_overlap"))
 
 CsvOptions = dict[str, Any]
 

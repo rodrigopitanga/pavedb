@@ -72,8 +72,8 @@ def test_encode_returns_float32_ndarray(monkeypatch):
     _install_fake_deps(monkeypatch, FakeModel)
     monkeypatch.setattr(
         sbert_mod,
-        "CFG",
-        _DummyCFG(
+        "get_cfg",
+        lambda: _DummyCFG(
             {
                 "embedder.sbert.model": "sentence-transformers/test-model",
                 "embedder.sbert.device": "cpu",
@@ -114,8 +114,8 @@ def test_auto_device_resolves_to_cpu_when_no_accelerator(monkeypatch):
     _install_fake_deps(monkeypatch, FakeModel)
     monkeypatch.setattr(
         sbert_mod,
-        "CFG",
-        _DummyCFG(
+        "get_cfg",
+        lambda: _DummyCFG(
             {
                 "embedder.sbert.model": "sentence-transformers/test-model",
                 "embedder.sbert.device": "auto",
@@ -151,8 +151,8 @@ def test_dim_reads_model_dimension_without_probe(monkeypatch):
     _install_fake_deps(monkeypatch, FakeModel)
     monkeypatch.setattr(
         sbert_mod,
-        "CFG",
-        _DummyCFG(
+        "get_cfg",
+        lambda: _DummyCFG(
             {
                 "embedder.sbert.model": "sentence-transformers/test-model",
                 "embedder.sbert.device": "auto",
@@ -184,8 +184,8 @@ def test_dim_probes_when_model_dimension_missing(monkeypatch):
     _install_fake_deps(monkeypatch, FakeModel)
     monkeypatch.setattr(
         sbert_mod,
-        "CFG",
-        _DummyCFG(
+        "get_cfg",
+        lambda: _DummyCFG(
             {
                 "embedder.sbert.model": "sentence-transformers/test-model",
                 "embedder.sbert.device": "auto",
@@ -217,8 +217,8 @@ def test_explicit_model_overrides_cfg(monkeypatch):
     _install_fake_deps(monkeypatch, FakeModel)
     monkeypatch.setattr(
         sbert_mod,
-        "CFG",
-        _DummyCFG(
+        "get_cfg",
+        lambda: _DummyCFG(
             {
                 "embedder.sbert.model": "sentence-transformers/from-cfg",
                 "embedder.sbert.device": "cpu",

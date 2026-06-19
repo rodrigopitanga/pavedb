@@ -11,7 +11,7 @@ from threading import Lock
 from typing import Any, Iterable, NotRequired, TypedDict
 
 from .base import Embedder, EmbedderConfig, EmbedderUnavailableError
-from ..config import CFG
+from ..config import Config, get_cfg
 
 log = logging.getLogger(__name__)
 
@@ -93,7 +93,7 @@ class LazyEmbedder:
 
 
 def resolve_setting(
-    cfg: CFG,
+    cfg: Config,
     etype: str,
     key: str,
     spec: Mapping[str, Any],
@@ -242,7 +242,8 @@ def _instance_from_config(key: str, raw: Mapping[str, Any]) -> EmbedderInstance:
     )
 
 
-def embedder_instances(cfg: CFG = CFG) -> tuple[EmbedderInstance, ...]:
+def embedder_instances(cfg: Config | None = None) -> tuple[EmbedderInstance, ...]:
+    cfg = cfg or get_cfg()
     raw_instances = cfg.get("embedder.instances") or {}
     if not isinstance(raw_instances, Mapping):
         raise _registry_error("embedder.instances must be a mapping")
@@ -278,7 +279,7 @@ def _format_instances(instances: Iterable[EmbedderInstance]) -> str:
     return ", ".join(_format_instance(instance) for instance in instances)
 
 
-def _configured_instances(cfg: CFG) -> tuple[EmbedderInstance, ...]:
+def _configured_instances(cfg: Config) -> tuple[EmbedderInstance, ...]:
     raw_instances = cfg.get("embedder.instances")
     if not raw_instances:
         return ()
@@ -286,7 +287,7 @@ def _configured_instances(cfg: CFG) -> tuple[EmbedderInstance, ...]:
 
 
 def _instance_for_selector(
-    cfg: CFG,
+    cfg: Config,
     selector: str,
 ) -> EmbedderInstance | None:
     matched = [
@@ -307,8 +308,9 @@ def _instance_for_selector(
 
 
 def resolve_default_embedder(
-    cfg: CFG = CFG,
+    cfg: Config | None = None,
 ) -> DefaultEmbedderResolution:
+    cfg = cfg or get_cfg()
     instances = embedder_instances(cfg)
     raw_selector = cfg.get("embedder.default")
     selector = (
@@ -363,7 +365,7 @@ def resolve_default_embedder(
 
 
 def runtime_embedder_spec_for_vector(
-    cfg: CFG,
+    cfg: Config,
     spec: Mapping[str, Any],
 ) -> EmbedderSpec:
     vector_key = vector_space_key(spec)
@@ -403,12 +405,13 @@ def runtime_embedder_spec_for_vector(
 
 
 def resolve_embedder_spec(
-    cfg: CFG = CFG,
+    cfg: Config | None = None,
     *,
     embedder_type: str | None = None,
     model: str | None = None,
     embedder_config: Mapping[str, Any] | None = None,
 ) -> EmbedderSpec:
+    cfg = cfg or get_cfg()
     if embedder_type is None and model is None and embedder_config is None:
         return resolve_default_embedder(cfg).instances[0].spec
 
@@ -495,12 +498,13 @@ def embedder_space_key(spec: Mapping[str, Any]) -> tuple[str, str, str]:
 
 
 def get_embedder(
-    cfg: CFG = CFG,
+    cfg: Config | None = None,
     *,
     embedder_type: str | None = None,
     model: str | None = None,
     embedder_config: Mapping[str, Any] | None = None,
 ) -> Embedder:
+    cfg = cfg or get_cfg()
     spec = resolve_embedder_spec(
         cfg,
         embedder_type=embedder_type,

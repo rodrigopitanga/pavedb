@@ -9,10 +9,10 @@ from dataclasses import dataclass
 # typing imports removed
 from fastapi import HTTPException, Depends, Security, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from . import config as cfg
+from .config import get_cfg, get_logger
 
 bearer = HTTPBearer(auto_error=False)
-log = cfg.get_logger()
+log = get_logger()
 
 @dataclass
 class AuthContext:
@@ -56,12 +56,13 @@ def _raise_500(mode):
 def auth_ctx(
     credentials: HTTPAuthorizationCredentials | None = Security(bearer)
 ) -> AuthContext:
-    # read from CFG.get so tests and env overrides work
-    mode = str(cfg.CFG.get("auth.mode")).strip().lower()
+    # Read per request so tests and runtime overlays are visible.
+    cfg = get_cfg()
+    mode = str(cfg.get("auth.mode")).strip().lower()
 
     if mode == "none":
         # open mode (dev): treat as admin
-        tenant = str(cfg.CFG.get("auth.default_access_tenant"))
+        tenant = str(cfg.get("auth.default_access_tenant"))
         return AuthContext(tenant=tenant, is_admin=True)
 
     if mode == "static":
@@ -72,12 +73,12 @@ def auth_ctx(
             _raise_401()
 
         # global key
-        global_key = cfg.CFG.get("auth.global_key")
+        global_key = cfg.get("auth.global_key")
         if global_key and token == str(global_key):
             return AuthContext(tenant=None, is_admin=True)
 
         # per-tenant keys
-        api_keys: dict[str, str] = cfg.CFG.get("auth.api_keys") or {}
+        api_keys: dict[str, str] = cfg.get("auth.api_keys") or {}
         for t, expected in api_keys.items():
             if token == str(expected):
                 return AuthContext(tenant=t, is_admin=False)

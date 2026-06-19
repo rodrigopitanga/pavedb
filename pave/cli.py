@@ -354,10 +354,11 @@ def cmd_dump_archive(args):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     output = args.output or f"pavedb-data-{stamp}.zip"
     archive_path, _ = svc_dump_archive(_get_store(), output)
+    cfg = get_cfg()
     out = {
         "ok": True,
         "archive": archive_path,
-        "source": str(get_cfg().get("data_dir")),
+        "source": str(cfg.get("data_dir")),
     }
     return out
 

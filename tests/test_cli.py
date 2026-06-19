@@ -699,7 +699,8 @@ def test_cli_get_chunk_content_missing_returns_exit_code_1(
 
 def test_cli_dump_archive_creates_zip(cli_env, tmp_path, capsys):
     pvcli, _, _ = cli_env
-    data_dir = Path(get_cfg().get("data_dir"))
+    cfg = get_cfg()
+    data_dir = Path(cfg.get("data_dir"))
     sample = data_dir / "sample.txt"
     sample.parent.mkdir(parents=True, exist_ok=True)
     sample.write_text("hello", encoding="utf-8")

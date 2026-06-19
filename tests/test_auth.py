@@ -18,7 +18,7 @@ def build_app():
 
 @pytest.fixture(autouse=True)
 def patch_cfg(monkeypatch, tmp_path):
-    from pave import config as cfg_mod
+    import pave.auth as auth_mod
     class DummyCFG:
         data_dir = str(tmp_path / "data")
         def get(self, key, default=None):
@@ -30,7 +30,7 @@ def patch_cfg(monkeypatch, tmp_path):
             if key == "auth.api_keys":
                 return {"acme": "sekret"}  # per-tenant mode
             return default
-    monkeypatch.setattr(cfg_mod, "CFG", DummyCFG(), raising=True)
+    monkeypatch.setattr(auth_mod, "get_cfg", lambda: DummyCFG(), raising=True)
     yield
 
 def test_static_auth_per_tenant():
@@ -56,7 +56,7 @@ def test_static_auth_per_tenant():
 
 def test_static_auth_global_key(monkeypatch):
     # Reconfigure to use global key instead of per-tenant keys
-    from pave import config as cfg_mod
+    import pave.auth as auth_mod
     class CFGGlobal:
         data_dir = "/tmp"
         def get(self, key, default=None):
@@ -67,7 +67,7 @@ def test_static_auth_global_key(monkeypatch):
             if key == "auth.api_keys":
                 return None
             return default
-    monkeypatch.setattr(cfg_mod, "CFG", CFGGlobal(), raising=True)
+    monkeypatch.setattr(auth_mod, "get_cfg", lambda: CFGGlobal(), raising=True)
 
     app = build_app()
     client = TestClient(app)

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import numpy as np
 
-from ..config import CFG
+from ..config import get_cfg
 
 
 CONFIG_KEYS: tuple[str, ...] = ("dim", "base_url", "batch_size")
@@ -67,23 +67,24 @@ class OpenAIEmbedder:
     ) -> None:
         from openai import OpenAI
 
+        cfg = get_cfg()
         self.model = str(
-            model if model is not None else CFG.get("embedder.openai.model")
+            model if model is not None else cfg.get("embedder.openai.model")
             or ""
         ).strip()
         if not self.model:
             raise RuntimeError("embedder.openai.model must be configured")
         if batch_size is None:
-            batch_size = CFG.get("embedder.openai.batch_size")
+            batch_size = cfg.get("embedder.openai.batch_size")
         self.batch_size = int(batch_size if batch_size is not None else 256)
-        self._dim = dim if dim is not None else CFG.get("embedder.openai.dim")
+        self._dim = dim if dim is not None else cfg.get("embedder.openai.dim")
         # No explicit api_key → let the OpenAI SDK apply its own
         # OPENAI_API_KEY env fallback (and raise if neither is present).
         client_kwargs: dict = {}
         if api_key:
             client_kwargs["api_key"] = str(api_key)
         if base_url is None:
-            base_url = CFG.get("embedder.openai.base_url")
+            base_url = cfg.get("embedder.openai.base_url")
         resolved_base_url = str(base_url if base_url is not None else "").strip()
         if resolved_base_url:
             client_kwargs["base_url"] = resolved_base_url

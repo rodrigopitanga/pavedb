@@ -12,7 +12,7 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
-from ..config import CFG
+from ..config import get_cfg
 
 _STARTUP_TIMEOUT_S = 300.0
 _REQUEST_TIMEOUT_S = 300.0
@@ -110,18 +110,19 @@ class ProcessSbertEmbedder:
         device: str | None = None,
         batch_size: int | None = None,
     ) -> None:
+        cfg = get_cfg()
         self.model_name = str(
             model_name if model_name is not None
-            else CFG.get("embedder.sbert.model")
+            else cfg.get("embedder.sbert.model")
             or ""
         ).strip()
         if not self.model_name:
             raise RuntimeError("embedder.sbert.model must be configured")
         if device is None:
-            device = CFG.get("embedder.sbert.device")
+            device = cfg.get("embedder.sbert.device")
         self.device = str(device if device is not None else "auto")
         if batch_size is None:
-            batch_size = CFG.get("embedder.sbert.batch_size")
+            batch_size = cfg.get("embedder.sbert.batch_size")
         self.batch_size = int(batch_size if batch_size is not None else 64)
         self._lock = Lock()
         self._proc: mp.Process | None = None

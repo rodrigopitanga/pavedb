@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from .config import (
-    CFG,
     CONFIG_FIELDS,
     Config,
     ConfigField,
@@ -16,12 +15,11 @@ from .config import (
 )
 
 # Dev stream (stderr) logger lives in pave.log — re-exported here for
-# back-compat. Imported after the names above are bound on the package so that
+# callers. Imported after the names above are bound on the package so that
 # pave.log._init_logger()'s `from pave.config import get_cfg` resolves.
 from pave.log import get_logger, LOG
 
 __all__ = [
-    "CFG",
     "CONFIG_FIELDS",
     "Config",
     "ConfigField",

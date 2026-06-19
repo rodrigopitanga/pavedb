@@ -8,7 +8,7 @@ import sys
 import numpy as np
 from numpy.typing import NDArray
 
-from ..config import CFG
+from ..config import get_cfg
 
 
 CONFIG_KEYS: tuple[str, ...] = ("runtime", "device", "batch_size")
@@ -72,18 +72,19 @@ class SbertEmbedder:
         import torch
         from sentence_transformers import SentenceTransformer
 
+        cfg = get_cfg()
         model_name = str(
             model_name if model_name is not None
-            else CFG.get("embedder.sbert.model")
+            else cfg.get("embedder.sbert.model")
             or ""
         ).strip()
         if not model_name:
             raise RuntimeError("embedder.sbert.model must be configured")
         if device is None:
-            device = CFG.get("embedder.sbert.device")
+            device = cfg.get("embedder.sbert.device")
         device = self._resolve_device(torch, device if device is not None else "auto")
         if batch_size is None:
-            batch_size = CFG.get("embedder.sbert.batch_size")
+            batch_size = cfg.get("embedder.sbert.batch_size")
         self.batch_size = int(batch_size if batch_size is not None else 64)
         self.model = SentenceTransformer(model_name, device=device)
         try:
