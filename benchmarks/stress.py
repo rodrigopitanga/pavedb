@@ -896,6 +896,48 @@ async def op_get_chunk(client: httpx.AsyncClient, world: World, stats: Stats):
         stats.record(OpResult("get_chunk", lat, False, str(e)))
 
 
+@_covers(("POST", "/v1/collections/{tenant}/{collection}/documents:batch"))
+async def op_ingest_batch(
+    client: httpx.AsyncClient, world: World, stats: Stats,
+):
+    """POST /collections/{tenant}/{coll}/documents:batch — JSON batch ingest."""
+    coll = await world.pick_collection()
+    if coll is None:
+        return
+    batch_size = random.randint(2, 4)
+    docids = [f"batch_{_rand_name()}" for _ in range(batch_size)]
+    body = {
+        "documents": [
+            {"text": random.choice(SAMPLE_TEXTS), "docid": docid}
+            for docid in docids
+        ],
+    }
+    t0 = time.perf_counter()
+    try:
+        r = await client.post(
+            f"{API_PREFIX}/collections/{TENANT}/{coll}/documents:batch",
+            json=body,
+        )
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(r):
+            _record_rate_limited(stats, lat)
+            return
+        if not _ok_response(r):
+            stats.record(OpResult("ingest_batch", lat, False, _parse_error(r)))
+            return
+        try:
+            payload = r.json()
+        except Exception:
+            payload = {}
+        for item in payload.get("documents") or ():
+            if item.get("ok") and item.get("docid"):
+                await world.add_doc(coll, item["docid"])
+        stats.record(OpResult("ingest_batch", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("ingest_batch", lat, False, str(e)))
+
+
 @_covers(("GET", "/v1/collections/{tenant}/{name}/search"))
 async def op_search_get(client: httpx.AsyncClient, world: World, stats: Stats):
     """GET /collections/{tenant}/{coll}/search — query-string variant."""
