@@ -1,7 +1,9 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import asyncio
 import sys
+from contextlib import suppress
 
 from fastapi.testclient import TestClient
 
@@ -77,3 +79,49 @@ def test_warmup_default_false_skips_embedder(monkeypatch, tmp_path):
     app = m.build_app(cfg)
     with TestClient(app):
         pass
+
+
+def test_metrics_periodic_flush_task(monkeypatch):
+    import pave.main as m
+
+    calls = []
+
+    async def run_probe():
+        monkeypatch.setattr(m, "METRICS_FLUSH_INTERVAL_SECONDS", 0.01)
+        monkeypatch.setattr(
+            m,
+            "metrics_flush_if_idle",
+            lambda seconds: calls.append(seconds),
+        )
+        task = asyncio.create_task(m._flush_metrics_periodically())
+        try:
+            await asyncio.sleep(0.025)
+        finally:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+    asyncio.run(run_probe())
+
+    assert calls
+    assert all(call == m.METRICS_SNAPSHOT_IDLE_SECONDS for call in calls)
+
+
+def test_lifespan_flushes_metrics_on_shutdown(monkeypatch, tmp_path):
+    import pave.main as m
+    from pave.config import get_cfg
+
+    cfg = get_cfg()
+    cfg.set("data_dir", str(tmp_path))
+    cfg.set("auth.mode", "none")
+    cfg.set("embedder.warmup_default", False)
+
+    calls = []
+    monkeypatch.setattr(m, "METRICS_FLUSH_INTERVAL_SECONDS", 3600.0)
+    monkeypatch.setattr(m, "metrics_flush", lambda: calls.append("flush"))
+
+    app = m.build_app(cfg)
+    with TestClient(app):
+        assert calls == []
+
+    assert calls == ["flush"]

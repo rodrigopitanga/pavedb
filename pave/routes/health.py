@@ -8,7 +8,7 @@ import os
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
-from pave.metrics import inc, set_error, snapshot, to_prometheus
+from pave.metrics import set_error, snapshot, to_prometheus
 from pave.stores.base import BaseStore
 
 
@@ -66,7 +66,6 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
         tags=["Health"],
     )
     def health(request: Request):
-        inc("requests_total")
         d = readiness_check(request)
         status = "ready" if d.get("ok") else "degraded"
         return trace(
@@ -81,7 +80,6 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
         tags=["Health"],
     )
     def health_live(request: Request):
-        inc("requests_total")
         return trace(
             {"ok": True, "status": "live", "version": version},
             request,
@@ -94,7 +92,6 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
         tags=["Health"],
     )
     def health_ready(request: Request):
-        inc("requests_total")
         d = readiness_check(request)
         code = 200 if d.get("ok") else 503
         return JSONResponse(trace(d, request), status_code=code)
@@ -109,7 +106,6 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
         request: Request,
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         extra = {
             "version": version,
             "vector_store": cfg.get("vector_store.type"),
@@ -126,7 +122,6 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
         tags=["Health"],
     )
     def metrics_prom(store: BaseStore = Depends(current_store)):
-        inc("requests_total")
         extra = store_metrics(store)
         txt = to_prometheus(
             build={

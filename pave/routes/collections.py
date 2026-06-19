@@ -7,7 +7,6 @@ from fastapi import APIRouter, Body, Depends, Request
 
 from pave.auth import AuthContext, tenant_rate_limit
 from pave.log import ops_event
-from pave.metrics import inc
 from pave.schemas import (
     CollectionDetailResponse,
     CreateCollectionOptionsBody,
@@ -49,7 +48,6 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         result = svc_list_collections(store, tenant)
         if not result.get("ok"):
             return error(
@@ -82,7 +80,6 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         result = svc_get_collection_detail(store, tenant, name)
         if not result.get("ok"):
             error_type = result.get("error_type", "failed")
@@ -121,7 +118,6 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         result = svc_create_collection(
             store,
             tenant,
@@ -169,7 +165,6 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         result = svc_update_collection(
             store,
             tenant,
@@ -209,7 +204,6 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         result = svc_delete_collection(store, tenant, name)
         if not result.get("ok"):
             return error(

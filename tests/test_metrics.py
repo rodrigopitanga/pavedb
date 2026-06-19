@@ -29,11 +29,46 @@ def test_metrics_counters(client):
     assert snap["search_total"] >= 1
     assert snap["requests_total"] >= 3  # create + upload + search
 
+def test_http_request_metrics_are_labeled_by_route_template(client):
+    client.get("/health/live")
+    client.post("/v1/collections/acme/http-metrics")
+
+    snap = client.get("/health/metrics").json()
+    series = {
+        tuple(sorted(item["labels"].items())): item["value"]
+        for item in snap["http_requests_total"]
+    }
+
+    assert series[
+        (
+            ("method", "GET"),
+            ("path", "/health/live"),
+            ("status_class", "2xx"),
+        )
+    ] >= 1
+    assert series[
+        (
+            ("method", "POST"),
+            ("path", "/v1/collections/{tenant}/{name}"),
+            ("status_class", "2xx"),
+        )
+    ] >= 1
+
 def test_metrics_exposes_build_labels(client):
     r = client.get("/metrics")
     assert r.status_code == 200
     txt = r.text
     assert "version" in txt and VERSION in txt
+
+def test_http_request_metrics_prometheus_labels(client):
+    client.get("/health/live")
+
+    r = client.get("/metrics")
+    assert r.status_code == 200
+    assert (
+        'pavedb_http_requests_total{method="GET",path="/health/live",'
+        'status_class="2xx"}'
+    ) in r.text
 
 
 def test_health_metrics_include_store_catalog_counts(client):
@@ -143,6 +178,29 @@ def test_metrics_coalesce_and_flush(tmp_path):
     # no leftover .tmp files
     assert not any(f.endswith(".tmp") for f in os.listdir(tmp_path))
 
+def test_metrics_flush_if_idle_requires_dirty_idle_cache(tmp_path):
+    metrics.set_data_dir(str(tmp_path))
+    metrics.reset()
+    path = tmp_path / "metrics.json"
+    path.unlink()
+
+    metrics.save()
+    assert not path.exists()
+
+    assert metrics.flush_if_idle(0) is False
+    assert not path.exists()
+
+    metrics.record_http_request("GET", "/health/live", 200)
+    assert metrics.flush_if_idle(3600) is False
+    assert not path.exists()
+
+    assert metrics.flush_if_idle(0) is True
+    assert path.exists()
+    path.unlink()
+
+    assert metrics.flush_if_idle(0) is False
+    assert not path.exists()
+
 def test_metrics_persistence(tmp_path):
     """Metrics should persist to disk and reload."""
     # Set up a temp data dir
@@ -152,6 +210,7 @@ def test_metrics_persistence(tmp_path):
     # Increment some counters
     metrics.inc("search_total", 5)
     metrics.inc("documents_indexed_total", 3)
+    metrics.record_http_request("GET", "/health/live", 200)
     metrics.record_latency("search", 42.5)
     metrics.flush()
     # Verify file exists
@@ -161,6 +220,17 @@ def test_metrics_persistence(tmp_path):
     data = json.loads(path.read_text())
     assert data["counters"]["search_total"] == 5.0
     assert data["counters"]["documents_indexed_total"] == 3.0
+    http_series = data["labeled_counters"]["http_requests_total"]
+    assert http_series == [
+        {
+            "labels": {
+                "method": "GET",
+                "path": "/health/live",
+                "status_class": "2xx",
+            },
+            "value": 1.0,
+        }
+    ]
     assert 42.5 in data["latencies"]["search"]
 
 def test_metrics_load_on_restart(tmp_path):
@@ -169,6 +239,18 @@ def test_metrics_load_on_restart(tmp_path):
     path = tmp_path / "metrics.json"
     path.write_text(json.dumps({
         "counters": {"search_total": 100.0, "errors_total": 5.0},
+        "labeled_counters": {
+            "http_requests_total": [
+                {
+                    "labels": {
+                        "method": "GET",
+                        "path": "/health/live",
+                        "status_class": "2xx",
+                    },
+                    "value": 4.0,
+                }
+            ]
+        },
         "last_error": "test error",
         "latencies": {"search": [10.0, 20.0, 30.0]}
     }))
@@ -180,6 +262,16 @@ def test_metrics_load_on_restart(tmp_path):
     assert snap["errors_total"] == 5.0
     assert snap["last_error"] == "test error"
     assert snap["search_latency_count"] == 3
+    assert snap["http_requests_total"] == [
+        {
+            "labels": {
+                "method": "GET",
+                "path": "/health/live",
+                "status_class": "2xx",
+            },
+            "value": 4.0,
+        }
+    ]
 
 def test_metrics_reset_api(client):
     """DELETE /admin/metrics should reset all metrics."""

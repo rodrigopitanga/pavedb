@@ -10,6 +10,7 @@ _started = time.time()
 _lock = threading.Lock()
 _data_dir: str | None = None
 _dirty = False
+_last_changed = time.monotonic()
 _METRICS_FILE = "metrics.json"
 
 _counters: dict[str, float] = {
@@ -23,6 +24,7 @@ _counters: dict[str, float] = {
     "search_total": 0.0,
     "errors_total": 0.0,
 }
+_labeled_counters: dict[str, dict[tuple[tuple[str, str], ...], float]] = {}
 
 _last_error: str | None = None
 
@@ -46,7 +48,7 @@ def set_data_dir(path: str) -> None:
 
 def load() -> None:
     """Load metrics from disk if available."""
-    global _counters, _last_error, _latencies
+    global _counters, _last_error, _latencies, _labeled_counters
     path = _metrics_path()
     if not path or not os.path.isfile(path):
         return
@@ -57,6 +59,21 @@ def load() -> None:
             for k, v in data.get("counters", {}).items():
                 if k in _counters:
                     _counters[k] = float(v)
+            _labeled_counters.clear()
+            for name, entries in data.get("labeled_counters", {}).items():
+                if not isinstance(entries, list):
+                    continue
+                series: dict[tuple[tuple[str, str], ...], float] = {}
+                for entry in entries:
+                    labels = entry.get("labels")
+                    value = entry.get("value")
+                    if not isinstance(labels, dict):
+                        continue
+                    key = tuple(
+                        sorted((str(k), str(v)) for k, v in labels.items())
+                    )
+                    series[key] = float(value)
+                _labeled_counters[str(name)] = series
             _last_error = data.get("last_error")
             for op, samples in data.get("latencies", {}).items():
                 if op not in _latencies:
@@ -68,6 +85,32 @@ def load() -> None:
     except Exception:
         pass  # ignore load errors, start fresh
 
+def _snapshot_for_save_locked() -> dict[str, Any]:
+    return {
+        "counters": dict(_counters),
+        "labeled_counters": _labeled_counters_json(),
+        "last_error": _last_error,
+        "latencies": {
+            op: list(samples)
+            for op, samples in _latencies.items()
+        },
+    }
+
+def _write_metrics_file(directory: str, path: str, data: dict[str, Any]) -> None:
+    fd, tmp = tempfile.mkstemp(dir=directory, suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
 def save() -> None:
     """Persist metrics to disk (atomic write via temp file + rename)."""
     global _dirty
@@ -78,66 +121,102 @@ def save() -> None:
         d = os.path.dirname(path)
         os.makedirs(d, exist_ok=True)
         with _lock:
-            data = {
-                "counters": dict(_counters),
-                "last_error": _last_error,
-                "latencies": {op: list(samples) for op, samples in _latencies.items()},
-            }
+            if not _dirty:
+                return
+            data = _snapshot_for_save_locked()
             _dirty = False
-        fd, tmp = tempfile.mkstemp(dir=d, suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, path)
-        except BaseException:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-            raise
+        _write_metrics_file(d, path, data)
     except Exception:
+        with _lock:
+            _dirty = True
         pass  # ignore save errors
 
 def flush() -> None:
     """Persist metrics only if changed since last save."""
-    if _dirty:
-        save()
+    save()
+
+def flush_if_idle(min_idle_seconds: float) -> bool:
+    global _dirty
+    path = _metrics_path()
+    if not path:
+        return False
+    try:
+        d = os.path.dirname(path)
+        os.makedirs(d, exist_ok=True)
+        with _lock:
+            if (
+                not _dirty or
+                time.monotonic() - _last_changed < min_idle_seconds
+            ):
+                return False
+            data = _snapshot_for_save_locked()
+            _dirty = False
+        _write_metrics_file(d, path, data)
+        return True
+    except Exception:
+        with _lock:
+            _dirty = True
+        return False
 
 def reset() -> dict[str, Any]:
     """Reset all metrics to initial state and persist."""
-    global _counters, _last_error, _latencies, _started
+    global _counters, _last_error, _latencies, _started, _labeled_counters
     with _lock:
         _counters = {k: 0.0 for k in _counters}
+        _labeled_counters = {}
         _last_error = None
         for op in _latencies:
             _latencies[op].clear()
         _started = time.time()
+        _mark_dirty_locked()
     save()
     return {"ok": True, "reset_at": time.time()}
 
+def _mark_dirty_locked() -> None:
+    global _dirty, _last_changed
+    _dirty = True
+    _last_changed = time.monotonic()
+
 def inc(name: str, value: float = 1.0):
-    global _dirty
     with _lock:
         _counters[name] = _counters.get(name, 0.0) + value
-        _dirty = True
+        _mark_dirty_locked()
+
+def inc_labeled(name: str, labels: dict[str, str], value: float = 1.0):
+    key = tuple(sorted((str(k), str(v)) for k, v in labels.items()))
+    with _lock:
+        series = _labeled_counters.setdefault(name, {})
+        series[key] = series.get(key, 0.0) + value
+        _mark_dirty_locked()
+
+def record_http_request(method: str, path: str, status_code: int):
+    status_class = f"{status_code // 100}xx"
+    labels = {
+        "method": method.upper(),
+        "path": path,
+        "status_class": status_class,
+    }
+    key = tuple(sorted(labels.items()))
+    with _lock:
+        _counters["requests_total"] = _counters.get("requests_total", 0.0) + 1
+        series = _labeled_counters.setdefault("http_requests_total", {})
+        series[key] = series.get(key, 0.0) + 1
+        _mark_dirty_locked()
 
 def set_error(msg: str):
-    global _last_error, _dirty
+    global _last_error
     with _lock:
         _last_error = msg
         _counters["errors_total"] = _counters.get("errors_total", 0.0) + 1.0
-        _dirty = True
+        _mark_dirty_locked()
 
 def record_latency(op: str, duration_ms: float):
     """Record a latency sample for an operation type (search, ingest)."""
-    global _dirty
     with _lock:
         if op not in _latencies:
             _latencies[op] = deque(maxlen=_LATENCY_WINDOW)
         _latencies[op].append(duration_ms)
-        _dirty = True
+        _mark_dirty_locked()
 
 @contextmanager
 def timed(op: str):
@@ -175,6 +254,9 @@ def latency_percentiles(op: str) -> dict[str, float]:
 def snapshot(extra: dict[str, Any] | None = None) -> dict[str, Any]:
     with _lock:
         data = dict(_counters)
+        data["http_requests_total"] = _labeled_counter_snapshot(
+            "http_requests_total"
+        )
         data.update({
             "uptime_seconds": time.time() - _started,
             "last_error": _last_error,
@@ -190,12 +272,49 @@ def snapshot(extra: dict[str, Any] | None = None) -> dict[str, Any]:
         data.update(extra)
     return data
 
-def to_prometheus(extra: dict[str, Any] | None = None, build: dict[str, str] | None = None) -> str:
+def _labeled_counter_snapshot(name: str) -> list[dict[str, Any]]:
+    series = _labeled_counters.get(name, {})
+    return [
+        {
+            "labels": dict(labels),
+            "value": value,
+        }
+        for labels, value in sorted(series.items())
+    ]
+
+def _labeled_counters_json() -> dict[str, list[dict[str, Any]]]:
+    return {
+        name: [
+            {
+                "labels": dict(labels),
+                "value": value,
+            }
+            for labels, value in sorted(series.items())
+        ]
+        for name, series in sorted(_labeled_counters.items())
+    }
+
+def _prom_label_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+def _prom_labels(labels: dict[str, str]) -> str:
+    return ",".join(
+        f'{key}="{_prom_label_value(str(value))}"'
+        for key, value in sorted(labels.items())
+    )
+
+def to_prometheus(
+    extra: dict[str, Any] | None = None,
+    build: dict[str, str] | None = None,
+) -> str:
     s = []
     snap = snapshot(extra)
     for k, v in snap.items():
         if isinstance(v, (int, float)):
             s.append(f"pavedb_{k} {float(v)}")
+    for item in snap.get("http_requests_total", []):
+        labels = _prom_labels(item["labels"])
+        s.append(f"pavedb_http_requests_total{{{labels}}} {float(item['value'])}")
     if build:
         labels = ",".join([f'{key}="{val}"' for key, val in build.items()])
         s.append(f"pavedb_build_info{{{labels}}} 1")

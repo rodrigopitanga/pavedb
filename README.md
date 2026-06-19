@@ -157,8 +157,10 @@ and request id:
 }
 ```
 
-Pass an `X-Request-ID` header to correlate a call across the logs and the response. Health
-and metrics live at `/health` and `/health/metrics`.
+Pass an `X-Request-ID` header to correlate a call across the logs and the
+response. Health and metrics live at `/health`, `/health/metrics`, and
+`/metrics`. The Prometheus endpoint includes `pavedb_http_requests_total`
+labeled by method, route template, and status class.
 
 ## 📦 Install options
 

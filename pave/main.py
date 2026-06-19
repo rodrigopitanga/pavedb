@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse, asyncio, copy, os, logging, time, uuid
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 import uvicorn
 
 from fastapi import FastAPI, Request, HTTPException
@@ -16,8 +16,12 @@ from fastapi.responses import JSONResponse
 from pave.config import get_cfg, get_logger, reload_cfg
 from pave.auth import enforce_policy, resolve_bind
 from pave.embedders import LazyEmbedder, get_embedder
-from pave.metrics import set_data_dir as metrics_set_data_dir, \
-    flush as metrics_flush
+from pave.metrics import (
+    flush as metrics_flush,
+    flush_if_idle as metrics_flush_if_idle,
+    record_http_request,
+    set_data_dir as metrics_set_data_dir,
+)
 from pave.stores.local import LocalStore
 from pave.service import ServiceError
 from pave.schemas import ErrorResponse
@@ -39,6 +43,9 @@ from pave.version import (
     version_banner,
 )
 import pave.log as ops_log
+
+METRICS_FLUSH_INTERVAL_SECONDS = 10.5
+METRICS_SNAPSHOT_IDLE_SECONDS = 0.5
 
 
 def _hw_info() -> dict:
@@ -67,6 +74,12 @@ def _hw_info() -> dict:
     return info
 
 
+async def _flush_metrics_periodically() -> None:
+    while True:
+        await asyncio.sleep(METRICS_FLUSH_INTERVAL_SECONDS)
+        metrics_flush_if_idle(METRICS_SNAPSHOT_IDLE_SECONDS)
+
+
 # Dependency injection builder
 def build_app(cfg=get_cfg()) -> FastAPI:
 
@@ -77,18 +90,24 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        metrics_flush_task = asyncio.create_task(_flush_metrics_periodically())
         if cfg.get("embedder.warmup_default"):
             try:
                 app.state.store.warm()
                 log.info("Default store warm-up complete")
             except Exception as exc:
                 log.warning(f"Default store warm-up failed: {exc}")
-        yield
-        metrics_flush()
-        ops_log.close()
-        for _exec in (app.state.search_executor, app.state.ingest_executor):
-            if _exec is not None:
-                _exec.shutdown(wait=False)
+        try:
+            yield
+        finally:
+            metrics_flush_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await metrics_flush_task
+            metrics_flush()
+            ops_log.close()
+            for _exec in (app.state.search_executor, app.state.ingest_executor):
+                if _exec is not None:
+                    _exec.shutdown(wait=False)
 
     app = FastAPI(
         title=product_display_name(cfg.get("instance.name")),
@@ -332,6 +351,18 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     data_dir = cfg.get("data_dir")
     if data_dir:
         metrics_set_data_dir(data_dir)
+
+    @app.middleware("http")
+    async def http_metrics_middleware(request: Request, call_next):
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            route = request.scope.get("route")
+            path = getattr(route, "path", request.url.path)
+            record_http_request(request.method, path, status_code)
 
     app.include_router(
         build_health_router(cfg, VERSION, _trace_body),

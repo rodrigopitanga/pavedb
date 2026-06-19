@@ -14,7 +14,7 @@ from starlette.background import BackgroundTask
 
 from pave.auth import AuthContext, actor_of, auth_ctx, tenant_limit_gate
 from pave.log import ops_event
-from pave.metrics import inc, reset as metrics_reset
+from pave.metrics import reset as metrics_reset
 from pave.schemas import (
     GetQueryLogResponse,
     QueryReplayResponse,
@@ -57,7 +57,6 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         if not ctx.is_admin:
             return error(
                 403,
@@ -122,7 +121,6 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         store: BaseStore = Depends(current_store),
         file: UploadFile = File(...),
     ):
-        inc("requests_total")
         if not ctx.is_admin:
             return error(
                 403,
@@ -169,7 +167,6 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(auth_ctx),
     ):
-        inc("requests_total")
         if not ctx.is_admin:
             return error(
                 403,
@@ -195,7 +192,6 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         if not ctx.is_admin:
             return error(
                 403,
@@ -238,7 +234,6 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         if not ctx.is_admin:
             return error(
                 403,
@@ -286,7 +281,6 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         if not ctx.is_admin:
             return error(
                 403,
@@ -343,7 +337,6 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         if not ctx.is_admin:
             return error(
                 403,

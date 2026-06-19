@@ -10,7 +10,6 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from pave.auth import AuthContext, actor_of, auth_ctx, tenant_rate_limit
 from pave.log import ops_event
-from pave.metrics import inc
 from pave.schemas import (
     GetQueryLogResponse,
     ListQueryLogsResponse,
@@ -63,7 +62,6 @@ def build_search_router(
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         result = svc_list_query_logs(
             store,
             tenant,
@@ -103,7 +101,6 @@ def build_search_router(
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         result = svc_get_query_log_entry_scoped(
             store,
             tenant,
@@ -149,7 +146,6 @@ def build_search_router(
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         return await do_search(
             functools.partial(
                 svc_replay_query_scoped,
@@ -191,7 +187,6 @@ def build_search_router(
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         include_common = bool(cfg.common_enabled)
         return await do_search(
             functools.partial(
@@ -243,7 +238,6 @@ def build_search_router(
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         include_common = bool(cfg.common_enabled)
         return await do_search(
             functools.partial(
@@ -290,7 +284,6 @@ def build_search_router(
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         if not cfg.common_enabled:
             return trace(
                 {
@@ -349,7 +342,6 @@ def build_search_router(
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         if not cfg.common_enabled:
             return trace(
                 {

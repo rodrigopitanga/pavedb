@@ -13,7 +13,6 @@ from pydantic import ValidationError
 from pave.auth import AuthContext, tenant_rate_limit
 from pave.config import get_logger
 from pave.log import ops_event
-from pave.metrics import inc
 from pave.schemas import (
     BatchIngestDocumentsBody,
     BatchIngestDocumentsResponse,
@@ -68,7 +67,6 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         result = svc_list_documents(store, tenant, collection)
         if not result.get("ok"):
             return error(
@@ -117,7 +115,6 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         is_json = (
             request.headers.get("content-type", "")
             .split(";", 1)[0]
@@ -307,7 +304,6 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         max_i = request.app.state.max_ingests
         if max_i > 0:
             if request.app.state.active_ingests >= max_i:
@@ -402,7 +398,6 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         result = svc_delete_document(store, tenant, collection, docid)
         if not result.get("ok"):
             return error(
@@ -436,7 +431,6 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         result = svc_list_chunks(store, tenant, collection, docid)
         if not result.get("ok"):
             return error(
@@ -471,7 +465,6 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         result = svc_get_document(store, tenant, collection, docid)
         if not result.get("ok"):
             error_type = result.get("error_type", "failed")
@@ -510,7 +503,6 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         result = svc_get_chunk(store, tenant, collection, rid)
         if not result.get("ok"):
             status = 404 if result.get("error_type") == "not_found" else 500
@@ -545,7 +537,6 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        inc("requests_total")
         result = svc_get_chunk_content(store, tenant, collection, rid)
         if not result.get("ok"):
             status = 404 if result.get("error_type") == "not_found" else 500
