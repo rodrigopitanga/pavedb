@@ -1453,7 +1453,7 @@ class LocalStore(BaseStore):
         take the write side, so same-collection searches can overlap without
         racing cache close or data-dir replacement.
         """
-        _fspec_str = json.dumps(dict(filters))
+        _fspec_str = "N/A" if filters is None else json.dumps(dict(filters))
         log.debug(f"SEARCH-IN: tenant> {tenant} coll> {collection} query> {query} \
                   k> {k} filters> {_fspec_str}")
         _perf = _time.perf_counter

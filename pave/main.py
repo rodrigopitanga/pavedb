@@ -92,11 +92,18 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     async def lifespan(app: FastAPI):
         metrics_flush_task = asyncio.create_task(_flush_metrics_periodically())
         if cfg.get("embedder.warmup_default"):
+            started = time.perf_counter()
             try:
                 app.state.store.warm()
-                log.info("Default store warm-up complete")
+                elapsed_ms = (time.perf_counter() - started) * 1000
+                log.info("Default store warm-up complete in %.1f ms", elapsed_ms)
             except Exception as exc:
-                log.warning(f"Default store warm-up failed: {exc}")
+                elapsed_ms = (time.perf_counter() - started) * 1000
+                log.warning(
+                    "Default store warm-up failed after %.1f ms: %s",
+                    elapsed_ms,
+                    exc,
+                )
         try:
             yield
         finally:
@@ -545,9 +552,11 @@ def main_srv(argv=None):
         "unlimited (0 disables gate)" if _tcap == 0 else str(_tcap)
     )
     _inst_desc = cfg.get("instance.desc")
+    log.info(" ")
     log.info(f"┌─ {software_title('pavesrv', emoji=True)}")
     log.info(f"│  {product_display_name(cfg.get('instance.name'))} — {_inst_desc}")
     log.info(f"│  {COPYRIGHT}")
+    log.info("│")
     _fields = [
         f"auth={cfg.get('auth.mode')}",
         f"store={cfg.get('vector_store.type')}",
@@ -563,6 +572,7 @@ def main_srv(argv=None):
     for _line in _wrap_banner_fields(_fields):
         log.info(_line)
     log.info("└" + "─" * 40)
+    log.info(" ")
 
     # Access log routing
     _acc_val = str(_acc_dest).strip().lower() if _acc_dest else ""
