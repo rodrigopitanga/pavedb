@@ -67,3 +67,50 @@ def test_dev_mode_defaults_to_debug_without_log_level_env(monkeypatch, tmp_path)
     main_mod.main_srv(["--home", str(home)])
 
     assert calls["kwargs"]["log_level"] == "debug"
+
+
+def test_main_srv_routes_access_log_to_file(monkeypatch, tmp_path):
+    calls: dict[str, object] = {}
+    home = tmp_path / "instance"
+    access_log = tmp_path / "logs" / "access.log"
+
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
+    monkeypatch.setenv("PAVEDB_LOG__ACCESS_LOG", str(access_log))
+    monkeypatch.setattr(main_mod, "enforce_policy", lambda _cfg: None)
+    monkeypatch.setattr(main_mod, "resolve_bind", lambda _cfg: ("127.0.0.1", 8086))
+    monkeypatch.setattr(
+        main_mod.uvicorn,
+        "run",
+        lambda *args, **kwargs: calls.update({"args": args, "kwargs": kwargs}),
+    )
+
+    main_mod.main_srv(["--home", str(home)])
+
+    log_config = calls["kwargs"]["log_config"]
+    access_handler = log_config["handlers"]["access"]
+    assert calls["kwargs"]["access_log"] is True
+    assert access_handler["class"] == "logging.FileHandler"
+    assert access_handler["filename"] == str(access_log)
+    assert access_log.parent.is_dir()
+
+
+def test_main_srv_leaves_stdout_access_log_on_uvicorn_default(
+    monkeypatch, tmp_path
+):
+    calls: dict[str, object] = {}
+    home = tmp_path / "instance"
+
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
+    monkeypatch.setenv("PAVEDB_LOG__ACCESS_LOG", "stdout")
+    monkeypatch.setattr(main_mod, "enforce_policy", lambda _cfg: None)
+    monkeypatch.setattr(main_mod, "resolve_bind", lambda _cfg: ("127.0.0.1", 8086))
+    monkeypatch.setattr(
+        main_mod.uvicorn,
+        "run",
+        lambda *args, **kwargs: calls.update({"args": args, "kwargs": kwargs}),
+    )
+
+    main_mod.main_srv(["--home", str(home)])
+
+    assert calls["kwargs"]["access_log"] is True
+    assert "log_config" not in calls["kwargs"]

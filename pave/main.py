@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import argparse, asyncio, os, logging, time, uuid
+import argparse, asyncio, copy, os, logging, time, uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 import uvicorn
@@ -393,6 +393,16 @@ def _wrap_banner_fields(
     return lines
 
 
+def _uvicorn_access_log_config(path: str) -> dict:
+    log_config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
+    log_config["handlers"]["access"] = {
+        "formatter": "access",
+        "class": "logging.FileHandler",
+        "filename": path,
+    }
+    return log_config
+
+
 def main_srv(argv=None):
     """
     HTTP server entrypoint.
@@ -525,6 +535,7 @@ def main_srv(argv=None):
 
     # Access log routing
     _acc_val = str(_acc_dest).strip().lower() if _acc_dest else ""
+    _access_log_config = None
     if _acc_val and _acc_val not in ("null", "none"):
         if _acc_val != "stdout":
             try:
@@ -532,9 +543,7 @@ def main_srv(argv=None):
                 access_dir = os.path.dirname(access_path)
                 if access_dir:
                     os.makedirs(access_dir, exist_ok=True)
-                logging.getLogger("uvicorn.access").addHandler(
-                    logging.FileHandler(access_path)
-                )
+                _access_log_config = _uvicorn_access_log_config(access_path)
             except OSError as exc:
                 log.warning(
                     "access log disabled: cannot open %s (%s)", _acc_dest, exc
@@ -542,15 +551,18 @@ def main_srv(argv=None):
     _access_log = _acc_val not in ("", "null", "none")
 
     # run server
-    uvicorn.run("pave.main:app",
-                host=host,
-                port=port,
-                reload=reload,
-                workers=workers,
-                log_level=log_level,
-                timeout_keep_alive=timeout_keep_alive,
-                access_log=_access_log,
-                )
+    _run_kwargs = {
+        "host": host,
+        "port": port,
+        "reload": reload,
+        "workers": workers,
+        "log_level": log_level,
+        "timeout_keep_alive": timeout_keep_alive,
+        "access_log": _access_log,
+    }
+    if _access_log_config:
+        _run_kwargs["log_config"] = _access_log_config
+    uvicorn.run("pave.main:app", **_run_kwargs)
 
 # Lazy module-level `app` — only built when first accessed (e.g. by uvicorn).
 # Importing `build_app` or `VERSION` from this module is now side-effect-free.
