@@ -3,10 +3,14 @@
 
 from __future__ import annotations
 
-import argparse, asyncio, copy, os, logging, time, uuid
+import argparse, asyncio, copy, os, logging, signal, sys, threading, time, uuid
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager, contextmanager, suppress
 import uvicorn
+from uvicorn.config import Config
+from uvicorn.main import STARTUP_FAILURE
+from uvicorn.server import HANDLED_SIGNALS, Server
+from uvicorn.supervisors import ChangeReload, Multiprocess
 
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.encoders import jsonable_encoder
@@ -46,6 +50,13 @@ import pave.log as ops_log
 
 METRICS_FLUSH_INTERVAL_SECONDS = 10.5
 METRICS_SNAPSHOT_IDLE_SECONDS = 0.5
+GRACEFUL_SHUTDOWN_MESSAGE = (
+    "Finishing current work, shutting down soon. Press Ctrl+C again to "
+    "shut down immediately (potential data loss)."
+)
+FORCE_SHUTDOWN_MESSAGE = (
+    "Immediate shutdown requested; exiting now (potential data loss)."
+)
 
 
 def _hw_info() -> dict:
@@ -78,6 +89,100 @@ async def _flush_metrics_periodically() -> None:
     while True:
         await asyncio.sleep(METRICS_FLUSH_INTERVAL_SECONDS)
         metrics_flush_if_idle(METRICS_SNAPSHOT_IDLE_SECONDS)
+
+
+class PaveServer(Server):
+    @contextmanager
+    def capture_signals(self):
+        if threading.current_thread() is not threading.main_thread():
+            yield
+            return
+        original_handlers = {
+            sig: signal.signal(sig, self.handle_exit)
+            for sig in HANDLED_SIGNALS
+        }
+        try:
+            yield
+        finally:
+            for sig, handler in original_handlers.items():
+                signal.signal(sig, handler)
+
+    def handle_exit(self, sig: int, frame) -> None:
+        self._captured_signals.append(sig)
+        if self.should_exit:
+            # SIGTERM during an existing graceful shutdown is the
+            # reloader/multiproc parent winding us up after we already
+            # accepted the user's SIGINT; only escalate on a real second
+            # user-issued SIGINT.
+            if sig == signal.SIGINT:
+                get_logger().warning(FORCE_SHUTDOWN_MESSAGE)
+                self.force_exit = True
+            return
+        get_logger().info(GRACEFUL_SHUTDOWN_MESSAGE)
+        self.should_exit = True
+
+
+class PaveMultiprocess(Multiprocess):
+    def _request_shutdown(self) -> None:
+        if self.should_exit.is_set():
+            get_logger().warning(FORCE_SHUTDOWN_MESSAGE)
+            for process in self.processes:
+                process.kill()
+            return
+        # Each worker prints GRACEFUL on its own terminal SIGINT; parent
+        # stays quiet so a single Ctrl+C produces a single message.
+        self.should_exit.set()
+
+    def handle_int(self) -> None:
+        self._request_shutdown()
+
+    def handle_term(self) -> None:
+        self._request_shutdown()
+
+    def handle_break(self) -> None:
+        self._request_shutdown()
+
+
+class PaveReload(ChangeReload):
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._pave_shutdown_requested = False
+
+    def signal_handler(self, sig: int, frame) -> None:
+        if self._pave_shutdown_requested:
+            get_logger().warning(FORCE_SHUTDOWN_MESSAGE)
+            self.process.kill()
+            self.should_exit.set()
+            return
+        self._pave_shutdown_requested = True
+        # The reload child prints GRACEFUL when it receives the terminal
+        # SIGINT; parent stays quiet to avoid duplicating the message.
+        if sys.platform == "win32" and self.is_restarting:
+            self.is_restarting = False
+        else:
+            self.should_exit.set()
+
+
+def _run_pave_server(app: str, **kwargs) -> None:
+    config = Config(app, **kwargs)
+    config.load_app()
+    pirex = PaveServer(config=config)
+    try:
+        if config.should_reload:
+            sock = config.bind_socket()
+            PaveReload(config, target=pirex.run, sockets=[sock]).run()
+        elif (config.workers or 1) > 1:
+            sock = config.bind_socket()
+            PaveMultiprocess(config, target=pirex.run, sockets=[sock]).run()
+        else:
+            pirex.run()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if config.uds and os.path.exists(config.uds):
+            os.remove(config.uds)
+    if not pirex.started and not config.should_reload and (config.workers or 1) == 1:
+        sys.exit(STARTUP_FAILURE)
 
 
 # Dependency injection builder
@@ -114,7 +219,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             ops_log.close()
             for _exec in (app.state.search_executor, app.state.ingest_executor):
                 if _exec is not None:
-                    _exec.shutdown(wait=False)
+                    _exec.shutdown(wait=True)
 
     app = FastAPI(
         title=product_display_name(cfg.get("instance.name")),
@@ -603,7 +708,7 @@ def main_srv(argv=None):
     }
     if _access_log_config:
         _run_kwargs["log_config"] = _access_log_config
-    uvicorn.run("pave.main:app", **_run_kwargs)
+    _run_pave_server("pave.main:app", **_run_kwargs)
 
 # Lazy module-level `app` — only built when first accessed (e.g. by uvicorn).
 # Importing `build_app` or `VERSION` from this module is now side-effect-free.
