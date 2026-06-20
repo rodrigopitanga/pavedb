@@ -1,20 +1,72 @@
 <!-- (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-# Client / Library Plan (P1-15 + Python HTTP client + CLI port)
+# Client / Library Plan (P1-15 + P1-24 + CLI port)
 
 PaveDB's core principle: **the service layer is the API; HTTP is
 just one transport.** This plan defines a single client interface
 that every transport implements, so caller code is identical
 whether PaveDB runs in-process or behind a server.
 
+## Distribution
+
+Package split:
+
+- `pavedb-client`: Python distribution containing the public
+  client API, `HttpClient`, transport-neutral `Client` /
+  `Collection` contracts, exceptions, connection dispatch, and
+  shared request/response helpers. It must not import server,
+  store, service, or embedder modules at import time.
+- `pavedb`: server/local-engine distribution. Depends on
+  `pavedb-client` and provides the local provider that backs
+  `LocalClient` with `pave.service`, `LocalStore`, and embedders.
+
+Install behavior:
+
+```bash
+pip install pavedb-client
+# HTTP client only
+
+pip install pavedb-client pavedb
+# HTTP client plus local persisted engine
+```
+
+There is no package dependency cycle. `pavedb` depends on
+`pavedb-client`; `pavedb-client` discovers local mode through an
+optional provider only when a caller asks for a local target.
+
+Runtime flow:
+
+```text
+pavedb_client.connect("https://host")
+  -> HttpClient
+  -> PaveDB HTTP API
+
+pavedb_client.connect("./data")
+  -> discover local provider registered by installed `pavedb`
+  -> pavedb.local_client.LocalClient
+  -> pave.service
+  -> LocalStore / CatalogDB / CollectionDB / FaissBackend / embedders
+```
+
+If only `pavedb-client` is installed, local targets fail with a
+clear `local_client_unavailable` error telling the user to install
+`pavedb`.
+
+Implementation note: move transport-neutral pieces out of the
+current `pave/client.py` into the client package, but keep the
+service/store-backed `LocalClient` implementation in the `pavedb`
+distribution. Use Python entry points or an equivalent provider
+registry so the client wheel does not directly depend on the local
+engine package.
+
 Sequence:
 
 - **P1-15 — Embedded/library mode (v1.0).** In-process
   `LocalClient` + `Collection` over `service.py`. No uvicorn.
-- **Python HTTP client (v1.1).** `HttpClient` implementing the
-  same `Client`/`Collection` interface — mimics the library. This
-  is the *next* item after P1-15.
+- **P1-24 — Python HTTP client (v1.0).** `HttpClient`
+  implementing the same `Client`/`Collection` interface — mimics
+  the library. This is the *next* item after P1-15.
 - **CLI port (sub-task of the HTTP client item).** Move the CLI
   off direct `service.py` calls onto the client abstraction, so
   `pavecli --remote http://…` swaps `LocalClient` for `HttpClient`.
@@ -53,7 +105,7 @@ a path, a network target always needs a scheme. Ambiguity here
 |---|---|---|
 | `connect()` or `connect(":memory:")` | ephemeral local client (temp dir) | deleted on `close()` / `with` exit |
 | `connect("./data")` | persistent local client | on disk |
-| `connect("http://…")` / `https://` | HTTP client *(reserved — raises until v1.1)* | remote |
+| `connect("http://…")` / `https://` | HTTP client | remote |
 
 `connect("localhost")` is a **path** (`./localhost`), not HTTP. To
 reach a local server: `connect("http://localhost:8080")`.
