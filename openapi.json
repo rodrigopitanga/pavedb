@@ -1,0 +1,6225 @@
+{
+  "components": {
+    "schemas": {
+      "BatchDocumentInput": {
+        "description": "One raw-text document in a batch ingest request.",
+        "properties": {
+          "docid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional stable document id; generated when omitted.",
+            "examples": [
+              "note-1"
+            ],
+            "title": "Docid"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional user metadata stored with the document.",
+            "examples": [
+              {
+                "source": "manual"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "text": {
+            "description": "Raw text to index as one document.",
+            "examples": [
+              "Captain Nemo commands the Nautilus."
+            ],
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "BatchDocumentInput",
+        "type": "object"
+      },
+      "BatchIngestDocumentResult": {
+        "description": "Per-document result for batch ingest.",
+        "properties": {
+          "chunks": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Number of chunks indexed on success.",
+            "examples": [
+              1
+            ],
+            "title": "Chunks"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Failure code for this item.",
+            "examples": [
+              "no_text_extracted"
+            ],
+            "title": "Code"
+          },
+          "docid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Document id, when known.",
+            "examples": [
+              "note-1"
+            ],
+            "title": "Docid"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Failure message for this item.",
+            "examples": [
+              "no text extracted"
+            ],
+            "title": "Error"
+          },
+          "index": {
+            "description": "Zero-based item index.",
+            "examples": [
+              0
+            ],
+            "title": "Index",
+            "type": "integer"
+          },
+          "ok": {
+            "description": "Whether this document was ingested.",
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "index"
+        ],
+        "title": "BatchIngestDocumentResult",
+        "type": "object"
+      },
+      "BatchIngestDocumentsBody": {
+        "description": "Batch raw-text document ingest request.",
+        "properties": {
+          "documents": {
+            "description": "Documents to ingest.",
+            "examples": [
+              [
+                {
+                  "docid": "note-1",
+                  "metadata": {
+                    "source": "manual"
+                  },
+                  "text": "Captain Nemo commands the Nautilus."
+                }
+              ]
+            ],
+            "items": {
+              "$ref": "#/components/schemas/BatchDocumentInput"
+            },
+            "minItems": 1,
+            "title": "Documents",
+            "type": "array"
+          }
+        },
+        "required": [
+          "documents"
+        ],
+        "title": "BatchIngestDocumentsBody",
+        "type": "object"
+      },
+      "BatchIngestDocumentsResponse": {
+        "description": "Result of ingesting several raw-text documents.",
+        "properties": {
+          "collection": {
+            "description": "Collection scope.",
+            "examples": [
+              "books"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of items processed.",
+            "examples": [
+              2
+            ],
+            "title": "Count",
+            "type": "integer"
+          },
+          "documents": {
+            "description": "Per-document ingest results.",
+            "items": {
+              "$ref": "#/components/schemas/BatchIngestDocumentResult"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "failed": {
+            "description": "Number of failed items.",
+            "examples": [
+              0
+            ],
+            "title": "Failed",
+            "type": "integer"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "succeeded": {
+            "description": "Number of successful items.",
+            "examples": [
+              2
+            ],
+            "title": "Succeeded",
+            "type": "integer"
+          },
+          "tenant": {
+            "description": "Tenant scope.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "collection",
+          "documents",
+          "count",
+          "succeeded",
+          "failed"
+        ],
+        "title": "BatchIngestDocumentsResponse",
+        "type": "object"
+      },
+      "Body_ingest_document_v1_collections__tenant___collection__documents_post": {
+        "properties": {
+          "docid": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Docid"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "contentMediaType": "application/octet-stream",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          }
+        },
+        "title": "Body_ingest_document_v1_collections__tenant___collection__documents_post",
+        "type": "object"
+      },
+      "Body_restore_archive_v1_admin_archive_put": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_restore_archive_v1_admin_archive_put",
+        "type": "object"
+      },
+      "ChunkSummary": {
+        "description": "Compact entry for chunk listings.",
+        "properties": {
+          "chunk_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Position of the chunk within the document.",
+            "examples": [
+              "0/42"
+            ],
+            "title": "Chunk Path"
+          },
+          "ingested_at": {
+            "description": "When the chunk was ingested (ISO 8601).",
+            "examples": [
+              "2026-03-07T12:00:00Z"
+            ],
+            "title": "Ingested At",
+            "type": "string"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "description": "Provenance and user metadata for the chunk.",
+            "examples": [
+              {
+                "offset": 21000
+              }
+            ],
+            "title": "Meta",
+            "type": "object"
+          },
+          "rid": {
+            "description": "Chunk id.",
+            "examples": [
+              "verne-20k::chunk_42"
+            ],
+            "title": "Rid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "rid",
+          "meta",
+          "ingested_at"
+        ],
+        "title": "ChunkSummary",
+        "type": "object"
+      },
+      "CollectionDetailResponse": {
+        "description": "Full detail for one collection.",
+        "properties": {
+          "chunk_count": {
+            "description": "Number of chunks.",
+            "examples": [
+              128
+            ],
+            "title": "Chunk Count",
+            "type": "integer"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the collection was created (ISO 8601).",
+            "examples": [
+              "2026-03-07T12:00:00Z"
+            ],
+            "title": "Created At"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Human-friendly label.",
+            "examples": [
+              "Books"
+            ],
+            "title": "Display Name"
+          },
+          "doc_count": {
+            "description": "Number of documents.",
+            "examples": [
+              3
+            ],
+            "title": "Doc Count",
+            "type": "integer"
+          },
+          "embed_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Embedding model name.",
+            "examples": [
+              "all-MiniLM-L6-v2"
+            ],
+            "title": "Embed Model"
+          },
+          "embedder_config": {
+            "additionalProperties": true,
+            "description": "Extra embedding options.",
+            "examples": [
+              {}
+            ],
+            "title": "Embedder Config",
+            "type": "object"
+          },
+          "embedder_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Embedding backend in use.",
+            "examples": [
+              "sbert"
+            ],
+            "title": "Embedder Type"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "name": {
+            "description": "Collection slug.",
+            "examples": [
+              "books"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenant": {
+            "description": "Tenant that owns the collection.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          },
+          "vector_space_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Identifier for the embedding model and size shared by this collection's vectors.",
+            "examples": [
+              "sbert:all-MiniLM-L6-v2:384"
+            ],
+            "title": "Vector Space Key"
+          }
+        },
+        "required": [
+          "tenant",
+          "name",
+          "doc_count",
+          "chunk_count"
+        ],
+        "title": "CollectionDetailResponse",
+        "type": "object"
+      },
+      "CollectionSummary": {
+        "description": "Compact entry for collection listings.",
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Human-friendly label.",
+            "examples": [
+              "Books"
+            ],
+            "title": "Display Name"
+          },
+          "embedder_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Embedding backend and model in one label.",
+            "examples": [
+              "sbert / all-MiniLM-L6-v2"
+            ],
+            "title": "Embedder Label"
+          },
+          "name": {
+            "description": "Collection slug.",
+            "examples": [
+              "books"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "vector_space_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Identifier for the embedding model and size shared by this collection's vectors.",
+            "examples": [
+              "sbert:all-MiniLM-L6-v2:384"
+            ],
+            "title": "Vector Space Key"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "CollectionSummary",
+        "type": "object"
+      },
+      "CreateCollectionOptionsBody": {
+        "description": "Optional settings when creating a collection.",
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Human-friendly label for the collection.",
+            "examples": [
+              "Books"
+            ],
+            "title": "Display Name"
+          },
+          "embed_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Embedding model name.",
+            "examples": [
+              "all-MiniLM-L6-v2"
+            ],
+            "title": "Embed Model"
+          },
+          "embedder_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Extra embedding options.",
+            "examples": [
+              {
+                "device": "cpu"
+              }
+            ],
+            "title": "Embedder Config"
+          },
+          "embedder_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Embedding backend to use for this collection.",
+            "examples": [
+              "sbert"
+            ],
+            "title": "Embedder Type"
+          }
+        },
+        "title": "CreateCollectionOptionsBody",
+        "type": "object"
+      },
+      "CreateCollectionResponse": {
+        "description": "A newly created collection.",
+        "properties": {
+          "collection": {
+            "description": "Collection slug.",
+            "examples": [
+              "books"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "display_name": {
+            "description": "Human-friendly label.",
+            "examples": [
+              "Books"
+            ],
+            "title": "Display Name",
+            "type": "string"
+          },
+          "embed_model": {
+            "description": "Embedding model name.",
+            "examples": [
+              "all-MiniLM-L6-v2"
+            ],
+            "title": "Embed Model",
+            "type": "string"
+          },
+          "embedder_config": {
+            "additionalProperties": true,
+            "description": "Extra embedding options.",
+            "examples": [
+              {}
+            ],
+            "title": "Embedder Config",
+            "type": "object"
+          },
+          "embedder_type": {
+            "description": "Embedding backend in use.",
+            "examples": [
+              "sbert"
+            ],
+            "title": "Embedder Type",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "name": {
+            "description": "Collection slug.",
+            "examples": [
+              "books"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenant": {
+            "description": "Tenant that owns the collection.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "name",
+          "collection",
+          "display_name",
+          "embedder_type",
+          "embed_model"
+        ],
+        "title": "CreateCollectionResponse",
+        "type": "object"
+      },
+      "DefaultEmbedderInventory": {
+        "description": "Default embedder resolution.",
+        "properties": {
+          "instance_keys": {
+            "description": "Instance keys in the default routing pool.",
+            "examples": [
+              [
+                "native"
+              ]
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Instance Keys",
+            "type": "array"
+          },
+          "selector": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Configured embedder.default selector, if any.",
+            "examples": [
+              "native"
+            ],
+            "title": "Selector"
+          },
+          "vector_key": {
+            "description": "Default vector-space key.",
+            "examples": [
+              "sbert:sentence-transformers/all-MiniLM-L6-v2:"
+            ],
+            "title": "Vector Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "vector_key",
+          "instance_keys"
+        ],
+        "title": "DefaultEmbedderInventory",
+        "type": "object"
+      },
+      "DeleteCollectionResponse": {
+        "description": "Confirmation of a deleted collection.",
+        "properties": {
+          "deleted": {
+            "description": "Slug of the deleted collection.",
+            "examples": [
+              "books"
+            ],
+            "title": "Deleted",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenant": {
+            "description": "Tenant that owned the collection.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "deleted"
+        ],
+        "title": "DeleteCollectionResponse",
+        "type": "object"
+      },
+      "DeleteDocumentResponse": {
+        "description": "Confirmation of a deleted document.",
+        "properties": {
+          "chunks_deleted": {
+            "description": "Number of chunks removed.",
+            "examples": [
+              42
+            ],
+            "title": "Chunks Deleted",
+            "type": "integer"
+          },
+          "collection": {
+            "description": "Collection it was in.",
+            "examples": [
+              "books"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "docid": {
+            "description": "Id of the deleted document.",
+            "examples": [
+              "verne-20k"
+            ],
+            "title": "Docid",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenant": {
+            "description": "Tenant that owned the document.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "collection",
+          "docid",
+          "chunks_deleted"
+        ],
+        "title": "DeleteDocumentResponse",
+        "type": "object"
+      },
+      "DocumentSummary": {
+        "description": "Compact entry for document listings.",
+        "properties": {
+          "chunk_count": {
+            "description": "Number of chunks.",
+            "examples": [
+              42
+            ],
+            "title": "Chunk Count",
+            "type": "integer"
+          },
+          "docid": {
+            "description": "Document id.",
+            "examples": [
+              "verne-20k"
+            ],
+            "title": "Docid",
+            "type": "string"
+          },
+          "ingested_at": {
+            "description": "When the document was last ingested (ISO 8601).",
+            "examples": [
+              "2026-03-07T12:00:00Z"
+            ],
+            "title": "Ingested At",
+            "type": "string"
+          },
+          "version": {
+            "description": "Revision, incremented on re-ingest.",
+            "examples": [
+              1
+            ],
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "docid",
+          "version",
+          "ingested_at",
+          "chunk_count"
+        ],
+        "title": "DocumentSummary",
+        "type": "object"
+      },
+      "EmbedderInventoryEntry": {
+        "description": "A configured embedder instance exposed without credentials.",
+        "properties": {
+          "embed_model": {
+            "description": "Embedding model name.",
+            "examples": [
+              "sentence-transformers/all-MiniLM-L6-v2"
+            ],
+            "title": "Embed Model",
+            "type": "string"
+          },
+          "embedder_type": {
+            "description": "Embedder implementation type.",
+            "examples": [
+              "sbert"
+            ],
+            "title": "Embedder Type",
+            "type": "string"
+          },
+          "key": {
+            "description": "Configured embedder instance key.",
+            "examples": [
+              "native"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "vector_key": {
+            "description": "Vector-space key produced by this instance.",
+            "examples": [
+              "sbert:sentence-transformers/all-MiniLM-L6-v2:"
+            ],
+            "title": "Vector Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "key",
+          "vector_key",
+          "embedder_type",
+          "embed_model"
+        ],
+        "title": "EmbedderInventoryEntry",
+        "type": "object"
+      },
+      "EmbedderInventoryResponse": {
+        "description": "Configured embedder instances available to a caller.",
+        "properties": {
+          "count": {
+            "description": "Number of configured instances.",
+            "examples": [
+              1
+            ],
+            "title": "Count",
+            "type": "integer"
+          },
+          "default": {
+            "$ref": "#/components/schemas/DefaultEmbedderInventory",
+            "description": "Resolved default embedder."
+          },
+          "embedders": {
+            "description": "Configured embedder instances.",
+            "items": {
+              "$ref": "#/components/schemas/EmbedderInventoryEntry"
+            },
+            "title": "Embedders",
+            "type": "array"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tenant scope for tenant-namespaced requests.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant"
+          }
+        },
+        "required": [
+          "embedders",
+          "default",
+          "count"
+        ],
+        "title": "EmbedderInventoryResponse",
+        "type": "object"
+      },
+      "ErrorResponse": {
+        "description": "API error envelope.",
+        "properties": {
+          "code": {
+            "description": "Stable, machine-readable error code.",
+            "examples": [
+              "not_found"
+            ],
+            "title": "Code",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional structured context about the error.",
+            "examples": [
+              {
+                "collection": "books",
+                "tenant": "demo"
+              }
+            ],
+            "title": "Details"
+          },
+          "error": {
+            "description": "Human-readable error message.",
+            "examples": [
+              "collection 'books' not found"
+            ],
+            "title": "Error",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": false,
+            "description": "Always false on an error response.",
+            "examples": [
+              false
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "ok",
+          "code",
+          "error"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "GetChunkResponse": {
+        "description": "Detail for one chunk.",
+        "properties": {
+          "chunk_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Position of the chunk within the document.",
+            "examples": [
+              "0/42"
+            ],
+            "title": "Chunk Path"
+          },
+          "collection": {
+            "description": "Collection it belongs to.",
+            "examples": [
+              "books"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "docid": {
+            "description": "Document it belongs to.",
+            "examples": [
+              "verne-20k"
+            ],
+            "title": "Docid",
+            "type": "string"
+          },
+          "ingested_at": {
+            "description": "When the chunk was ingested (ISO 8601).",
+            "examples": [
+              "2026-03-07T12:00:00Z"
+            ],
+            "title": "Ingested At",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "description": "Provenance and user metadata for the chunk.",
+            "examples": [
+              {
+                "offset": 21000
+              }
+            ],
+            "title": "Meta",
+            "type": "object"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "rid": {
+            "description": "Chunk id.",
+            "examples": [
+              "verne-20k::chunk_42"
+            ],
+            "title": "Rid",
+            "type": "string"
+          },
+          "tenant": {
+            "description": "Tenant that owns the chunk.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "collection",
+          "docid",
+          "rid",
+          "meta",
+          "ingested_at"
+        ],
+        "title": "GetChunkResponse",
+        "type": "object"
+      },
+      "GetDocumentResponse": {
+        "description": "Detail for one document.",
+        "properties": {
+          "chunk_count": {
+            "description": "Number of chunks.",
+            "examples": [
+              42
+            ],
+            "title": "Chunk Count",
+            "type": "integer"
+          },
+          "chunk_ids": {
+            "description": "Chunk ids that make up the document.",
+            "examples": [
+              [
+                "verne-20k::chunk_0",
+                "verne-20k::chunk_1"
+              ]
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Chunk Ids",
+            "type": "array"
+          },
+          "collection": {
+            "description": "Collection it belongs to.",
+            "examples": [
+              "books"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "docid": {
+            "description": "Document id.",
+            "examples": [
+              "verne-20k"
+            ],
+            "title": "Docid",
+            "type": "string"
+          },
+          "ingested_at": {
+            "description": "When the document was last ingested (ISO 8601).",
+            "examples": [
+              "2026-03-07T12:00:00Z"
+            ],
+            "title": "Ingested At",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "description": "User metadata stored with the document.",
+            "examples": [
+              {
+                "lang": "en"
+              }
+            ],
+            "title": "Metadata",
+            "type": "object"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenant": {
+            "description": "Tenant that owns the document.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          },
+          "version": {
+            "description": "Revision, incremented on re-ingest.",
+            "examples": [
+              1
+            ],
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tenant",
+          "collection",
+          "docid",
+          "version",
+          "ingested_at",
+          "metadata",
+          "chunk_ids",
+          "chunk_count"
+        ],
+        "title": "GetDocumentResponse",
+        "type": "object"
+      },
+      "GetQueryLogResponse": {
+        "description": "A single logged search.",
+        "properties": {
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "query": {
+            "$ref": "#/components/schemas/QueryLogEntry",
+            "description": "The logged search and its results."
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "GetQueryLogResponse",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "IngestDocumentResponse": {
+        "description": "Result of ingesting a document.",
+        "properties": {
+          "chunks": {
+            "description": "Number of chunks created.",
+            "examples": [
+              42
+            ],
+            "title": "Chunks",
+            "type": "integer"
+          },
+          "collection": {
+            "description": "Collection the document went into.",
+            "examples": [
+              "books"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "docid": {
+            "description": "Id of the ingested document.",
+            "examples": [
+              "verne-20k"
+            ],
+            "title": "Docid",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenant": {
+            "description": "Tenant that owns the document.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "collection",
+          "docid",
+          "chunks"
+        ],
+        "title": "IngestDocumentResponse",
+        "type": "object"
+      },
+      "ListChunksResponse": {
+        "description": "All chunks of a document.",
+        "properties": {
+          "chunks": {
+            "description": "The chunks.",
+            "items": {
+              "$ref": "#/components/schemas/ChunkSummary"
+            },
+            "title": "Chunks",
+            "type": "array"
+          },
+          "collection": {
+            "description": "Collection scope.",
+            "examples": [
+              "books"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of chunks.",
+            "examples": [
+              42
+            ],
+            "title": "Count",
+            "type": "integer"
+          },
+          "docid": {
+            "description": "Document the chunks belong to.",
+            "examples": [
+              "verne-20k"
+            ],
+            "title": "Docid",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenant": {
+            "description": "Tenant scope of the listing.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "collection",
+          "docid",
+          "chunks",
+          "count"
+        ],
+        "title": "ListChunksResponse",
+        "type": "object"
+      },
+      "ListCollectionsResponse": {
+        "description": "All collections in a tenant.",
+        "properties": {
+          "collections": {
+            "description": "The collections.",
+            "items": {
+              "$ref": "#/components/schemas/CollectionSummary"
+            },
+            "title": "Collections",
+            "type": "array"
+          },
+          "count": {
+            "description": "Number of collections.",
+            "examples": [
+              2
+            ],
+            "title": "Count",
+            "type": "integer"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenant": {
+            "description": "Tenant scope of the listing.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "collections",
+          "count"
+        ],
+        "title": "ListCollectionsResponse",
+        "type": "object"
+      },
+      "ListDocumentsResponse": {
+        "description": "All documents in a collection.",
+        "properties": {
+          "collection": {
+            "description": "Collection scope.",
+            "examples": [
+              "books"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "count": {
+            "description": "Number of documents.",
+            "examples": [
+              3
+            ],
+            "title": "Count",
+            "type": "integer"
+          },
+          "documents": {
+            "description": "The documents.",
+            "items": {
+              "$ref": "#/components/schemas/DocumentSummary"
+            },
+            "title": "Documents",
+            "type": "array"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenant": {
+            "description": "Tenant scope of the listing.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "collection",
+          "documents",
+          "count"
+        ],
+        "title": "ListDocumentsResponse",
+        "type": "object"
+      },
+      "ListQueryLogsResponse": {
+        "description": "A page of logged searches.",
+        "properties": {
+          "collection": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Collection scope, if narrowed.",
+            "examples": [
+              "books"
+            ],
+            "title": "Collection"
+          },
+          "count": {
+            "description": "Number of entries returned.",
+            "examples": [
+              3
+            ],
+            "title": "Count",
+            "type": "integer"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "queries": {
+            "description": "The logged searches.",
+            "items": {
+              "$ref": "#/components/schemas/QueryLogSummary"
+            },
+            "title": "Queries",
+            "type": "array"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenant": {
+            "description": "Tenant scope of the listing.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "queries",
+          "count"
+        ],
+        "title": "ListQueryLogsResponse",
+        "type": "object"
+      },
+      "ListTenantsResponse": {
+        "description": "All known tenants.",
+        "properties": {
+          "count": {
+            "description": "Number of tenants.",
+            "examples": [
+              2
+            ],
+            "title": "Count",
+            "type": "integer"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenants": {
+            "description": "Tenant slugs.",
+            "examples": [
+              [
+                "demo",
+                "acme"
+              ]
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Tenants",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tenants",
+          "count"
+        ],
+        "title": "ListTenantsResponse",
+        "type": "object"
+      },
+      "MoveCollectionBody": {
+        "description": "Request body for renaming a collection.",
+        "properties": {
+          "new_name": {
+            "description": "New collection slug.",
+            "examples": [
+              "library"
+            ],
+            "title": "New Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "new_name"
+        ],
+        "title": "MoveCollectionBody",
+        "type": "object"
+      },
+      "MoveCollectionResponse": {
+        "description": "Confirmation of a renamed collection.",
+        "properties": {
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "new_name": {
+            "description": "New collection slug.",
+            "examples": [
+              "library"
+            ],
+            "title": "New Name",
+            "type": "string"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "old_name": {
+            "description": "Previous collection slug.",
+            "examples": [
+              "books"
+            ],
+            "title": "Old Name",
+            "type": "string"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenant": {
+            "description": "Tenant that owns the collection.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "old_name",
+          "new_name"
+        ],
+        "title": "MoveCollectionResponse",
+        "type": "object"
+      },
+      "QueryLogEntry": {
+        "description": "A recorded search and its results.",
+        "properties": {
+          "actor": {
+            "description": "Who ran the search.",
+            "examples": [
+              "demo-key"
+            ],
+            "title": "Actor",
+            "type": "string"
+          },
+          "collection": {
+            "description": "Collection searched.",
+            "examples": [
+              "books"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "common_collection": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The merged shared collection, if any.",
+            "examples": [
+              "shared"
+            ],
+            "title": "Common Collection"
+          },
+          "common_tenant": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Tenant of the merged shared collection, if any.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Common Tenant"
+          },
+          "executed_at": {
+            "description": "When the search ran (ISO 8601).",
+            "examples": [
+              "2026-03-07T12:00:00Z"
+            ],
+            "title": "Executed At",
+            "type": "string"
+          },
+          "filters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Metadata filters applied to the search.",
+            "examples": [
+              {
+                "lang": "en"
+              }
+            ],
+            "title": "Filters"
+          },
+          "include_common": {
+            "default": false,
+            "description": "Whether shared results were merged in.",
+            "examples": [
+              false
+            ],
+            "title": "Include Common",
+            "type": "boolean"
+          },
+          "k": {
+            "description": "Maximum number of hits requested.",
+            "examples": [
+              5
+            ],
+            "title": "K",
+            "type": "integer"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total time for the search, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "query_id": {
+            "description": "Id of the logged search.",
+            "examples": [
+              "q-7b2c-19af"
+            ],
+            "title": "Query Id",
+            "type": "string"
+          },
+          "query_text": {
+            "description": "The search text.",
+            "examples": [
+              "captain nemo"
+            ],
+            "title": "Query Text",
+            "type": "string"
+          },
+          "replay_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Original query id when this entry is a replay.",
+            "examples": [
+              "q-1a2b-0001"
+            ],
+            "title": "Replay Of"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id of the original request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "result_count": {
+            "description": "Number of hits returned.",
+            "examples": [
+              3
+            ],
+            "title": "Result Count",
+            "type": "integer"
+          },
+          "result_ids": {
+            "description": "Chunk ids returned, in rank order.",
+            "examples": [
+              [
+                "verne-20k::chunk_42"
+              ]
+            ],
+            "items": {
+              "type": "string"
+            },
+            "title": "Result Ids",
+            "type": "array"
+          },
+          "tenant": {
+            "description": "Tenant the search ran in.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          },
+          "timing": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-phase latency breakdown, in ms.",
+            "examples": [
+              {
+                "embed_ms": 1.2,
+                "search_ms": 8.4
+              }
+            ],
+            "title": "Timing"
+          }
+        },
+        "required": [
+          "query_id",
+          "tenant",
+          "collection",
+          "actor",
+          "query_text",
+          "k",
+          "result_ids",
+          "result_count",
+          "executed_at"
+        ],
+        "title": "QueryLogEntry",
+        "type": "object"
+      },
+      "QueryLogSummary": {
+        "description": "Compact entry for query-log listings.",
+        "properties": {
+          "executed_at": {
+            "description": "When the search ran (ISO 8601).",
+            "examples": [
+              "2026-03-07T12:00:00Z"
+            ],
+            "title": "Executed At",
+            "type": "string"
+          },
+          "k": {
+            "description": "Maximum number of hits requested.",
+            "examples": [
+              5
+            ],
+            "title": "K",
+            "type": "integer"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total time for the search, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "query_id": {
+            "description": "Id of the logged search.",
+            "examples": [
+              "q-7b2c-19af"
+            ],
+            "title": "Query Id",
+            "type": "string"
+          },
+          "query_text": {
+            "description": "The search text.",
+            "examples": [
+              "captain nemo"
+            ],
+            "title": "Query Text",
+            "type": "string"
+          },
+          "replay_of": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Original query id when this entry is a replay.",
+            "examples": [
+              "q-1a2b-0001"
+            ],
+            "title": "Replay Of"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id of the original request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "result_count": {
+            "description": "Number of hits returned.",
+            "examples": [
+              3
+            ],
+            "title": "Result Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "query_id",
+          "query_text",
+          "k",
+          "result_count",
+          "executed_at"
+        ],
+        "title": "QueryLogSummary",
+        "type": "object"
+      },
+      "QueryReplayResponse": {
+        "description": "Results of re-running a logged search.",
+        "properties": {
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "matches": {
+            "description": "Hits from the replay.",
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            },
+            "title": "Matches",
+            "type": "array"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "original_latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latency of the original search, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Original Latency Ms"
+          },
+          "original_query_id": {
+            "description": "Id of the search that was replayed.",
+            "examples": [
+              "q-7b2c-19af"
+            ],
+            "title": "Original Query Id",
+            "type": "string"
+          },
+          "original_result_count": {
+            "description": "Hit count of the original search.",
+            "examples": [
+              3
+            ],
+            "title": "Original Result Count",
+            "type": "integer"
+          },
+          "replay_query_id": {
+            "description": "Id assigned to this replay.",
+            "examples": [
+              "q-9f0a-22b1"
+            ],
+            "title": "Replay Query Id",
+            "type": "string"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "timing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchTiming"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-phase latency breakdown."
+          }
+        },
+        "required": [
+          "original_query_id",
+          "replay_query_id",
+          "matches",
+          "original_result_count"
+        ],
+        "title": "QueryReplayResponse",
+        "type": "object"
+      },
+      "ResetMetricsResponse": {
+        "description": "Confirmation that metrics were reset.",
+        "properties": {
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "reset_at": {
+            "description": "When metrics were reset (Unix seconds).",
+            "examples": [
+              1709815200.0
+            ],
+            "title": "Reset At",
+            "type": "number"
+          }
+        },
+        "required": [
+          "reset_at"
+        ],
+        "title": "ResetMetricsResponse",
+        "type": "object"
+      },
+      "RestoreArchiveResponse": {
+        "description": "Confirmation of a restored archive.",
+        "properties": {
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          }
+        },
+        "title": "RestoreArchiveResponse",
+        "type": "object"
+      },
+      "SearchBody": {
+        "description": "Search request body.",
+        "properties": {
+          "filters": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Metadata equality filters to narrow results.",
+            "examples": [
+              {
+                "lang": "en"
+              }
+            ],
+            "title": "Filters"
+          },
+          "k": {
+            "default": 5,
+            "description": "Maximum number of hits.",
+            "examples": [
+              5
+            ],
+            "title": "K",
+            "type": "integer"
+          },
+          "q": {
+            "description": "The search text.",
+            "examples": [
+              "captain nemo"
+            ],
+            "title": "Q",
+            "type": "string"
+          }
+        },
+        "required": [
+          "q"
+        ],
+        "title": "SearchBody",
+        "type": "object"
+      },
+      "SearchResponse": {
+        "description": "Search results with optional timing.",
+        "properties": {
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "matches": {
+            "description": "Ranked list of hits, best first.",
+            "items": {
+              "$ref": "#/components/schemas/SearchResult"
+            },
+            "title": "Matches",
+            "type": "array"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "query_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Id for this search, usable with the /queries/{query_id} and /queries/{query_id}/replay endpoints. Omitted when query logging is disabled.",
+            "examples": [
+              "q-7b2c-19af"
+            ],
+            "title": "Query Id"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "timing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SearchTiming"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-phase latency breakdown."
+          }
+        },
+        "required": [
+          "matches"
+        ],
+        "title": "SearchResponse",
+        "type": "object"
+      },
+      "SearchResult": {
+        "description": "A single search hit.",
+        "properties": {
+          "collection": {
+            "description": "Collection the hit came from.",
+            "examples": [
+              "books"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "id": {
+            "description": "Chunk id of the matching passage.",
+            "examples": [
+              "verne-20k::chunk_42"
+            ],
+            "title": "Id",
+            "type": "string"
+          },
+          "match_reason": {
+            "description": "Why this result matched.",
+            "examples": [
+              "semantic"
+            ],
+            "title": "Match Reason",
+            "type": "string"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "description": "Provenance and user metadata for the chunk.",
+            "examples": [
+              {
+                "docid": "verne-20k",
+                "offset": 21000,
+                "page": 12
+              }
+            ],
+            "title": "Meta",
+            "type": "object"
+          },
+          "score": {
+            "description": "Relevance score; higher is closer.",
+            "examples": [
+              0.82
+            ],
+            "title": "Score",
+            "type": "number"
+          },
+          "tenant": {
+            "description": "Tenant that owns the hit.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          },
+          "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The matched snippet, when stored.",
+            "examples": [
+              "Captain Nemo conducted me to the central staircase ..."
+            ],
+            "title": "Text"
+          }
+        },
+        "required": [
+          "id",
+          "score",
+          "text",
+          "tenant",
+          "collection",
+          "meta",
+          "match_reason"
+        ],
+        "title": "SearchResult",
+        "type": "object"
+      },
+      "SearchTiming": {
+        "description": "Per-phase latency breakdown, in ms.",
+        "properties": {
+          "embed_ms": {
+            "description": "Time to turn the query into a vector.",
+            "examples": [
+              1.2
+            ],
+            "title": "Embed Ms",
+            "type": "number"
+          },
+          "filter_ms": {
+            "description": "Time spent applying metadata filters.",
+            "examples": [
+              0.6
+            ],
+            "title": "Filter Ms",
+            "type": "number"
+          },
+          "hydrate_ms": {
+            "description": "Time spent loading snippet text and metadata.",
+            "examples": [
+              2.1
+            ],
+            "title": "Hydrate Ms",
+            "type": "number"
+          },
+          "search_ms": {
+            "description": "Time spent finding nearest matches.",
+            "examples": [
+              8.4
+            ],
+            "title": "Search Ms",
+            "type": "number"
+          }
+        },
+        "required": [
+          "embed_ms",
+          "search_ms",
+          "filter_ms",
+          "hydrate_ms"
+        ],
+        "title": "SearchTiming",
+        "type": "object"
+      },
+      "UpdateCollectionBody": {
+        "description": "Request body for editing collection metadata.",
+        "properties": {
+          "display_name": {
+            "description": "New human-friendly label.",
+            "examples": [
+              "Books"
+            ],
+            "title": "Display Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "display_name"
+        ],
+        "title": "UpdateCollectionBody",
+        "type": "object"
+      },
+      "UpdateCollectionResponse": {
+        "description": "Confirmation of updated collection metadata.",
+        "properties": {
+          "display_name": {
+            "description": "Updated label.",
+            "examples": [
+              "Books"
+            ],
+            "title": "Display Name",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "name": {
+            "description": "Collection slug.",
+            "examples": [
+              "books"
+            ],
+            "title": "Name",
+            "type": "string"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenant": {
+            "description": "Tenant that owns the collection.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "name",
+          "display_name"
+        ],
+        "title": "UpdateCollectionResponse",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    },
+    "securitySchemes": {
+      "HTTPBearer": {
+        "scheme": "bearer",
+        "type": "http"
+      }
+    }
+  },
+  "info": {
+    "description": "Vector Search Microservice",
+    "title": "PaveDB",
+    "version": "0.9.2"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/health": {
+      "get": {
+        "description": "Returns ready or degraded, plus the running version.",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health check",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/health/live": {
+      "get": {
+        "description": "Always succeeds while the process is running.",
+        "operationId": "health_live_health_live_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liveness check",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/health/metrics": {
+      "get": {
+        "description": "Counters, version, and hardware info as JSON.",
+        "operationId": "health_metrics_health_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Metrics snapshot",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/health/ready": {
+      "get": {
+        "description": "Returns 503 until storage and embeddings are usable.",
+        "operationId": "health_ready_health_ready_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Readiness check",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/metrics": {
+      "get": {
+        "description": "The same counters in Prometheus exposition format.",
+        "operationId": "metrics_prom_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Prometheus metrics",
+        "tags": [
+          "Health"
+        ]
+      }
+    },
+    "/v1/admin/archive": {
+      "get": {
+        "description": "Streams the whole dataset as a zip; requires the admin key.",
+        "operationId": "dump_archive_v1_admin_archive_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Download an archive",
+        "tags": [
+          "Instance Admin"
+        ]
+      },
+      "put": {
+        "description": "Overwrites current data with the uploaded zip; requires the admin key.",
+        "operationId": "restore_archive_v1_admin_archive_put",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_restore_archive_v1_admin_archive_put"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreArchiveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Restore an archive",
+        "tags": [
+          "Instance Admin"
+        ]
+      }
+    },
+    "/v1/admin/collections/{tenant}/{name}/move": {
+      "post": {
+        "description": "Changes the slug, and therefore the URL; requires the admin key.",
+        "operationId": "move_collection_v1_admin_collections__tenant___name__move_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveCollectionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MoveCollectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Rename a collection",
+        "tags": [
+          "Instance Admin"
+        ]
+      }
+    },
+    "/v1/admin/embedders": {
+      "get": {
+        "description": "Lists configured embedder instances and the resolved default; requires the admin key.",
+        "operationId": "list_embedders_v1_admin_embedders_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbedderInventoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List embedder instances",
+        "tags": [
+          "Instance Admin"
+        ]
+      }
+    },
+    "/v1/admin/metrics": {
+      "delete": {
+        "description": "Zeroes request counters; requires the admin key.",
+        "operationId": "delete_metrics_v1_admin_metrics_delete",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResetMetricsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reset metrics",
+        "tags": [
+          "Instance Admin"
+        ]
+      }
+    },
+    "/v1/admin/queries/{query_id}": {
+      "get": {
+        "description": "Finds a search by id without knowing its tenant; requires the admin key.",
+        "operationId": "get_query_log_v1_admin_queries__query_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "query_id",
+            "required": true,
+            "schema": {
+              "title": "Query Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetQueryLogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get any logged search",
+        "tags": [
+          "Query Admin"
+        ]
+      }
+    },
+    "/v1/admin/queries/{query_id}/replay": {
+      "post": {
+        "description": "Re-runs a search found by id in any tenant; requires the admin key.",
+        "operationId": "replay_query_v1_admin_queries__query_id__replay_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "query_id",
+            "required": true,
+            "schema": {
+              "title": "Query Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryReplayResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Replay any logged search",
+        "tags": [
+          "Query Admin"
+        ]
+      }
+    },
+    "/v1/admin/tenants": {
+      "get": {
+        "description": "Names every tenant on the instance; requires the admin key.",
+        "operationId": "list_tenants_v1_admin_tenants_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListTenantsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List tenants",
+        "tags": [
+          "Instance Admin"
+        ]
+      }
+    },
+    "/v1/collections/{tenant}": {
+      "get": {
+        "description": "One entry per collection, with display name and embedding model.",
+        "operationId": "list_collections_v1_collections__tenant__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListCollectionsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List collections",
+        "tags": [
+          "Collection Catalog"
+        ]
+      }
+    },
+    "/v1/collections/{tenant}/{collection}/chunks/{rid}": {
+      "get": {
+        "description": "Returns the chunk's provenance and metadata, not its text.",
+        "operationId": "get_chunk_handler_v1_collections__tenant___collection__chunks__rid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "title": "Rid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetChunkResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get a chunk",
+        "tags": [
+          "Chunk Inspection"
+        ]
+      }
+    },
+    "/v1/collections/{tenant}/{collection}/chunks/{rid}/content": {
+      "get": {
+        "description": "Returns the chunk's raw text as the response body.",
+        "operationId": "get_chunk_content_handler_v1_collections__tenant___collection__chunks__rid__content_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "rid",
+            "required": true,
+            "schema": {
+              "title": "Rid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get chunk content",
+        "tags": [
+          "Chunk Inspection"
+        ]
+      }
+    },
+    "/v1/collections/{tenant}/{collection}/documents": {
+      "get": {
+        "description": "One entry per document, with version and chunk count.",
+        "operationId": "list_documents_v1_collections__tenant___collection__documents_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListDocumentsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List documents",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "post": {
+        "description": "Chunks, embeds, and indexes a multipart file or JSON raw-text document; reusing a docid replaces it.",
+        "operationId": "ingest_document_v1_collections__tenant___collection__documents_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "csv_has_header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "pattern": "^(auto|yes|no)$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Csv Has Header"
+            }
+          },
+          {
+            "in": "query",
+            "name": "csv_meta_cols",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Csv Meta Cols"
+            }
+          },
+          {
+            "in": "query",
+            "name": "csv_include_cols",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Csv Include Cols"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_ingest_document_v1_collections__tenant___collection__documents_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestDocumentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Request Entity Too Large"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ingest a document",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/collections/{tenant}/{collection}/documents/{docid}": {
+      "delete": {
+        "description": "Removes the document and all chunks derived from it.",
+        "operationId": "delete_document_v1_collections__tenant___collection__documents__docid__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "docid",
+            "required": true,
+            "schema": {
+              "title": "Docid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteDocumentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete a document",
+        "tags": [
+          "Documents"
+        ]
+      },
+      "get": {
+        "description": "Includes stored metadata, version, and its chunk ids.",
+        "operationId": "get_document_v1_collections__tenant___collection__documents__docid__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "docid",
+            "required": true,
+            "schema": {
+              "title": "Docid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetDocumentResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get a document",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/collections/{tenant}/{collection}/documents/{docid}/chunks": {
+      "get": {
+        "description": "Chunks in document order, with provenance metadata.",
+        "operationId": "list_chunks_handler_v1_collections__tenant___collection__documents__docid__chunks_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "docid",
+            "required": true,
+            "schema": {
+              "title": "Docid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListChunksResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List document chunks",
+        "tags": [
+          "Chunk Inspection"
+        ]
+      }
+    },
+    "/v1/collections/{tenant}/{collection}/documents:batch": {
+      "post": {
+        "description": "Indexes several raw-text documents in one request. Each item may provide text, docid, and metadata.",
+        "operationId": "ingest_documents_batch_v1_collections__tenant___collection__documents_batch_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "collection",
+            "required": true,
+            "schema": {
+              "title": "Collection",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchIngestDocumentsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchIngestDocumentsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Ingest documents in a batch",
+        "tags": [
+          "Documents"
+        ]
+      }
+    },
+    "/v1/collections/{tenant}/{name}": {
+      "delete": {
+        "description": "Permanently removes the collection and every document in it.",
+        "operationId": "delete_collection_v1_collections__tenant___name__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteCollectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete a collection",
+        "tags": [
+          "Collection Catalog"
+        ]
+      },
+      "patch": {
+        "description": "Changes editable metadata only; does not re-index documents.",
+        "operationId": "update_collection_v1_collections__tenant___name__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateCollectionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UpdateCollectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update a collection",
+        "tags": [
+          "Collection Catalog"
+        ]
+      },
+      "post": {
+        "description": "Optionally sets the display name and embedding model; returns 201.",
+        "operationId": "create_collection_v1_collections__tenant___name__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CreateCollectionOptionsBody"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateCollectionResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Create a collection",
+        "tags": [
+          "Collection Catalog"
+        ]
+      }
+    },
+    "/v1/collections/{tenant}/{name}/detail": {
+      "get": {
+        "description": "Settings plus document and chunk counts.",
+        "operationId": "get_collection_detail_v1_collections__tenant___name__detail_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CollectionDetailResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get collection detail",
+        "tags": [
+          "Collection Catalog"
+        ]
+      }
+    },
+    "/v1/collections/{tenant}/{name}/queries": {
+      "get": {
+        "description": "Most recent first; omits result bodies, which one-by-id returns.",
+        "operationId": "list_query_logs_handler_v1_collections__tenant___name__queries_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 500,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListQueryLogsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List logged searches",
+        "tags": [
+          "Query Inspection"
+        ]
+      }
+    },
+    "/v1/collections/{tenant}/{name}/queries/{query_id}": {
+      "get": {
+        "description": "Includes the query text, filters, and the chunk ids it returned.",
+        "operationId": "get_query_log_handler_v1_collections__tenant___name__queries__query_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "query_id",
+            "required": true,
+            "schema": {
+              "title": "Query Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetQueryLogResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get a logged search",
+        "tags": [
+          "Query Inspection"
+        ]
+      }
+    },
+    "/v1/collections/{tenant}/{name}/queries/{query_id}/replay": {
+      "post": {
+        "description": "Re-runs the original query against current data; recorded as a new entry.",
+        "operationId": "replay_query_handler_v1_collections__tenant___name__queries__query_id__replay_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "query_id",
+            "required": true,
+            "schema": {
+              "title": "Query Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QueryReplayResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Replay a logged search",
+        "tags": [
+          "Query Inspection"
+        ]
+      }
+    },
+    "/v1/collections/{tenant}/{name}/search": {
+      "get": {
+        "description": "Query-string form of the search; metadata filters are not accepted.",
+        "operationId": "search_get_v1_collections__tenant___name__search_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "k",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "minimum": 1,
+              "title": "K",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Search a collection",
+        "tags": [
+          "Scoped Search"
+        ]
+      },
+      "post": {
+        "description": "Ranked semantic matches with provenance and per-phase timing.",
+        "operationId": "search_post_v1_collections__tenant___name__search_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Search a collection",
+        "tags": [
+          "Scoped Search"
+        ]
+      }
+    },
+    "/v1/embedders/{tenant}": {
+      "get": {
+        "description": "Lists configured embedder instances currently available in this tenant namespace.",
+        "operationId": "list_embedders_v1_embedders__tenant__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmbedderInventoryResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Too Many Requests"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List embedders available to a tenant",
+        "tags": [
+          "Collection Catalog"
+        ]
+      }
+    },
+    "/v1/search": {
+      "get": {
+        "description": "Query-string form of the shared search; filters are not accepted.",
+        "operationId": "search_common_get_v1_search_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "q",
+            "required": true,
+            "schema": {
+              "title": "Q",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "k",
+            "required": false,
+            "schema": {
+              "default": 5,
+              "minimum": 1,
+              "title": "K",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Search shared collections",
+        "tags": [
+          "Global Search"
+        ]
+      },
+      "post": {
+        "description": "Searches the shared scope; empty when that scope is disabled.",
+        "operationId": "search_common_post_v1_search_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Search shared collections",
+        "tags": [
+          "Global Search"
+        ]
+      }
+    }
+  }
+}

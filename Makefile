@@ -117,8 +117,8 @@ else
   RELEASE_CPU_MODE := both
 endif
 
-DOC_REF_TARGETS := docs-ref-cli docs-ref-config
-DOC_REF_CHECK_TARGETS := docs-ref-check-cli docs-ref-check-config
+DOC_REF_TARGETS := docs-ref-cli docs-ref-config docs-ref-openapi
+DOC_REF_CHECK_TARGETS := docs-ref-check-cli docs-ref-check-config docs-ref-check-openapi
 
 .ONESHELL:
 # With .ONESHELL enabled, keep recipe failure semantics strict so later
@@ -146,8 +146,8 @@ help:
 	echo "  docker-check     Run alive check against a prebuilt local Docker image"; \
 	echo ""; \
 	echo "Docs:"; \
-	echo "  docs-refresh     Regenerate committed reference markdown"; \
-	echo "  docs-ref-check   Check committed reference markdown is current"; \
+	echo "  docs-refresh     Regenerate committed reference files"; \
+	echo "  docs-ref-check   Check committed reference files are current"; \
 	echo ""; \
 	echo "Verify:"; \
 	echo "  $${B}test$${R}            Run pytest (full suite)"; \
@@ -282,6 +282,9 @@ docs-ref-cli: venv
 docs-ref-config: venv
 	PYTHONPATH=. $(PYTHON_BIN) scripts/config_reference.py
 
+docs-ref-openapi: venv
+	PYTHONPATH=. $(PYTHON_BIN) scripts/openapi_snapshot.py
+
 .PHONY: docs-ref-check $(DOC_REF_CHECK_TARGETS)
 docs-ref-check: $(DOC_REF_CHECK_TARGETS)
 
@@ -290,6 +293,9 @@ docs-ref-check-cli: venv
 
 docs-ref-check-config: venv
 	PYTHONPATH=. $(PYTHON_BIN) scripts/config_reference.py --check
+
+docs-ref-check-openapi: venv
+	PYTHONPATH=. $(PYTHON_BIN) scripts/openapi_snapshot.py --check
 
 # -------- bump --------
 .PHONY: bump

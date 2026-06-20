@@ -118,7 +118,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-53b | ~~Reference-source plumbing: CLI completeness + dumper~~ | 🔧 | Every subcommand gets `help`/`epilog`-example; `scripts/cli_to_markdown.py` renders `docs/reference/cli.md` committed in-repo. | v1.0 |
 | P1-53c | ~~Reference-source plumbing: config schema refactor~~ | 🔧 | Single (key, default, description, env_var) source for `_DEFAULTS`, `config.yml.example`, and `docs/reference/config.md`. Closes P1-26 (drift check) as a side effect. | v1.0 |
 | P1-53d | ~~Reference-source plumbing: module/class docstrings on public seams~~ | 🔧 | `pave/stores`, `pave/backends`, `pave/embedders`, catalog, `pave/service.py` public functions. Powers `mkdocstrings` once the docs site lands. | v1.0 |
-| P1-53e | API contract snapshot + drift check | 🔧 | Commit `openapi.json` as a checked-in snapshot; `docs-ref-openapi` dump + drift check (mirrors P1-53b's CLI gate) enforces the P1-43 "frozen at v1.0, additive-after" contract — breaking changes fail CI. Depends on P1-53a. | v1.0 |
+| P1-53e | ~~API contract snapshot + drift check~~ | 🔧 | Commit `openapi.json` as a checked-in snapshot; `docs-ref-openapi` dump + drift check (mirrors P1-53b's CLI gate) enforces the P1-43 "frozen at v1.0, additive-after" contract — breaking changes fail CI. Depends on P1-53a. | v1.0 |
 | P1-54 | Per-collection archive (dump + restore) | 🧱 | Admin-only `GET`/`POST` archive endpoints for a single collection. Carries `manifest.json` (PaveDB version, embedder spec, schema version), `meta.db`, FAISS index, sidecars. Restore must verify embedder spec is resolvable locally before touching disk. Same-version restore only at v1.5; cross-version waits on P3-37. Depends on P2-25. | v1.5 |
 | P1-55 | Per-collection reindex | 🧱 | Admin-only operation: rebuild vectors against a new embedder spec. Needs a job model (interruptible, resumable, status-trackable). Splits cleanly from PATCH (cheap label edit) and `move` (slug/path move + disk move) because it's the only one that rewrites stored vectors. | v1.6 |
 | P1-56 | Chroma comparison benchmark | 🔧 | Optional local compare bench for PaveDB vs Chroma using the same corpus, same sentence-transformers model, comparable create/upsert/delete/search operations, exact metadata filters only, and consolidated latency/stress output. Keep Chroma deps off the default install/test path. | v1.0 |
@@ -202,7 +202,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-52 | ~~`make build-check`: install from local wheel in temp venv, alive test~~ | 🧩 | v0.5.9 |
 | P3-53 | Micro-batch concurrent query embeddings | 🧱 | v1.8 |
 
-P3-18 includes a checked-in `openapi.json` snapshot plus a
+P1-53e includes a checked-in `openapi.json` snapshot plus a
 `docs-ref-openapi` dump and drift check, mirroring P1-53b's CLI gate.
 Any unintended public API change should fail CI after the freeze; the
 current spec is complete as of P1-53a.
@@ -409,9 +409,9 @@ latency on every search/ingest/delete.~~
     `pave/backends`, `pave/embedders`, catalog, and
     `pave/service.py` public functions. Powers `mkdocstrings`
     when the docs site lands at v1.1 (P1-53d).~~
-  - API contract snapshot: commit `openapi.json` and add a dump +
+  - ~~API contract snapshot: commit `openapi.json` and add a dump +
     drift check that enforces the P1-43 frozen-at-1.0,
-    additive-after contract — breaking changes fail CI (P1-53e).
+    additive-after contract — breaking changes fail CI (P1-53e).~~
 - ~~Admin/tenant embedder inventory (P1-59 v1.0 slice): admin-only
   `GET /v1/admin/embedders` and tenant-scoped
   `GET /v1/embedders/{tenant}` list configured instance

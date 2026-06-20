@@ -224,6 +224,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     app = FastAPI(
         title=product_display_name(cfg.get("instance.name")),
         description=cfg.get("instance.desc"),
+        version=VERSION,
         lifespan=lifespan,
     )
 
