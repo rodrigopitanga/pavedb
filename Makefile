@@ -184,15 +184,23 @@ help:
 	echo "  data-clean       Remove local data/indexes"
 
 # -------- venv (robust, idempotent) --------
-$(VENV)/.created:
+.PHONY: _venv-create
+_venv-create:
 	@if ! command -v $(PYTHON) >/dev/null 2>&1; then echo "ERROR: '$(PYTHON)' not found"; exit 127; fi
 	@echo "⏳ Creating virtual environment in $(VENV) using: $(PYTHON)"
+	@rm -rf $(VENV)
 	@$(PYTHON) -m venv $(VENV) --prompt $(PKG_NAME)
 	@$(PIP_BIN) install -q --upgrade pip
-	@touch $@
+	@touch $(VENV)/.created
 
 .PHONY: venv
-venv: $(VENV)/.created
+venv:
+	@if [ ! -f "$(VENV)/.created" ] \
+	  || ! "$(PYTHON_BIN)" -c 'import sys; print(sys.executable)' \
+	      >/dev/null 2>&1 \
+	  || ! "$(PIP_BIN)" --version >/dev/null 2>&1; then \
+	  $(MAKE) _venv-create; \
+	fi
 	@echo "✅ Virtual env ready 👉 Run: source $(VENV)/bin/activate"
 
 # -------- install --------
