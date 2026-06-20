@@ -474,6 +474,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         finally:
             route = request.scope.get("route")
             path = getattr(route, "path", request.url.path)
+            if request.url.path.startswith("/v1/") and not path.startswith("/v1/"):
+                path = f"/v1{path}"
             record_http_request(request.method, path, status_code)
 
     app.include_router(
