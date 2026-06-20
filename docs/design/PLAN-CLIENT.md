@@ -12,28 +12,33 @@ whether PaveDB runs in-process or behind a server.
 
 Package split:
 
-- `pavedb-client`: Python distribution containing the public
-  client API, `HttpClient`, transport-neutral `Client` /
+- `pavedb-sdk`: Python distribution containing the public
+  SDK API, `HttpClient`, transport-neutral `Client` /
   `Collection` contracts, exceptions, connection dispatch, and
   shared request/response helpers. It must not import server,
   store, service, or embedder modules at import time.
 - `pavedb`: server/local-engine distribution. Depends on
-  `pavedb-client` and provides the local provider that backs
+  `pavedb-sdk` and provides the local provider that backs
   `LocalClient` with `pave.service`, `LocalStore`, and embedders.
 
 Install behavior:
 
 ```bash
-pip install pavedb-client
+pip install pavedb-sdk
 # HTTP client only
 
-pip install pavedb-client pavedb
+pip install pavedb-sdk pavedb
 # HTTP client plus local persisted engine
 ```
 
 There is no package dependency cycle. `pavedb` depends on
-`pavedb-client`; `pavedb-client` discovers local mode through an
+`pavedb-sdk`; `pavedb-sdk` discovers local mode through an
 optional provider only when a caller asks for a local target.
+
+SDK package versions are a linear SDK release line, not mirrored
+PaveDB core versions. SDK `0.1.x` targets the PaveDB `/v1` API;
+the SDK exposes the API prefix as `PAVEDB_API_PREFIX` and its own
+release as `__version__`.
 
 Runtime flow:
 
@@ -49,7 +54,7 @@ pavedb_client.connect("./data")
   -> LocalStore / CatalogDB / CollectionDB / FaissBackend / embedders
 ```
 
-If only `pavedb-client` is installed, local targets fail with a
+If only `pavedb-sdk` is installed, local targets fail with a
 clear `local_client_unavailable` error telling the user to install
 `pavedb`.
 

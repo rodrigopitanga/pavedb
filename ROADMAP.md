@@ -87,7 +87,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-21 | ~~Serve listings + store catalog counts in health/metrics~~ | 🧩 | Internal store query layer | v0.5.8 |
 | P1-22 | Per-collection hot caches | 🧱 | Performance isolation; clarified for v1.1 so v1.0 can focus on the stable client/API contract | v1.1 |
 | P1-23 | ~~Freeze search response schema~~ | 🧩 | SDK contract; `query_id` added additively after freeze | v0.9 |
-| P1-24 | Python client package | 🧱 | SDK foundation; v1.0 now includes `HttpClient` parity with `LocalClient`. Distribution target: `pavedb-client` package; `pavedb` provides optional local provider. | v1.0 |
+| P1-24 | Python SDK package | 🧱 | SDK foundation; v1.0 now includes `HttpClient` parity with `LocalClient`. Distribution target: `pavedb-sdk` package; `pavedb` provides optional local provider. | v1.0 |
 | P1-25 | ~~Dev vs prod config defaults~~ | 🔧 | Safe defaults — code defaults are prod-safe (`auth.mode=none` refuses to boot outside dev); dev overlay lives in the `make serve` env | v1.0 |
 | P1-26 | ~~Config reference + CI doc check~~ | 🧩 | Config clarity | v1.0 |
 | P1-27 | Admin key auto-generate + persist | 🧩 | Secure bootstrap | v1.1 |
@@ -390,7 +390,7 @@ latency on every search/ingest/delete.~~
   The library API is the canonical interface the v1.0 Python HTTP
   client mirrors 1:1. Design in `docs/design/PLAN-CLIENT.md`
   (P1-15).~~
-- Python client package: `pavedb-client` distribution. It provides
+- Python SDK package: `pavedb-sdk` distribution. It provides
   the shared API and `HttpClient`; the `pavedb` package depends on
   it and registers the optional `LocalClient` provider so the same
   interface works locally when `pavedb` is installed (P1-24).
@@ -1026,7 +1026,7 @@ Status: done.
 
 | Version | Deliverable | Depends on |
 |---------|------------|------------|
-| v1.0 | Python client (`pavedb-client`): HTTP + optional local provider | Stable REST API (v1.0) |
+| v1.0 | Python SDK (`pavedb-sdk`): HTTP + optional local provider | Stable REST API (v1.0) |
 | v1.1 | Embedded mode, batch ingest | Python client |
 | v1.3 | `pavecli --host` (remote CLI via HTTP client) | Python client |
 | v1.3 | JS/TS client (npm) | OpenAPI spec (auto-generated, then typed) |

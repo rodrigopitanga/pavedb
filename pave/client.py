@@ -11,15 +11,17 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from paveclient import (
-    BaseClient,
-    Collection,
+from pavesdk.batch import batch_item
+from pavesdk.errors import (
     Conflict,
     InvalidRequest,
     NotFoundError,
     PaveError,
     Unavailable,
-    batch_item,
+)
+from pavesdk.interface import (
+    BaseClient,
+    Collection,
 )
 
 import pave.embedders as embedders
@@ -115,7 +117,7 @@ def connect(
     if parsed.scheme in ("http", "https"):
         raise InvalidRequest(
             "unsupported_scheme",
-            "network targets are handled by the pavedb-client package",
+            "network targets are handled by the pavedb-sdk package",
         )
     if parsed.scheme and len(parsed.scheme) > 1:
         raise InvalidRequest(

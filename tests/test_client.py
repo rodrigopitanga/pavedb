@@ -41,7 +41,7 @@ def test_connect_dispatch_and_ephemeral_cleanup(tmp_path, monkeypatch):
         pave.connect("http://localhost:8080")
     assert excinfo.value.code == "unsupported_scheme"
     assert excinfo.value.message == (
-        "network targets are handled by the pavedb-client package"
+        "network targets are handled by the pavedb-sdk package"
     )
 
     ephemeral = pave.connect()

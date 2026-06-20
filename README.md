@@ -60,8 +60,9 @@ debugging — and available the same way from the CLI, the REST API, or any clie
   matched. Observability is the product, not an add-on.
 - **Multi-tenant by default** — tenant/collection namespacing is built in, not bolted
   on (and transparent when you just don't need it).
-- **Embed it, script it, or serve it** — use the Python client (more clients soon), drive
-  the CLI, or call the HTTP server from any environment. Same ops, same provenance.
+- **Embed it, script it, or serve it** — use the Python SDK (more clients soon),
+  drive the CLI, or call the HTTP server from any environment. Same ops, same
+  provenance.
 - **Pluggable embeddings** — swap models per collection; wire in local or hosted
   embedding backends.
 
@@ -69,12 +70,19 @@ debugging — and available the same way from the CLI, the REST API, or any clie
 
 PaveDB exposes the same operations two ways: through a **client interface** and a plain
 **REST API**. The client interface is identical across languages and transports — the
-Python client ships today (Elixir and JavaScript next), and from v1.1 the same client also
-talks to a remote server over HTTP. There's also a **CLI**. Beneath every networked client
-sits the REST API: an open wire protocol you can call directly or wrap in your own client,
-in any language. The examples below use the Python client — `pip install pavedb` (Python
+Python SDK support ships today (Elixir and JavaScript next) and supports local
+embedded and remote HTTP transports. There's also a **CLI**. Beneath every
+networked client sits the REST API: an open wire protocol you can call directly
+or wrap in your own client, in any language. The examples below use Python —
+`pip install pavedb` (Python
 3.10–3.14); see [Install options](#-install-options) for CPU-only wheels, Docker, and
 source.
+
+The standalone Python SDK package is `pavedb-sdk`, with source on
+[GitHub](https://github.com/rodrigopitanga/pavedb-sdk-python) and
+[GitLab](https://gitlab.com/flowlexi/pavedb-sdk-python). Install it by itself for
+HTTP mode, or install it alongside `pavedb` when you want the same handle API backed by
+the local embedded engine.
 
 ### 🐍 From Python
 
@@ -94,9 +102,10 @@ for hit in books.search("captain nemo", k=3):
     print(hit["score"], hit["meta"]["docid"], hit["text"][:60])
 ```
 
-From v1.1 the same client also reaches a remote server —
-`pave.connect("http://your-host:8086")`, unchanged code. Whichever client or transport you
-use, every hit carries the same provenance: document id, offset, and the matched snippet.
+The standalone `pavedb-sdk` package uses the same handle API against a remote
+server via `pavesdk.client.connect("http://your-host:8086")`. Whichever client
+or transport you use, every hit carries the same provenance: document id,
+offset, and the matched snippet.
 
 ### ⌨️ From the CLI (local, no server)
 
