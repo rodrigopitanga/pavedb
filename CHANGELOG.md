@@ -1,6 +1,56 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
+## 0.9.2 — 2026-06-20
+
+### Core
+- Add batch document ingest (P1-16)
+- Add JSON document ingest (P1-16)
+- Single-source config schema in pave/config package (P1-53c)
+- Centralize branding in version.py; promote CLI runtime flags to global
+- [conf] Add embedder instance registry (P1-58)
+- [fix] Stop spurious force-exit, especially under --reload
+- Add embedder inventory endpoints (P1-59)
+
+### Log
+- Create log parent dirs and disable cleanly on open failure
+- Show instance name in startup banner and reflow config fields
+- Log store SEARCH-IN at debug level
+- [fix] Route uvicorn access log to file via log_config
+- Add HTTP request metrics middleware (P1-49)
+- Polish startup banner and warmup logging
+- Preserve public v1 paths in HTTP metrics
+
+### Documentation
+- Add generated CLI reference docs (P1-53b)
+- [core] Document store protocol contract (P3-26)
+- [core] Add module and class docstrings on public seams (P1-53d)(P3-26)
+- [build] Add OpenAPI contract snapshot (P1-53e)
+
+### Config
+- Tweak production-ready defaults (static auth, file logs)
+- Rely on schema defaults for config reads
+- Standardize config access calls
+
+### API
+- [doc] Add OpenAPI reference metadata (P1-53a)
+- Add embedded/library mode client (P1-15)
+
+### Build
+- Wire dev serve flags for workers, reload, and instance name
+- Recreate stale PaveDB venvs
+
+### Performance
+- Refactor benchmark server config, restore bench model
+- Cover batch document ingest endpoint (P2-48)
+
+### CLI
+- Add parser metadata for CLI reference (P1-53b)
+
+### UI
+- Migrate served template to centralized branding tokens
+
+---
 ## 0.9.1 — 2026-06-15
 
 ### Core
