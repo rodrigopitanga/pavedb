@@ -16,6 +16,7 @@ from pave.auth import AuthContext, actor_of, auth_ctx, tenant_limit_gate
 from pave.log import ops_event
 from pave.metrics import reset as metrics_reset
 from pave.schemas import (
+    EmbedderInventoryResponse,
     GetQueryLogResponse,
     QueryReplayResponse,
     ListTenantsResponse,
@@ -27,6 +28,7 @@ from pave.schemas import (
 from pave.service import (
     dump_archive as svc_dump_archive,
     get_query_log_entry_scoped as svc_get_query_log_entry_scoped,
+    list_embedders as svc_list_embedders,
     list_tenants as svc_list_tenants,
     move_collection as svc_move_collection,
     replay_query_scoped as svc_replay_query_scoped,
@@ -206,6 +208,42 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
                 500,
                 result.get("code", "list_tenants_failed"),
                 result.get("error", "failed to list tenants"),
+                request=request,
+                request_id=rid,
+            )
+        return trace(result, request, request_id=rid)
+
+    @router.get(
+        "/admin/embedders",
+        summary="List embedder instances",
+        description=(
+            "Lists configured embedder instances and the resolved default; "
+            "requires the admin key."
+        ),
+        response_model=EmbedderInventoryResponse,
+        responses=resp(401, 403, 500),
+        tags=["Instance Admin"],
+    )
+    @ops_event("list_embedders", coll=None, request_id="rid")
+    def list_embedders(
+        request: Request,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(auth_ctx),
+    ):
+        if not ctx.is_admin:
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
+        result = svc_list_embedders()
+        if not result.get("ok"):
+            return error(
+                500,
+                result.get("code", "list_embedders_failed"),
+                result.get("error", "failed to list embedders"),
                 request=request,
                 request_id=rid,
             )

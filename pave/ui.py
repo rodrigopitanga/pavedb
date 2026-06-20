@@ -265,10 +265,11 @@ def attach_ui(app: FastAPI):
             },
             "Collection Catalog": {
                 ("get", "/v1/collections/{tenant}"): 0,
-                ("get", "/v1/collections/{tenant}/{name}/detail"): 1,
-                ("post", "/v1/collections/{tenant}/{name}"): 2,
-                ("patch", "/v1/collections/{tenant}/{name}"): 3,
-                ("delete", "/v1/collections/{tenant}/{name}"): 4,
+                ("get", "/v1/embedders/{tenant}"): 1,
+                ("get", "/v1/collections/{tenant}/{name}/detail"): 2,
+                ("post", "/v1/collections/{tenant}/{name}"): 3,
+                ("patch", "/v1/collections/{tenant}/{name}"): 4,
+                ("delete", "/v1/collections/{tenant}/{name}"): 5,
             },
             "Instance Admin": {
                 ("get", "/v1/admin/archive"): 0,

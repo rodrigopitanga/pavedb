@@ -31,6 +31,7 @@ from pave.service import (
     list_chunks as svc_list_chunks,
     list_collections as svc_list_collections,
     list_documents as svc_list_documents,
+    list_embedders as svc_list_embedders,
     list_query_homes as svc_list_query_homes,
     list_tenants as svc_list_tenants,
     move_collection as svc_move_collection,
@@ -254,6 +255,11 @@ class LocalClient:
     def list_tenants(self) -> list[str]:
         result = self._call(svc_list_tenants)
         return list(_unwrap(result)["tenants"])
+
+    def embedders(self, *, tenant: str | None = None) -> dict:
+        self._ensure_open()
+        result = svc_list_embedders(tenant=tenant)
+        return _unwrap(result)
 
     def delete_collection(self, name: str, *, tenant: str | None = None) -> dict:
         result = self._call(svc_delete_collection, self._tenant(tenant), name)

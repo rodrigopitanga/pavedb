@@ -12,6 +12,7 @@ from pave.schemas import (
     CreateCollectionOptionsBody,
     CreateCollectionResponse,
     DeleteCollectionResponse,
+    EmbedderInventoryResponse,
     ListCollectionsResponse,
     UpdateCollectionBody,
     UpdateCollectionResponse,
@@ -20,6 +21,7 @@ from pave.service import (
     create_collection as svc_create_collection,
     delete_collection as svc_delete_collection,
     get_collection_detail as svc_get_collection_detail,
+    list_embedders as svc_list_embedders,
     list_collections as svc_list_collections,
     update_collection as svc_update_collection,
 )
@@ -210,6 +212,35 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
                 500,
                 result.get("code", "delete_collection_failed"),
                 result.get("error", "failed to delete collection"),
+                request=request,
+                request_id=rid,
+            )
+        return trace(result, request, request_id=rid)
+
+    @router.get(
+        "/embedders/{tenant}",
+        summary="List embedders available to a tenant",
+        description=(
+            "Lists configured embedder instances currently available in this "
+            "tenant namespace."
+        ),
+        response_model=EmbedderInventoryResponse,
+        responses=resp(401, 403, 429, 500),
+        tags=["Collection Catalog"],
+    )
+    @ops_event("list_embedders", coll=None, request_id="rid")
+    def list_embedders(
+        request: Request,
+        tenant: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(tenant_rate_limit),
+    ):
+        result = svc_list_embedders(tenant=tenant)
+        if not result.get("ok"):
+            return error(
+                500,
+                result.get("code", "list_embedders_failed"),
+                result.get("error", "failed to list embedders"),
                 request=request,
                 request_id=rid,
             )

@@ -28,6 +28,7 @@ from pave.service import (
     list_tenants as svc_list_tenants,
     list_collections as svc_list_collections,
     list_documents as svc_list_documents,
+    list_embedders as svc_list_embedders,
     list_query_homes as svc_list_query_homes,
     replay_query as svc_replay_query,
     search as svc_search,
@@ -375,6 +376,9 @@ def cmd_reset_metrics(args):
 
 def cmd_list_tenants(args):
     return svc_list_tenants(_get_store())
+
+def cmd_list_embedders(args):
+    return svc_list_embedders(tenant=args.tenant)
 
 def cmd_list_collections(args):
     out = svc_list_collections(_get_store(), args.tenant)
@@ -832,6 +836,25 @@ def build_parser() -> argparse.ArgumentParser:
         example="pavecli list-tenants",
     )
     p_list_tenants.set_defaults(func=cmd_list_tenants)
+
+    p_list_embedders = _command(
+        sub,
+        "list-embedders",
+        help="List configured embedder instances.",
+        description=(
+            "Print configured embedder instances and the resolved default "
+            "routing pool."
+        ),
+        example=(
+            "pavecli list-embedders",
+            "pavecli list-embedders --tenant demo",
+        ),
+    )
+    p_list_embedders.add_argument(
+        "--tenant",
+        help="Tenant namespace to echo in the response",
+    )
+    p_list_embedders.set_defaults(func=cmd_list_embedders)
 
     p_list_collections = _command(
         sub,

@@ -1010,6 +1010,33 @@ async def op_admin_tenants(client: httpx.AsyncClient, _: World, stats: Stats):
         stats.record(OpResult("admin_tenants", lat, False, str(e)))
 
 
+@_covers(
+    ("GET", "/v1/admin/embedders"),
+    ("GET", "/v1/embedders/{tenant}"),
+)
+async def op_list_embedders(client: httpx.AsyncClient, _: World, stats: Stats):
+    t0 = time.perf_counter()
+    try:
+        admin = await client.get(f"{API_PREFIX}/admin/embedders")
+        tenant = await client.get(f"{API_PREFIX}/embedders/{TENANT}")
+        lat = (time.perf_counter() - t0) * 1000
+        if _is_rate_limited(admin) or _is_rate_limited(tenant):
+            _record_rate_limited(stats, lat)
+            return
+        if not _ok_response(admin):
+            stats.record(OpResult("list_embedders", lat, False,
+                                  _parse_error(admin)))
+            return
+        if not _ok_response(tenant):
+            stats.record(OpResult("list_embedders", lat, False,
+                                  _parse_error(tenant)))
+            return
+        stats.record(OpResult("list_embedders", lat, True))
+    except Exception as e:
+        lat = (time.perf_counter() - t0) * 1000
+        stats.record(OpResult("list_embedders", lat, False, str(e)))
+
+
 @_covers(("GET", "/v1/admin/queries/{query_id}"))
 async def op_admin_queries_get(
     client: httpx.AsyncClient, world: World, stats: Stats,

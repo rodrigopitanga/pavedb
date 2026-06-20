@@ -78,6 +78,17 @@ def test_collection_surface_returns_clean_data(tmp_path):
             "docs",
         ]
         assert db.list_tenants() == ["acme", "default"]
+        inventory = db.embedders(tenant="acme")
+        assert inventory["tenant"] == "acme"
+        assert inventory["embedders"] == [
+            {
+                "key": "native",
+                "vector_key": "sbert:fake:",
+                "embedder_type": "sbert",
+                "embed_model": "fake",
+            }
+        ]
+        assert inventory["default"]["instance_keys"] == ["native"]
 
         ingest = books.ingest(
             file_path,

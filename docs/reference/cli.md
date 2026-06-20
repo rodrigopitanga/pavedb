@@ -75,6 +75,7 @@ There is NO WARRANTY, to the extent permitted by law.
 | `restore-archive` | Restore an instance data archive. |
 | `reset-metrics` | Reset persisted metrics. |
 | `list-tenants` | List tenants with cataloged collections. |
+| `list-embedders` | List configured embedder instances. |
 | `list-collections` | List collections for a tenant. |
 | `get-collection` | Fetch collection details. |
 
@@ -575,6 +576,27 @@ pavecli list-tenants [-h]
 ```bash
 pavecli list-tenants
 ```
+
+## `list-embedders`
+
+Print configured embedder instances and the resolved default routing pool.
+
+### Usage
+
+```bash
+pavecli list-embedders [-h] [--tenant TENANT]
+```
+
+### Examples
+
+```bash
+pavecli list-embedders
+pavecli list-embedders --tenant demo
+```
+
+### Arguments And Options
+
+- `--tenant` (optional): Tenant namespace to echo in the response
 
 ## `list-collections`
 

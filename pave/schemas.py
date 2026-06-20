@@ -448,6 +448,59 @@ class ListTenantsResponse(OkResponse):
     count: int = Field(description="Number of tenants.", examples=[2])
 
 
+class EmbedderInventoryEntry(BaseModel):
+    """A configured embedder instance exposed without credentials."""
+    key: str = Field(
+        description="Configured embedder instance key.",
+        examples=["native"],
+    )
+    vector_key: str = Field(
+        description="Vector-space key produced by this instance.",
+        examples=["sbert:sentence-transformers/all-MiniLM-L6-v2:"],
+    )
+    embedder_type: str = Field(
+        description="Embedder implementation type.",
+        examples=["sbert"],
+    )
+    embed_model: str = Field(
+        description="Embedding model name.",
+        examples=["sentence-transformers/all-MiniLM-L6-v2"],
+    )
+
+
+class DefaultEmbedderInventory(BaseModel):
+    """Default embedder resolution."""
+    selector: str | None = Field(
+        default=None,
+        description="Configured embedder.default selector, if any.",
+        examples=["native"],
+    )
+    vector_key: str = Field(
+        description="Default vector-space key.",
+        examples=["sbert:sentence-transformers/all-MiniLM-L6-v2:"],
+    )
+    instance_keys: list[str] = Field(
+        description="Instance keys in the default routing pool.",
+        examples=[["native"]],
+    )
+
+
+class EmbedderInventoryResponse(OkResponse):
+    """Configured embedder instances available to a caller."""
+    tenant: str | None = Field(
+        default=None,
+        description="Tenant scope for tenant-namespaced requests.",
+        examples=["demo"],
+    )
+    embedders: list[EmbedderInventoryEntry] = Field(
+        description="Configured embedder instances."
+    )
+    default: DefaultEmbedderInventory = Field(
+        description="Resolved default embedder."
+    )
+    count: int = Field(description="Number of configured instances.", examples=[1])
+
+
 class IngestDocumentResponse(OkResponse):
     """Result of ingesting a document."""
     tenant: str = Field(

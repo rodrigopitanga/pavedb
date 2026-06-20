@@ -38,7 +38,9 @@ from pave.config import get_cfg, get_logger
 from pave.embedders import EmbedderUnavailableError
 from pave.embedders.base import EmbedderConfig
 from pave.embedders.factory import (
+    embedder_instances,
     embedder_space_key,
+    resolve_default_embedder,
     resolve_embedder_spec,
 )
 from pave.metrics import (
@@ -1031,6 +1033,44 @@ def list_tenants(store) -> ServiceResult:
             "code": "list_tenants_failed",
             "error": str(e),
         }
+
+
+def list_embedders(*, tenant: str | None = None) -> ServiceResult:
+    try:
+        cfg = get_cfg()
+        instances = embedder_instances(cfg)
+        default = resolve_default_embedder(cfg)
+        out: ServiceResult = {
+            "ok": True,
+            "embedders": [
+                {
+                    "key": instance.key,
+                    "vector_key": instance.vector_key,
+                    "embedder_type": instance.spec["embedder_type"],
+                    "embed_model": instance.spec["embed_model"],
+                }
+                for instance in instances
+            ],
+            "default": {
+                "selector": default.selector,
+                "vector_key": default.vector_key,
+                "instance_keys": [
+                    instance.key for instance in default.instances
+                ],
+            },
+            "count": len(instances),
+        }
+        if tenant is not None:
+            out["tenant"] = tenant
+        return out
+    except Exception as e:
+        log.warning("list_embedders failed tenant=%s: %s", tenant, e)
+        return {
+            "ok": False,
+            "code": "list_embedders_failed",
+            "error": str(e),
+        }
+
 
 def list_collections(store, tenant: str) -> ServiceResult:
     try:

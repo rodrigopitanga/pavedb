@@ -797,6 +797,27 @@ def test_cli_list_tenants_does_not_load_embedder(tmp_path, capsys, monkeypatch):
     assert out["tenants"] == ["alpha", "beta"]
 
 
+def test_cli_list_embedders_returns_inventory(cli_env, capsys):
+    pvcli, store, _ = cli_env
+
+    rc = pvcli.main_cli(["list-embedders", "--tenant", "acme"])
+    out = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert out["ok"] is True
+    assert out["tenant"] == "acme"
+    assert out["embedders"] == [
+        {
+            "key": "native",
+            "vector_key": "sbert:fake:",
+            "embedder_type": "sbert",
+            "embed_model": "fake",
+        }
+    ]
+    assert out["default"]["instance_keys"] == ["native"]
+    assert store.calls == []
+
+
 def test_cli_get_collection_returns_detail(cli_env, capsys):
     pvcli, store, _ = cli_env
     tenant, coll = "acme", "detailcli"

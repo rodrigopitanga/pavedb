@@ -124,7 +124,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-56 | Chroma comparison benchmark | 🔧 | Optional local compare bench for PaveDB vs Chroma using the same corpus, same sentence-transformers model, comparable create/upsert/delete/search operations, exact metadata filters only, and consolidated latency/stress output. Keep Chroma deps off the default install/test path. | v1.0 |
 | P1-57 | ~~Typing policy + SDK-ready type vocabulary~~ | 🧩 | Boundary-focused typing rules, named internal JSON vocabulary, and lighter test annotations without duplicating API/client schemas | v1.0 |
 | P1-58 | ~~Embedder instance registry core~~ | 🧩 | Registry-shaped config with keyed instances, `embedder.default` as instance/type/type:model/vector-key selector, useful CRITICAL failures for missing or ambiguous defaults, deterministic first compatible runtime instance, and catalog persistence limited to vector-space identity. Depends on P1-32 (done) | v1.0 |
-| P1-59 | Admin embedder inventory endpoint | 🧩 | v1.0 slice: admin-only `GET /v1/admin/embedders` surfaces configured instance keys, vector-space keys, types, models, and default resolution. No credentials, no readiness probe. Mirrored by `Client.embedders()` (library + future HTTP transport) and `pavecli list-embedders`. v1.6 expansion: readiness probe + credential-ref identity per P2-49. Per-tenant embedder assignment (and per-tenant inventory) stays a post-1.0 direction once tenant profiles (P2-26) land. Builds on P1-58. | v1.0 / v1.6 |
+| P1-59 | ~~Admin embedder inventory endpoint~~ | 🧩 | v1.0 slice: admin-only `GET /v1/admin/embedders` and tenant-scoped `GET /v1/embedders/{tenant}` surface configured instance keys, vector-space keys, types, models, and default resolution. No credentials, no readiness probe. Mirrored by `Client.embedders()` and `pavecli list-embedders`. v1.6 expansion: readiness probe + credential-ref identity per P2-49. Per-tenant embedder assignment stays a post-1.0 direction once tenant profiles (P2-26) land. Builds on P1-58. | v1.0 / v1.6 |
 | P1-60 | Embedder selection shorthand + routing policy | 🧱 | Collection create accepts an `embedder` selector shorthand; compatible instance routing grows from deterministic first configured to explicit policy (`first`, `round_robin`, weighted/failover). Any pinning is operational config, not catalog state. | v1.7 |
 
 ### P2 — Enables enterprise use cases and competitive moat
@@ -412,16 +412,14 @@ latency on every search/ingest/delete.~~
   - API contract snapshot: commit `openapi.json` and add a dump +
     drift check that enforces the P1-43 frozen-at-1.0,
     additive-after contract — breaking changes fail CI (P1-53e).
-- Admin embedder inventory (P1-59 v1.0 slice): admin-only
-  `GET /v1/admin/embedders` lists configured instance keys,
-  vector-space keys, types, models, and default resolution
+- ~~Admin/tenant embedder inventory (P1-59 v1.0 slice): admin-only
+  `GET /v1/admin/embedders` and tenant-scoped
+  `GET /v1/embedders/{tenant}` list configured instance
+  keys, vector-space keys, types, models, and default resolution
   (no credentials, no readiness probe). Mirrored by
   `Client.embedders()` so the library mode and the v1.1 HTTP
   client answer the same question through one handle method,
-  plus `pavecli list-embedders`. Per-tenant assignment and the
-  associated per-tenant inventory stay a post-1.0 direction
-  (waits on tenant profiles, P2-26); readiness + credential-ref
-  expansion still lands at v1.6 alongside P2-49.
+  plus `pavecli list-embedders`.~~
 - ~~Dev vs prod config defaults: code defaults are prod-safe, the dev
   convenience overlay lives in the Makefile/env, enforced by
   `enforce_policy` fail-fast (P1-25).~~
