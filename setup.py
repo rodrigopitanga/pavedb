@@ -49,6 +49,7 @@ setup(
         "pypdf>=5.0.0",
         "pyyaml>=6.0.2",
         "python-dotenv>=1.0.1",
+        "pavedb-client>=0.1.0",
         "faiss-cpu>=1.7.1",
         "torch>=2.10.0",
         "sentence-transformers>=2.7.0",
@@ -69,8 +70,8 @@ setup(
             "pavesrv=pave.main:main_srv",
             "pavecli=pave.cli:main_cli",
         ],
-        "pavedb_client.local_providers": [
-            "pavedb=pave.client:local_provider",
+        "paveclient.providers": [
+            "pave=pave.client:local_provider",
         ],
     },
     classifiers=[

@@ -103,20 +103,18 @@ a path, a network target always needs a scheme. Ambiguity here
 
 | call | result | lifetime |
 |---|---|---|
-| `connect()` or `connect(":memory:")` | ephemeral local client (temp dir) | deleted on `close()` / `with` exit |
+| `connect()` | ephemeral local client (temp dir) | deleted on `close()` / `with` exit |
 | `connect("./data")` | persistent local client | on disk |
 | `connect("http://…")` / `https://` | HTTP client | remote |
 
 `connect("localhost")` is a **path** (`./localhost`), not HTTP. To
 reach a local server: `connect("http://localhost:8080")`.
 
-Ephemeral mode is a `tempfile.mkdtemp()` cleaned up on close — not
-a true zero-disk store. `LocalStore` is built around a `data_dir`
-(SQLite catalog, FAISS files, sidecars); a real `:memory:` backend
-(shared `sqlite :memory:` + RAM FAISS) is a separate store-level
-follow-up, out of P1-15 scope. The temp-dir approach gives the
-same "nothing persists" UX with no store changes; label it
-*ephemeral*, not *in-memory*, to stay truthful.
+Ephemeral mode is a `tempfile.mkdtemp()` cleaned up on close. It
+is not a true zero-disk store. `LocalStore` is built around a
+`data_dir` (SQLite catalog, FAISS files, sidecars). The temp-dir
+approach gives the same "nothing persists" UX with no store
+changes; label it *ephemeral*, not *in-memory*, to stay truthful.
 
 Clients are context managers (`with pave.connect() as db:`) with
 `.close()` — required for ephemeral cleanup, used elsewhere to

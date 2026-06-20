@@ -39,8 +39,10 @@ def test_connect_dispatch_and_ephemeral_cleanup(tmp_path, monkeypatch):
 
     with pytest.raises(InvalidRequest) as excinfo:
         pave.connect("http://localhost:8080")
-    assert excinfo.value.code == "http_client_unavailable"
-    assert excinfo.value.message == "HTTP client lands in v1.1"
+    assert excinfo.value.code == "unsupported_scheme"
+    assert excinfo.value.message == (
+        "network targets are handled by the pavedb-client package"
+    )
 
     ephemeral = pave.connect()
     ephemeral_path = ephemeral.path
@@ -48,17 +50,9 @@ def test_connect_dispatch_and_ephemeral_cleanup(tmp_path, monkeypatch):
     ephemeral.close()
     assert not os.path.exists(ephemeral_path)
 
-    memory = pave.connect(":memory:")
-    memory_path = memory.path
-    assert os.path.isdir(memory_path)
-    memory.close()
-    assert not os.path.exists(memory_path)
-
-    blank = pave.connect("")
-    blank_path = blank.path
-    assert os.path.isdir(blank_path)
-    blank.close()
-    assert not os.path.exists(blank_path)
+    with pytest.raises(InvalidRequest) as blank:
+        pave.connect("")
+    assert blank.value.code == "unsupported_target"
 
 
 def test_local_provider_accepts_target_and_tenant(tmp_path):

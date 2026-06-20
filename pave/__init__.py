@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 from .slugify import slugify
 from .client import (
+    BaseClient,
     Collection,
     Conflict,
     InvalidRequest,
@@ -14,7 +15,7 @@ from .client import (
 
 __all__ = [
     "config", "auth", "preprocess", "metrics", "service", "main", "cli",
-    "embedders", "stores", "log", "slugify", "connect", "LocalClient",
-    "Collection", "PaveError", "NotFoundError", "InvalidRequest", "Conflict",
-    "Unavailable",
+    "embedders", "stores", "log", "slugify", "connect", "BaseClient",
+    "LocalClient", "Collection", "PaveError", "NotFoundError",
+    "InvalidRequest", "Conflict", "Unavailable",
 ]
