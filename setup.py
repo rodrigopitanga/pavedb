@@ -69,6 +69,9 @@ setup(
             "pavesrv=pave.main:main_srv",
             "pavecli=pave.cli:main_cli",
         ],
+        "pavedb_client.local_providers": [
+            "pavedb=pave.client:local_provider",
+        ],
     },
     classifiers=[
         "Development Status :: 4 - Beta",

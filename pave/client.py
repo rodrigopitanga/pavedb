@@ -140,9 +140,13 @@ def _batch_item(document: object) -> dict[str, Any]:
     )
 
 
-def connect(target: str | os.PathLike[str] | None = None) -> LocalClient:
+def connect(
+    target: str | os.PathLike[str] | None = None,
+    *,
+    tenant: str = "default",
+) -> LocalClient:
     if target is None:
-        return LocalClient._ephemeral()
+        return LocalClient._ephemeral(tenant=tenant)
     raw = os.fspath(target)
     parsed = urlparse(raw)
     if parsed.scheme in ("http", "https"):
@@ -156,8 +160,16 @@ def connect(target: str | os.PathLike[str] | None = None) -> LocalClient:
             f"unsupported connect() scheme: {parsed.scheme}",
         )
     if raw in ("", ":memory:"):
-        return LocalClient._ephemeral()
-    return LocalClient(raw)
+        return LocalClient._ephemeral(tenant=tenant)
+    return LocalClient(raw, tenant=tenant)
+
+
+def local_provider(
+    target: str | os.PathLike[str] | None = None,
+    *,
+    tenant: str = "default",
+) -> LocalClient:
+    return connect(target, tenant=tenant)
 
 
 class LocalClient:

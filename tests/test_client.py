@@ -8,6 +8,7 @@ import os
 import pytest
 
 import pave
+import pave.client as client_mod
 from pave.client import (
     Collection,
     Conflict,
@@ -58,6 +59,25 @@ def test_connect_dispatch_and_ephemeral_cleanup(tmp_path, monkeypatch):
     assert os.path.isdir(blank_path)
     blank.close()
     assert not os.path.exists(blank_path)
+
+
+def test_local_provider_accepts_target_and_tenant(tmp_path):
+    persistent = client_mod.local_provider(tmp_path / "data", tenant="acme")
+    try:
+        assert isinstance(persistent, LocalClient)
+        assert persistent.path == os.fspath(tmp_path / "data")
+        assert persistent.tenant == "acme"
+    finally:
+        persistent.close()
+
+    ephemeral = client_mod.local_provider(None, tenant="acme")
+    ephemeral_path = ephemeral.path
+    try:
+        assert ephemeral.tenant == "acme"
+        assert os.path.isdir(ephemeral_path)
+    finally:
+        ephemeral.close()
+    assert not os.path.exists(ephemeral_path)
 
 
 def test_collection_surface_returns_clean_data(tmp_path):
