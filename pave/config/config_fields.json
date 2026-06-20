@@ -13,7 +13,7 @@
     {
       "key": "common_enabled",
       "default": false,
-      "description": "Also search a shared common collection for every tenant request."
+      "description": "Allow searches to include the configured common collection when requested."
     },
     {
       "key": "common_tenant",

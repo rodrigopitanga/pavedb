@@ -129,6 +129,14 @@ class SearchBody(BaseModel):
         description="Metadata equality filters to narrow results.",
         examples=[{"lang": "en"}],
     )
+    include_common: bool = Field(
+        default=False,
+        description=(
+            "Include configured common collection results when server common "
+            "search is enabled."
+        ),
+        examples=[False],
+    )
 
     @model_validator(mode="before")
     @classmethod
@@ -159,17 +167,17 @@ class QueryLogEntry(BaseModel):
     )
     include_common: bool = Field(
         default=False,
-        description="Whether shared results were merged in.",
+        description="Whether common results were included.",
         examples=[False],
     )
     common_tenant: str | None = Field(
         default=None,
-        description="Tenant of the merged shared collection, if any.",
+        description="Tenant of the included common collection, if any.",
         examples=["demo"],
     )
     common_collection: str | None = Field(
         default=None,
-        description="The merged shared collection, if any.",
+        description="The included common collection, if any.",
         examples=["shared"],
     )
     result_ids: list[str] = Field(

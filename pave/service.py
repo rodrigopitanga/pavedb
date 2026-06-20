@@ -906,18 +906,34 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
     start = _time.perf_counter()
     m_inc("search_total", 1.0)
     try:
-        if include_common and common_tenant and common_collection:
+        merge_common = bool(
+            include_common and common_tenant and common_collection
+        )
+        effective_common_tenant = (
+            common_tenant if merge_common else None
+        )
+        effective_common_collection = (
+            common_collection if merge_common else None
+        )
+        if (
+            merge_common
+            and effective_common_tenant
+            and effective_common_collection
+        ):
             _require_compatible_embeddings(
                 store,
                 tenant,
                 collection,
-                common_tenant,
-                common_collection,
+                effective_common_tenant,
+                effective_common_collection,
             )
             local = _normalize_search_output(store.search(
                 tenant, collection, q, max(10, k * 2), filters=filters))
             common = _normalize_search_output(store.search(
-                common_tenant, common_collection, q, max(10, k * 2),
+                effective_common_tenant,
+                effective_common_collection,
+                q,
+                max(10, k * 2),
                 filters=filters))
             matches = list(local.matches) + list(common.matches)
             timing = _sum_timing(local.timing, common.timing)
@@ -953,9 +969,9 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
                     query_text=q,
                     k=k,
                     filters=filters,
-                    include_common=include_common,
-                    common_tenant=common_tenant,
-                    common_collection=common_collection,
+                    include_common=merge_common,
+                    common_tenant=effective_common_tenant,
+                    common_collection=effective_common_collection,
                     result_ids=[r.id for r in top],
                     result_count=len(top),
                     latency_ms=latency_ms,

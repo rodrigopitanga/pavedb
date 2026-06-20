@@ -59,7 +59,7 @@ def test_get_query_log_entry_includes_common_merge_fields(client, cfg):
 
     response = client.post(
         "/v1/collections/acme/local/search",
-        json={"q": "captain", "k": 5},
+        json={"q": "captain", "k": 5, "include_common": True},
         headers={"X-Request-ID": "req-common-1"},
     )
     assert response.status_code == 200
@@ -84,6 +84,95 @@ def test_get_query_log_entry_includes_common_merge_fields(client, cfg):
         "filter_ms",
         "hydrate_ms",
     }
+
+
+def test_scoped_search_common_merge_requires_request_opt_in(client, app, cfg):
+    cfg.set("common_enabled", True)
+    cfg.set("common_tenant", "global")
+    cfg.set("common_collection", "commonopt")
+
+    client.post("/v1/collections/acme/localopt")
+    client.post("/v1/collections/global/commonopt")
+    client.post(
+        "/v1/collections/acme/localopt/documents",
+        files={"file": ("a.txt", b"captain local", "text/plain")},
+        data={"docid": "DOC-L"},
+    )
+    client.post(
+        "/v1/collections/global/commonopt/documents",
+        files={"file": ("b.txt", b"captain common", "text/plain")},
+        data={"docid": "DOC-C"},
+    )
+
+    store = app.state.store
+    store.calls.clear()
+
+    response = client.post(
+        "/v1/collections/acme/localopt/search",
+        json={"q": "captain", "k": 2},
+    )
+    assert response.status_code == 200
+    assert {
+        match["meta"]["docid"] for match in response.json()["matches"]
+    } == {"DOC-L"}
+    assert (
+        "search",
+        "global",
+        "commonopt",
+        "captain",
+        10,
+        None,
+    ) not in store.calls
+    log_calls = [call for call in store.calls if call[0] == "log_query"]
+    assert log_calls[-1][1]["include_common"] is False
+    assert log_calls[-1][1]["common_tenant"] is None
+    assert log_calls[-1][1]["common_collection"] is None
+
+    store.calls.clear()
+
+    local_only = client.post(
+        "/v1/collections/acme/localopt/search",
+        json={"q": "captain", "k": 2, "include_common": False},
+    )
+    assert local_only.status_code == 200
+    assert {
+        match["meta"]["docid"] for match in local_only.json()["matches"]
+    } == {"DOC-L"}
+    assert (
+        "search",
+        "global",
+        "commonopt",
+        "captain",
+        10,
+        None,
+    ) not in store.calls
+    log_calls = [call for call in store.calls if call[0] == "log_query"]
+    assert log_calls[-1][1]["include_common"] is False
+    assert log_calls[-1][1]["common_tenant"] is None
+    assert log_calls[-1][1]["common_collection"] is None
+
+    store.calls.clear()
+
+    merged = client.get(
+        "/v1/collections/acme/localopt/search",
+        params={"q": "captain", "k": 2, "include_common": "true"},
+    )
+    assert merged.status_code == 200
+    assert {
+        match["meta"]["docid"] for match in merged.json()["matches"]
+    } == {"DOC-L", "DOC-C"}
+    assert (
+        "search",
+        "global",
+        "commonopt",
+        "captain",
+        10,
+        None,
+    ) in store.calls
+    log_calls = [call for call in store.calls if call[0] == "log_query"]
+    assert log_calls[-1][1]["include_common"] is True
+    assert log_calls[-1][1]["common_tenant"] == "global"
+    assert log_calls[-1][1]["common_collection"] == "commonopt"
 
 
 def test_get_query_log_not_found(client):
@@ -192,7 +281,7 @@ def test_search_log_reflects_common_merge_flags(client, cfg):
 
     response = client.post(
         "/v1/collections/acme/qflags/search",
-        json={"q": "flag", "k": 5},
+        json={"q": "flag", "k": 5, "include_common": True},
     )
     assert response.status_code == 200
 

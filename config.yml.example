@@ -21,7 +21,7 @@
 # Env: PAVEDB_DATA_DIR
 data_dir: '~/pavedb/data'
 
-# Also search a shared common collection for every tenant request.
+# Allow searches to include the configured common collection when requested.
 # Env: PAVEDB_COMMON_ENABLED
 common_enabled: false
 

@@ -299,7 +299,7 @@ class LocalClient(BaseClient):
         k: int = 5,
         *,
         filters: FilterSpec | None = None,
-        include_common: bool = False,
+        include_common: bool | None = None,
     ) -> list[dict]:
         cfg = get_cfg()
         result = self._call(

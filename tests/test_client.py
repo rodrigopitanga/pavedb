@@ -21,6 +21,31 @@ from pave.client import (
 from pave.service import ServiceError
 
 
+def test_local_client_search_common_merge_requires_opt_in(tmp_path, cfg):
+    cfg.set("common_enabled", True)
+    cfg.set("common_tenant", "global")
+    cfg.set("common_collection", "common")
+
+    with pave.connect(tmp_path / "db") as db:
+        local = db.create_collection("books")
+        db.create_collection("common", tenant="global")
+
+        local.add("captain local", docid="DOC-L")
+        db.collection("common", tenant="global").add(
+            "captain common",
+            docid="DOC-C",
+        )
+
+        assert {
+            match["meta"]["docid"]
+            for match in local.search("captain", k=5)
+        } == {"DOC-L"}
+        assert {
+            match["meta"]["docid"]
+            for match in local.search("captain", k=5, include_common=True)
+        } == {"DOC-L", "DOC-C"}
+
+
 def test_connect_dispatch_and_ephemeral_cleanup(tmp_path, monkeypatch):
     persistent = pave.connect(tmp_path / "data")
     try:

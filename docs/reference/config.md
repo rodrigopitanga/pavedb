@@ -21,7 +21,8 @@ replace dots with double underscores, so `auth.mode` becomes
 
 - Default: `false`
 - Env var: `PAVEDB_COMMON_ENABLED`
-- Description: Also search a shared common collection for every tenant request.
+- Description: Allow searches to include the configured common collection when
+  requested.
 
 ### `common_tenant`
 

@@ -106,7 +106,7 @@ def test_replay_query_preserves_common_merge_and_logs_once(
 
     original = client.post(
         f"/v1/collections/acme/{local_collection}/search",
-        json={"q": "captain", "k": 5},
+        json={"q": "captain", "k": 5, "include_common": True},
     )
     assert original.status_code == 200
 

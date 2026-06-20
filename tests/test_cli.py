@@ -309,6 +309,8 @@ def test_cli_search_does_not_merge_common_by_default(
     assert log_calls
     payload = log_calls[-1][1]
     assert payload["include_common"] is False
+    assert payload["common_tenant"] is None
+    assert payload["common_collection"] is None
 
 
 def test_cli_search_merges_common_when_enabled(
@@ -344,7 +346,7 @@ def test_cli_search_merges_common_when_enabled(
             "captain",
             "-k",
             "2",
-            "--merge-common=true",
+            "--include-common",
         ]
     )
     out = json.loads(capsys.readouterr().out)

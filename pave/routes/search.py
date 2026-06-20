@@ -187,7 +187,7 @@ def build_search_router(
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        include_common = bool(cfg.common_enabled)
+        include_common = bool(body.include_common and cfg.common_enabled)
         return await do_search(
             functools.partial(
                 svc_search,
@@ -234,11 +234,18 @@ def build_search_router(
         name: str,
         q: str = Query(...),
         k: int = Query(5, ge=1),
+        include_common: bool = Query(
+            False,
+            description=(
+                "Include configured common collection results when server "
+                "common search is enabled."
+            ),
+        ),
         rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        include_common = bool(cfg.common_enabled)
+        include_common = bool(include_common and cfg.common_enabled)
         return await do_search(
             functools.partial(
                 svc_search,

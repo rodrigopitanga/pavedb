@@ -234,10 +234,7 @@ def cmd_ingest_text(args):
 def cmd_search(args):
     cfg = get_cfg()
     filters = _parse_filters_arg(args.filters)
-    merge_common = (
-        args.merge_common == "true"
-        and bool(cfg.common_enabled)
-    )
+    include_common = bool(args.include_common and cfg.common_enabled)
     return svc_search(
         _get_store(),
         args.tenant,
@@ -245,7 +242,7 @@ def cmd_search(args):
         args.query,
         args.k,
         filters=filters,
-        include_common=merge_common,
+        include_common=include_common,
         common_tenant=cfg.common_tenant,
         common_collection=cfg.common_collection,
         actor="admin",
@@ -613,10 +610,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_search.add_argument("query", help="Natural-language search query")
     p_search.add_argument("-k", type=int, default=5, help="Number of matches to return")
     p_search.add_argument(
-        "--merge-common",
-        choices=["true", "false"],
-        default="false",
-        help="Merge configured common collection results when set to true",
+        "--include-common",
+        action="store_true",
+        help="Include configured common collection results",
     )
     p_search.add_argument("--filters", help='JSON object, e.g. {"docid":"DOC-1"}')
     p_search.set_defaults(func=cmd_search)

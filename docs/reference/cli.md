@@ -222,8 +222,7 @@ Run semantic search over a collection and print the response envelope.
 ### Usage
 
 ```bash
-pavecli search [-h] [-k K] [--merge-common {true,false}]
-                      [--filters FILTERS]
+pavecli search [-h] [-k K] [--include-common] [--filters FILTERS]
                       tenant collection query
 ```
 
@@ -239,8 +238,7 @@ pavecli search demo books "captain nemo" -k 3
 - `collection` (required): Collection name
 - `query` (required): Natural-language search query
 - `-k` (optional): Number of matches to return (default: 5)
-- `--merge-common` (optional): Merge configured common collection results when set to
-  true (choices: true, false; default: false)
+- `--include-common` (optional): Include configured common collection results
 - `--filters` (optional): JSON object, e.g. {"docid":"DOC-1"}
 
 ## `list-queries`

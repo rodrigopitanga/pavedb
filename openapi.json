@@ -2197,7 +2197,7 @@
                 "type": "null"
               }
             ],
-            "description": "The merged shared collection, if any.",
+            "description": "The included common collection, if any.",
             "examples": [
               "shared"
             ],
@@ -2212,7 +2212,7 @@
                 "type": "null"
               }
             ],
-            "description": "Tenant of the merged shared collection, if any.",
+            "description": "Tenant of the included common collection, if any.",
             "examples": [
               "demo"
             ],
@@ -2246,7 +2246,7 @@
           },
           "include_common": {
             "default": false,
-            "description": "Whether shared results were merged in.",
+            "description": "Whether common results were included.",
             "examples": [
               false
             ],
@@ -2722,6 +2722,15 @@
               }
             ],
             "title": "Filters"
+          },
+          "include_common": {
+            "default": false,
+            "description": "Include configured common collection results when server common search is enabled.",
+            "examples": [
+              false
+            ],
+            "title": "Include Common",
+            "type": "boolean"
           },
           "k": {
             "default": 5,
@@ -5748,6 +5757,18 @@
               "minimum": 1,
               "title": "K",
               "type": "integer"
+            }
+          },
+          {
+            "description": "Include configured common collection results when server common search is enabled.",
+            "in": "query",
+            "name": "include_common",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Include configured common collection results when server common search is enabled.",
+              "title": "Include Common",
+              "type": "boolean"
             }
           }
         ],
