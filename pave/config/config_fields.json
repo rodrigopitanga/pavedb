@@ -96,6 +96,11 @@
       "description": "Optional native SBERT encode batch size; null uses the adapter default."
     },
     {
+      "key": "embedder.instances.native.config.workers",
+      "default": "auto",
+      "description": "Native SBERT process worker count; auto picks a bounded local default when runtime resolves to process."
+    },
+    {
       "key": "ingest.max_file_size_mb",
       "default": 500,
       "description": "Reject document uploads larger than this many megabytes; 0 disables the limit."

@@ -105,39 +105,31 @@ def _store_for_path(path: str | os.PathLike[str]) -> BaseStore:
     )
 
 
-def connect(
-    target: str | os.PathLike[str] | None = None,
-    *,
-    tenant: str = "default",
-) -> BaseClient:
-    if target is None:
-        return LocalClient._ephemeral(tenant=tenant)
-    raw = os.fspath(target)
-    parsed = urlparse(raw)
-    if parsed.scheme in ("http", "https"):
-        raise InvalidRequest(
-            "unsupported_scheme",
-            "network targets are handled by the pavedb-sdk package",
-        )
-    if parsed.scheme and len(parsed.scheme) > 1:
-        raise InvalidRequest(
-            "unsupported_scheme",
-            f"unsupported connect() scheme: {parsed.scheme}",
-        )
-    if raw == "":
-        raise InvalidRequest(
-            "unsupported_target",
-            "empty connect() target; omit the argument for an ephemeral store",
-        )
-    return LocalClient(raw, tenant=tenant)
-
-
-def local_provider(
+def provider(
     target: str | os.PathLike[str] | None = None,
     *,
     tenant: str = "default",
 ) -> LocalClient:
-    return connect(target, tenant=tenant)
+    if target is None:
+        return LocalClient._ephemeral(tenant=tenant)
+    raw = os.fspath(target)
+    if raw == "":
+        raise InvalidRequest(
+            "unsupported_target",
+            "empty local provider target; pass None for an ephemeral store",
+        )
+    parsed = urlparse(raw)
+    if parsed.scheme in ("http", "https"):
+        raise InvalidRequest(
+            "unsupported_scheme",
+            "network targets are handled by pavesdk.client.connect()",
+        )
+    if parsed.scheme and len(parsed.scheme) > 1:
+        raise InvalidRequest(
+            "unsupported_scheme",
+            f"unsupported local provider scheme: {parsed.scheme}",
+        )
+    return LocalClient(raw, tenant=tenant)
 
 
 class LocalClient(BaseClient):
@@ -163,12 +155,13 @@ class LocalClient(BaseClient):
     def close(self) -> None:
         if self._closed:
             return
-        flush = getattr(self._store, "_flush_caches", None)
-        if callable(flush):
-            flush(async_close=False)
         close = getattr(self._store, "close", None)
         if callable(close):
             close()
+        else:
+            flush = getattr(self._store, "_flush_caches", None)
+            if callable(flush):
+                flush(async_close=False)
         if self._ephemeral:
             shutil.rmtree(self.path, ignore_errors=True)
         self._closed = True

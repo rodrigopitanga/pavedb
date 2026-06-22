@@ -32,7 +32,7 @@ def test_json_text_document_ingest_api(client):
     assert "filename" not in metadata
 
 
-def test_batch_document_ingest_api(client):
+def test_batch_document_ingest_api(client, app):
     create = client.post("/v1/collections/acme/batchdocs")
     assert create.status_code == 201
 
@@ -71,6 +71,7 @@ def test_batch_document_ingest_api(client):
     assert data["documents"][0]["chunks"] == 1
     assert data["documents"][2]["ok"] is False
     assert data["documents"][2]["code"] == "no_text_extracted"
+    assert any(call[0] == "index_documents" for call in app.state.store.calls)
 
     doc = client.get("/v1/collections/acme/batchdocs/documents/NOTE-1")
     assert doc.status_code == 200

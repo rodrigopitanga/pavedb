@@ -122,6 +122,7 @@ def main() -> int:
         "docs": "Documentation",
         "conf": "Config",
         "core": "Core",
+        "sdk": "SDK",
         "store": "Store",
         "infra": "Infrastructure",
         "pkg": "Packaging",

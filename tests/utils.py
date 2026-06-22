@@ -437,6 +437,17 @@ class DummyStore(BaseStore):
             json.dump(data, f)
         return IndexResult(indexed_chunks=len(ids), purged_chunks=purged)
 
+    def index_documents(
+        self,
+        tenant: str,
+        collection: str,
+        documents: Iterable[tuple[str, Iterable[Record], dict[str, Any] | None]],
+    ) -> list[IndexResult]:
+        return [
+            self.index_records(tenant, collection, docid, records, doc_meta)
+            for docid, records, doc_meta in documents
+        ]
+
     def search(self, tenant: str, collection: str, text: str, k: int = 5,
                filters: dict[str, Any] | None = None) -> SearchOutput:
         cat = os.path.join(self._dir(tenant, collection), "catalog.json")
@@ -688,6 +699,31 @@ class SpyStore(BaseStore):
         return self.impl.index_records(
             tenant, collection, docid, recs, doc_meta=doc_meta
         )
+
+    def index_documents(
+        self,
+        tenant: str,
+        collection: str,
+        documents: Iterable[tuple[str, Iterable[Record], dict[str, Any] | None]],
+    ) -> list[IndexResult]:
+        docs = [
+            (docid, list(records), doc_meta)
+            for docid, records, doc_meta in documents
+        ]
+        self.calls.append(("index_documents", tenant, collection, len(docs)))
+        index_documents = getattr(self.impl, "index_documents", None)
+        if callable(index_documents):
+            return index_documents(tenant, collection, docs)
+        return [
+            self.impl.index_records(
+                tenant,
+                collection,
+                docid,
+                records,
+                doc_meta=doc_meta,
+            )
+            for docid, records, doc_meta in docs
+        ]
 
     def search(self, tenant: str, collection: str, text: str, k: int = 5,
                filters: dict[str, Any] | None = None) -> SearchOutput:

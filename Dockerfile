@@ -36,10 +36,9 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     if [ "${USE_CPU}" = "1" ] || [ "${USE_CPU}" = "true" ] ; then \
       echo "=== Installing CPU deps ===" ; \
       pip install --progress-bar=off -r requirements-cpu.txt ; \
-      pip install --progress-bar=off "openai>=1.0.0" ; \
     else \
       echo "=== Installing GPU deps ===" ; \
-      pip install --progress-bar=off ".[openai]" ; \
+      pip install --progress-bar=off "." ; \
     fi
 
 # now copy real source and reinstall (deps already satisfied, fast)

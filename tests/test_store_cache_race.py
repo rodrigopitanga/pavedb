@@ -8,6 +8,30 @@ from pave.stores.local import LocalStore, _CollectionReadWriteLock
 from utils import FakeEmbedder
 
 
+class BlockingIngestEmbedder(FakeEmbedder):
+    def __init__(self):
+        super().__init__()
+        self.started = threading.Event()
+        self.release = threading.Event()
+
+    def encode(self, texts):
+        if any("slow ingest payload" in text for text in texts):
+            self.started.set()
+            if not self.release.wait(timeout=2.0):
+                raise TimeoutError("blocked ingest encode was not released")
+        return super().encode(texts)
+
+
+class CountingEmbedder(FakeEmbedder):
+    def __init__(self):
+        super().__init__()
+        self.calls: list[tuple[str, ...]] = []
+
+    def encode(self, texts):
+        self.calls.append(tuple(texts))
+        return super().encode(texts)
+
+
 def test_get_document_uses_atomic_cache_lookup_under_flush_race(temp_data_dir):
     store = LocalStore(str(temp_data_dir), FakeEmbedder())
     tenant, collection, docid = "acme", "race", "DOC-1"
@@ -114,3 +138,89 @@ def test_search_final_cache_retry_does_not_run_under_write_lock(temp_data_dir):
 
     assert done.is_set(), "search deadlocked on final cache retry"
     assert result["hits"]
+
+
+def test_search_runs_while_batch_ingest_embeds(temp_data_dir):
+    embedder = BlockingIngestEmbedder()
+    store = LocalStore(str(temp_data_dir), embedder)
+    tenant, collection = "acme", "ingest_search_overlap"
+    store.index_records(
+        tenant,
+        collection,
+        "DOC-1",
+        [("0", "fast searchable probe", {"lang": "en"})],
+    )
+
+    ingest_done = threading.Event()
+    ingest_error: list[BaseException] = []
+
+    def ingest():
+        try:
+            store.index_documents(
+                tenant,
+                collection,
+                [
+                    (
+                        "DOC-2",
+                        [("0", "slow ingest payload", {"lang": "en"})],
+                        None,
+                    )
+                ],
+            )
+        except BaseException as exc:
+            ingest_error.append(exc)
+        finally:
+            ingest_done.set()
+
+    thread = threading.Thread(target=ingest, daemon=True)
+    thread.start()
+    assert embedder.started.wait(timeout=2.0)
+
+    search_done = threading.Event()
+    search_result: dict[str, object] = {}
+
+    def search():
+        search_result["hits"] = store.search(
+            tenant,
+            collection,
+            "fast searchable",
+            k=1,
+        )
+        search_done.set()
+
+    search_thread = threading.Thread(target=search, daemon=True)
+    search_thread.start()
+    search_thread.join(timeout=0.5)
+
+    embedder.release.set()
+    thread.join(timeout=2.0)
+
+    assert search_done.is_set(), "search waited for ingest embedding"
+    assert search_result["hits"]
+    assert ingest_done.is_set()
+    assert not ingest_error
+
+
+def test_search_reuses_cached_query_vector(temp_data_dir):
+    embedder = CountingEmbedder()
+    store = LocalStore(str(temp_data_dir), embedder)
+    tenant, collection = "acme", "query_cache"
+    store.index_records(
+        tenant,
+        collection,
+        "DOC-1",
+        [("0", "cached query probe", {"lang": "en"})],
+    )
+
+    first = store.search(tenant, collection, "cached query", k=1)
+    second = store.search(tenant, collection, "cached query", k=1)
+
+    assert first
+    assert second
+    assert embedder.calls.count(("cached query",)) == 1
+    assert set(second.timing) == {
+        "embed_ms",
+        "search_ms",
+        "filter_ms",
+        "hydrate_ms",
+    }

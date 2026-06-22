@@ -121,6 +121,11 @@ embedder:
         # Env: PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__BATCH_SIZE
         # batch_size: null
 
+        # Native SBERT process worker count; auto picks a bounded local default when
+        # runtime resolves to process.
+        # Env: PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__WORKERS
+        workers: 'auto'
+
     #
     # Additional instance examples. Keep these commented until the
     # provider is configured. If more than one instance is active, set

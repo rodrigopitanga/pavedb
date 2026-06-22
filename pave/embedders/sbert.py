@@ -19,7 +19,7 @@ from numpy.typing import NDArray
 from ..config import get_cfg
 
 
-CONFIG_KEYS: tuple[str, ...] = ("runtime", "device", "batch_size")
+CONFIG_KEYS: tuple[str, ...] = ("runtime", "device", "batch_size", "workers")
 SPACE_KEYS: tuple[str, ...] = ()
 
 
@@ -45,6 +45,7 @@ def build_embedder(cfg, *, model=None, embedder_config=None, api_key=None):
     runtime = str(runtime_value).lower()
     device = resolve_setting(cfg, "sbert", "device", spec, None)
     batch_size = resolve_setting(cfg, "sbert", "batch_size", spec, None)
+    workers = resolve_setting(cfg, "sbert", "workers", spec, None)
     backend_type = str(cfg.get("vector_store.type")).lower()
 
     if runtime == "auto":
@@ -65,6 +66,7 @@ def build_embedder(cfg, *, model=None, embedder_config=None, api_key=None):
     }
     if runtime == "process":
         from .sbert_worker import ProcessSbertEmbedder
+        kwargs["workers"] = workers
         return ProcessSbertEmbedder(**kwargs)
     return SbertEmbedder(**kwargs)
 

@@ -3,6 +3,8 @@
 
 from typing import Any
 
+import numpy as np
+
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
@@ -12,6 +14,23 @@ def _seed_records(count: int) -> list[tuple[str, str, dict]]:
         (f"r{i}", "shared query token", {"lang": "en", "chunk": i})
         for i in range(count)
     ]
+
+
+class _RankedEmbedder:
+    @property
+    def dim(self) -> int:
+        return 2
+
+    def encode(self, texts: list[str]) -> np.ndarray:
+        rows = []
+        for text in texts:
+            if text == "needle query":
+                rows.append([1.0, 0.0])
+            elif text == "target payload":
+                rows.append([-1.0, 0.0])
+            else:
+                rows.append([1.0, 0.0])
+        return np.asarray(rows, dtype=np.float32)
 
 
 def test_search_fetches_meta_for_all_candidates_without_post_filters(
@@ -151,3 +170,45 @@ def test_search_calls_pushdown_for_postfilter_only_conditions(temp_data_dir):
     assert called is True
     assert seen["filters"] == {"lang": ["*n"]}
     assert len(hits) == 5
+
+
+def test_filtered_search_expands_candidate_window_until_match(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), _RankedEmbedder())
+    tenant, collection = "tenant", "meta_scope_expand"
+    store.index_records(
+        tenant,
+        collection,
+        "other",
+        [
+            (f"r{i}", "near payload", {"shape": "other"})
+            for i in range(60)
+        ],
+    )
+    store.index_records(
+        tenant,
+        collection,
+        "target",
+        [("r0", "target payload", {"shape": "target"})],
+    )
+
+    backend = store._emb[(tenant, collection)]
+    seen_limits: list[int] = []
+    original_search = backend.search
+
+    def _spy_search(vector, limit):
+        seen_limits.append(limit)
+        return original_search(vector, limit)
+
+    backend.search = _spy_search  # type: ignore[method-assign]
+
+    hits = store.search(
+        tenant,
+        collection,
+        "needle query",
+        k=1,
+        filters={"shape": "target"},
+    )
+
+    assert [hit.id for hit in hits] == ["target::r0"]
+    assert seen_limits[0] == 50
+    assert max(seen_limits) > 50

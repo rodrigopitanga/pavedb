@@ -22,6 +22,7 @@ import shutil
 import sqlite3
 import tempfile
 import zipfile
+from collections import OrderedDict
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import ExitStack, contextmanager, suppress
 from datetime import datetime, date, timezone as tz
@@ -67,6 +68,8 @@ CollectionConfig = dict[str, Any]
 # concurrent /metrics scrapers from each re-running the walk and stampeding
 # the per-collection locks under load.
 _CATALOG_METRICS_TTL_S = 5.0
+_QUERY_VECTOR_CACHE_MAX = 256
+_INDEX_DIRTY_FILE = ".pavedb-index-dirty"
 
 
 class _StoreStateLock:
@@ -231,6 +234,12 @@ class LocalStore(BaseStore):
         self._state_lock = _StoreStateLock()
         self._catalog_metrics_lock = Lock()
         self._catalog_metrics_cache: tuple[float, dict[str, int]] | None = None
+        self._query_vector_cache: OrderedDict[
+            tuple[str, str, int, str],
+            Any,
+        ] = OrderedDict()
+        self._query_vector_cache_lock = Lock()
+        self._closed = False
         configured_embedders = embedder_factory_mod.embedder_instances()
         log.info(
             "Configured embedders: %s",
@@ -326,6 +335,33 @@ class LocalStore(BaseStore):
 
     def _db_path(self, tenant: str, collection: str) -> Path:
         return Path(self._base_path(tenant, collection)) / "meta.db"
+
+    def _index_dir(self, tenant: str, collection: str) -> Path:
+        return Path(self._base_path(tenant, collection)) / "index"
+
+    def _index_dirty_path(self, tenant: str, collection: str) -> Path:
+        return self._index_dir(tenant, collection) / _INDEX_DIRTY_FILE
+
+    def _mark_index_dirty(self, tenant: str, collection: str) -> None:
+        path = self._index_dirty_path(tenant, collection)
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                path.write_text("dirty\n", encoding="utf-8")
+        except OSError:
+            log.warning(
+                "Failed to mark index dirty tenant=%s coll=%s",
+                tenant,
+                collection,
+                exc_info=True,
+            )
+
+    def _clear_index_dirty(self, tenant: str, collection: str) -> None:
+        with suppress(OSError):
+            self._index_dirty_path(tenant, collection).unlink()
+
+    def _index_is_dirty(self, tenant: str, collection: str) -> bool:
+        return self._index_dirty_path(tenant, collection).is_file()
 
     def _catalog_db_path(self) -> Path:
         return Path(self._data_dir).resolve() / "catalog.db"
@@ -536,6 +572,74 @@ class LocalStore(BaseStore):
         embedder = self._get_embedder_for_config(cfg)
         self._embedder_dim_for_config(cfg, embedder)
 
+    @staticmethod
+    def _backend_vector_count(backend: VectorBackend) -> int | None:
+        count = getattr(backend, "count", None)
+        if callable(count):
+            try:
+                return max(0, int(count()))
+            except Exception:
+                return None
+        index = getattr(backend, "_index", None)
+        total = getattr(index, "ntotal", None)
+        if total is None:
+            return None
+        try:
+            return max(0, int(total))
+        except Exception:
+            return None
+
+    def _index_needs_rebuild(
+        self,
+        tenant: str,
+        collection: str,
+        backend: VectorBackend,
+        col_db: CollectionDB,
+    ) -> bool:
+        if self._index_is_dirty(tenant, collection):
+            return True
+        try:
+            _docs, chunks = col_db.get_doc_chunk_counts()
+        except Exception:
+            return False
+        total = self._backend_vector_count(backend)
+        return total is not None and total != chunks
+
+    def _rebuild_index_from_chunks(
+        self,
+        tenant: str,
+        collection: str,
+        backend: VectorBackend,
+        col_db: CollectionDB,
+        embedder: Embedder,
+    ) -> None:
+        rids: list[str] = []
+        texts: list[str] = []
+        for document in col_db.list_documents():
+            docid = str(document.get("docid") or "")
+            if not docid:
+                continue
+            for chunk in col_db.list_chunks(docid):
+                rid = str(chunk.get("rid") or "")
+                if not rid:
+                    continue
+                text = self._load_chunk_text(tenant, collection, rid)
+                if text is None:
+                    log.warning(
+                        "Skipping missing chunk text during index rebuild "
+                        "tenant=%s coll=%s rid=%s",
+                        tenant,
+                        collection,
+                        rid,
+                    )
+                    continue
+                rids.append(rid)
+                texts.append(text)
+        if rids:
+            backend.add(rids, embedder.encode(texts))
+        backend.flush()
+        self._clear_index_dirty(tenant, collection)
+
     def _load_or_init(
         self,
         tenant: str,
@@ -559,10 +663,10 @@ class LocalStore(BaseStore):
         )
         embedder = self._get_embedder_for_config(coll_cfg)
         embedder_dim = self._embedder_dim_for_config(coll_cfg, embedder)
+        idx_dir = self._index_dir(tenant, collection)
 
         backend = self._emb.get(key)
         if backend is None:
-            idx_dir = Path(os.path.join(base, "index"))
             backend = FaissBackend(
                 embedder_dim,
                 storage_dir=idx_dir,
@@ -587,6 +691,21 @@ class LocalStore(BaseStore):
             col_db = CollectionDB()
             col_db.open(self._db_path(tenant, collection))
 
+        if self._index_needs_rebuild(tenant, collection, backend, col_db):
+            log.info(
+                "Rebuilding dirty index tenant=%s coll=%s",
+                tenant,
+                collection,
+            )
+            backend = FaissBackend(embedder_dim, storage_dir=idx_dir)
+            self._rebuild_index_from_chunks(
+                tenant,
+                collection,
+                backend,
+                col_db,
+                embedder,
+            )
+
         self._emb[key] = backend
         self._collection_embedders[key] = embedder
         self._dbs[key] = col_db
@@ -597,6 +716,47 @@ class LocalStore(BaseStore):
         if not em:
             return
         em.flush()
+        self._clear_index_dirty(tenant, collection)
+
+    def _drop_query_vector_cache(
+        self,
+        tenant: str | None = None,
+        collection: str | None = None,
+    ) -> None:
+        with self._query_vector_cache_lock:
+            if tenant is None and collection is None:
+                self._query_vector_cache.clear()
+                return
+            stale = [
+                key
+                for key in self._query_vector_cache
+                if (tenant is None or key[0] == tenant)
+                and (collection is None or key[1] == collection)
+            ]
+            for key in stale:
+                self._query_vector_cache.pop(key, None)
+
+    def _encode_query_cached(
+        self,
+        tenant: str,
+        collection: str,
+        embedder: Embedder,
+        query: str,
+    ) -> tuple[Any, bool]:
+        cache_key = (tenant, collection, id(embedder), query)
+        with self._query_vector_cache_lock:
+            cached = self._query_vector_cache.get(cache_key)
+            if cached is not None:
+                self._query_vector_cache.move_to_end(cache_key)
+                return cached, True
+
+        vector = embedder.encode([query])[0]
+        with self._query_vector_cache_lock:
+            self._query_vector_cache[cache_key] = vector
+            self._query_vector_cache.move_to_end(cache_key)
+            while len(self._query_vector_cache) > _QUERY_VECTOR_CACHE_MAX:
+                self._query_vector_cache.popitem(last=False)
+        return vector, False
 
     def create_collection(
         self,
@@ -669,6 +829,7 @@ class LocalStore(BaseStore):
                         with suppress(Exception):
                             db.close()
                     self._collection_embedders.pop(key, None)
+                    self._drop_query_vector_cache(tenant, name)
                     with suppress(Exception):
                         self._with_catalog_retry(
                             "unregister_collection",
@@ -687,10 +848,14 @@ class LocalStore(BaseStore):
             backend = self._emb.pop(key, None)
             if backend is not None:
                 try:
+                    discard = getattr(backend, "discard", None)
+                    if callable(discard):
+                        discard()
                     backend.close()
                 except Exception:
                     pass
             self._collection_embedders.pop(key, None)
+            self._drop_query_vector_cache(tenant, collection)
             col_db = self._dbs.pop(key, None)
             if col_db is not None:
                 col_db.close()
@@ -775,6 +940,8 @@ class LocalStore(BaseStore):
                 old_backend.close()
                 self._emb.pop(old_key, None)
             self._collection_embedders.pop(old_key, None)
+            self._drop_query_vector_cache(tenant, old_name)
+            self._drop_query_vector_cache(tenant, new_name)
 
             # Close DB for old collection before rename
             old_db = self._dbs.pop(old_key, None)
@@ -1266,13 +1433,20 @@ class LocalStore(BaseStore):
         with self._collection_write_lock(tenant, collection):
             return self._purge_doc_locked(tenant, collection, docid)
 
-    def _purge_doc_locked(self, tenant: str, collection: str, docid: str) -> int:
+    def _purge_doc_locked(
+        self,
+        tenant: str,
+        collection: str,
+        docid: str,
+    ) -> int:
         self._load_or_init(tenant, collection)
         key = (tenant, collection)
         col_db = self._dbs[key]
-        ids = col_db.delete_doc(docid)
-        if not ids:
+        existing_ids = col_db.get_rids_for_doc(docid)
+        if not existing_ids:
             return 0
+        self._mark_index_dirty(tenant, collection)
+        ids = col_db.delete_doc(docid)
 
         for urid in ids:
             p = os.path.join(
@@ -1294,7 +1468,6 @@ class LocalStore(BaseStore):
                 # and searches hydrate text from sidecars.
                 pass
 
-        self._save(tenant, collection)
         return len(ids)
 
     def _chunks_dir(self, tenant: str, collection: str) -> str:
@@ -1313,7 +1486,6 @@ class LocalStore(BaseStore):
         data = (t or "").encode("utf-8")
         with open(p, "wb") as f:
             f.write(data)
-            f.flush()
 
     def _load_chunk_text(self, tenant: str, collection: str,
                          urid: str) -> str | None:
@@ -1330,6 +1502,88 @@ class LocalStore(BaseStore):
         except OSError:
             return None
 
+    def _prepare_index_records_locked(
+        self,
+        tenant: str,
+        collection: str,
+        docid: str,
+        records: Iterable[Record],
+        doc_meta: Metadata | None,
+        *,
+        verify_roundtrip: bool,
+        save_text: bool = True,
+    ) -> tuple[list[str], list[str], list[tuple[str, str | None, Metadata]], Metadata]:
+        raw_doc_meta = dict(doc_meta or {})
+        raw_doc_meta.setdefault("docid", docid)
+        try:
+            safe_doc_meta = sanit_meta_dict(raw_doc_meta)
+        except MetadataValidationError:
+            raise
+        except Exception:
+            safe_doc_meta = {"docid": docid}
+
+        rids_to_add: list[str] = []
+        texts_to_encode: list[str] = []
+        chunk_rows: list[tuple[str, str | None, Metadata]] = []
+
+        for record in records:
+            if isinstance(record, dict):
+                rid = record.get("rid") or record.get("id") or record.get("uid")
+                txt = record.get("text") or record.get("content")
+                md = (
+                    record.get("meta") or record.get("metadata") or
+                    record.get("tags") or {}
+                )
+            else:
+                try:
+                    rid, txt, md = record
+                except Exception:
+                    continue
+
+            if not rid or txt is None:
+                continue
+
+            if not isinstance(md, dict):
+                if isinstance(md, str):
+                    try:
+                        md = json.loads(md)
+                    except:
+                        md = {}
+                else:
+                    try:
+                        md = dict(md)
+                    except:
+                        md = {}
+
+            try:
+                safe_meta = sanit_meta_dict(md)
+            except MetadataValidationError:
+                raise
+            except Exception:
+                safe_meta = {}
+
+            rid = str(rid)
+            txt = str(txt)
+            if not rid.startswith(f"{docid}::"):
+                rid = f"{docid}::{rid}"
+
+            chunk_path = os.path.join("chunks", self._urid_to_fname(rid))
+            chunk_rows.append((rid, chunk_path, safe_meta))
+            rids_to_add.append(rid)
+            texts_to_encode.append(txt)
+
+            if save_text:
+                self._save_chunk_text(tenant, collection, rid, txt)
+            if save_text and verify_roundtrip:
+                loaded = self._load_chunk_text(tenant, collection, rid) or ""
+                if txt != loaded:
+                    log.warning(
+                        f"Chunk text round-trip mismatch for {rid}: "
+                        f"saved {len(txt)} chars, loaded {len(loaded)} chars"
+                    )
+
+        return rids_to_add, texts_to_encode, chunk_rows, safe_doc_meta
+
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],
                       doc_meta: Metadata | None = None
@@ -1340,12 +1594,32 @@ class LocalStore(BaseStore):
         """
         chunk_count = 0
         purged = 0
+        key = (tenant, collection)
         with self._collection_write_lock(tenant, collection):
             self._load_or_init(tenant, collection)
-            key = (tenant, collection)
+            embedder = self._collection_embedders[key]
+
+        rids_to_add, texts_to_encode, chunk_rows, safe_doc_meta = (
+            self._prepare_index_records_locked(
+                tenant,
+                collection,
+                docid,
+                records,
+                doc_meta,
+                verify_roundtrip=False,
+                save_text=False,
+            )
+        )
+        vectors = (
+            embedder.encode(texts_to_encode)
+            if rids_to_add else None
+        )
+
+        with self._collection_write_lock(tenant, collection):
+            self._load_or_init(tenant, collection)
             col_db = self._dbs[key]
             backend = self._emb[key]
-            embedder = self._collection_embedders[key]
+            current_embedder = self._collection_embedders[key]
             purged = self._purge_doc_locked(tenant, collection, docid)
             if purged:
                 log.debug(
@@ -1355,82 +1629,20 @@ class LocalStore(BaseStore):
                     docid,
                     purged,
                 )
-            raw_doc_meta = dict(doc_meta or {})
-            raw_doc_meta.setdefault("docid", docid)
-            try:
-                safe_doc_meta = sanit_meta_dict(raw_doc_meta)
-            except MetadataValidationError:
-                raise
-            except Exception:
-                safe_doc_meta = {"docid": docid}
-            rids_to_add: list[str] = []
-            texts_to_encode: list[str] = []
-            chunk_rows: list[tuple[str, str | None, Metadata]] = []
-
-            for r in records:
-                if isinstance(r, dict):
-                    rid = r.get("rid") or r.get("id") or r.get("uid")
-                    txt = r.get("text") or r.get("content")
-                    md = (
-                        r.get("meta") or r.get("metadata") or
-                        r.get("tags") or {}
-                    )
-                else:
-                    try:
-                        rid, txt, md = r
-                    except Exception:
-                        continue
-
-                if not rid or txt is None:
-                    continue
-
-                if not isinstance(md, dict):
-                    if isinstance(md, str):
-                        try:
-                            md = json.loads(md)
-                        except:
-                            md = {}
-                    else:
-                        try:
-                            md = dict(md)
-                        except:
-                            md = {}
-
-                try:
-                    safe_meta = sanit_meta_dict(md)
-                except MetadataValidationError:
-                    raise
-                except Exception:
-                    safe_meta = {}
-
-                rid = str(rid)
-                txt = str(txt)
-                if not rid.startswith(f"{docid}::"):
-                    rid = f"{docid}::{rid}"
-
-                chunk_path = os.path.join(
-                    "chunks", self._urid_to_fname(rid)
-                )
-                chunk_rows.append((rid, chunk_path, safe_meta))
-                rids_to_add.append(rid)
-                texts_to_encode.append(txt)
-
-                self._save_chunk_text(tenant, collection, rid, txt)
-                loaded = self._load_chunk_text(tenant, collection, rid) or ""
-                if txt != loaded:
-                    log.warning(
-                        f"Chunk text round-trip mismatch for {rid}: "
-                        f"saved {len(txt)} chars, loaded {len(loaded)} chars"
-                    )
 
             if not rids_to_add:
                 return IndexResult(indexed_chunks=0, purged_chunks=purged)
 
+            self._mark_index_dirty(tenant, collection)
+            for rid, text in zip(rids_to_add, texts_to_encode, strict=False):
+                self._save_chunk_text(tenant, collection, rid, text)
+            if current_embedder is not embedder:
+                vectors = current_embedder.encode(texts_to_encode)
+            assert vectors is not None
+
             # Write metadata to SQLite (inside collection_lock)
             col_db.upsert_chunks(docid, chunk_rows, doc_meta=safe_doc_meta)
-            vectors = embedder.encode(texts_to_encode)
             backend.add(rids_to_add, vectors)
-            self._save(tenant, collection)
             _rids = rids_to_add[:3]
             _sfx = " ..." if len(rids_to_add) > 3 else ""
             log.debug(
@@ -1441,6 +1653,114 @@ class LocalStore(BaseStore):
             if chunk_count:
                 self._register_catalog_collection(tenant, collection)
         return IndexResult(indexed_chunks=chunk_count, purged_chunks=purged)
+
+    def index_documents(
+        self,
+        tenant: str,
+        collection: str,
+        documents: Iterable[tuple[str, Iterable[Record], Metadata | None]],
+    ) -> list[IndexResult]:
+        """Index several prepared documents with one encode/add/save cycle."""
+        prepared = [
+            (str(docid), list(records), doc_meta)
+            for docid, records, doc_meta in documents
+        ]
+        if not prepared:
+            return []
+
+        results: list[IndexResult] = []
+        all_rids: list[str] = []
+        all_texts: list[str] = []
+        docs_to_commit: list[
+            tuple[
+                str,
+                list[str],
+                list[str],
+                list[tuple[str, str | None, Metadata]],
+                Metadata,
+            ]
+        ] = []
+        changed = False
+        key = (tenant, collection)
+
+        with self._collection_write_lock(tenant, collection):
+            self._load_or_init(tenant, collection)
+            embedder = self._collection_embedders[key]
+
+        for docid, records, doc_meta in prepared:
+            rids, texts, chunk_rows, safe_doc_meta = (
+                self._prepare_index_records_locked(
+                    tenant,
+                    collection,
+                    docid,
+                    records,
+                    doc_meta,
+                    verify_roundtrip=False,
+                    save_text=False,
+                )
+            )
+            docs_to_commit.append(
+                (docid, rids, texts, chunk_rows, safe_doc_meta)
+            )
+            all_rids.extend(rids)
+            all_texts.extend(texts)
+
+        vectors = (
+            embedder.encode(all_texts)
+            if all_rids else None
+        )
+
+        with self._collection_write_lock(tenant, collection):
+            self._load_or_init(tenant, collection)
+            col_db = self._dbs[key]
+            backend = self._emb[key]
+            current_embedder = self._collection_embedders[key]
+
+            for docid, rids, texts, chunk_rows, safe_doc_meta in docs_to_commit:
+                purged = self._purge_doc_locked(
+                    tenant,
+                    collection,
+                    docid,
+                )
+                if purged:
+                    log.debug(
+                        "INGEST-REPLACE tenant=%s coll=%s "
+                        "docid=%s purged_chunks=%s",
+                        tenant,
+                        collection,
+                        docid,
+                        purged,
+                    )
+                    changed = True
+
+                results.append(
+                    IndexResult(indexed_chunks=len(rids), purged_chunks=purged)
+                )
+                if not rids:
+                    continue
+
+                for rid, text in zip(rids, texts, strict=False):
+                    self._save_chunk_text(tenant, collection, rid, text)
+                col_db.upsert_chunks(docid, chunk_rows, doc_meta=safe_doc_meta)
+                changed = True
+
+            if all_rids:
+                self._mark_index_dirty(tenant, collection)
+                if current_embedder is not embedder:
+                    vectors = current_embedder.encode(all_texts)
+                assert vectors is not None
+                backend.add(all_rids, vectors)
+                _rids = all_rids[:3]
+                _sfx = " ..." if len(all_rids) > 3 else ""
+                log.debug(
+                    f"INGEST-BATCH-PREPARED: {len(all_rids)} "
+                    f"chunks {_rids}{_sfx}"
+                )
+
+            if all_rids:
+                self._register_catalog_collection(tenant, collection)
+
+        return results
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: FilterSpec | None = None) -> SearchOutput:
@@ -1474,53 +1794,101 @@ class LocalStore(BaseStore):
             else:
                 normed_filters[safe_key] = [vals]
 
+        def _backend_count(backend: VectorBackend) -> int | None:
+            count = getattr(backend, "count", None)
+            if callable(count):
+                try:
+                    return max(0, int(count()))
+                except Exception:
+                    return None
+            index = getattr(backend, "_index", None)
+            total = getattr(index, "ntotal", None)
+            if total is None:
+                return None
+            try:
+                return max(0, int(total))
+            except Exception:
+                return None
+
         def _search_loaded(
             backend: VectorBackend,
             col_db: CollectionDB,
             q_vec: Any,
             embed_ms: float,
         ) -> SearchOutput:
-            t0 = _perf()
-            raw = backend.search(q_vec, fetch_k)
-            candidate_rids = [rid for rid, _ in raw if rid]
-            search_ms = _ms_since(t0)
-
+            total = _backend_count(backend)
+            limit = fetch_k
+            if total is not None:
+                limit = min(limit, total)
+            search_ms = 0.0
             filter_push_ms = 0.0
-            if normed_filters:
-                t0 = _perf()
-                surviving = col_db.filter_by_meta(
-                    candidate_rids,
-                    normed_filters,
-                )
-                raw = [
-                    (rid, score)
-                    for rid, score in raw
-                    if rid in surviving
-                ]
-                candidate_rids = [rid for rid, _score in raw if rid]
-                filter_push_ms = _ms_since(t0)
-
-            t0 = _perf()
-            meta_batch = self._read_meta_batch_safe(
-                tenant,
-                collection,
-                candidate_rids,
-            )
-            hydrate_meta_ms = _ms_since(t0)
-
+            hydrate_meta_ms = 0.0
+            filter_post_ms = 0.0
+            raw: list[tuple[str, float]] = []
+            candidate_rids: list[str] = []
+            meta_batch: dict[str, Metadata] = {}
             kept: list[tuple[str, float]] = []
-            if normed_filters:
-                log.debug(f"SEARCH-FILTER-POST: {normed_filters}")
-            t0 = _perf()
-            for rid, score in raw:
-                if not rid:
-                    continue
-                rid_meta = meta_batch.get(rid, {})
-                if matches_filters(rid_meta, normed_filters):
-                    kept.append((rid, score))
-                    if len(kept) >= kk:
-                        break
-            filter_post_ms = _ms_since(t0)
+
+            while True:
+                t0 = _perf()
+                raw = backend.search(q_vec, limit)
+                search_ms += _ms_since(t0)
+                raw_count = len(raw)
+                candidate_rids = [rid for rid, _score in raw if rid]
+
+                if normed_filters:
+                    t0 = _perf()
+                    surviving = col_db.filter_by_meta(
+                        candidate_rids,
+                        normed_filters,
+                    )
+                    raw = [
+                        (rid, score)
+                        for rid, score in raw
+                        if rid in surviving
+                    ]
+                    candidate_rids = [rid for rid, _score in raw if rid]
+                    filter_push_ms += _ms_since(t0)
+
+                t0 = _perf()
+                meta_batch = self._read_meta_batch_safe(
+                    tenant,
+                    collection,
+                    candidate_rids,
+                )
+                hydrate_meta_ms += _ms_since(t0)
+
+                kept = []
+                if normed_filters:
+                    log.debug(f"SEARCH-FILTER-POST: {normed_filters}")
+                t0 = _perf()
+                for rid, score in raw:
+                    if not rid:
+                        continue
+                    rid_meta = meta_batch.get(rid, {})
+                    if matches_filters(rid_meta, normed_filters):
+                        kept.append((rid, score))
+                        if len(kept) >= kk:
+                            break
+                filter_post_ms += _ms_since(t0)
+
+                if not normed_filters or len(kept) >= kk:
+                    break
+                exhausted_by_total = total is not None and limit >= total
+                exhausted_by_result = raw_count < limit
+                if exhausted_by_total or exhausted_by_result:
+                    break
+
+                next_limit = max(limit * 2, limit + kk)
+                if total is not None:
+                    next_limit = min(next_limit, total)
+                if next_limit <= limit:
+                    break
+                log.debug(
+                    f"SEARCH-FILTER-EXPAND: hits={len(kept)} "
+                    f"k={kk} fetch_k={limit}->{next_limit}"
+                )
+                limit = next_limit
 
             out: list[SearchResult] = []
             t0 = _perf()
@@ -1546,7 +1914,7 @@ class LocalStore(BaseStore):
                 matches=out,
                 timing={
                     "embed_ms": embed_ms,
-                    "search_ms": search_ms,
+                    "search_ms": round(search_ms, 2),
                     "filter_ms": round(filter_push_ms + filter_post_ms, 2),
                     "hydrate_ms": round(hydrate_meta_ms + hydrate_text_ms, 2),
                 },
@@ -1573,14 +1941,24 @@ class LocalStore(BaseStore):
                 return None
 
             t0 = _perf()
-            q_vec = embedder.encode([query])[0]
-            embed_ms = _ms_since(t0)
+            q_vec, query_cache_hit = self._encode_query_cached(
+                tenant,
+                collection,
+                embedder,
+                query,
+            )
+            embed_ms = 0.0 if query_cache_hit else _ms_since(t0)
 
             with self._collection_read_lock(tenant, collection):
                 backend = self._emb.get(key)
                 col_db = self._dbs.get(key)
                 if backend is not None and col_db is not None:
-                    return _search_loaded(backend, col_db, q_vec, embed_ms)
+                    return _search_loaded(
+                        backend,
+                        col_db,
+                        q_vec,
+                        embed_ms,
+                    )
             # Collection drained between encode and search (concurrent
             # delete/move); signal the caller to reload and retry.
             return None
@@ -1630,7 +2008,7 @@ class LocalStore(BaseStore):
 
     def _flush_caches(self, *, async_close: bool = True) -> None:
         old_dbs = list(self._dbs.values())
-        old_backends = list(self._emb.values())
+        old_backends = list(self._emb.items())
         with self._catalog_guard:
             old_catalog = self._catalog
             self._catalog = self._catalog_factory()
@@ -1638,6 +2016,7 @@ class LocalStore(BaseStore):
         self._dbs.clear()
         self._emb.clear()
         self._collection_embedders.clear()
+        self._drop_query_vector_cache()
 
         if old_catalog._conn is not None:
             try:
@@ -1654,9 +2033,10 @@ class LocalStore(BaseStore):
                     db.close()
                 except Exception:
                     pass
-            for backend in old_backends:
+            for (tenant, collection), backend in old_backends:
                 try:
                     backend.close()
+                    self._clear_index_dirty(tenant, collection)
                 except Exception:
                     pass
 
@@ -1666,6 +2046,30 @@ class LocalStore(BaseStore):
             threading.Thread(target=_close_all, daemon=True).start()
         else:
             _close_all()
+
+    def close(self) -> None:
+        """Close open collection handles and cached runtime embedders."""
+        if self._closed:
+            return
+        self._flush_caches(async_close=False)
+        embedders = list(self._embedder_cache.values())
+        if all(embedder is not self._embedder for embedder in embedders):
+            embedders.append(self._embedder)
+        self._embedder_cache.clear()
+
+        seen: set[int] = set()
+        for embedder in embedders:
+            marker = id(embedder)
+            if marker in seen:
+                continue
+            seen.add(marker)
+            close = getattr(embedder, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    pass
+        self._closed = True
 
     def _write_zip(self, source_dir: Path, target_path: Path) -> None:
         source_dir = source_dir.resolve()

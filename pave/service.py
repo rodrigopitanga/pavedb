@@ -798,57 +798,15 @@ def ingest_text(
             }
 
 
-def ingest_documents_batch(
+def _ingest_documents_batch_serial(
     store,
     tenant: str,
     collection: str,
-    documents: Iterable[Mapping[str, Any]],
+    items: list[Mapping[str, Any]],
 ) -> ServiceResult:
-    items = list(documents)
-    if not items:
-        return {
-            "ok": False,
-            "code": "invalid_batch",
-            "error": "documents must not be empty",
-            "error_type": "invalid",
-        }
-
     results: list[dict[str, Any]] = []
     succeeded = 0
     failed = 0
-    for index, item in enumerate(items):
-        if not isinstance(item, Mapping):
-            return {
-                "ok": False,
-                "code": "invalid_batch",
-                "error": f"documents[{index}] must be an object",
-                "error_type": "invalid",
-            }
-        text = item.get("text")
-        if not isinstance(text, str):
-            return {
-                "ok": False,
-                "code": "invalid_batch",
-                "error": f"documents[{index}].text must be a string",
-                "error_type": "invalid",
-            }
-        docid_value = item.get("docid")
-        if docid_value is not None and not isinstance(docid_value, str):
-            return {
-                "ok": False,
-                "code": "invalid_batch",
-                "error": f"documents[{index}].docid must be a string or null",
-                "error_type": "invalid",
-            }
-        metadata_value = item.get("metadata")
-        if metadata_value is not None and not isinstance(metadata_value, dict):
-            return {
-                "ok": False,
-                "code": "invalid_batch",
-                "error": f"documents[{index}].metadata must be an object or null",
-                "error_type": "invalid",
-            }
-
     for index, item in enumerate(items):
         try:
             result = ingest_text(
@@ -889,6 +847,205 @@ def ingest_documents_batch(
         "collection": collection,
         "documents": results,
         "count": len(results),
+        "succeeded": succeeded,
+        "failed": failed,
+    }
+
+
+def ingest_documents_batch(
+    store,
+    tenant: str,
+    collection: str,
+    documents: Iterable[Mapping[str, Any]],
+) -> ServiceResult:
+    items = list(documents)
+    if not items:
+        return {
+            "ok": False,
+            "code": "invalid_batch",
+            "error": "documents must not be empty",
+            "error_type": "invalid",
+        }
+
+    for index, item in enumerate(items):
+        if not isinstance(item, Mapping):
+            return {
+                "ok": False,
+                "code": "invalid_batch",
+                "error": f"documents[{index}] must be an object",
+                "error_type": "invalid",
+            }
+        text = item.get("text")
+        if not isinstance(text, str):
+            return {
+                "ok": False,
+                "code": "invalid_batch",
+                "error": f"documents[{index}].text must be a string",
+                "error_type": "invalid",
+            }
+        docid_value = item.get("docid")
+        if docid_value is not None and not isinstance(docid_value, str):
+            return {
+                "ok": False,
+                "code": "invalid_batch",
+                "error": f"documents[{index}].docid must be a string or null",
+                "error_type": "invalid",
+            }
+        metadata_value = item.get("metadata")
+        if metadata_value is not None and not isinstance(metadata_value, dict):
+            return {
+                "ok": False,
+                "code": "invalid_batch",
+                "error": f"documents[{index}].metadata must be an object or null",
+                "error_type": "invalid",
+            }
+
+    batch_index = getattr(store, "index_documents", None)
+    if not callable(batch_index):
+        return _ingest_documents_batch_serial(store, tenant, collection, items)
+
+    from pave.filters import sanit_meta_dict
+
+    results: list[dict[str, Any] | None] = [None] * len(items)
+    prepared: list[tuple[str, list[tuple[str, str, Metadata]], Metadata]] = []
+    prepared_indexes: list[int] = []
+    seen_docids: set[str] = set()
+    duplicate_docid = False
+    batch_started = _time.perf_counter()
+    now = datetime.now(tz.utc).isoformat(timespec="seconds")
+    now = now.replace("+00:00", "Z")
+
+    for index, item in enumerate(items):
+        baseid = item.get("docid") or _default_docid("")
+        if baseid in seen_docids:
+            duplicate_docid = True
+            break
+        seen_docids.add(baseid)
+
+        metadata = item.get("metadata") or {}
+        doc_meta = {
+            "docid": baseid,
+            "ingested_at": now,
+            **metadata,
+        }
+        try:
+            sanit_meta_dict(doc_meta)
+        except MetadataValidationError as exc:
+            results[index] = {
+                "ok": False,
+                "index": index,
+                "docid": baseid,
+                "code": "invalid_metadata_keys",
+                "error": str(exc),
+            }
+            continue
+
+        records = [
+            (f"{baseid}::{local_id}", chunk, extra)
+            for local_id, chunk, extra in preprocess_text(str(item["text"]))
+        ]
+        if not records:
+            results[index] = {
+                "ok": False,
+                "index": index,
+                "docid": baseid,
+                "code": "no_text_extracted",
+                "error": "no text extracted",
+            }
+            continue
+
+        prepared.append((baseid, records, doc_meta))
+        prepared_indexes.append(index)
+
+    if duplicate_docid:
+        return _ingest_documents_batch_serial(store, tenant, collection, items)
+
+    if prepared:
+        try:
+            with m_timed("ingest"):
+                indexed = batch_index(tenant, collection, prepared)
+        except EmbedderUnavailableError as exc:
+            indexed = []
+            for result_index in prepared_indexes:
+                results[result_index] = {
+                    "ok": False,
+                    "index": result_index,
+                    "docid": items[result_index].get("docid"),
+                    "code": "embedder_unavailable",
+                    "error": str(exc),
+                }
+        except MetadataValidationError as exc:
+            indexed = []
+            for result_index in prepared_indexes:
+                results[result_index] = {
+                    "ok": False,
+                    "index": result_index,
+                    "docid": items[result_index].get("docid"),
+                    "code": "invalid_metadata_keys",
+                    "error": str(exc),
+                }
+        except Exception as exc:
+            indexed = []
+            log.warning(
+                f"ingest_batch failed tenant={tenant} coll={collection}: {exc}",
+                exc_info=True,
+            )
+            for result_index in prepared_indexes:
+                results[result_index] = {
+                    "ok": False,
+                    "index": result_index,
+                    "docid": items[result_index].get("docid"),
+                    "code": "ingest_failed",
+                    "error": str(exc),
+                }
+
+        for result_index, doc, index_result in zip(
+            prepared_indexes,
+            prepared,
+            indexed,
+            strict=False,
+        ):
+            baseid = doc[0]
+            if index_result.purged_chunks:
+                m_inc("purge_total", float(index_result.purged_chunks))
+            m_inc("documents_indexed_total", 1.0)
+            m_inc("chunks_indexed_total", float(index_result.indexed_chunks))
+            results[result_index] = {
+                "ok": True,
+                "index": result_index,
+                "docid": baseid,
+                "chunks": index_result.indexed_chunks,
+            }
+
+    finalized = [
+        result if result is not None else {
+            "ok": False,
+            "index": index,
+            "docid": items[index].get("docid"),
+            "code": "ingest_failed",
+            "error": "failed to ingest document",
+        }
+        for index, result in enumerate(results)
+    ]
+    succeeded = sum(1 for result in finalized if result.get("ok"))
+    failed = len(finalized) - succeeded
+    chunks = sum(
+        int(result.get("chunks") or 0)
+        for result in finalized
+        if result.get("ok")
+    )
+    latency_ms = round((_time.perf_counter() - batch_started) * 1000, 2)
+    log.info(
+        f"ingest_batch tenant={tenant} coll={collection} "
+        f"docs={succeeded} failed={failed} chunks={chunks} ms={latency_ms:.2f}"
+    )
+
+    return {
+        "ok": True,
+        "tenant": tenant,
+        "collection": collection,
+        "documents": finalized,
+        "count": len(finalized),
         "succeeded": succeeded,
         "failed": failed,
     }

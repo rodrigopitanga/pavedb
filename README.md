@@ -24,9 +24,9 @@ Ingest a file, search it, and — the part most engines hide — inspect exactly
 happened and reproduce it later:
 
 ```python
-import pave
+from pavesdk.client import connect
 
-db = pave.connect("./data")
+db = connect("./data")
 books = db.create_collection("books")
 books.ingest("20k_leagues.txt", docid="verne-20k")
 
@@ -73,10 +73,9 @@ PaveDB exposes the same operations two ways: through a **client interface** and 
 Python SDK support ships today (Elixir and JavaScript next) and supports local
 embedded and remote HTTP transports. There's also a **CLI**. Beneath every
 networked client sits the REST API: an open wire protocol you can call directly
-or wrap in your own client, in any language. The examples below use Python —
-`pip install pavedb` (Python
-3.10–3.14); see [Install options](#-install-options) for CPU-only wheels, Docker, and
-source.
+or wrap in your own client, in any language. The examples below use Python
+3.10–3.14; see [Install options](#-install-options) for CPU-only wheels,
+Docker, and source.
 
 The standalone Python SDK package is `pavedb-sdk`, with source on
 [GitHub](https://github.com/rodrigopitanga/pavedb-sdk-python) and
@@ -86,13 +85,14 @@ the local embedded engine.
 
 ### 🐍 From Python
 
-The fastest path to a first search — no server, no config. `connect()` to a directory to
-persist, or with no argument for an ephemeral store discarded on close.
+The fastest path to a first search — no server, no config. Use the SDK
+handle API with `pavedb` installed alongside it; local targets are backed by
+PaveDB's embedded engine.
 
 ```python
-import pave
+from pavesdk.client import connect
 
-db = pave.connect("./data")              # persistent; pave.connect() for ephemeral
+db = connect("./data")                   # persistent; connect() for ephemeral
 books = db.create_collection("books")
 
 books.ingest("20k_leagues.txt", docid="verne-20k", metadata={"lang": "en"})
@@ -102,10 +102,9 @@ for hit in books.search("captain nemo", k=3):
     print(hit["score"], hit["meta"]["docid"], hit["text"][:60])
 ```
 
-The standalone `pavedb-sdk` package uses the same handle API against a remote
-server via `pavesdk.client.connect("http://your-host:8086")`. Whichever client
-or transport you use, every hit carries the same provenance: document id,
-offset, and the matched snippet.
+Use the same SDK handle API against a remote server with
+`connect("http://your-host:8086")`. Whichever transport you use, every hit
+carries the same provenance: document id, offset, and the matched snippet.
 
 ### ⌨️ From the CLI (local, no server)
 
@@ -127,10 +126,10 @@ Full command reference: [`docs/reference/cli.md`](docs/reference/cli.md).
 Run a server — `pavesrv` (from a PyPI install) or a Docker image (see
 [Install options](#-install-options)) — and PaveDB exposes a plain HTTP API on
 `http://localhost:8086`. This is the open wire protocol every networked client wraps
-(networked clients arrive in v1.1) and the one you'd target to build your own — in any
-language. No black box: every route is documented in OpenAPI at `/openapi.json` and
-browsable at `/ui`. Create and ingest mirror the CLI. Set an auth key
-(`PAVEDB_GLOBAL_KEY`) so the server accepts requests; then a search looks like:
+and the one you'd target to build your own — in any language. No black box:
+every route is documented in OpenAPI at `/openapi.json` and browsable at
+`/ui`. Create and ingest mirror the CLI. Set an auth key (`PAVEDB_GLOBAL_KEY`)
+so the server accepts requests; then a search looks like:
 
 ```bash
 export PAVEDB_GLOBAL_KEY=super-sekret
@@ -244,17 +243,17 @@ log:
 The same engine scales from a throwaway prototype to a remote deployment — and your code
 barely changes along the way:
 
-1. **Prototype with zero setup.** `pave.connect()` opens an ephemeral store in a temp
+1. **Prototype with zero setup.** `connect()` opens an ephemeral store in a temp
    directory, discarded on close. No config, nothing left behind.
-2. **Persist locally.** Point at a directory — `pave.connect("./data")` — and your data
+2. **Persist locally.** Point at a directory — `connect("./data")` — and your data
    survives restarts. Same code, now durable.
 3. **Validate it as a service.** Serve that *exact* directory over HTTP, no copying:
    ```bash
    pavesrv --data-dir ./data
    ```
    Run your staging checks against the real wire protocol your production deploy will
-   speak. In v1.1 your app switches transports with one line —
-   `pave.connect("http://localhost:8086")`, same interface.
+   speak. Your app switches transports with one line:
+   `connect("http://localhost:8086")`.
 4. **Deploy remotely.** Run the prebuilt Docker image on your server (see
    [Install options](#-install-options)).
 5. **Migrate your data.** Snapshot the local instance and restore it into the remote one —

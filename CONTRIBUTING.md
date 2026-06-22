@@ -111,6 +111,7 @@ breakdown:
 | Tag | Changelog Section | Use for |
 |-----|-------------------|---------|
 | `[core]` | Core | Cross-cutting features, service logic layer |
+| `[sdk]` | SDK | Python SDK package, client interface, and SDK repo changes |
 | `[api]` | API | REST endpoints, request/response schemas |
 | `[cli]` | CLI | Command-line interface changes |
 | `[store]` | Store | Vector store backends, indexing |
@@ -128,6 +129,10 @@ breakdown:
 
 **Two tags max**, most relevant first: `[api][cli] Add delete document endpoint`
 
+Use `[sdk]` for commits in the standalone Python SDK repository. The same tag also
+applies inside PaveDB when a change exists primarily to support the SDK/client
+interface boundary.
+
 **Feature plan reference:** when a commit implements work tracked in `docs/design/`,
 include the plan ID in parentheses at the end of the first line:
 
@@ -144,6 +149,10 @@ chore(deps): bump sentence-transformers to 5.x
 
 **Changelog:** Only commits starting with `[tag]` or `chore:` are included. Release
 commits (`chore(release): vX.Y.Z`) are auto-skipped.
+
+**Commit identity:** configure Git with the project maintainer identity before
+committing. Do not rely on fallback machine hostnames or unset Git identity. This
+policy applies to PaveDB and the standalone PaveDB SDK repositories.
 
 ## Issues and task claims
 

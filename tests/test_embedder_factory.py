@@ -33,8 +33,12 @@ def _registry_cfg(
     runtime="auto",
     model=_DEFAULT_SBERT_MODEL,
     store="faiss",
+    config=None,
     instances=None,
 ):
+    active_config = {"runtime": runtime}
+    if config:
+        active_config.update(config)
     return _DummyCFG(
         {
             "embedder.default": default,
@@ -42,7 +46,7 @@ def _registry_cfg(
                 "native": {
                     "type": "sbert",
                     "model": model,
-                    "config": {"runtime": runtime},
+                    "config": active_config,
                 },
             },
             "vector_store.type": store,
@@ -116,11 +120,16 @@ def test_factory_uses_process_mode_when_explicitly_requested(monkeypatch):
     )
 
     emb = factory.get_embedder(
-        _registry_cfg(runtime="process", store="qdrant")
+        _registry_cfg(
+            runtime="process",
+            store="qdrant",
+            config={"workers": 3},
+        )
     )
 
     assert isinstance(emb, FakeProcessSbert)
     assert emb.kwargs["model_name"] == "sentence-transformers/all-MiniLM-L6-v2"
+    assert emb.kwargs["workers"] == 3
 
 
 def test_factory_uses_none_mode_for_direct_sbert(monkeypatch):
@@ -259,6 +268,7 @@ def test_embedder_space_key_ignores_sbert_runtime_knobs():
                 "runtime": "direct",
                 "device": "cpu",
                 "batch_size": 8,
+                "workers": 1,
             },
         }
     )
@@ -270,6 +280,7 @@ def test_embedder_space_key_ignores_sbert_runtime_knobs():
                 "runtime": "process",
                 "device": "mps",
                 "batch_size": 64,
+                "workers": 4,
             },
         }
     )

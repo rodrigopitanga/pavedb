@@ -11,8 +11,10 @@ macOS to sidestep the torch fork-safety hazard.
 from __future__ import annotations
 
 import multiprocessing as mp
+import os
 import traceback
 from contextlib import suppress
+from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any
 
@@ -23,6 +25,14 @@ from ..config import get_cfg
 
 _STARTUP_TIMEOUT_S = 300.0
 _REQUEST_TIMEOUT_S = 300.0
+_MAX_AUTO_WORKERS = 8
+
+
+@dataclass
+class _WorkerSlot:
+    lock: Lock = field(default_factory=Lock)
+    proc: mp.Process | None = None
+    conn: Any = None
 
 
 def _resolve_device(raw_device: object) -> str:
@@ -101,6 +111,16 @@ def _worker_main(conn, model_name: str, raw_device: str, batch_size: int) -> Non
             conn.close()
 
 
+def _resolve_worker_count(raw_workers: object) -> int:
+    if raw_workers is None:
+        raw_workers = "auto"
+    value = str(raw_workers).strip().lower()
+    if value in {"", "auto"}:
+        cpus = os.cpu_count() or 1
+        return max(1, min(_MAX_AUTO_WORKERS, cpus // 2 or 1))
+    return max(1, int(raw_workers))
+
+
 class ProcessSbertEmbedder:
     """Run sentence-transformers in a dedicated subprocess.
 
@@ -116,6 +136,7 @@ class ProcessSbertEmbedder:
         model_name: str | None = None,
         device: str | None = None,
         batch_size: int | None = None,
+        workers: int | None = None,
     ) -> None:
         cfg = get_cfg()
         self.model_name = str(
@@ -131,11 +152,16 @@ class ProcessSbertEmbedder:
         if batch_size is None:
             batch_size = cfg.get("embedder.sbert.batch_size")
         self.batch_size = int(batch_size if batch_size is not None else 64)
-        self._lock = Lock()
-        self._proc: mp.Process | None = None
-        self._conn: Any = None
+        if workers is None:
+            workers = cfg.get("embedder.sbert.workers")
+        self.workers = _resolve_worker_count(workers)
+        self._slots = [_WorkerSlot() for _ in range(self.workers)]
+        self._select_lock = Lock()
+        self._dim_lock = Lock()
+        self._next_slot = 0
         self._dim: int | None = None
-        self._start_locked()
+        with self._slots[0].lock:
+            self._start_slot_locked(self._slots[0])
 
     def __enter__(self) -> "ProcessSbertEmbedder":
         return self
@@ -156,11 +182,11 @@ class ProcessSbertEmbedder:
         child_conn.close()
         return proc, parent_conn
 
-    def _shutdown_locked(self) -> None:
-        proc = self._proc
-        conn = self._conn
-        self._proc = None
-        self._conn = None
+    def _shutdown_slot_locked(self, slot: _WorkerSlot) -> None:
+        proc = slot.proc
+        conn = slot.conn
+        slot.proc = None
+        slot.conn = None
 
         if conn is not None:
             with suppress(Exception):
@@ -174,11 +200,26 @@ class ProcessSbertEmbedder:
                 proc.terminate()
                 proc.join(timeout=2)
 
-    def _start_locked(self) -> None:
-        if self._proc is not None and self._conn is not None and self._proc.is_alive():
+    def _record_dim(self, dim: int) -> None:
+        with self._dim_lock:
+            if self._dim is None:
+                self._dim = dim
+                return
+            if self._dim != dim:
+                raise RuntimeError(
+                    "SBERT worker reported a different embedding dimension "
+                    f"after restart: {dim} != {self._dim}"
+                )
+
+    def _start_slot_locked(self, slot: _WorkerSlot) -> None:
+        if (
+            slot.proc is not None
+            and slot.conn is not None
+            and slot.proc.is_alive()
+        ):
             return
 
-        self._shutdown_locked()
+        self._shutdown_slot_locked(slot)
         proc, conn = self._spawn_worker_process()
 
         try:
@@ -204,35 +245,57 @@ class ProcessSbertEmbedder:
                 proc.join(timeout=2)
             raise RuntimeError(f"SBERT worker failed to start: {payload}")
 
-        dim = int(payload)
-        if self._dim is not None and self._dim != dim:
+        try:
+            self._record_dim(int(payload))
+        except RuntimeError:
             with suppress(Exception):
                 conn.close()
             with suppress(Exception):
                 proc.terminate()
                 proc.join(timeout=2)
-            raise RuntimeError(
-                "SBERT worker reported a different embedding dimension "
-                f"after restart: {dim} != {self._dim}"
-            )
+            raise
 
-        self._proc = proc
-        self._conn = conn
-        self._dim = dim
+        slot.proc = proc
+        slot.conn = conn
 
-    def _restart_locked(self) -> None:
-        self._shutdown_locked()
-        self._start_locked()
+    def _restart_slot_locked(self, slot: _WorkerSlot) -> None:
+        self._shutdown_slot_locked(slot)
+        self._start_slot_locked(slot)
 
-    def _ensure_worker_locked(self) -> None:
-        if self._proc is None or self._conn is None or not self._proc.is_alive():
-            self._start_locked()
+    def _ensure_slot_locked(self, slot: _WorkerSlot) -> None:
+        if slot.proc is None or slot.conn is None or not slot.proc.is_alive():
+            self._start_slot_locked(slot)
+
+    @staticmethod
+    def _slot_alive(slot: _WorkerSlot) -> bool:
+        return (
+            slot.proc is not None
+            and slot.conn is not None
+            and slot.proc.is_alive()
+        )
+
+    def _choose_slot(self) -> _WorkerSlot:
+        with self._select_lock:
+            total = len(self._slots)
+            for offset in range(total):
+                index = (self._next_slot + offset) % total
+                slot = self._slots[index]
+                if self._slot_alive(slot) and not slot.lock.locked():
+                    self._next_slot = index + 1
+                    return slot
+            for offset in range(total):
+                index = (self._next_slot + offset) % total
+                slot = self._slots[index]
+                if not self._slot_alive(slot):
+                    self._next_slot = index + 1
+                    return slot
+            slot = self._slots[self._next_slot % total]
+            self._next_slot += 1
+            return slot
 
     @property
     def dim(self) -> int:
-        with self._lock:
-            if self._dim is None:
-                self._start_locked()
+        with self._dim_lock:
             assert self._dim is not None
             return int(self._dim)
 
@@ -240,22 +303,23 @@ class ProcessSbertEmbedder:
         if not texts:
             return np.zeros((0, self.dim), dtype=np.float32)
 
-        with self._lock:
+        slot = self._choose_slot()
+        with slot.lock:
             for attempt in range(2):
-                self._ensure_worker_locked()
-                assert self._conn is not None
-                assert self._proc is not None
+                self._ensure_slot_locked(slot)
+                assert slot.conn is not None
+                assert slot.proc is not None
                 try:
-                    self._conn.send(("encode", texts))
-                    if not self._conn.poll(_REQUEST_TIMEOUT_S):
+                    slot.conn.send(("encode", texts))
+                    if not slot.conn.poll(_REQUEST_TIMEOUT_S):
                         raise TimeoutError(
                             "SBERT worker did not answer within "
                             f"{_REQUEST_TIMEOUT_S:.0f}s"
                         )
-                    status, payload = self._conn.recv()
+                    status, payload = slot.conn.recv()
                 except (BrokenPipeError, EOFError, OSError, TimeoutError):
                     if attempt == 0:
-                        self._restart_locked()
+                        self._restart_slot_locked(slot)
                         continue
                     raise
 
@@ -266,8 +330,9 @@ class ProcessSbertEmbedder:
                 raise RuntimeError(f"SBERT worker returned unknown status: {status}")
 
     def close(self) -> None:
-        with self._lock:
-            self._shutdown_locked()
+        for slot in self._slots:
+            with slot.lock:
+                self._shutdown_slot_locked(slot)
 
     def __del__(self) -> None:
         try:

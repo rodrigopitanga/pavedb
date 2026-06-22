@@ -137,6 +137,13 @@ shows commented Ollama and OpenAI examples; only the
 - Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__BATCH_SIZE`
 - Description: Optional native SBERT encode batch size; null uses the adapter default.
 
+### `embedder.instances.native.config.workers`
+
+- Default: `"auto"`
+- Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__WORKERS`
+- Description: Native SBERT process worker count; auto picks a bounded local default
+  when runtime resolves to process.
+
 ## Ingest
 
 ### `ingest.max_file_size_mb`

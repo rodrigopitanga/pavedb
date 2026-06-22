@@ -7,17 +7,19 @@ import os
 
 import pytest
 
-import pave
-import pave.client as client_mod
-from pave.client import (
-    Collection,
+import pave.localclient as localclient_mod
+from pave.localclient import (
+    LocalClient,
+    provider,
+)
+from pavesdk.errors import (
     Conflict,
     InvalidRequest,
-    LocalClient,
     NotFoundError,
     PaveError,
     Unavailable,
 )
+from pavesdk.interface import Collection
 from pave.service import ServiceError
 
 
@@ -26,7 +28,7 @@ def test_local_client_search_common_merge_requires_opt_in(tmp_path, cfg):
     cfg.set("common_tenant", "global")
     cfg.set("common_collection", "common")
 
-    with pave.connect(tmp_path / "db") as db:
+    with provider(tmp_path / "db") as db:
         local = db.create_collection("books")
         db.create_collection("common", tenant="global")
 
@@ -46,8 +48,8 @@ def test_local_client_search_common_merge_requires_opt_in(tmp_path, cfg):
         } == {"DOC-L", "DOC-C"}
 
 
-def test_connect_dispatch_and_ephemeral_cleanup(tmp_path, monkeypatch):
-    persistent = pave.connect(tmp_path / "data")
+def test_provider_target_handling_and_ephemeral_cleanup(tmp_path, monkeypatch):
+    persistent = provider(tmp_path / "data")
     try:
         assert isinstance(persistent, LocalClient)
         assert persistent.path == os.fspath(tmp_path / "data")
@@ -55,7 +57,7 @@ def test_connect_dispatch_and_ephemeral_cleanup(tmp_path, monkeypatch):
         persistent.close()
 
     monkeypatch.chdir(tmp_path)
-    bare = pave.connect("localhost")
+    bare = provider("localhost")
     try:
         assert isinstance(bare, LocalClient)
         assert bare.path == "localhost"
@@ -63,25 +65,25 @@ def test_connect_dispatch_and_ephemeral_cleanup(tmp_path, monkeypatch):
         bare.close()
 
     with pytest.raises(InvalidRequest) as excinfo:
-        pave.connect("http://localhost:8080")
+        provider("http://localhost:8080")
     assert excinfo.value.code == "unsupported_scheme"
     assert excinfo.value.message == (
-        "network targets are handled by the pavedb-sdk package"
+        "network targets are handled by pavesdk.client.connect()"
     )
 
-    ephemeral = pave.connect()
+    ephemeral = provider()
     ephemeral_path = ephemeral.path
     assert os.path.isdir(ephemeral_path)
     ephemeral.close()
     assert not os.path.exists(ephemeral_path)
 
     with pytest.raises(InvalidRequest) as blank:
-        pave.connect("")
+        provider("")
     assert blank.value.code == "unsupported_target"
 
 
-def test_local_provider_accepts_target_and_tenant(tmp_path):
-    persistent = client_mod.local_provider(tmp_path / "data", tenant="acme")
+def test_provider_accepts_target_and_tenant(tmp_path):
+    persistent = localclient_mod.provider(tmp_path / "data", tenant="acme")
     try:
         assert isinstance(persistent, LocalClient)
         assert persistent.path == os.fspath(tmp_path / "data")
@@ -89,7 +91,7 @@ def test_local_provider_accepts_target_and_tenant(tmp_path):
     finally:
         persistent.close()
 
-    ephemeral = client_mod.local_provider(None, tenant="acme")
+    ephemeral = localclient_mod.provider(None, tenant="acme")
     ephemeral_path = ephemeral.path
     try:
         assert ephemeral.tenant == "acme"
@@ -99,12 +101,34 @@ def test_local_provider_accepts_target_and_tenant(tmp_path):
     assert not os.path.exists(ephemeral_path)
 
 
+def test_local_client_close_delegates_store_close(tmp_path):
+    class ClosingStore:
+        def __init__(self):
+            self.close_count = 0
+            self.flush_count = 0
+
+        def close(self):
+            self.close_count += 1
+
+        def _flush_caches(self, *, async_close=True):
+            self.flush_count += 1
+
+    store = ClosingStore()
+    client = LocalClient(tmp_path / "data", store=store)
+
+    client.close()
+    client.close()
+
+    assert store.close_count == 1
+    assert store.flush_count == 0
+
+
 def test_collection_surface_returns_clean_data(tmp_path):
     file_path = tmp_path / "book.txt"
     file_path.write_text("Captain Nemo commands the Nautilus", encoding="utf-8")
     archive_path = tmp_path / "dump.zip"
 
-    with pave.connect(tmp_path / "db") as db:
+    with provider(tmp_path / "db") as db:
         books = db.create_collection("books", display_name="Books")
         assert isinstance(books, Collection)
         assert books.tenant == "default"
@@ -224,7 +248,7 @@ def test_collection_surface_returns_clean_data(tmp_path):
 
 
 def test_exception_translation_from_service_results(tmp_path):
-    with pave.connect(tmp_path / "db") as db:
+    with provider(tmp_path / "db") as db:
         with pytest.raises(NotFoundError) as missing:
             db.collection("missing").detail()
         assert missing.value.code == "collection_not_found"
@@ -241,13 +265,13 @@ def test_exception_translation_from_service_results(tmp_path):
 
 
 def test_exception_translation_from_service_errors(tmp_path, monkeypatch):
-    with pave.connect(tmp_path / "db") as db:
+    with provider(tmp_path / "db") as db:
         coll = db.create_collection("books")
 
         def raise_unavailable(*_args, **_kwargs):
             raise ServiceError("embedder_unavailable", "embedder offline")
 
-        monkeypatch.setattr("pave.client.svc_search", raise_unavailable)
+        monkeypatch.setattr("pave.localclient.svc_search", raise_unavailable)
 
         with pytest.raises(Unavailable) as unavailable:
             coll.search("captain")
@@ -257,7 +281,7 @@ def test_exception_translation_from_service_errors(tmp_path, monkeypatch):
         def raise_unknown(*_args, **_kwargs):
             raise ServiceError("unexpected_failure", "boom")
 
-        monkeypatch.setattr("pave.client.svc_search", raise_unknown)
+        monkeypatch.setattr("pave.localclient.svc_search", raise_unknown)
 
         with pytest.raises(PaveError) as generic:
             coll.search("captain")

@@ -81,6 +81,7 @@ def test_process_sbert_restarts_after_connection_drop(monkeypatch):
         model_name="sentence-transformers/test-model",
         device="cpu",
         batch_size=8,
+        workers=1,
     )
     out = emb.encode(["hello"])
 
@@ -95,3 +96,67 @@ def test_process_sbert_restarts_after_connection_drop(monkeypatch):
     assert second_conn.sent == [("encode", ["hello"]), ("close",)]
     assert second_conn.closed is True
     assert second_proc.join_calls
+
+
+def test_process_sbert_auto_worker_count_is_bounded(monkeypatch):
+    factory = importlib.reload(worker_mod)
+    monkeypatch.setattr(factory.os, "cpu_count", lambda: 20)
+
+    assert factory._resolve_worker_count("auto") == 8
+    assert factory._resolve_worker_count(None) == 8
+    assert factory._resolve_worker_count(2) == 2
+    assert factory._resolve_worker_count(0) == 1
+
+
+def test_process_sbert_distributes_encode_calls_across_workers(monkeypatch):
+    factory = importlib.reload(worker_mod)
+
+    first_proc = _FakeProc()
+    first_conn = _FakeConn(
+        [
+            ("ready", 3),
+            ("ok", np.array([[1.0, 0.0, 0.0]], dtype=np.float32)),
+            ("ok", np.array([[3.0, 0.0, 0.0]], dtype=np.float32)),
+        ]
+    )
+    second_proc = _FakeProc()
+    second_conn = _FakeConn(
+        [
+            ("ready", 3),
+            ("ok", np.array([[2.0, 0.0, 0.0]], dtype=np.float32)),
+            ("ok", np.array([[4.0, 0.0, 0.0]], dtype=np.float32)),
+        ]
+    )
+    pairs = [(first_proc, first_conn), (second_proc, second_conn)]
+    spawned: list[tuple[_FakeProc, _FakeConn]] = []
+
+    def fake_spawn(self):
+        pair = pairs[len(spawned)]
+        spawned.append(pair)
+        return pair
+
+    monkeypatch.setattr(
+        factory.ProcessSbertEmbedder,
+        "_spawn_worker_process",
+        fake_spawn,
+        raising=True,
+    )
+
+    emb = factory.ProcessSbertEmbedder(
+        model_name="sentence-transformers/test-model",
+        device="cpu",
+        batch_size=8,
+        workers=2,
+    )
+
+    assert len(spawned) == 1
+    assert emb.encode(["a"])[0, 0] == 1.0
+    with emb._slots[0].lock:
+        assert emb.encode(["b"])[0, 0] == 2.0
+    assert len(spawned) == 2
+    assert emb.encode(["c"])[0, 0] == 3.0
+    assert emb.encode(["d"])[0, 0] == 4.0
+    assert first_conn.sent == [("encode", ["a"]), ("encode", ["c"])]
+    assert second_conn.sent == [("encode", ["b"]), ("encode", ["d"])]
+
+    emb.close()

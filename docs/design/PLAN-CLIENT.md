@@ -43,27 +43,29 @@ release as `__version__`.
 Runtime flow:
 
 ```text
-pavedb_client.connect("https://host")
+pavesdk.client.connect("https://host")
   -> HttpClient
   -> PaveDB HTTP API
 
-pavedb_client.connect("./data")
+pavesdk.client.connect("./data")
   -> discover local provider registered by installed `pavedb`
-  -> pavedb.local_client.LocalClient
+  -> pave.localclient.LocalClient
   -> pave.service
   -> LocalStore / CatalogDB / CollectionDB / FaissBackend / embedders
 ```
 
-If only `pavedb-sdk` is installed, local targets fail with a
-clear `local_client_unavailable` error telling the user to install
-`pavedb`.
+If only `pavedb-sdk` is installed, local targets fail with
+`LocalClientUnavailable` (`localClientUnavailable`) telling the user
+to install `pavedb`.
 
-Implementation note: move transport-neutral pieces out of the
-current `pave/client.py` into the client package, but keep the
-service/store-backed `LocalClient` implementation in the `pavedb`
-distribution. Use Python entry points or an equivalent provider
-registry so the client wheel does not directly depend on the local
-engine package.
+History note: P1-15 first landed the local handle API inside
+`pave/client.py` and exposed `pave.connect()`. After the standalone
+SDK split, transport-neutral pieces moved to `pavesdk`; public
+`connect()` lives only in `pavesdk.client`, and `pavedb` keeps only
+the service/store-backed `LocalClient` in `pave/localclient.py`.
+The core package registers local mode through the
+`pave.localclient:provider` entry point so the client wheel does not
+directly depend on the local engine package.
 
 Sequence:
 
@@ -82,9 +84,9 @@ Two levels: `Client` → `Collection`. A `Collection` handle carries
 `(tenant, name)` so methods never repeat them.
 
 ```python
-import pave
+from pavesdk.client import connect
 
-db = pave.connect("./data")
+db = connect("./data")
 books = db.create_collection("books")
 books.ingest("book.txt", docid="verne")
 books.add("Captain Nemo commands the Nautilus.", docid="note-1")
@@ -98,12 +100,12 @@ db.collection("books", tenant="acme")            # multi-tenant when needed
 Tenant lives on the client (default `"default"`), overridable per
 call. This is the canonical interface the HTTP client copies 1:1.
 
-## `connect()` — scheme-based dispatch
+## `pavesdk.client.connect()` — scheme-based dispatch
 
-`connect()` is thin sugar over explicit constructors
-(`LocalClient(path)`, later `HttpClient(url)`); it picks one by
-URL scheme. **No host/path heuristics** — a bare string is always
-a path, a network target always needs a scheme. Ambiguity here
+`pavesdk.client.connect()` is thin sugar over explicit constructors
+(`LocalClient(path)`, `HttpClient(url)`); it picks one by URL
+scheme. **No host/path heuristics** — a bare string is always a
+path, a network target always needs a scheme. Ambiguity here
 (e.g. `"localhost"`) is a silent footgun, so we refuse to guess.
 
 | call | result | lifetime |
@@ -121,7 +123,7 @@ is not a true zero-disk store. `LocalStore` is built around a
 approach gives the same "nothing persists" UX with no store
 changes; label it *ephemeral*, not *in-memory*, to stay truthful.
 
-Clients are context managers (`with pave.connect() as db:`) with
+Clients are context managers (`with connect() as db:`) with
 `.close()` — required for ephemeral cleanup, used elsewhere to
 release handles.
 

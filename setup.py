@@ -49,6 +49,7 @@ setup(
         "pypdf>=5.0.0",
         "pyyaml>=6.0.2",
         "python-dotenv>=1.0.1",
+        "openai>=1.0.0",
         "pavedb-sdk>=0.1.0,<0.2.0",
         "faiss-cpu>=1.7.1",
         "torch>=2.10.0",
@@ -56,9 +57,6 @@ setup(
     ],
     extras_require={
         "cpu": [],
-        "openai": [
-            "openai>=1.0.0",
-        ],
         "test": [
             "pytest",
             "httpx",
@@ -71,7 +69,7 @@ setup(
             "pavecli=pave.cli:main_cli",
         ],
         "pavesdk.providers": [
-            "pave=pave.client:local_provider",
+            "pave=pave.localclient:provider",
         ],
     },
     classifiers=[

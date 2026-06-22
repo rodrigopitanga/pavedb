@@ -17,6 +17,27 @@ def _store(temp_data_dir):
     return LocalStore(str(temp_data_dir), FakeEmbedder())
 
 
+class CloseTrackingEmbedder(FakeEmbedder):
+    def __init__(self):
+        super().__init__()
+        self.close_count = 0
+
+    def close(self):
+        self.close_count += 1
+
+
+def test_store_close_closes_cached_embedders_once(temp_data_dir):
+    embedder = CloseTrackingEmbedder()
+    store = LocalStore(str(temp_data_dir), embedder)
+    store._embedder_cache["duplicate"] = embedder
+    store._collection_embedders[("acme", "books")] = embedder
+
+    store.close()
+    store.close()
+
+    assert embedder.close_count == 1
+
+
 def test_get_document_recovers_from_closed_cached_db(temp_data_dir):
     store = _store(temp_data_dir)
     tenant, collection, docid = "acme", "race_get_doc", "DOC-1"

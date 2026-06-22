@@ -40,6 +40,8 @@ class FaissBackend:
         self._rid_to_id: dict[str, int] = {}
         self._id_to_rid: dict[int, str] = {}
         self._next_id = 0
+        self._dirty = False
+        self._discarded = False
 
     @property
     def _index_file(self) -> Path:
@@ -73,6 +75,7 @@ class FaissBackend:
             for iid, rid in id_to_rid_raw.items()
         }
         self._next_id = int(data.get("next_id", 0))
+        self._dirty = False
 
     def add(self, rids: list[str], vectors: NDArray[np.float32]) -> None:
         if not rids:
@@ -109,6 +112,8 @@ class FaissBackend:
 
         ids = np.array(int_ids, dtype=np.int64)
         self._index.add_with_ids(normed, ids)
+        self._dirty = True
+        self._discarded = False
 
     def search(
         self,
@@ -134,6 +139,10 @@ class FaissBackend:
             out.append((rid, float(score)))
         return out
 
+    def count(self) -> int:
+        """Return the number of vectors currently indexed."""
+        return int(self._index.ntotal)
+
     def delete(self, rids: list[str]) -> None:
         if not rids:
             return
@@ -148,8 +157,20 @@ class FaissBackend:
 
         if int_ids:
             self._index.remove_ids(np.array(int_ids, dtype=np.int64))
+            self._dirty = True
+            self._discarded = False
+
+    def discard(self) -> None:
+        """Drop pending persistence for a backend that is about to be removed."""
+        self._discarded = True
 
     def flush(self) -> None:
+        if self._discarded:
+            return
+        persisted = self._index_file.is_file() and self._map_file.is_file()
+        if persisted and not self._dirty:
+            return
+
         self._storage_dir.mkdir(parents=True, exist_ok=True)
         faiss.write_index(self._index, str(self._index_file))
 
@@ -162,6 +183,7 @@ class FaissBackend:
             json.dumps(payload, ensure_ascii=False),
             encoding="utf-8",
         )
+        self._dirty = False
 
     def close(self) -> None:
         self.flush()
