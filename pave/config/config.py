@@ -125,10 +125,20 @@ def _config_defaults(
 
 
 def _env_flag(name: str) -> bool:
-    value = os.environ.get(_ENV_PREFIX + name)
-    if value is None:
-        return False
-    return value.strip().lower() in {"1", "true", "yes", "on"}
+    return cfg_bool(os.environ.get(_ENV_PREFIX + name))
+
+
+def cfg_bool(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def should_warm_default_embedder(cfg: "Config") -> bool:
+    raw = cfg.get("embedder.warmup_default")
+    if raw is None:
+        return not cfg_bool(cfg.get("dev"))
+    return cfg_bool(raw)
 
 
 def _default_config_path() -> str | None:

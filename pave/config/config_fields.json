@@ -26,6 +26,11 @@
       "description": "Collection name used for common shared results."
     },
     {
+      "key": "query_log.enabled",
+      "default": true,
+      "description": "Enable persisted query history and query-home lookup pointers."
+    },
+    {
       "key": "dev",
       "default": false,
       "description": "Enable development startup behavior such as allowing auth.mode=none on loopback and verbose PaveDB logging."
@@ -67,8 +72,8 @@
     },
     {
       "key": "embedder.warmup_default",
-      "default": true,
-      "description": "Warm the default embedder at server startup before the first query."
+      "default": null,
+      "description": "Warm the default embedder at server startup before the first query. Null uses the startup policy: enabled outside dev, disabled in dev."
     },
     {
       "key": "embedder.instances.native.type",
@@ -98,7 +103,7 @@
     {
       "key": "embedder.instances.native.config.workers",
       "default": "auto",
-      "description": "Native SBERT process worker count; auto picks a bounded local default when runtime resolves to process."
+      "description": "Native SBERT process worker count; auto picks a conservative local default capped for mixed search/ingest tail stability."
     },
     {
       "key": "ingest.max_file_size_mb",

@@ -25,7 +25,7 @@ from pavesdk.interface import (
 )
 
 import pave.embedders as embedders
-from pave.config import get_cfg
+from pave.config import get_cfg, get_logger, should_warm_default_embedder
 from pave.embedders import LazyEmbedder
 from pave.service import (
     ServiceError,
@@ -99,10 +99,16 @@ def _unwrap(result: dict[str, Any]) -> dict[str, Any]:
 
 
 def _store_for_path(path: str | os.PathLike[str]) -> BaseStore:
-    return LocalStore(
+    store = LocalStore(
         data_dir=str(path),
         embedder=LazyEmbedder(embedders.get_embedder),
     )
+    if should_warm_default_embedder(get_cfg()):
+        try:
+            store.warm()
+        except Exception as exc:
+            get_logger().warning("Local provider warm-up failed: %s", exc)
+    return store
 
 
 def provider(

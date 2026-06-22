@@ -20,6 +20,7 @@ from pavesdk.errors import (
     Unavailable,
 )
 from pavesdk.interface import Collection
+from pave.config import get_cfg
 from pave.service import ServiceError
 
 
@@ -99,6 +100,55 @@ def test_provider_accepts_target_and_tenant(tmp_path):
     finally:
         ephemeral.close()
     assert not os.path.exists(ephemeral_path)
+
+
+def test_provider_warms_store_when_warmup_enabled(tmp_path, monkeypatch):
+    cfg = get_cfg()
+    cfg.set("dev", True)
+    cfg.set("embedder.warmup_default", True)
+    stores = []
+
+    class WarmStore:
+        def __init__(self, *args, **kwargs):
+            self.close_count = 0
+            self.warm_count = 0
+            stores.append(self)
+
+        def close(self):
+            self.close_count += 1
+
+        def warm(self):
+            self.warm_count += 1
+
+    monkeypatch.setattr(localclient_mod, "LocalStore", WarmStore)
+
+    client = provider(tmp_path / "data")
+    try:
+        assert stores[0].warm_count == 1
+    finally:
+        client.close()
+    assert stores[0].close_count == 1
+
+
+def test_provider_auto_warmup_skips_dev_store(tmp_path, monkeypatch):
+    cfg = get_cfg()
+    cfg.set("dev", True)
+    cfg.set("embedder.warmup_default", None)
+
+    class ColdStore:
+        def __init__(self, *args, **kwargs):
+            self.close_count = 0
+
+        def close(self):
+            self.close_count += 1
+
+        def warm(self):
+            raise AssertionError("auto warmup must skip dev local stores")
+
+    monkeypatch.setattr(localclient_mod, "LocalStore", ColdStore)
+
+    client = provider(tmp_path / "data")
+    client.close()
 
 
 def test_local_client_close_delegates_store_close(tmp_path):

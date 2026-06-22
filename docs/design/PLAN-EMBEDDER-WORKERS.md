@@ -25,7 +25,8 @@ details into `LocalStore`.
 
 ## Configuration Shape
 
-The existing per-instance `config` map remains the home for runtime knobs:
+The instance mapping owns warmup policy; the per-instance `config` map remains
+the home for provider runtime knobs:
 
 ```yaml
 embedder:
@@ -33,6 +34,7 @@ embedder:
     native:
       type: sbert
       model: sentence-transformers/paraphrase-MiniLM-L3-v2
+      warmup: true
       config:
         workers: 4
 ```
@@ -40,6 +42,8 @@ embedder:
 Future provider-specific knobs should stay operational:
 
 - `workers`: maximum concurrent encode calls for one configured instance.
+- `warmup`: optional per-instance override for `embedder.warmup_default`.
+  When omitted, the global/default warmup policy applies.
 - `queue_size`: optional bound for local backpressure.
 - `rate_limit`: optional remote-provider request budget.
 

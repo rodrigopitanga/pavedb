@@ -44,6 +44,8 @@ PYTHON_BIN      ?= $(VENV)/bin/python
 PIP_BIN         ?= $(VENV)/bin/pip
 
 DEV		?= 1
+WARMUP_DEFAULT  ?= false
+BENCH_WARMUP_DEFAULT ?= true
 DATA_DIR	?= ./data
 CONFIG          ?=
 AUTH_MODE	?= none
@@ -161,6 +163,7 @@ help:
 	echo "  bench-latency    Search latency (LAT_LENGTH=queries/variant, LAT_CONCUR, LAT_FILTERS=x,y)"; \
 	echo "  bench-stress     Stress test (STR_LENGTH=seconds, STR_CONCUR, STR_SUITE=base|critical|full)"; \
 	echo "  bench-stress-full Full-suite stress test (alias for STR_SUITE=full bench-stress)"; \
+	echo "    BENCH_WARMUP_DEFAULT=true warms the benchmark server"; \
 	echo "    BENCH_SAVE=1 to save outputs in benchmarks/results/"; \
 	echo "    BENCH_TAG=<tag> adds suffix to saved filenames"; \
 	echo "  LAT_SLO_P99_MS    Fail bench-latency if p99 > N ms (0=off)"; \
@@ -251,6 +254,7 @@ serve: install
 	env "$${cfg_env[@]}" \
 	  PYTHONPATH=. \
 	  PAVEDB_DEV=$(DEV) \
+	  PAVEDB_EMBEDDER__WARMUP_DEFAULT=$(BENCH_WARMUP_DEFAULT) \
 	  PAVEDB_DATA_DIR=$(DATA_DIR) \
 	  PAVEDB_AUTH__MODE=$(AUTH_MODE) \
 	  PAVEDB_AUTH__GLOBAL_KEY=$(GLOBAL_KEY) \
@@ -681,6 +685,7 @@ _build-check-run: venv
 	echo "==> Checking installed CLI bootstrap"; \
 	PYTHONPATH="$$check_pythonpath" \
 	PAVEDB_DEV=1 \
+	PAVEDB_EMBEDDER__WARMUP_DEFAULT=$(WARMUP_DEFAULT) \
 	PAVEDB_EMBEDDER__DEFAULT=openai \
 	PAVEDB_EMBEDDER__INSTANCES__OPENAI__TYPE=openai \
 	PAVEDB_EMBEDDER__INSTANCES__OPENAI__MODEL=$(BUILD_CHECK_OPENAI_MODEL) \
@@ -691,6 +696,7 @@ _build-check-run: venv
 	echo "==> Starting installed pavesrv on $(BUILD_CHECK_URL)"; \
 	PYTHONPATH="$$check_pythonpath" \
 	PAVEDB_DEV=1 \
+	PAVEDB_EMBEDDER__WARMUP_DEFAULT=$(WARMUP_DEFAULT) \
 	PAVEDB_EMBEDDER__DEFAULT=openai \
 	PAVEDB_EMBEDDER__INSTANCES__OPENAI__TYPE=openai \
 	PAVEDB_EMBEDDER__INSTANCES__OPENAI__MODEL=$(BUILD_CHECK_OPENAI_MODEL) \
@@ -756,6 +762,7 @@ _docker-check-run:
 	  -p $(DOCKER_CHECK_HOST):$(DOCKER_CHECK_PORT):8086 \
 	  -e PAVEDB_CONFIG= \
 	  -e PAVEDB_DEV=1 \
+	  -e PAVEDB_EMBEDDER__WARMUP_DEFAULT=$(WARMUP_DEFAULT) \
 	  -e PAVEDB_AUTH__MODE=none \
 	  -e PAVEDB_EMBEDDER__DEFAULT=openai \
 	  -e PAVEDB_EMBEDDER__INSTANCES__OPENAI__TYPE=openai \
@@ -866,6 +873,7 @@ _check-with-server: install
 	  PYTHONPATH=. \
 	  PYTHONFAULTHANDLER=1 \
 	  PAVEDB_DEV=1 \
+	  PAVEDB_EMBEDDER__WARMUP_DEFAULT=$(BENCH_WARMUP_DEFAULT) \
 	  PAVEDB_DATA_DIR="$$data_dir" \
 	  PAVEDB_AUTH__MODE=$(CHECK_AUTH_MODE) \
 	  PAVEDB_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
@@ -886,6 +894,7 @@ _check-with-server: install
 	  PYTHONPATH=. \
 	  PYTHONFAULTHANDLER=1 \
 	  PAVEDB_DEV=1 \
+	  PAVEDB_EMBEDDER__WARMUP_DEFAULT=$(BENCH_WARMUP_DEFAULT) \
 	  PAVEDB_DATA_DIR="$$data_dir" \
 	  PAVEDB_AUTH__MODE=$(CHECK_AUTH_MODE) \
 	  PAVEDB_AUTH__GLOBAL_KEY=$(CHECK_TOKEN) \
@@ -987,6 +996,7 @@ _bench-with-server:
 	  PYTHONPATH=. \
 	  PYTHONFAULTHANDLER=1 \
 	  PAVEDB_DEV=1 \
+	  PAVEDB_EMBEDDER__WARMUP_DEFAULT=$(BENCH_WARMUP_DEFAULT) \
 	  PAVEDB_DATA_DIR="$$data_dir" \
 	  PAVEDB_AUTH__MODE=none \
 	  PAVEDB_EMBEDDER__INSTANCES__NATIVE__MODEL=$(BENCH_EMBEDDER_MODEL) \
@@ -1011,6 +1021,7 @@ _bench-with-server:
 	  PYTHONPATH=. \
 	  PYTHONFAULTHANDLER=1 \
 	  PAVEDB_DEV=1 \
+	  PAVEDB_EMBEDDER__WARMUP_DEFAULT=$(BENCH_WARMUP_DEFAULT) \
 	  PAVEDB_DATA_DIR="$$data_dir" \
 	  PAVEDB_AUTH__MODE=none \
 	  PAVEDB_EMBEDDER__INSTANCES__NATIVE__MODEL=$(BENCH_EMBEDDER_MODEL) \

@@ -264,8 +264,12 @@ class QueryReplayResponse(OkResponse):
         description="Id of the search that was replayed.",
         examples=["q-7b2c-19af"],
     )
-    replay_query_id: str = Field(
-        description="Id assigned to this replay.",
+    replay_query_id: str | None = Field(
+        default=None,
+        description=(
+            "Id assigned to this replay. Omitted when query logging is "
+            "disabled."
+        ),
         examples=["q-9f0a-22b1"],
     )
     matches: list[SearchResult] = Field(description="Hits from the replay.")

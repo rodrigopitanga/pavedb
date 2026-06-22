@@ -43,6 +43,14 @@ replace dots with double underscores, so `auth.mode` becomes
 - Description: Enable development startup behavior such as allowing auth.mode=none on
   loopback and verbose PaveDB logging.
 
+## Query Log
+
+### `query_log.enabled`
+
+- Default: `true`
+- Env var: `PAVEDB_QUERY_LOG__ENABLED`
+- Description: Enable persisted query history and query-home lookup pointers.
+
 ## Authentication
 
 ### `auth.mode`
@@ -101,9 +109,10 @@ shows commented Ollama and OpenAI examples; only the
 
 ### `embedder.warmup_default`
 
-- Default: `true`
+- Default: `null`
 - Env var: `PAVEDB_EMBEDDER__WARMUP_DEFAULT`
-- Description: Warm the default embedder at server startup before the first query.
+- Description: Warm the default embedder at server startup before the first query. Null
+  uses the startup policy: enabled outside dev, disabled in dev.
 
 ### `embedder.instances.native.type`
 
@@ -141,8 +150,8 @@ shows commented Ollama and OpenAI examples; only the
 
 - Default: `"auto"`
 - Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__WORKERS`
-- Description: Native SBERT process worker count; auto picks a bounded local default
-  when runtime resolves to process.
+- Description: Native SBERT process worker count; auto picks a conservative local
+  default capped for mixed search/ingest tail stability.
 
 ## Ingest
 

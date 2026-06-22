@@ -17,7 +17,7 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from pave.config import get_cfg, get_logger, reload_cfg
+from pave.config import get_cfg, get_logger, reload_cfg, should_warm_default_embedder
 from pave.auth import enforce_policy, resolve_bind
 from pave.embedders import LazyEmbedder, get_embedder
 from pave.metrics import (
@@ -196,7 +196,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         metrics_flush_task = asyncio.create_task(_flush_metrics_periodically())
-        if cfg.get("embedder.warmup_default"):
+        if should_warm_default_embedder(cfg):
             started = time.perf_counter()
             try:
                 app.state.store.warm()

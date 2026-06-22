@@ -144,9 +144,9 @@ class _CollectionReadWriteLock:
 
     Reads are reentrant on the same thread (search() already holds a read
     lock when it calls _read_meta_batch_safe which re-enters via
-    _read_collection_db). A thread that already holds a read lock bypasses
-    the writer-priority gate so a queued writer cannot deadlock the nested
-    re-acquisition.
+    _read_collection_db). Readers wait for active writers, but not for
+    queued writers; search read-lock sections are intentionally short and
+    writer-priority causes second-scale search tails under mixed hammering.
 
     Read-to-write upgrade is still not supported: a thread holding read_lock
     that calls write_lock will deadlock waiting for itself to release.
@@ -162,10 +162,7 @@ class _CollectionReadWriteLock:
     def read_lock(self) -> Iterator[None]:
         tid = get_ident()
         with self._cond:
-            while (
-                self._writer
-                or (self._pending_writers > 0 and tid not in self._readers)
-            ):
+            while self._writer:
                 self._cond.wait()
             self._readers[tid] = self._readers.get(tid, 0) + 1
         try:
@@ -277,7 +274,11 @@ class LocalStore:
         FaissBackend in a temp dir triggers FAISS' library-level setup
         (BLAS, threading) without persisting any catalog row or index.
         """
-        self._embedder.encode(["warmup"])
+        warm = getattr(self._embedder, "warm", None)
+        if callable(warm):
+            warm()
+        else:
+            self._embedder.encode(["warmup"])
         with tempfile.TemporaryDirectory(prefix="pavedb-warm-") as td:
             sentinel = FaissBackend(
                 int(self._embedder.dim),

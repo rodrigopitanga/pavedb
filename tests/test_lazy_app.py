@@ -81,6 +81,47 @@ def test_warmup_default_false_skips_embedder(monkeypatch, tmp_path):
         pass
 
 
+def test_warmup_default_auto_skips_dev_embedder(monkeypatch, tmp_path):
+    """Implicit warmup stays lazy in dev mode."""
+    import pave.main as m
+    from pave.config import get_cfg
+
+    cfg = get_cfg()
+    cfg.set("data_dir", str(tmp_path))
+    cfg.set("auth.mode", "none")
+    cfg.set("dev", True)
+    cfg.set("embedder.warmup_default", None)
+
+    def fail_get_embedder():
+        raise AssertionError("dev auto warmup must not load the embedder")
+
+    monkeypatch.setattr(m, "get_embedder", fail_get_embedder, raising=True)
+
+    app = m.build_app(cfg)
+    with TestClient(app):
+        pass
+
+
+def test_warmup_default_auto_warms_prod_embedder(monkeypatch, tmp_path):
+    """Implicit warmup loads the default embedder outside dev mode."""
+    import pave.main as m
+    from pave.config import get_cfg
+
+    cfg = get_cfg()
+    cfg.set("data_dir", str(tmp_path))
+    cfg.set("auth.mode", "none")
+    cfg.set("dev", False)
+    cfg.set("embedder.warmup_default", None)
+
+    calls = []
+    app = m.build_app(cfg)
+    app.state.store.warm = lambda: calls.append("warm")
+    with TestClient(app):
+        pass
+
+    assert calls == ["warm"]
+
+
 def test_metrics_periodic_flush_task(monkeypatch):
     import pave.main as m
 

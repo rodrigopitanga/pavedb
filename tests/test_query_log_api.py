@@ -360,3 +360,31 @@ def test_service_search_with_log_false_skips_query_log(app):
     assert result["ok"] is True
     assert inner.list_query_logs("acme", "nolog") == []
     assert not any(call[0] == "log_query" for call in store.calls)
+
+
+def test_service_search_query_log_disabled_skips_query_log(app, cfg):
+    cfg.set("query_log.enabled", False)
+    store = app.state.store
+    inner = store.impl
+    inner.create_collection("acme", "nologconfig")
+    inner.index_records(
+        "acme",
+        "nologconfig",
+        "DOC-1",
+        [("DOC-1::chunk_0", "hello world", {"docid": "DOC-1"})],
+        doc_meta={"docid": "DOC-1"},
+    )
+
+    result = svc_search(
+        store,
+        "acme",
+        "nologconfig",
+        "hello",
+        k=5,
+        actor="admin",
+    )
+
+    assert result["ok"] is True
+    assert result["query_id"] is None
+    assert inner.list_query_logs("acme", "nologconfig") == []
+    assert not any(call[0] == "log_query" for call in store.calls)

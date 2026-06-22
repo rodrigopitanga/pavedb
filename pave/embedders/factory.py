@@ -125,6 +125,14 @@ class LazyEmbedder:
     def dim(self) -> int:
         return self._get().dim
 
+    def warm(self) -> None:
+        embedder = self._get()
+        warm = getattr(embedder, "warm", None)
+        if callable(warm):
+            warm()
+            return
+        embedder.encode(["warmup"])
+
     def encode(self, texts: list[str]):
         return self._get().encode(texts)
 

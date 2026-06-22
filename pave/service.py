@@ -61,6 +61,11 @@ log = get_logger()
 
 ServiceResult = dict[str, Any]
 
+
+def _query_log_enabled() -> bool:
+    return bool(get_cfg().get("query_log.enabled", True))
+
+
 # Pure-ish service functions operating on a store adapter
 class ServiceError(RuntimeError):
     """Hard failure inside a service operation.
@@ -1115,7 +1120,7 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
                if _t else "")
             + (f" req={request_id}" if request_id else ""))
         query_id: str | None = None
-        if _log:
+        if _log and _query_log_enabled():
             query_id = str(uuid.uuid4())
             try:
                 store.log_query(
@@ -1417,28 +1422,31 @@ def execute_replay(
         if not result.get("ok"):
             return result
 
-        replay_qid = str(uuid.uuid4())
-        try:
-            store.log_query(
-                query_id=replay_qid,
-                tenant=tenant,
-                collection=collection,
-                actor=actor,
-                query_text=entry["query_text"],
-                k=entry["k"],
-                filters=entry.get("filters"),
-                include_common=entry.get("include_common", False),
-                common_tenant=entry.get("common_tenant"),
-                common_collection=entry.get("common_collection"),
-                result_ids=[match["id"] for match in result["matches"]],
-                result_count=len(result["matches"]),
-                latency_ms=result.get("latency_ms"),
-                timing=result.get("timing"),
-                request_id=request_id,
-                replay_of=query_id,
-            )
-        except Exception:
-            log.warning("replay log failed", exc_info=True)
+        replay_qid: str | None = None
+        if _query_log_enabled():
+            replay_qid = str(uuid.uuid4())
+            try:
+                store.log_query(
+                    query_id=replay_qid,
+                    tenant=tenant,
+                    collection=collection,
+                    actor=actor,
+                    query_text=entry["query_text"],
+                    k=entry["k"],
+                    filters=entry.get("filters"),
+                    include_common=entry.get("include_common", False),
+                    common_tenant=entry.get("common_tenant"),
+                    common_collection=entry.get("common_collection"),
+                    result_ids=[match["id"] for match in result["matches"]],
+                    result_count=len(result["matches"]),
+                    latency_ms=result.get("latency_ms"),
+                    timing=result.get("timing"),
+                    request_id=request_id,
+                    replay_of=query_id,
+                )
+            except Exception:
+                log.warning("replay log failed", exc_info=True)
+                replay_qid = None
 
         return {
             "ok": True,

@@ -68,6 +68,40 @@ def test_replay_query_returns_fresh_results_and_logs_replay(client):
     }
 
 
+def test_replay_query_log_disabled_returns_without_logging_replay(client, cfg):
+    collection = "replaynolog"
+    client.post(f"/v1/collections/acme/{collection}")
+    client.post(
+        f"/v1/collections/acme/{collection}/documents",
+        files={"file": ("a.txt", b"hello world", "text/plain")},
+        data={"docid": "DOC-1"},
+    )
+    original = client.post(
+        f"/v1/collections/acme/{collection}/search",
+        json={"q": "hello", "k": 5},
+    )
+    assert original.status_code == 200
+    original_query_id = client.get(
+        f"/v1/collections/acme/{collection}/queries"
+    ).json()["queries"][0]["query_id"]
+
+    cfg.set("query_log.enabled", False)
+    replay = client.post(
+        f"/v1/collections/acme/{collection}/queries/{original_query_id}/replay"
+    )
+
+    assert replay.status_code == 200
+    data = replay.json()
+    assert data["ok"] is True
+    assert data["original_query_id"] == original_query_id
+    assert data["replay_query_id"] is None
+
+    logs_after = client.get(f"/v1/collections/acme/{collection}/queries")
+    assert logs_after.status_code == 200
+    assert logs_after.json()["count"] == 1
+    assert logs_after.json()["queries"][0]["query_id"] == original_query_id
+
+
 def test_replay_query_not_found(client):
     response = client.post(
         "/v1/collections/acme/replaymissing/queries/missing-query-id/replay"

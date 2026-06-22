@@ -71,5 +71,6 @@ def test_config_example_spacing_between_blocks():
 
     assert "auth:\n\n  # Authentication mode" in text
     assert "mode: 'static'\n\n  # Tenant label" in text
-    assert "warmup_default: true\n\n  instances:" in text
+    assert "# enabled: true\n\n\n# ------------------------" in text
+    assert "# warmup_default: false\n\n  instances:" in text
     assert "native:\n\n      # Built-in native embedder" in text

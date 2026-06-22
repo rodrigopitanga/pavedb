@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import importlib
+from threading import Lock
 
 import numpy as np
 
@@ -102,8 +103,8 @@ def test_process_sbert_auto_worker_count_is_bounded(monkeypatch):
     factory = importlib.reload(worker_mod)
     monkeypatch.setattr(factory.os, "cpu_count", lambda: 20)
 
-    assert factory._resolve_worker_count("auto") == 8
-    assert factory._resolve_worker_count(None) == 8
+    assert factory._resolve_worker_count("auto") == 2
+    assert factory._resolve_worker_count(None) == 2
     assert factory._resolve_worker_count(2) == 2
     assert factory._resolve_worker_count(0) == 1
 
@@ -158,5 +159,51 @@ def test_process_sbert_distributes_encode_calls_across_workers(monkeypatch):
     assert emb.encode(["d"])[0, 0] == 4.0
     assert first_conn.sent == [("encode", ["a"]), ("encode", ["c"])]
     assert second_conn.sent == [("encode", ["b"]), ("encode", ["d"])]
+
+    emb.close()
+
+
+def test_process_sbert_warm_starts_and_encodes_all_workers(monkeypatch):
+    factory = importlib.reload(worker_mod)
+
+    pairs = [
+        (
+            _FakeProc(),
+            _FakeConn([
+                ("ready", 3),
+                ("ok", np.array([[float(index), 0.0, 0.0]], dtype=np.float32)),
+            ]),
+        )
+        for index in range(3)
+    ]
+    spawned: list[tuple[_FakeProc, _FakeConn]] = []
+    spawn_lock = Lock()
+
+    def fake_spawn(self):
+        with spawn_lock:
+            pair = pairs[len(spawned)]
+            spawned.append(pair)
+            return pair
+
+    monkeypatch.setattr(
+        factory.ProcessSbertEmbedder,
+        "_spawn_worker_process",
+        fake_spawn,
+        raising=True,
+    )
+
+    emb = factory.ProcessSbertEmbedder(
+        model_name="sentence-transformers/test-model",
+        device="cpu",
+        batch_size=8,
+        workers=3,
+    )
+
+    assert len(spawned) == 1
+    emb.warm()
+
+    assert len(spawned) == 3
+    for _proc, conn in pairs:
+        assert conn.sent == [("encode", ["warmup"])]
 
     emb.close()

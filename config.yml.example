@@ -40,6 +40,17 @@ dev: false
 
 
 # ---------------------------------------------------------------------------
+# Query Log
+# ---------------------------------------------------------------------------
+
+query_log:
+
+  # Enable persisted query history and query-home lookup pointers.
+  # Env: PAVEDB_QUERY_LOG__ENABLED
+  # enabled: true
+
+
+# ---------------------------------------------------------------------------
 # Authentication
 # ---------------------------------------------------------------------------
 
@@ -89,9 +100,10 @@ embedder:
   # Env: PAVEDB_EMBEDDER__DEFAULT
   # default: null
 
-  # Warm the default embedder at server startup before the first query.
+  # Warm the default embedder at server startup before the first query. Null uses the
+  # startup policy: enabled outside dev, disabled in dev.
   # Env: PAVEDB_EMBEDDER__WARMUP_DEFAULT
-  warmup_default: true
+  # warmup_default: false
 
   instances:
 
@@ -121,8 +133,8 @@ embedder:
         # Env: PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__BATCH_SIZE
         # batch_size: null
 
-        # Native SBERT process worker count; auto picks a bounded local default when
-        # runtime resolves to process.
+        # Native SBERT process worker count; auto picks a conservative local default
+        # capped for mixed search/ingest tail stability.
         # Env: PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__WORKERS
         workers: 'auto'
 

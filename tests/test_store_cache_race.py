@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import threading
+import time
 from contextlib import contextmanager
 
 from pave.stores.local import LocalStore, _CollectionReadWriteLock
@@ -91,6 +92,51 @@ def test_collection_rwlock_nested_read_does_not_deadlock_pending_writer():
     assert reader_done.is_set(), (
         "nested read failed to re-enter while a writer was queued"
     )
+
+
+def test_collection_rwlock_queued_writer_does_not_block_new_reader():
+    lock = _CollectionReadWriteLock()
+    first_reader_ready = threading.Event()
+    release_first_reader = threading.Event()
+    writer_entered = threading.Event()
+    second_reader_entered = threading.Event()
+
+    def first_reader():
+        with lock.read_lock():
+            first_reader_ready.set()
+            release_first_reader.wait(timeout=3.0)
+
+    def writer():
+        first_reader_ready.wait(timeout=1.0)
+        with lock.write_lock():
+            writer_entered.set()
+
+    def second_reader():
+        with lock.read_lock():
+            second_reader_entered.set()
+
+    r1 = threading.Thread(target=first_reader, daemon=True)
+    w = threading.Thread(target=writer, daemon=True)
+    r1.start()
+    w.start()
+    assert first_reader_ready.wait(timeout=1.0)
+
+    deadline = time.monotonic() + 1.0
+    while lock._pending_writers == 0 and time.monotonic() < deadline:
+        time.sleep(0.001)
+    assert lock._pending_writers == 1
+
+    r2 = threading.Thread(target=second_reader, daemon=True)
+    r2.start()
+    r2.join(timeout=1.0)
+
+    assert second_reader_entered.is_set()
+    assert not writer_entered.is_set()
+
+    release_first_reader.set()
+    r1.join(timeout=1.0)
+    w.join(timeout=1.0)
+    assert writer_entered.is_set()
 
 
 def test_search_final_cache_retry_does_not_run_under_write_lock(temp_data_dir):

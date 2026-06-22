@@ -13,6 +13,7 @@ from __future__ import annotations
 import multiprocessing as mp
 import os
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from dataclasses import dataclass, field
 from threading import Lock
@@ -25,7 +26,10 @@ from ..config import get_cfg
 
 _STARTUP_TIMEOUT_S = 300.0
 _REQUEST_TIMEOUT_S = 300.0
-_MAX_AUTO_WORKERS = 8
+# Native embedding workers run full model inference in separate processes.
+# More workers can improve isolated throughput, but under mixed search/ingest
+# pressure it oversubscribes CPU/native thread pools and creates long tails.
+_MAX_AUTO_WORKERS = 2
 
 
 @dataclass
@@ -299,35 +303,57 @@ class ProcessSbertEmbedder:
             assert self._dim is not None
             return int(self._dim)
 
+    def _encode_slot_locked(
+        self,
+        slot: _WorkerSlot,
+        texts: list[str],
+    ) -> NDArray[np.float32]:
+        for attempt in range(2):
+            self._ensure_slot_locked(slot)
+            assert slot.conn is not None
+            assert slot.proc is not None
+            try:
+                slot.conn.send(("encode", texts))
+                if not slot.conn.poll(_REQUEST_TIMEOUT_S):
+                    raise TimeoutError(
+                        "SBERT worker did not answer within "
+                        f"{_REQUEST_TIMEOUT_S:.0f}s"
+                    )
+                status, payload = slot.conn.recv()
+            except (BrokenPipeError, EOFError, OSError, TimeoutError):
+                if attempt == 0:
+                    self._restart_slot_locked(slot)
+                    continue
+                raise
+
+            if status == "ok":
+                return np.asarray(payload, dtype=np.float32)
+            if status == "error":
+                raise RuntimeError(f"SBERT worker encode failed: {payload}")
+            raise RuntimeError(f"SBERT worker returned unknown status: {status}")
+        raise RuntimeError("SBERT worker encode exhausted retries")
+
+    def warm(self) -> None:
+        def warm_slot(slot: _WorkerSlot) -> None:
+            with slot.lock:
+                self._encode_slot_locked(slot, ["warmup"])
+
+        if len(self._slots) == 1:
+            warm_slot(self._slots[0])
+            return
+
+        with ThreadPoolExecutor(max_workers=len(self._slots)) as pool:
+            futures = [pool.submit(warm_slot, slot) for slot in self._slots]
+            for future in futures:
+                future.result()
+
     def encode(self, texts: list[str]) -> NDArray[np.float32]:
         if not texts:
             return np.zeros((0, self.dim), dtype=np.float32)
 
         slot = self._choose_slot()
         with slot.lock:
-            for attempt in range(2):
-                self._ensure_slot_locked(slot)
-                assert slot.conn is not None
-                assert slot.proc is not None
-                try:
-                    slot.conn.send(("encode", texts))
-                    if not slot.conn.poll(_REQUEST_TIMEOUT_S):
-                        raise TimeoutError(
-                            "SBERT worker did not answer within "
-                            f"{_REQUEST_TIMEOUT_S:.0f}s"
-                        )
-                    status, payload = slot.conn.recv()
-                except (BrokenPipeError, EOFError, OSError, TimeoutError):
-                    if attempt == 0:
-                        self._restart_slot_locked(slot)
-                        continue
-                    raise
-
-                if status == "ok":
-                    return np.asarray(payload, dtype=np.float32)
-                if status == "error":
-                    raise RuntimeError(f"SBERT worker encode failed: {payload}")
-                raise RuntimeError(f"SBERT worker returned unknown status: {status}")
+            return self._encode_slot_locked(slot, texts)
 
     def close(self) -> None:
         for slot in self._slots:

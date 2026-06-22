@@ -133,6 +133,9 @@ class SbertEmbedder:
             self._dim = int(probe.shape[1])
         return int(self._dim)
 
+    def warm(self) -> None:
+        self.encode(["warmup"])
+
     def encode(self, texts: list[str]) -> NDArray[np.float32]:
         vecs = self.model.encode(
             texts,

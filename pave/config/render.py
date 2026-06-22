@@ -12,6 +12,8 @@ from .config import CONFIG_FIELDS, ConfigField
 def _section_for(key: str) -> str:
     if key in {"data_dir", "dev"} or key.startswith("common_"):
         return "General"
+    if key.startswith("query_log."):
+        return "Query Log"
     if key.startswith("auth."):
         return "Authentication"
     if key.startswith("vector_store."):
@@ -60,6 +62,16 @@ def _yaml_value(value) -> str:
     if value == {}:
         return "{}"
     return str(value)
+
+
+def _config_example_value(field: ConfigField):
+    if field.key == "embedder.warmup_default" and field.default is None:
+        return False
+    return field.default
+
+
+def _comment_config_example_field(field: ConfigField) -> bool:
+    return field.default is None or field.key == "query_log.enabled"
 
 
 def _markdown_value(value) -> str:
@@ -191,8 +203,8 @@ def render_config_example(
             lines.extend(_comment_lines(field.description, indent))
             lines.append(" " * indent + f"# Env: {field.env_var}")
             key = field.key.split(".")[-1]
-            rendered = _yaml_value(field.default)
-            commented = "# " if field.default is None else ""
+            rendered = _yaml_value(_config_example_value(field))
+            commented = "# " if _comment_config_example_field(field) else ""
             lines.append(" " * indent + f"{commented}{key}: {rendered}")
         if section == "Embedding":
             _append_blank(lines)

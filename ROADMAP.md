@@ -465,10 +465,12 @@ latency on every search/ingest/delete.~~
   with a clear "daemon not reachable" message. Lowers adoption
   friction for the local-LLM dev loop (P2-50).~~
 - ~~Default-embedder warmup knob: top-level boolean
-  `embedder.warmup_default` (default `true`) drives a single
-  `.encode(["warmup"])` call against `store._embedder` at server
-  lifespan startup. Restores v0.9.0 behavior after the lazy refactor
-  and fail-fast checks API key/network for openai-class embedders.
+  `embedder.warmup_default` (default `null`: production warms, dev
+  stays lazy) drives default-embedder warmup at server lifespan
+  startup. SBERT process mode prewarms every configured worker so
+  startup cost does not land on first traffic. Restores v0.9.0
+  behavior after the lazy refactor and fail-fast checks API
+  key/network for openai-class embedders.
   Per-embedder warmup switches arrive at v1.7 alongside the
   multi-embedder registry (P1-58) (P3-48 v1.0 slice).~~
 
@@ -611,7 +613,8 @@ and post-contract hardening.
 - Explicit embedder warmup policy — enum expansion: `embedder.warmup`
   accepts `default` / `none` / `all` / list-of-keys. Adds per-embedder
   `warmup` switch under each spec in the v1.6 multi-embedder registry
-  (P1-58). v1.0's `warmup_default` boolean remains as the canonical
+  (P1-58). Per-instance `warmup` overrides the global/default policy
+  when present. v1.0's `warmup_default` boolean remains as the canonical
   default-only knob (P3-48).
 
 ### PaveDB v1.8 — Scale

@@ -9,8 +9,26 @@ from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
 
+class WarmableFakeEmbedder(FakeEmbedder):
+    def __init__(self):
+        super().__init__()
+        self.warm_calls = 0
+
+    def warm(self) -> None:
+        self.warm_calls += 1
+
+
 def _index_dir(store: LocalStore, tenant: str, collection: str) -> Path:
     return Path(store._base_path(tenant, collection)) / "index"
+
+
+def test_store_warm_uses_embedder_warm_hook(tmp_path):
+    embedder = WarmableFakeEmbedder()
+    store = LocalStore(str(tmp_path), embedder)
+
+    store.warm()
+
+    assert embedder.warm_calls == 1
 
 
 def test_ingest_defers_faiss_flush_until_explicit_save(tmp_path):
