@@ -51,6 +51,14 @@ mirror-github:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}(\.\d{1,4})?$/'
 
+issue-key-sync:
+  stage: test
+  script:
+    - python scripts/issue_key_sync.py
+  rules:
+    - if: '$GITLAB_ISSUE_TOKEN && $CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$GITLAB_ISSUE_TOKEN && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
 pytest:
   stage: test
   script:
