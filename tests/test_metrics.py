@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import json, os
+import threading
 from pave.main import VERSION
 from pave import metrics
 
@@ -233,6 +234,44 @@ def test_metrics_persistence(tmp_path):
     ]
     assert 42.5 in data["latencies"]["search"]
 
+
+def test_metrics_save_holds_lock_until_write_finishes(tmp_path, monkeypatch):
+    metrics.set_data_dir(str(tmp_path))
+    metrics.reset()
+    metrics.inc("search_total", 1)
+
+    writes: list[dict] = []
+    first_write_started = threading.Event()
+    allow_first_write = threading.Event()
+
+    def fake_write(directory, path, data):
+        writes.append(data)
+        if len(writes) == 1:
+            first_write_started.set()
+            allow_first_write.wait(timeout=5)
+
+    monkeypatch.setattr(metrics, "_write_metrics_file", fake_write)
+
+    save_thread = threading.Thread(target=metrics.save)
+    save_thread.start()
+    assert first_write_started.wait(timeout=5)
+
+    reset_thread = threading.Thread(target=metrics.reset)
+    reset_thread.start()
+    reset_thread.join(timeout=0.1)
+    assert reset_thread.is_alive()
+
+    allow_first_write.set()
+    save_thread.join(timeout=5)
+    reset_thread.join(timeout=5)
+
+    assert not save_thread.is_alive()
+    assert not reset_thread.is_alive()
+    assert writes[0]["counters"]["search_total"] == 1.0
+    assert writes[-1]["counters"]["search_total"] == 0.0
+    data = json.loads((tmp_path / "metrics.json").read_text())
+    assert data["counters"]["search_total"] == 0.0
+
 def test_metrics_load_on_restart(tmp_path):
     """Metrics should be restored from disk on restart."""
     # Write a metrics file
@@ -272,6 +311,33 @@ def test_metrics_load_on_restart(tmp_path):
             "value": 4.0,
         }
     ]
+
+
+def test_build_app_disables_metrics_persistence_for_multiple_workers(
+    monkeypatch,
+    tmp_path,
+):
+    from pave.config import Config
+    import pave.main as main_mod
+
+    cfg = Config(path=tmp_path / "missing.yml")
+    cfg.set("dev", True)
+    cfg.set("auth.mode", "none")
+    cfg.set("data_dir", str(tmp_path))
+    cfg.set("server.workers", 2)
+    cfg.set("embedder.warmup_default", False)
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        main_mod,
+        "metrics_set_data_dir",
+        lambda path: calls.append(path),
+    )
+
+    app = main_mod.build_app(cfg)
+
+    assert calls == []
+    assert app.state.cfg.get("server.workers") == 2
 
 def test_metrics_reset_api(client):
     """DELETE /admin/metrics should reset all metrics."""

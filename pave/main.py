@@ -460,10 +460,17 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             status_code=422,
         )
 
-    # Initialize metrics persistence
+    # Initialize metrics persistence.
+    workers = int(cfg.get("server.workers") or 1)
     data_dir = cfg.get("data_dir")
-    if data_dir:
+    if data_dir and workers == 1:
         metrics_set_data_dir(data_dir)
+    elif data_dir and workers > 1:
+        log.warning(
+            "metrics persistence disabled with server.workers=%s; "
+            "metrics.json is process-local",
+            workers,
+        )
 
     @app.middleware("http")
     async def http_metrics_middleware(request: Request, call_next):

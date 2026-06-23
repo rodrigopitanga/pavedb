@@ -124,8 +124,8 @@ def save() -> None:
             if not _dirty:
                 return
             data = _snapshot_for_save_locked()
+            _write_metrics_file(d, path, data)
             _dirty = False
-        _write_metrics_file(d, path, data)
     except Exception:
         with _lock:
             _dirty = True
@@ -150,8 +150,8 @@ def flush_if_idle(min_idle_seconds: float) -> bool:
             ):
                 return False
             data = _snapshot_for_save_locked()
+            _write_metrics_file(d, path, data)
             _dirty = False
-        _write_metrics_file(d, path, data)
         return True
     except Exception:
         with _lock:
