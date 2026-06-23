@@ -285,7 +285,6 @@ pave/backends/
     __init__.py          # re-exports backend contracts/adapters
     base.py              # VectorBackend protocol
     txtai.py             # TxtaiVectorBackend
-    qdrant.py            # QdrantVectorBackend (stub)
     faiss.py             # FaissBackend
 pave/embedders/
     __init__.py          # re-exports Embedder, get_embedder

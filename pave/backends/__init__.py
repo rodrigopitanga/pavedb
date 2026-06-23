@@ -11,16 +11,14 @@ metadata filters — those are upstream concerns owned by the store.
 
 `VectorBackend` is the frozen v1.0 seam (see
 `docs/reference/protocols.md`); `FaissBackend` is the in-tree
-implementation; `QdrantVectorBackend` is a stub kept for shape.
+implementation.
 """
 
 from .base import SearchHit, VectorBackend
 from .faiss import FaissBackend
-from .qdrant import QdrantVectorBackend
 
 __all__ = [
     "FaissBackend",
-    "QdrantVectorBackend",
     "SearchHit",
     "VectorBackend",
 ]

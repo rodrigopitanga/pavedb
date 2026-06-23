@@ -101,7 +101,6 @@ Implementations:
 | Class | Module | Status |
 |---|---|---|
 | `FaissBackend` | `pave/backends/faiss.py` | Default; persistent `IndexIDMap2` over `IndexFlatIP`. |
-| `QdrantVectorBackend` | `pave/backends/qdrant.py` | Stub — not implemented. |
 
 ## Embedder authoring convention
 
