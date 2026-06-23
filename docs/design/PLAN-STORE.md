@@ -59,7 +59,7 @@ txtai adds ~150 MB of install weight for what is effectively a FAISS
 eliminates the duplication and gives PaveDB full ownership of the
 stack.
 
-`BaseStore` ABC forces any new vector backend to re-implement all
+`BaseStore` contract forces any new vector backend to re-implement all
 four concerns. `QdrantStore` is a stub precisely because the surface
 is too large.
 
@@ -585,7 +585,7 @@ and `filter_by_meta()` already knows what it can push down.
 
 - `_matches_filters()` — canonical post-filter, untouched.
 - `_sanit_sql`, `_sanit_field`, `_sanit_meta_dict` — reused.
-- `BaseStore` ABC — redefined at Step 4, not here.
+- `BaseStore` contract — redefined at Step 4, not here.
 - External API — no changes.
 - Layer violations in `service.py` (`_unwrap_store`,
   `_flush_store_caches`, `_lock_indexes`) — fixed at Step 4 when
@@ -624,7 +624,7 @@ catalog + concurrency.
 
 ```python
 # pave/stores/local.py (new — the orchestrator)
-class LocalStore(BaseStore):
+class LocalStore:
     def __init__(
         self,
         data_dir: str,
@@ -690,7 +690,7 @@ a store. No orchestrator polymorphism.
 
 ### `BaseStore` becomes the orchestrator interface
 
-`BaseStore` ABC redefined with the `LocalStore` public
+`BaseStore` contract redefined with the `LocalStore` public
 surface. Signature changes:
 - `list_tenants(data_dir)` → `list_tenants()`
 - `catalog_metrics(data_dir)` → `catalog_metrics()`
@@ -1069,7 +1069,7 @@ tests passed at every commit:
 | v0.5.9 | P1-31 | LocalStore orchestrator replaces TxtaiStore (final deletion) |
 
 At no point was a "big bang rewrite" needed. The seams
-(`BaseStore` ABC, `Embedder` protocol, `VectorBackend` protocol,
+(`BaseStore` contract, `Embedder` protocol, `VectorBackend` protocol,
 `CollectionDB`) were cut incrementally, each shipped as a
 self-contained change with benchmarks proving no regression.
 

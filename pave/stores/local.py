@@ -198,7 +198,7 @@ class _CollectionReadWriteLock:
                 self._cond.notify_all()
 
 
-class LocalStore(BaseStore):
+class LocalStore:
     """Default `BaseStore` implementation backed by local files.
 
     Each collection maps to a directory holding a SQLite metadata DB,

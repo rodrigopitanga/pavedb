@@ -154,7 +154,7 @@ class FakeEmbedder:
         return np.stack(rows).astype(np.float32, copy=False)
 
 
-class DummyStore(BaseStore):
+class DummyStore:
     def __init__(self) -> None:
         self._collection_configs: dict[tuple[str, str], dict[str, Any]] = {}
 
@@ -572,7 +572,7 @@ class DummyStore(BaseStore):
             zf.extractall(data_dir)
 
 
-class SpyStore(BaseStore):
+class SpyStore:
     def __init__(self, impl: BaseStore):
         self.impl = impl
         self.calls: list[tuple] = []

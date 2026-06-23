@@ -9,7 +9,7 @@ SQLite metadata (`pave.metadb`) into a single per-tenant/collection
 interface. Service-layer code (`pave.service`) talks only to the
 store; transport layers (HTTP, CLI, library) never reach below it.
 
-See `pave.stores.base.BaseStore` for the abstract contract and
+See `pave.stores.base.BaseStore` for the typed contract and
 `pave.stores.local.LocalStore` for the on-disk implementation.
 """
 

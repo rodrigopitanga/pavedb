@@ -3,24 +3,18 @@
 
 """Store contract.
 
-Defines `BaseStore` — the abstract surface every concrete store
+Defines `BaseStore` — the typed surface every concrete store
 implementation honors — together with the dataclasses that flow
 across the store/service boundary (`SearchResult`, `SearchOutput`,
 `IndexResult`) and the typed-alias shorthands used in their
 signatures.
-
-`BaseStore` owns collection lifecycle (create/delete/move/update),
-document ingest, search, archive dump/restore, and the query log.
-Concurrency and per-collection isolation are implementation
-concerns of the concrete store, not part of the contract.
 """
 
 from __future__ import annotations
-from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from dataclasses import dataclass, asdict, field
 import os
-from typing import Any
+from typing import Any, Protocol
 
 from pave.embedders.base import EmbedderConfig
 
@@ -84,8 +78,8 @@ class IndexResult:
     purged_chunks: int = 0
 
 
-class BaseStore(ABC):
-    """Abstract orchestrator for a single PaveDB instance.
+class BaseStore(Protocol):
+    """Store surface for a single PaveDB instance.
 
     Composes embedder + vector backend + metadata store behind one
     tenant/collection-scoped interface. The service layer depends
@@ -101,7 +95,6 @@ class BaseStore(ABC):
         """
         return None
 
-    @abstractmethod
     def create_collection(
         self,
         tenant: str,
@@ -113,10 +106,8 @@ class BaseStore(ABC):
         display_name: str | None = None,
     ) -> CollectionInfo | None: ...
 
-    @abstractmethod
     def delete_collection(self, tenant: str, collection: str) -> None: ...
 
-    @abstractmethod
     def update_collection(
         self,
         tenant: str,
@@ -125,29 +116,24 @@ class BaseStore(ABC):
         display_name: str | None = None,
     ) -> CollectionInfo | None: ...
 
-    @abstractmethod
     def move_collection(self, tenant: str, old_name: str, new_name: str) -> None:
         """Move a collection slug/path. Raises ValueError if invalid."""
         ...
 
-    @abstractmethod
     def list_collections(self, tenant: str) -> list[CollectionInfo]:
         """List collection summaries for a tenant."""
         ...
 
-    @abstractmethod
     def get_collection_detail(
         self,
         tenant: str,
         name: str,
     ) -> CollectionInfo | None: ...
 
-    @abstractmethod
     def list_tenants(self) -> list[str]:
         """List all tenants."""
         ...
 
-    @abstractmethod
     def get_document(
         self,
         tenant: str,
@@ -155,14 +141,12 @@ class BaseStore(ABC):
         docid: str,
     ) -> DocumentInfo | None: ...
 
-    @abstractmethod
     def list_documents(
         self,
         tenant: str,
         collection: str,
     ) -> list[DocumentInfo]: ...
 
-    @abstractmethod
     def list_chunks(
         self,
         tenant: str,
@@ -170,7 +154,6 @@ class BaseStore(ABC):
         docid: str,
     ) -> list[ChunkInfo]: ...
 
-    @abstractmethod
     def get_chunk(
         self,
         tenant: str,
@@ -178,7 +161,6 @@ class BaseStore(ABC):
         rid: str,
     ) -> ChunkInfo | None: ...
 
-    @abstractmethod
     def get_chunk_content(
         self,
         tenant: str,
@@ -186,22 +168,18 @@ class BaseStore(ABC):
         rid: str,
     ) -> ChunkInfo | None: ...
 
-    @abstractmethod
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int: ...
 
-    @abstractmethod
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],
                       doc_meta: Metadata | None = None
                       ) -> IndexResult: ...
 
-    @abstractmethod
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: FilterSpec | None = None) -> SearchOutput:
         """Search for similar documents."""
         ...
 
-    @abstractmethod
     def log_query(
         self,
         *,
@@ -223,7 +201,6 @@ class BaseStore(ABC):
         replay_of: str | None = None,
     ) -> None: ...
 
-    @abstractmethod
     def get_query_log_entry(
         self,
         tenant: str,
@@ -231,7 +208,6 @@ class BaseStore(ABC):
         query_id: str,
     ) -> QueryLogEntry | None: ...
 
-    @abstractmethod
     def list_query_logs(
         self,
         tenant: str,
@@ -240,7 +216,6 @@ class BaseStore(ABC):
         offset: int = 0,
     ) -> list[QueryLogEntry]: ...
 
-    @abstractmethod
     def put_query_home(
         self,
         query_id: str,
@@ -248,20 +223,17 @@ class BaseStore(ABC):
         collection: str,
     ) -> None: ...
 
-    @abstractmethod
     def resolve_query_home(
         self,
         query_id: str,
     ) -> tuple[str, str] | None: ...
 
-    @abstractmethod
     def purge_query_homes_for_collection(
         self,
         tenant: str,
         collection: str,
     ) -> None: ...
 
-    @abstractmethod
     def list_query_homes(
         self,
         tenant: str | None = None,
