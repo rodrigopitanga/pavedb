@@ -10,34 +10,8 @@ import os, re, threading
 from pathlib import Path
 from typing import Any
 
-try:  # pragma: no cover - optional dependency guard
-    from dotenv import load_dotenv
-except ModuleNotFoundError:  # pragma: no cover
-    def load_dotenv(*_args, **_kwargs):
-        return False
-
-try:  # pragma: no cover - simple import guard
-    import yaml  # type: ignore
-except ModuleNotFoundError:  # pragma: no cover
-    class _YamlFallback:
-        """Very small subset YAML loader fallback using JSON semantics."""
-
-        @staticmethod
-        def safe_load(stream):  # type: ignore[override]
-            if hasattr(stream, "read"):
-                text = stream.read()
-            else:
-                text = stream
-            if not text:
-                return {}
-            try:
-                return json.loads(text)
-            except Exception as exc:  # pragma: no cover - exercised if invalid
-                raise RuntimeError(
-                    "yaml module not available and fallback JSON parsing failed"
-                ) from exc
-
-    yaml = _YamlFallback()  # type: ignore
+from dotenv import load_dotenv
+import yaml  # type: ignore
 
 load_dotenv()
 
