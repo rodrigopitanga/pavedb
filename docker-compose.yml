@@ -13,6 +13,7 @@ services:
       - ./config.yml:/app/config.yml:ro
     environment:
       - PAVEDB_CONFIG=/app/config.yml
+      - PAVEDB_DATA_DIR=/data
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8086/health/ready"]
       interval: 30s

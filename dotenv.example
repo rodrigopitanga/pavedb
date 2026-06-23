@@ -1,41 +1,28 @@
-# PatchVec — .env.example (only REQUIRED vars per profile)
-# ---------------------------------------------------------
-# Copy to `.env` and fill ONLY the section you need.
-# This file is intentionally minimal. Optional knobs (HOST/PORT/RELOAD/etc)
-# are omitted here; you can set them in the process environment if desired.
-#
-# IMPORTANT: Do NOT commit your real `.env`. It's ignored by .gitignore.
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
 
-# === Profile A: Development (no auth) ====================
+# PaveDB .env.example
+# -------------------
+# Copy to `.env` and fill only the section you need.
+# Keep real secrets out of git.
+
+# === Profile A: development (no auth) ====================
 # No required variables.
-# (Ensure config.yml sets: auth.mode: none)
+# (Ensure config.yml sets auth.mode: none or use the default dev config.)
 
-# === Profile B: Production with static auth (global admin) ===
-# Use a global admin token; keep per-tenant keys in tenants.secrets.yml (untracked).
-# Enable static auth (if not already in config.yml):
-# PATCHVEC_AUTH__MODE=static
-# REQUIRED:
-# PATCHVEC_AUTH__GLOBAL_KEY=change-me-strong-random-token
+# === Profile B: production with static auth ==============
+# PAVEDB_AUTH__MODE=static
+# PAVEDB_AUTH__GLOBAL_KEY=change-me-strong-random-token
 
-# === OPTIONAL (instead of GLOBAL_KEY): define tenant keys via env ===
-# This is only required if you don't use tenants.secrets.yml
-# PATCHVEC_AUTH__API_KEYS__acme=acme-secret
-# PATCHVEC_AUTH__API_KEYS__umbrella=umbrella-secret
+# === Optional: tenant keys via env =======================
+# PAVEDB_AUTH__API_KEYS__acme=acme-secret
+# PAVEDB_AUTH__API_KEYS__umbrella=umbrella-secret
 
-# === Profile C: OpenAI embedder ==========================
-# REQUIRED when using OpenAI embedder:
-# PATCHVEC_EMBEDDER__TYPE=openai
-# OPENAI_API_KEY=sk-your-openai-key
-# (Optional) model/dimension overrides:
-# PATCHVEC_EMBEDDER__MODEL=text-embedding-3-small
-# PATCHVEC_EMBEDDER__DIM=1536
+# === Optional: override the default embedder =============
+# PAVEDB_EMBEDDER__DEFAULT=native
+# PAVEDB_EMBEDDER__INSTANCES__NATIVE__TYPE=sbert
+# PAVEDB_EMBEDDER__INSTANCES__NATIVE__MODEL=sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2
 
-# === Tenants file path (untracked secrets) ===============
-# If you store tenant keys in an external file (recommended for prod),
-# ensure config.yml has: auth.tenants_file: ./tenants.secrets.yml
-# You may also override via env:
-# PATCHVEC_AUTH__TENANTS_FILE=./tenants.secrets.yml
-
-# === Optional: explicit config path ======================
-# If you keep multiple configs, point to one explicitly:
-# PATCHVEC_CONFIG=./config.yml
+# === Optional: explicit config and data paths ============
+# PAVEDB_CONFIG=./config.yml
+# PAVEDB_DATA_DIR=./data

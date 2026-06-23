@@ -53,7 +53,10 @@ customize `~/pavedb/config.yml`:
 vector_store:
   type: faiss
 embedder:
-  type: sbert
+  default: native
+  instances:
+    native:
+      type: sbert
 auth:
   mode: static
   global_key: ${PAVEDB_GLOBAL_KEY}
@@ -78,11 +81,11 @@ pavecli search demo books "captain nemo" -k 5
 ## REST example
 ```bash
 # Create a collection
-curl -X POST http://localhost:8086/collections/demo/books \
+curl -X POST http://localhost:8086/v1/collections/demo/books \
   -H "Authorization: Bearer your-secret"
 
 # Upload a TXT document
-curl -X POST http://localhost:8086/collections/demo/books/documents \
+curl -X POST http://localhost:8086/v1/collections/demo/books/documents \
   -H "Authorization: Bearer your-secret" \
   -F "file=@demo/20k_leagues.txt" -F "docid=verne-20k" \
   -F 'metadata={"lang":"en"}'
@@ -90,10 +93,10 @@ curl -X POST http://localhost:8086/collections/demo/books/documents \
 # Search (GET, no filters)
 curl -G --data-urlencode "q=hello" \
   -H "Authorization: Bearer your-secret" \
-  http://localhost:8086/collections/demo/books/search
+  http://localhost:8086/v1/collections/demo/books/search
 
 # Search (POST, with filters)
-curl -X POST http://localhost:8086/collections/demo/books/search \
+curl -X POST http://localhost:8086/v1/collections/demo/books/search \
   -H "Authorization: Bearer your-secret" \
   -H "Content-Type: application/json" \
   -d '{"q":"captain nemo","k":5,"filters":{"docid":"verne-20k"}}'
