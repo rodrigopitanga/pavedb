@@ -129,6 +129,13 @@ def _init_logger() -> logging.Logger:
     def shift(level: int, delta: int) -> int:
         return min(logging.CRITICAL, max(logging.DEBUG, level + 10 * delta))
 
+    def namespaces(value: Any) -> list[str]:
+        if not value:
+            return []
+        if isinstance(value, str):
+            return [value]
+        return [str(item) for item in value if str(item)]
+
     root = logging.getLogger()
     root.setLevel(shift(base_level, +2))
     root.handlers.clear()
@@ -147,13 +154,13 @@ def _init_logger() -> logging.Logger:
     dev_forces_debug = cfg.get("dev") and "PAVEDB_LOG__LEVEL" not in os.environ
     pave_log.setLevel(logging.DEBUG if dev_forces_debug else base_level)
 
-    for ns in cfg.get("log.debug"):
+    for ns in namespaces(cfg.get("log.debug")):
         logging.getLogger(ns).setLevel(logging.DEBUG)
 
-    for ns in cfg.get("log.watch"):
+    for ns in namespaces(cfg.get("log.watch")):
         logging.getLogger(ns).setLevel(shift(base_level, -1))
 
-    for ns in cfg.get("log.quiet"):
+    for ns in namespaces(cfg.get("log.quiet")):
         logging.getLogger(ns).setLevel(shift(base_level, +1))
 
     return pave_log

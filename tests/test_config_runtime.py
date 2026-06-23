@@ -53,3 +53,13 @@ def test_runtime_overlay_does_not_mutate_future_default_configs(tmp_path):
 
     assert fresh.get("vector_store.type") == "faiss"
     assert fresh.get("auth.api_keys") == {}
+
+
+def test_list_valued_env_overrides_are_split(monkeypatch, tmp_path):
+    monkeypatch.setenv("PAVEDB_LOG__DEBUG", "pave.api,pave.service")
+    monkeypatch.setenv("PAVEDB_LOG__WATCH", '["pave.routes","pave.cli"]')
+
+    cfg = Config(path=tmp_path / "missing.yml")
+
+    assert cfg.get("log.debug") == ["pave.api", "pave.service"]
+    assert cfg.get("log.watch") == ["pave.routes", "pave.cli"]

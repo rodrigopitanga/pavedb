@@ -109,6 +109,9 @@ def _load_config_fields(
 
 
 CONFIG_FIELDS: tuple[ConfigField, ...] = _load_config_fields()
+_LIST_VALUE_KEYS = {
+    field.key for field in CONFIG_FIELDS if isinstance(field.default, list)
+}
 
 
 def _config_defaults(
@@ -206,6 +209,27 @@ def _env_to_dict() -> dict[str, Any]:
         cur = envmap
         for part in path[:-1]:
             cur = cur.setdefault(part, {})
+        leaf = ".".join(path)
+        if leaf in _LIST_VALUE_KEYS:
+            text = v.strip()
+            if not text:
+                cur[path[-1]] = []
+                continue
+            parsed = None
+            if text[:1] in "[{":
+                try:
+                    parsed = json.loads(text)
+                except json.JSONDecodeError:
+                    parsed = None
+            if isinstance(parsed, list):
+                cur[path[-1]] = parsed
+            else:
+                cur[path[-1]] = [
+                    item.strip()
+                    for item in text.split(",")
+                    if item.strip()
+                ]
+            continue
         cur[path[-1]] = _coerce(v)
     return envmap
 
