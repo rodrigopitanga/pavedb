@@ -86,11 +86,12 @@ def test_cli_ingest_batch_indexes_raw_text_documents(cli_env, capsys):
     out = json.loads(capsys.readouterr().out)
     assert out["succeeded"] == 2
     assert out["failed"] == 0
-    assert {
-        call[3]
-        for call in store.calls
-        if call[0] == "index_records" and call[1] == tenant and call[2] == coll
-    } == {"NOTE-1", "NOTE-2"}
+    assert (
+        "index_documents",
+        tenant,
+        coll,
+        2,
+    ) in store.calls
 
 
 def test_cli_ingest_text_indexes_raw_text_document(cli_env, capsys):
