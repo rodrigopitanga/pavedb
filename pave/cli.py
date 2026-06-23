@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 from __future__ import annotations
-import argparse, json, pathlib, sys, uuid
+import argparse, json, pathlib, sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pave.embedders import LazyEmbedder, get_embedder
@@ -176,7 +176,7 @@ def cmd_create(args):
     )
 
 def cmd_ingest(args):
-    baseid = args.docid or str(uuid.uuid4())
+    baseid = args.docid
     meta = json.loads(args.metadata) if args.metadata else {}
     content = _read(args.file)
 
@@ -191,7 +191,7 @@ def cmd_ingest(args):
 
     return svc_ingest_document(
         _get_store(), args.tenant, args.collection, args.file, content,
-        baseid if args.docid else None, meta, csv_options=csv_opts
+        baseid, meta, csv_options=csv_opts
     )
 
 

@@ -627,8 +627,7 @@ def list_documents(
 
 
 def _default_docid(filename: str) -> str:
-    # Uppercase
-    base = filename.upper()
+    base = Path(filename).name.upper()
     # replace space and dot with underscore
     base = base.replace(" ", "_").replace(".", "_")
     # replace all non A-Z0-9_ with underscore

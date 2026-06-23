@@ -18,6 +18,7 @@ def test_default_docid_from_filename_rules():
     assert _default_docid("bncc_ef.pdf") == "BNCC_EF_PDF"
     assert _default_docid("bncc ef v2.csv") == "BNCC_EF_V2_CSV"
     assert _default_docid("bncc-ef!.txt") == "BNCC_EF_TXT"
+    assert _default_docid("/tmp/shadow/bncc-ef!.txt") == "BNCC_EF_TXT"
     val = _default_docid("...")
     assert val.startswith("PVDOC_") and len(val) > 6
 
