@@ -23,6 +23,7 @@ from pave.service import (
     replay_query_scoped as svc_replay_query_scoped,
     search as svc_search,
 )
+from pave.routes._deps import current_store
 from pave.stores.base import BaseStore
 
 
@@ -35,9 +36,6 @@ def build_search_router(
     trace,
 ) -> APIRouter:
     router = APIRouter()
-
-    def current_store(request: Request) -> BaseStore:
-        return request.app.state.store
 
     @router.get(
         "/collections/{tenant}/{name}/queries",

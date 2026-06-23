@@ -35,14 +35,12 @@ from pave.service import (
     resolve_query_home as svc_resolve_query_home,
     restore_archive as svc_restore_archive,
 )
+from pave.routes._deps import current_store
 from pave.stores.base import BaseStore
 
 
 def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
     router = APIRouter()
-
-    def current_store(request: Request) -> BaseStore:
-        return request.app.state.store
 
     @router.get(
         "/admin/archive",

@@ -25,14 +25,12 @@ from pave.service import (
     list_collections as svc_list_collections,
     update_collection as svc_update_collection,
 )
+from pave.routes._deps import current_store
 from pave.stores.base import BaseStore
 
 
 def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
     router = APIRouter()
-
-    def current_store(request: Request) -> BaseStore:
-        return request.app.state.store
 
     @router.get(
         "/collections/{tenant}",

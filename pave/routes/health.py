@@ -9,14 +9,12 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from pave.metrics import set_error, snapshot, to_prometheus
+from pave.routes._deps import current_store
 from pave.stores.base import BaseStore
 
 
 def build_health_router(cfg, version: str, trace) -> APIRouter:
     router = APIRouter()
-
-    def current_store(request: Request) -> BaseStore:
-        return request.app.state.store
 
     def readiness_check(request: Request):
         details = {

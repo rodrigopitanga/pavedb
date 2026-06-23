@@ -36,15 +36,13 @@ from pave.service import (
     list_chunks as svc_list_chunks,
     list_documents as svc_list_documents,
 )
+from pave.routes._deps import current_store
 from pave.stores.base import BaseStore
 
 
 def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
     router = APIRouter()
     log = get_logger()
-
-    def current_store(request: Request) -> BaseStore:
-        return request.app.state.store
 
     @router.get(
         "/collections/{tenant}/{collection}/documents",
