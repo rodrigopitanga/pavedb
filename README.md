@@ -128,13 +128,14 @@ Run a server — `pavesrv` (from a PyPI install) or a Docker image (see
 `http://localhost:8086`. This is the open wire protocol every networked client wraps
 and the one you'd target to build your own — in any language. No black box:
 every route is documented in OpenAPI at `/openapi.json` and browsable at
-`/ui`. Create and ingest mirror the CLI. Set an auth key (`PAVEDB_GLOBAL_KEY`)
-so the server accepts requests; then a search looks like:
+`/ui`. Create and ingest mirror the CLI. Set an auth key
+(`PAVEDB_AUTH__GLOBAL_KEY`) so the server accepts requests; then a search looks
+like:
 
 ```bash
-export PAVEDB_GLOBAL_KEY=super-sekret
+export PAVEDB_AUTH__GLOBAL_KEY=super-sekret
 pavesrv
-curl -H "Authorization: Bearer $PAVEDB_GLOBAL_KEY" \
+curl -H "Authorization: Bearer $PAVEDB_AUTH__GLOBAL_KEY" \
   "http://localhost:8086/v1/collections/demo/books/search?q=captain+nemo&k=3"
 ```
 
