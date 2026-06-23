@@ -158,22 +158,6 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         if file is not None:
             content = await file.read()
 
-        max_mb = float(cfg.get("ingest.max_file_size_mb"))
-        max_bytes = int(max_mb * 1024 * 1024)
-        content_len = (
-            len(text_body.text.encode("utf-8"))
-            if text_body is not None
-            else len(content)
-        )
-        if max_bytes > 0 and content_len > max_bytes:
-            return error(
-                413,
-                "file_too_large",
-                f"file exceeds the {int(max_mb)} MB limit",
-                request=request,
-                request_id=rid,
-            )
-
         csv_opts = None
         if csv_has_header or csv_meta_cols or csv_include_cols:
             csv_opts = {

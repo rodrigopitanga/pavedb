@@ -637,6 +637,26 @@ def _default_docid(filename: str) -> str:
     if base != '': return base
     return "PVDOC_"+str(uuid.uuid4())
 
+
+def _ingest_size_limit_bytes() -> int:
+    raw = get_cfg().get("ingest.max_file_size_mb")
+    try:
+        max_mb = float(raw or 0)
+    except (TypeError, ValueError):
+        max_mb = 0.0
+    if max_mb <= 0:
+        return 0
+    return int(max_mb * 1024 * 1024)
+
+
+def _enforce_ingest_size_limit(size_bytes: int) -> None:
+    limit_bytes = _ingest_size_limit_bytes()
+    if limit_bytes > 0 and size_bytes > limit_bytes:
+        raise ServiceError(
+            "file_too_large",
+            f"file exceeds the {int(limit_bytes / (1024 * 1024))} MB limit",
+        )
+
 def _index_records_result(store, tenant: str, collection: str, baseid: str,
                           records, doc_meta, t0: float, label: str) -> ServiceResult:
     """Shared tail for ingest paths: index records, metrics, log, envelope."""
@@ -667,6 +687,7 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
     with m_timed("ingest"):
         try:
             stage = "prepare"
+            _enforce_ingest_size_limit(len(content))
             baseid = docid or _default_docid(filename)
             meta_from_call = metadata or {}
             now = datetime.now(tz.utc).isoformat(timespec="seconds")
@@ -740,6 +761,7 @@ def ingest_text(
     _t0 = _time.perf_counter()
     with m_timed("ingest"):
         try:
+            _enforce_ingest_size_limit(len(text.encode("utf-8")))
             baseid = docid or _default_docid("")
             meta_from_call = metadata or {}
             now = datetime.now(tz.utc).isoformat(timespec="seconds")
