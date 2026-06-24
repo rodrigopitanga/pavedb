@@ -1,7 +1,7 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-import time as _time
+import threading
 import pave.routes.search as search_routes
 
 
@@ -26,8 +26,10 @@ def test_search_timeout_returns_503(client, app, monkeypatch):
     """Search that exceeds timeout_ms returns 503 search_timeout."""
     client.post("/v1/collections/acme/timeouttestcol")
 
+    release = threading.Event()
+
     def slow(*args, **kwargs):
-        _time.sleep(5)
+        release.wait(timeout=5)
         return []
 
     monkeypatch.setattr(app.state, "search_timeout_s", 0.05)
@@ -37,6 +39,10 @@ def test_search_timeout_returns_503(client, app, monkeypatch):
         "/v1/collections/acme/timeouttestcol/search",
         json={"q": "x", "k": 1},
     )
+    # Timeout has already fired; release the worker so it drains and logs
+    # within the test instead of orphaning a thread that logs post-teardown.
+    release.set()
+
     assert r.status_code == 503
     data = r.json()
     assert data["ok"] is False
