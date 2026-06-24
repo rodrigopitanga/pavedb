@@ -18,19 +18,16 @@ def test_upload_txt_and_search_post_get(client):
     # GET without filters
     s2 = client.get("/v1/collections/acme/txts/search",
                     params={"q": "patchvec", "k": 3})
-    print(s2.status_code, s2.json())
     assert s2.status_code == 200 and len(s2.json()["matches"]) >= 1
 
     # POST without filters
     body = {"q": "world", "k": 5}
     s = client.post("/v1/collections/acme/txts/search", json=body)
-    print(s.status_code, s.json())
     assert s.status_code == 200 and len(s.json()["matches"]) >= 1
 
     # POST with filters
     body = {"q": "world", "k": 5, "filters": {"docid": "DOC-TXT"}}
     s = client.post("/v1/collections/acme/txts/search", json=body)
-    print(s.status_code, s.json())
     assert s.status_code == 200 and len(s.json()["matches"]) >= 1
 
 def test_reupload_same_docid_calls_purge_and_reindexes(client):

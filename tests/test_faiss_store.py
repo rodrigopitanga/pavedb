@@ -121,7 +121,6 @@ def test_meta_json_and_filters(store):
     # Filters should select only lang=en
     hits = store.search("ten", "c1", "world", k=5, filters={"lang": "en"})
     assert len(hits) == 1
-    print(f"debug:: HITS: {hits}")
     assert hits[0].meta["lang"] == "en"
 
 def test_doc_level_meta_persists_in_documents_table(store):
