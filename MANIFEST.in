@@ -5,6 +5,5 @@ include config.yml.example
 include requirements-cpu.txt
 recursive-include pave *.py
 recursive-include pave *.json
-recursive-include scripts *.sh
 recursive-include pave/assets *
 global-exclude __pycache__ *.py[cod] *.so
