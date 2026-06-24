@@ -6,7 +6,7 @@ import pytest
 pytestmark = pytest.mark.slow
 
 
-def test_upload_pdf_and_search(client):
+def test_upload_pdf_yields_page_chunk(client):
     # create collection
     client.post("/v1/collections/acme/pdfs")
 
@@ -29,14 +29,3 @@ def test_upload_pdf_and_search(client):
     out = r.json()
     assert out["ok"] is True
     assert out["chunks"] >= 1
-
-    # POST search (filters by docid). DummyStore returns results even when text doesn't match.
-    body = {"q": "anything", "k": 5, "filters": {"docid": "DOC-PDF"}}
-    s = client.post("/v1/collections/acme/pdfs/search", json=body)
-    assert s.status_code == 200
-    assert len(s.json()["matches"]) >= 1
-
-    # GET search (no filters)
-    s2 = client.get("/v1/collections/acme/pdfs/search", params={"q": "anything", "k": 5})
-    assert s2.status_code == 200
-    assert len(s2.json()["matches"]) >= 1

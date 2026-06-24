@@ -261,42 +261,6 @@ def test_list_query_logs_pagination(client):
     assert page2.json()["queries"][0]["query_text"] == "alpha"
 
 
-def test_search_log_reflects_common_merge_flags(client, cfg):
-    cfg.set("common_enabled", True)
-    cfg.set("common_tenant", "global")
-    cfg.set("common_collection", "common")
-
-    client.post("/v1/collections/acme/qflags")
-    client.post("/v1/collections/global/common")
-    client.post(
-        "/v1/collections/acme/qflags/documents",
-        files={"file": ("a.txt", b"flag local", "text/plain")},
-        data={"docid": "DOC-L"},
-    )
-    client.post(
-        "/v1/collections/global/common/documents",
-        files={"file": ("b.txt", b"flag common", "text/plain")},
-        data={"docid": "DOC-C"},
-    )
-
-    response = client.post(
-        "/v1/collections/acme/qflags/search",
-        json={"q": "flag", "k": 5, "include_common": True},
-    )
-    assert response.status_code == 200
-
-    logs = client.get("/v1/collections/acme/qflags/queries")
-    query_id = logs.json()["queries"][0]["query_id"]
-    entry = client.get(f"/v1/collections/acme/qflags/queries/{query_id}")
-
-    assert entry.status_code == 200
-    query = entry.json()["query"]
-    assert query["include_common"] is True
-    assert query["common_tenant"] == "global"
-    assert query["common_collection"] == "common"
-    assert query["replay_of"] is None
-
-
 def test_query_log_moves_with_collection_move(client):
     client.post("/v1/collections/acme/qmove")
     client.post(

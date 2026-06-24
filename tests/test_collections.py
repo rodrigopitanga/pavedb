@@ -404,57 +404,33 @@ def test_vector_space_key_on_listing(client):
     )
 
 
-def test_base_url_change_keeps_same_vector_space_key(client):
-    """base_url is operational, not geometric."""
+def test_vector_space_key_reflects_dim_but_not_base_url(client):
+    # base_url is operational (keeps the key); dim is geometric (changes it).
     _set_openai_instance("openai-a", dim=1024, base_url="http://a/v1")
     _set_openai_instance("openai-b", dim=1024, base_url="http://b/v1")
-    a = client.post(
-        "/v1/collections/acme/openai-a",
-        json={
-            "embedder_type": "openai",
-            "embed_model": "bge-m3",
-            "embedder_config": {"dim": 1024},
-        },
-    )
-    b = client.post(
-        "/v1/collections/acme/openai-b",
-        json={
-            "embedder_type": "openai",
-            "embed_model": "bge-m3",
-            "embedder_config": {"dim": 1024},
-        },
-    )
-    assert a.status_code == 201 and b.status_code == 201
+    _set_openai_instance("openai-c", dim=1536, base_url="http://a/v1")
 
-    da = client.get("/v1/collections/acme/openai-a/detail").json()
-    db = client.get("/v1/collections/acme/openai-b/detail").json()
-    assert da["vector_space_key"] == "openai:bge-m3:dim=1024"
-    assert da["vector_space_key"] == db["vector_space_key"]
+    def key_for(name, dim):
+        r = client.post(
+            f"/v1/collections/acme/{name}",
+            json={
+                "embedder_type": "openai",
+                "embed_model": "bge-m3",
+                "embedder_config": {"dim": dim},
+            },
+        )
+        assert r.status_code == 201
+        return client.get(
+            f"/v1/collections/acme/{name}/detail"
+        ).json()["vector_space_key"]
 
+    key_a = key_for("openai-a", 1024)
+    key_b = key_for("openai-b", 1024)
+    key_c = key_for("openai-c", 1536)
 
-def test_dim_change_changes_vector_space_key(client):
-    _set_openai_instance("openai-1024", dim=1024)
-    _set_openai_instance("openai-1536", dim=1536)
-    a = client.post(
-        "/v1/collections/acme/dim-1024",
-        json={
-            "embedder_type": "openai",
-            "embed_model": "bge-m3",
-            "embedder_config": {"dim": 1024},
-        },
-    )
-    b = client.post(
-        "/v1/collections/acme/dim-1536",
-        json={
-            "embedder_type": "openai",
-            "embed_model": "bge-m3",
-            "embedder_config": {"dim": 1536},
-        },
-    )
-    assert a.status_code == 201 and b.status_code == 201
-    da = client.get("/v1/collections/acme/dim-1024/detail").json()
-    db = client.get("/v1/collections/acme/dim-1536/detail").json()
-    assert da["vector_space_key"] != db["vector_space_key"]
+    assert key_a == "openai:bge-m3:dim=1024"
+    assert key_a == key_b  # base_url differs -> same vector space
+    assert key_a != key_c  # dim differs -> different vector space
 
 
 def test_embedder_unavailable_on_create(tmp_path):
