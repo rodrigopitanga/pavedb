@@ -237,6 +237,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                 code = exc.code
                 status_map = {
                     "embedder_unavailable": 503,
+                    "file_too_large": 413,
                     "invalid_csv_options": 400,
                     "invalid_metadata_keys": 400,
                     "ingest_failed": 500,
