@@ -18,19 +18,13 @@ both into the HTTP response envelope.
 
 from __future__ import annotations
 
-import errno
-import json
 import os
 import re
-import shutil
-import tempfile
 import unicodedata
 import uuid
-import zipfile
-from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone as tz
 from pathlib import Path
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 import time as _time
