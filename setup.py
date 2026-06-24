@@ -39,7 +39,7 @@ setup(
     include_package_data=True,
     package_data={
         "pave.config": ["config_fields.json"],
-        "pave.assets": ["*.png", "*.html", "tenants.yml.example"],
+        "pave.assets": ["*.png", "*.ico", "*.html", "tenants.yml.example"],
     },
     install_requires=[
         "fastapi>=0.115.0",
