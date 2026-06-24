@@ -10,7 +10,7 @@ keep PRs focused.
 
 ```bash
 # clone and enter the repo first
-git clone https://github.com/rodrigopitanga/pavedb.git
+git clone https://gitlab.com/flowlexi/pavedb.git
 cd pavedb
 
 # GPU deps by default; add USE_CPU=1 if you want CPU-only torch wheels
@@ -47,12 +47,13 @@ production-like stack, or call the wrapper script directly:
 
 ## Workflow
 
-1. Fork and clone the repository (menu above).
-2. Create a branch named after the task (`feature/tenant-search`, `fix/csv-metadata`,
-   etc.).
+1. Fork and clone the repository on GitLab.
+2. Create a branch with the matching prefix: `feat/tenant-search`,
+   `bug/csv-metadata`, or `rev/r3-26-cli-filters`.
 3. Make the change, keep commits scoped, and include tests whenever applicable.
 4. Run `make test` and `make check` before submitting.
-5. Open a pull request referencing the issue you claimed.
+5. Open a GitLab merge request referencing the issue you claimed.
+6. Merge requests must pass the GitLab pipeline before they merge to `main`.
 
 ## Code style
 
@@ -157,6 +158,10 @@ policy applies to PaveDB and the standalone PaveDB SDK repositories.
 ## Issues and task claims
 
 - [`ROADMAP.md`](ROADMAP.md) lists tasks that need owners.
+- Bugs and feature requests can be filed on GitHub; code review and merges happen
+  through GitLab merge requests.
+- Do not close referenced issues from a branch or open MR. Mention the issue key
+  in commits/MRs and let CI close it after merge.
 - To claim a task, open an issue titled `claim: <task ID>` and describe the
 approach.
 - Good first issues live under the `bite-sized` label. Submit a draft PR
