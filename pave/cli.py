@@ -393,6 +393,7 @@ def cmd_list_collections(args):
                 "name": coll["name"],
                 "display_name": coll.get("display_name"),
                 "embedder_label": coll.get("embedder_label"),
+                "vector_space_key": coll.get("vector_space_key"),
             }
             for coll in out.get("collections", [])
         ]

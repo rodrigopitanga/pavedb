@@ -303,6 +303,9 @@ def test_list_collections_cli(tmp_path, capsys, monkeypatch):
         "sbert:fake",
         "sbert:fake",
     ]
+    assert all(
+        c["vector_space_key"] == "sbert:fake:" for c in out["collections"]
+    )
     assert out["count"] == 2
 
 
