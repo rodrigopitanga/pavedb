@@ -119,7 +119,7 @@ pavecli ingest demo books 20k_leagues.txt --docid=verne-20k --metadata='{"lang":
 pavecli search demo books "captain nemo" -k 3
 ```
 
-Full command reference: [`docs/reference/cli.md`](docs/reference/cli.md).
+Full [command reference](docs/reference/cli.md).
 
 ### 🌐 Server & REST API
 
@@ -271,7 +271,9 @@ barely changes along the way:
 
 ## 📚 Reference
 
-- CLI: [`docs/reference/cli.md`](docs/reference/cli.md)
+- [CLI](docs/reference/cli.md) — `pavecli` commands and flags
+- [Configuration](docs/reference/config.md) — config fields, defaults, and environment overrides
+- [Store protocols](docs/reference/protocols.md) — `Embedder`/backend stability contract
 
 ## 🗺️ Roadmap
 
