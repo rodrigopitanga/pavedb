@@ -1981,15 +1981,22 @@ class LocalStore:
             with self._collection_read_lock(tenant, collection):
                 backend = self._emb.get(key)
                 col_db = self._dbs.get(key)
-                if backend is not None and col_db is not None:
+                current_embedder = self._collection_embedders.get(key)
+                if (
+                    backend is not None
+                    and col_db is not None
+                    and current_embedder is embedder
+                ):
                     return _search_loaded(
                         backend,
                         col_db,
                         q_vec,
                         embed_ms,
                     )
-            # Collection drained between encode and search (concurrent
-            # delete/move); signal the caller to reload and retry.
+            # Caches drained, or a delete+recreate swapped the embedder between
+            # encode and search (a different vector space, so q_vec would have
+            # the wrong dimension for the new backend). Reload and retry, which
+            # re-encodes against the current embedder. R3-23.
             return None
 
         for attempt in range(3):

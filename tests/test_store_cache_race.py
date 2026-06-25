@@ -247,6 +247,45 @@ def test_search_runs_while_batch_ingest_embeds(temp_data_dir):
     assert not ingest_error
 
 
+def test_search_retries_when_embedder_swapped_between_encode_and_search(
+    temp_data_dir,
+):
+    """A delete+recreate that swaps the cached embedder between encode and the
+    FAISS read lock must not feed the stale query vector (wrong dimension for
+    the new backend) to search; it reloads and re-encodes instead (R3-23)."""
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    tenant, collection = "acme", "embedder_swap"
+    store.index_records(
+        tenant,
+        collection,
+        "DOC-1",
+        [("0", "swap race probe", {"lang": "en"})],
+    )
+    key = (tenant, collection)
+
+    real_encode = store._encode_query_cached
+    encode_calls = {"n": 0}
+    swapped = {"done": False}
+
+    def spy_encode(t, c, embedder, q):
+        encode_calls["n"] += 1
+        vec = real_encode(t, c, embedder, q)
+        if not swapped["done"]:
+            swapped["done"] = True
+            # Simulate delete+recreate swapping the cached embedder object
+            # in the gap between encode and the FAISS read lock.
+            store._collection_embedders[key] = FakeEmbedder()
+        return vec
+
+    store._encode_query_cached = spy_encode  # type: ignore[method-assign]
+
+    hits = store.search(tenant, collection, "swap race", k=1)
+
+    assert swapped["done"]
+    assert encode_calls["n"] >= 2  # swap forced a reload + re-encode, not a stale read
+    assert hits
+
+
 def test_search_reuses_cached_query_vector(temp_data_dir):
     embedder = CountingEmbedder()
     store = LocalStore(str(temp_data_dir), embedder)
