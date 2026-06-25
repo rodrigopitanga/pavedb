@@ -396,9 +396,9 @@ class LocalClient(BaseClient):
         tenant: str,
         old_name: str,
         new_name: str,
-    ) -> None:
+    ) -> dict:
         result = self._call(svc_move_collection, tenant, old_name, new_name)
-        _unwrap(result)
+        return _unwrap(result)
 
     def _update_collection(
         self,
