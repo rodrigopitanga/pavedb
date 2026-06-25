@@ -1307,9 +1307,10 @@ class LocalStore:
         """Return tenant/collection/doc/chunk counters from store metadata.
 
         Doc/chunk counts require walking every collection under its read
-        lock, so the result is memoized for `_CATALOG_METRICS_TTL_S`. At most
-        one walk runs per window; concurrent callers block on the lock and
-        share the fresh result rather than each repeating the walk.
+        lock, so the result is memoized for `_CATALOG_METRICS_TTL_S`. The walk
+        runs outside `_catalog_metrics_lock`; the lock only guards the cache
+        swap, so a slow walk never blocks concurrent callers (at worst two
+        cold callers repeat the walk).
         """
         cached = self._catalog_metrics_cache
         if cached is not None:
@@ -1317,13 +1318,13 @@ class LocalStore:
             if _time.monotonic() - ts < _CATALOG_METRICS_TTL_S:
                 return dict(value)
 
+        metrics = self._compute_catalog_metrics()
         with self._catalog_metrics_lock:
             cached = self._catalog_metrics_cache
             if cached is not None:
                 ts, value = cached
                 if _time.monotonic() - ts < _CATALOG_METRICS_TTL_S:
                     return dict(value)
-            metrics = self._compute_catalog_metrics()
             self._catalog_metrics_cache = (_time.monotonic(), metrics)
             return dict(metrics)
 
