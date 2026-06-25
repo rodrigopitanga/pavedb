@@ -363,6 +363,7 @@ class CollectionDB:
                 "VALUES (?, ?)",
                 (_COLLECTION_SCHEMA_VERSION, now),
             )
+            conn.commit()
 
     @staticmethod
     def _schema_version(conn: sqlite3.Connection) -> int:
@@ -1107,6 +1108,7 @@ class CatalogDB:
                 "VALUES (?, ?)",
                 (_CATALOG_SCHEMA_VERSION, now),
             )
+            conn.commit()
 
     @staticmethod
     def _schema_version(conn: sqlite3.Connection) -> int:
