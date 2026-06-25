@@ -3,6 +3,7 @@
 
 import errno
 import shutil
+import threading
 import time
 from pathlib import Path
 
@@ -36,6 +37,61 @@ def test_store_close_closes_cached_embedders_once(temp_data_dir):
     store.close()
 
     assert embedder.close_count == 1
+
+
+def test_read_recovers_when_close_runs_during_in_flight_read(temp_data_dir):
+    """close() concurrent with an in-flight read must still return the doc.
+
+    The other recovery tests pre-close the cached handle single-threaded.
+    Here close() actually runs while a read holds the read lock and the
+    cached CollectionDB reference, reproducing the real timing race: the
+    handle is closed underneath the read, which must fall back to a fresh
+    read-only open rather than raise.
+    """
+    store = _store(temp_data_dir)
+    tenant, collection, docid = "acme", "inflight_close", "DOC-LIVE"
+    store.index_records(
+        tenant,
+        collection,
+        docid,
+        [("0", "in-flight read probe", {"lang": "en"})],
+    )
+
+    read_holding = threading.Event()
+    close_done = threading.Event()
+    result: dict = {}
+
+    cached_db = store._dbs[(tenant, collection)]
+    orig_get_document = cached_db.get_document
+
+    def _paused_get_document(*args, **kwargs):
+        # Mid-read: read lock + cached handle held. Block until close() has
+        # closed this handle underneath us, then let the original run (and
+        # raise the closed-db error the fallback is meant to recover from).
+        read_holding.set()
+        assert close_done.wait(timeout=5)
+        return orig_get_document(*args, **kwargs)
+
+    cached_db.get_document = _paused_get_document  # type: ignore[method-assign]
+
+    def _read():
+        try:
+            result["doc"] = store.get_document(tenant, collection, docid)
+        except Exception as exc:
+            result["error"] = exc
+
+    reader = threading.Thread(target=_read)
+    reader.start()
+    assert read_holding.wait(timeout=5)
+
+    store.close()
+    close_done.set()
+
+    reader.join(timeout=5)
+    assert not reader.is_alive()
+    assert "error" not in result, result.get("error")
+    assert result["doc"] is not None
+    assert result["doc"]["docid"] == docid
 
 
 def test_get_document_recovers_from_closed_cached_db(temp_data_dir):
