@@ -550,6 +550,27 @@ class LocalStore:
             self._embedder_cache[key] = embedder
         return embedder
 
+    def _close_embedder_if_orphaned(self, embedder: Embedder | None) -> None:
+        """Close an embedder's worker once no cache still references it.
+
+        Embedders are shared across collections by vector_space_key, so a
+        pop must not close one a sibling still uses. Only close when neither
+        cache holds this object any more, otherwise the SBERT worker
+        subprocess leaks until GC (R3-16).
+        """
+        if embedder is None:
+            return
+        if any(e is embedder for e in self._embedder_cache.values()):
+            return
+        if any(e is embedder for e in self._collection_embedders.values()):
+            return
+        close = getattr(embedder, "close", None)
+        if callable(close):
+            try:
+                close()
+            except Exception:
+                pass
+
     def _embedder_dim_for_config(
         self,
         cfg: CollectionConfig,
@@ -562,12 +583,14 @@ class LocalStore:
                 embedder_factory_mod.vector_space_key(cfg),
                 None,
             )
+            self._close_embedder_if_orphaned(embedder)
             raise
         except Exception as exc:
             self._embedder_cache.pop(
                 embedder_factory_mod.vector_space_key(cfg),
                 None,
             )
+            self._close_embedder_if_orphaned(embedder)
             raise EmbedderUnavailableError(
                 f"embedder {cfg.get('embedder_type')!s}:"
                 f"{cfg.get('embed_model')!s} dimension unavailable: {exc}"

@@ -9,6 +9,9 @@ from pathlib import Path
 
 from unittest.mock import patch
 
+import pytest
+
+import pave.embedders.factory as embedder_factory_mod
 from pave.metadb import CatalogDB, CollectionDB
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
@@ -37,6 +40,44 @@ def test_store_close_closes_cached_embedders_once(temp_data_dir):
     store.close()
 
     assert embedder.close_count == 1
+
+
+def test_close_embedder_if_orphaned_skips_shared(temp_data_dir):
+    store = _store(temp_data_dir)
+
+    orphan = CloseTrackingEmbedder()
+    store._close_embedder_if_orphaned(orphan)
+    assert orphan.close_count == 1  # no cache holds it -> close the worker
+
+    cached = CloseTrackingEmbedder()
+    store._embedder_cache["vk"] = cached
+    store._close_embedder_if_orphaned(cached)
+    assert cached.close_count == 0  # still in _embedder_cache -> keep open
+
+    pinned = CloseTrackingEmbedder()
+    store._collection_embedders[("acme", "books")] = pinned
+    store._close_embedder_if_orphaned(pinned)
+    assert pinned.close_count == 0  # a collection still uses it -> keep open
+
+
+def test_embedder_dim_failure_closes_orphaned_worker(temp_data_dir):
+    store = _store(temp_data_dir)
+
+    class DimFails(CloseTrackingEmbedder):
+        @property
+        def dim(self):
+            raise RuntimeError("worker boot failed")
+
+    embedder = DimFails()
+    cfg = {"embedder_type": "sbert", "embed_model": "m"}
+    vk = embedder_factory_mod.vector_space_key(cfg)
+    store._embedder_cache[vk] = embedder
+
+    with pytest.raises(Exception):
+        store._embedder_dim_for_config(cfg, embedder)
+
+    assert vk not in store._embedder_cache  # popped on failure
+    assert embedder.close_count == 1  # worker closed, not leaked until GC
 
 
 def test_read_recovers_when_close_runs_during_in_flight_read(temp_data_dir):
