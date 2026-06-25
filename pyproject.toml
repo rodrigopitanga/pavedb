@@ -1,0 +1,18 @@
+# (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Project metadata lives in setup.py; this file carries only the tables that
+# tools auto-discover by standard filename. No [project] table: setuptools
+# would then require name/version here and conflict with setup.py.
+
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.ruff]
+line-length = 88
+lint.select = ["E", "F", "W", "I"]
