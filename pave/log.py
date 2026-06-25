@@ -32,20 +32,23 @@ def configure(dest: str | None) -> None:
     if not dest or str(dest).strip().lower() in ("null", "none", ""):
         return
 
-    _dest = str(dest).strip()
-    if _dest == "stdout":
+    target = str(dest).strip()
+    if target == "stdout":
+        with _lock:
+            _dest = "stdout"
         return
     try:
-        path = Path(_dest).expanduser()
+        path = Path(target).expanduser()
         path.parent.mkdir(parents=True, exist_ok=True)
         handle = path.open("a", encoding="utf-8", buffering=1)
     except OSError as exc:
-        LOG.warning("ops log disabled: cannot open %s (%s)", _dest, exc)
-        _dest = None
+        LOG.warning("ops log disabled: cannot open %s (%s)", target, exc)
         return
-    _dest = str(path)
+    # Assign the handle before _dest so a concurrent emit() never sees a
+    # file dest with no handle (which would silently drop the line).
     with _lock:
         _handle = handle
+        _dest = str(path)
 
 
 def emit(**fields) -> None:
