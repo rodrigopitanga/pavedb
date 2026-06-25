@@ -122,6 +122,11 @@ class DummyStore:
         self._collection_configs.pop((tenant, collection), None)
         shutil.rmtree(self._dir(tenant, collection), ignore_errors=True)
 
+    def get_collection_config(
+        self, tenant: str, collection: str
+    ) -> dict[str, Any] | None:
+        return self._collection_configs.get((tenant, collection))
+
     def update_collection(
         self,
         tenant: str,

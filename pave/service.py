@@ -240,13 +240,18 @@ def update_collection(
                 "display_name is required",
             )
         resolved_display_name = _normalize_display_name(display_name, name)
-        updated = store.update_collection(
+        if store.get_collection_config(tenant, resolved_name) is None:
+            return {
+                "ok": False,
+                "code": "collection_not_found",
+                "error": f"collection '{resolved_name}' does not exist",
+                "error_type": "not_found",
+            }
+        store.update_collection(
             tenant,
             resolved_name,
             display_name=resolved_display_name,
         )
-        if updated is None:
-            raise ValueError(f"collection '{resolved_name}' does not exist")
         return {
             "ok": True,
             "tenant": tenant,
@@ -265,18 +270,10 @@ def update_collection(
             "error_type": "invalid",
         }
     except ValueError as e:
-        err = str(e)
-        if "does not exist" in err or "missing" in err:
-            return {
-                "ok": False,
-                "code": "collection_not_found",
-                "error": err,
-                "error_type": "not_found",
-            }
         return {
             "ok": False,
             "code": "update_collection_invalid",
-            "error": err,
+            "error": str(e),
             "error_type": "invalid",
         }
     except Exception as e:

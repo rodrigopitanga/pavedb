@@ -193,6 +193,15 @@ def test_update_collection_rejects_empty_display_name(client):
     assert r.json()["code"] == "invalid_display_name"
 
 
+def test_update_collection_not_found(client):
+    r = client.patch(
+        "/v1/collections/acme/missing-update",
+        json={"display_name": "Whatever"},
+    )
+    assert r.status_code == 404
+    assert r.json()["code"] == "collection_not_found"
+
+
 def test_list_collections_api_sorted(client, tmp_path, monkeypatch):
     store = client.app.state.store.impl
     monkeypatch.setattr(store, "_data_dir", str(tmp_path))
