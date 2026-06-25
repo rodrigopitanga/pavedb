@@ -321,14 +321,18 @@ class LocalStore:
     ) -> Iterator[None]:
         """Atomic write across one or more collections (e.g. rename)."""
         with self._state_lock.read_lock():
-            locks = [
-                self._get_collection_lock(f"t_{tenant}:c_{collection}")
+            # Order by the stable collection key, not lock id(): an id()-based
+            # order is only consistent while locks are never evicted, which
+            # blocks pruning (R3-14). Keys are deterministic across threads.
+            keys = sorted({
+                f"t_{tenant}:c_{collection}"
                 for tenant, collection in collections
-            ]
-            unique_locks = sorted(set(locks), key=id)
+            })
             with ExitStack() as stack:
-                for lock in unique_locks:
-                    stack.enter_context(lock.write_lock())
+                for key in keys:
+                    stack.enter_context(
+                        self._get_collection_lock(key).write_lock()
+                    )
                 yield
 
     def _base_path(self, tenant: str, collection: str) -> str:
