@@ -37,7 +37,7 @@ from pave.service import (
     get_chunk_content as svc_get_chunk_content,
     get_collection_detail as svc_get_collection_detail,
     get_document as svc_get_document,
-    get_query_log_entry as svc_get_query_log_entry,
+    get_query_log_entry_scoped as svc_get_query_log_entry_scoped,
     ingest_documents_batch as svc_ingest_documents_batch,
     ingest_document as svc_ingest_document,
     ingest_text as svc_ingest_text,
@@ -48,7 +48,7 @@ from pave.service import (
     list_query_homes as svc_list_query_homes,
     list_tenants as svc_list_tenants,
     move_collection as svc_move_collection,
-    replay_query as svc_replay_query,
+    replay_query_scoped as svc_replay_query_scoped,
     restore_archive as svc_restore_archive,
     search as svc_search,
     update_collection as svc_update_collection,
@@ -380,13 +380,15 @@ class LocalClient(BaseClient):
         return list(_unwrap(result)["queries"])
 
     def _get_query(self, tenant: str, collection: str, qid: str) -> dict:
-        _ = (tenant, collection)
-        result = self._call(svc_get_query_log_entry, qid)
+        result = self._call(
+            svc_get_query_log_entry_scoped, tenant, collection, qid
+        )
         return _unwrap(result)["query"]
 
     def _replay(self, tenant: str, collection: str, qid: str) -> list[dict]:
-        _ = (tenant, collection)
-        result = self._call(svc_replay_query, qid, actor="library")
+        result = self._call(
+            svc_replay_query_scoped, tenant, collection, qid, actor="library"
+        )
         return list(_unwrap(result)["matches"])
 
     def _rename(

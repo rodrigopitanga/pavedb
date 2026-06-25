@@ -337,3 +337,18 @@ def test_exception_translation_from_service_errors(tmp_path, monkeypatch):
             coll.search("captain")
         assert type(generic.value) is PaveError
         assert generic.value.code == "unexpected_failure"
+
+
+def test_get_query_and_replay_are_collection_scoped(tmp_path):
+    with provider(tmp_path / "db") as db:
+        books = db.create_collection("books")
+        other = db.create_collection("other")
+        books.add("captain nemo", docid="DOC-1")
+        books.search("captain", k=1)
+        qid = books.queries()[0]["query_id"]
+
+        assert books.get_query(qid)["query_id"] == qid
+        with pytest.raises(NotFoundError):
+            other.get_query(qid)
+        with pytest.raises(NotFoundError):
+            other.replay(qid)
