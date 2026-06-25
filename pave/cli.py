@@ -43,7 +43,6 @@ from pave.runtime_paths import (
     render_config_template,
     resolve_runtime_paths,
 )
-from pave.slugify import slugify
 from pave.version import help_notice, version_banner
 
 store: BaseStore | None = None
@@ -167,17 +166,11 @@ def cmd_create(args):
         if args.embedder_config
         else None
     )
-    collection = args.collection
-    display_name = args.display_name
-    slug = slugify(collection)
-    if slug and slug != collection:
-        collection = slug
-        display_name = display_name or args.collection.strip()
     return svc_create_collection(
         _get_store(),
         args.tenant,
-        collection,
-        display_name=display_name,
+        args.collection,
+        display_name=args.display_name,
         embedder_type=args.embedder_type,
         embed_model=args.embed_model,
         embedder_config=embedder_config,

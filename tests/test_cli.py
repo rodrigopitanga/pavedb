@@ -181,7 +181,7 @@ def test_cli_create_collection_accepts_display_name(cli_env, capsys):
         [
             "create-collection",
             "acme",
-            "Human Docs",
+            "human-docs",
             "--display-name",
             "Human Docs",
         ]
@@ -193,6 +193,18 @@ def test_cli_create_collection_accepts_display_name(cli_env, capsys):
     assert out["name"] == "human-docs"
     assert out["display_name"] == "Human Docs"
     assert ("create_collection", "acme", "human-docs") in store.calls
+
+
+def test_cli_create_collection_rejects_invalid_name(cli_env, capsys):
+    pvcli, store, _ = cli_env
+
+    rc = pvcli.main_cli(["create-collection", "acme", "Human Docs"])
+    out = json.loads(capsys.readouterr().out)
+
+    assert rc == 1
+    assert out["ok"] is False
+    assert out["code"] == "invalid_collection_name"
+    assert not any(c[0] == "create_collection" for c in store.calls)
 
 
 def test_cli_ingest_passes_doc_meta_through_wrapper(cli_env, tmp_path):
