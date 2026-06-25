@@ -192,7 +192,7 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         summary="Delete a collection",
         description="Permanently removes the collection and every document in it.",
         response_model=DeleteCollectionResponse,
-        responses=resp(401, 403, 429, 500),
+        responses=resp(400, 401, 403, 404, 429, 500),
         tags=["Collection Catalog"],
     )
     @ops_event("delete_collection", request_id="rid")
@@ -206,8 +206,9 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
     ):
         result = svc_delete_collection(store, tenant, name)
         if not result.get("ok"):
+            status_map = {"not_found": 404, "invalid": 400}
             return error(
-                500,
+                status_map.get(result.get("error_type"), 500),
                 result.get("code", "delete_collection_failed"),
                 result.get("error", "failed to delete collection"),
                 request=request,

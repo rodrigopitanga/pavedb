@@ -328,12 +328,27 @@ def _require_compatible_embeddings(
 
 def delete_collection(store, tenant: str, name: str) -> ServiceResult:
     try:
-        store.delete_collection(tenant, name)
+        resolved_name = _validate_collection_name(name)
+        if store.get_collection_config(tenant, resolved_name) is None:
+            return {
+                "ok": False,
+                "code": "collection_not_found",
+                "error": f"collection '{resolved_name}' does not exist",
+                "error_type": "not_found",
+            }
+        store.delete_collection(tenant, resolved_name)
         m_inc("collections_deleted_total", 1.0)
         return {
             "ok": True,
             "tenant": tenant,
-            "deleted": name
+            "deleted": resolved_name,
+        }
+    except ServiceError as e:
+        return {
+            "ok": False,
+            "code": e.code,
+            "error": e.message,
+            "error_type": "invalid",
         }
     except Exception as e:
         log.warning(
