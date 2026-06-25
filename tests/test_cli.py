@@ -265,6 +265,15 @@ def test_cli_search_returns_matches(cli_env, tmp_path):
                and c[3] == "avião" and c[4] == 5 for c in store.calls)
 
 
+def test_cli_search_rejects_non_object_filters(cli_env, capsys):
+    pvcli, _, _ = cli_env
+    rc = pvcli.main_cli(["search", "acme", "c", "q", "--filters", "[1, 2]"])
+    out = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert out["ok"] is False
+    assert out["code"] == "invalid_filters"
+
+
 def test_cli_search_does_not_merge_common_by_default(
     cli_env,
     tmp_path,

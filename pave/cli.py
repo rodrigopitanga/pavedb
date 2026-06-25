@@ -82,7 +82,15 @@ def _read(path: str) -> bytes:
 
 
 def _parse_filters_arg(raw: str | None) -> dict | None:
-    return json.loads(raw) if raw else None
+    if not raw:
+        return None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise ServiceError("invalid_filters", f"--filters is not valid JSON: {exc}")
+    if not isinstance(parsed, dict):
+        raise ServiceError("invalid_filters", "--filters must be a JSON object")
+    return parsed
 
 
 def _prepare_runtime(args) -> None:
