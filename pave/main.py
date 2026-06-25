@@ -215,11 +215,13 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             metrics_flush_task.cancel()
             with suppress(asyncio.CancelledError):
                 await metrics_flush_task
-            metrics_flush()
-            ops_log.close()
+            # Drain in-flight search/ingest work before flushing metrics and
+            # closing the ops log, so their accounting is not lost.
             for _exec in (app.state.search_executor, app.state.ingest_executor):
                 if _exec is not None:
                     _exec.shutdown(wait=True)
+            metrics_flush()
+            ops_log.close()
 
     app = FastAPI(
         title=product_display_name(cfg.get("instance.name")),
