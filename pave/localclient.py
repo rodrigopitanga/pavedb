@@ -74,7 +74,11 @@ def _error_class(code: str, error_type: str | None = None) -> type[PaveError]:
         return NotFoundError
     if "conflict" in code or code.endswith("_exists"):
         return Conflict
-    if code.startswith("invalid_") or code.endswith("_invalid"):
+    if (
+        code.startswith("invalid_")
+        or code.endswith("_invalid")
+        or code == "no_text_extracted"
+    ):
         return InvalidRequest
     return PaveError
 

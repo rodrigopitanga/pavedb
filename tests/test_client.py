@@ -352,3 +352,11 @@ def test_get_query_and_replay_are_collection_scoped(tmp_path):
             other.get_query(qid)
         with pytest.raises(NotFoundError):
             other.replay(qid)
+
+
+def test_sdk_empty_text_raises_invalid_request(tmp_path):
+    with provider(tmp_path / "db") as db:
+        books = db.create_collection("books")
+        with pytest.raises(InvalidRequest) as exc:
+            books.add("")
+        assert exc.value.code == "no_text_extracted"
