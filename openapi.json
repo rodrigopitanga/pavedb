@@ -575,7 +575,7 @@
             ],
             "description": "Embedding backend and model in one label.",
             "examples": [
-              "sbert / all-MiniLM-L6-v2"
+              "sbert:all-MiniLM-L6-v2"
             ],
             "title": "Embedder Label"
           },

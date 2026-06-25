@@ -392,7 +392,7 @@ class CollectionSummary(BaseModel):
     embedder_label: str | None = Field(
         default=None,
         description="Embedding backend and model in one label.",
-        examples=["sbert / all-MiniLM-L6-v2"],
+        examples=["sbert:all-MiniLM-L6-v2"],
     )
     vector_space_key: str | None = Field(
         default=None,
