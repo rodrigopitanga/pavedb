@@ -63,3 +63,13 @@ def test_list_valued_env_overrides_are_split(monkeypatch, tmp_path):
 
     assert cfg.get("log.debug") == ["pave.api", "pave.service"]
     assert cfg.get("log.watch") == ["pave.routes", "pave.cli"]
+
+
+def test_replace_keeps_child_views_live(tmp_path):
+    cfg = Config(data={"auth": {"mode": "none"}})
+    auth_view = cfg.auth
+    assert auth_view.get("mode") == "none"
+
+    cfg.replace(data={"auth": {"mode": "static"}})
+
+    assert auth_view.get("mode") == "static"

@@ -392,9 +392,21 @@ class Config:
     def replace(self, data: dict[str, Any] | None = None,
                 path: str | Path | None = None) -> None:
         fresh = Config(data=data, path=path)
+
+        def _apply(target: dict[str, Any], source: dict[str, Any]) -> None:
+            # Update in place, preserving nested dict identity so child views
+            # from __getattr__ stay valid after replace().
+            for key in [k for k in target if k not in source]:
+                del target[key]
+            for key, value in source.items():
+                existing = target.get(key)
+                if isinstance(value, dict) and isinstance(existing, dict):
+                    _apply(existing, value)
+                else:
+                    target[key] = value
+
         with self._lock:
-            self._cfg.clear()
-            self._cfg.update(fresh._cfg)
+            _apply(self._cfg, fresh._cfg)
             self._data = self._cfg
 
     # attribute sugar (cfg.instance_name, cfg.auth, ...)
