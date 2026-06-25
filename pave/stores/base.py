@@ -66,8 +66,6 @@ class SearchOutput:
     def __eq__(self, other: object) -> bool:
         if isinstance(other, SearchOutput):
             return self.matches == other.matches and self.timing == other.timing
-        if isinstance(other, list):
-            return self.matches == other
         return NotImplemented
 
 

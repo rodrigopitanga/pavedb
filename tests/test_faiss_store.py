@@ -166,7 +166,7 @@ def test_purge_doc_removes_ids(store):
 
     # now no matches
     hits = store.search("ten", "c2", "primeiro", k=3)
-    assert hits == []
+    assert len(hits) == 0
 
 def test_load_or_init_handles_empty_index_dir(store, tmp_path):
     """

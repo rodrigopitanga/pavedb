@@ -47,8 +47,6 @@ from pave.stores.base import (
     Metadata,
     MetadataValidationError,
     QueryLogEntry,
-    SearchOutput,
-    SearchResult,
 )
 
 log = get_logger()
@@ -292,12 +290,6 @@ def update_collection(
             "error": str(e),
             "error_type": "failed",
         }
-
-
-def _normalize_search_output(result: SearchOutput | list[SearchResult]) -> SearchOutput:
-    if isinstance(result, SearchOutput):
-        return result
-    return SearchOutput(matches=list(result))
 
 
 def _sum_timing(*timings: dict[str, float]) -> dict[str, float]:
@@ -1104,22 +1096,20 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
                 effective_common_tenant,
                 effective_common_collection,
             )
-            local = _normalize_search_output(store.search(
-                tenant, collection, q, max(10, k * 2), filters=filters))
-            common = _normalize_search_output(store.search(
+            local = store.search(
+                tenant, collection, q, max(10, k * 2), filters=filters)
+            common = store.search(
                 effective_common_tenant,
                 effective_common_collection,
                 q,
                 max(10, k * 2),
-                filters=filters))
+                filters=filters)
             matches = list(local.matches) + list(common.matches)
             timing = _sum_timing(local.timing, common.timing)
             from heapq import nlargest
             top = nlargest(k, matches, key=lambda x: x.score)
         else:
-            result = _normalize_search_output(
-                store.search(tenant, collection, q, k, filters=filters)
-            )
+            result = store.search(tenant, collection, q, k, filters=filters)
             top = result.matches
             timing = result.timing
         m_inc("matches_total", float(len(top) or 0))
