@@ -99,6 +99,12 @@ Instance names are operator-defined. `config.yml.example`
 shows commented Ollama and OpenAI examples; only the
 `native` instance is active by default.
 
+Any instance `config` field — plus `model` — also has a global
+per-type fallback at `embedder.<type>.<field>` (for example
+`embedder.sbert.device` or `embedder.openai.batch_size`). The
+global value applies when an instance of that type omits the
+field from its own `config`; the per-instance value always wins.
+
 ### `embedder.default`
 
 - Default: `null`

@@ -151,6 +151,11 @@ embedder:
     # credentials. If 'api_key' is omitted for an openai instance, the
     # OpenAI SDK falls back to the OPENAI_API_KEY environment variable.
     #
+    # Global per-type fallback: 'embedder.<type>.<field>' (e.g.
+    # 'embedder.sbert.device: cuda' or 'embedder.openai.batch_size: 256')
+    # sets a default 'config' value — plus 'model' — for every instance
+    # of that type. An instance's own 'config' value overrides it.
+    #
     # local-small:
     #   type: 'ollama'
     #   model: 'nomic-embed-text'
