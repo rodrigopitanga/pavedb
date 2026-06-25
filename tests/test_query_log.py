@@ -282,7 +282,7 @@ def test_load_or_init_does_not_publish_half_initialized_cache(
 def test_local_store_log_query_reopen_is_serialized(tmp_path, monkeypatch):
     store = LocalStore(str(tmp_path), FakeEmbedder())
     store.create_collection("acme", "docs")
-    store._flush_caches(async_close=False)
+    store._flush_caches()
 
     real_open = CollectionDB.open
     gate = threading.Lock()

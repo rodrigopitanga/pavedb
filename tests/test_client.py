@@ -160,7 +160,7 @@ def test_local_client_close_delegates_store_close(tmp_path):
         def close(self):
             self.close_count += 1
 
-        def _flush_caches(self, *, async_close=True):
+        def _flush_caches(self):
             self.flush_count += 1
 
     store = ClosingStore()

@@ -264,7 +264,7 @@ def test_flush_caches_replaces_catalog_handle_before_close(temp_data_dir):
     store = _store(temp_data_dir)
     old_catalog = store._catalog
 
-    store._flush_caches(async_close=False)
+    store._flush_caches()
 
     assert store._catalog is not old_catalog
     assert old_catalog._conn is None

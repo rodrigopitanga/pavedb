@@ -85,7 +85,7 @@ def test_flush_store_caches_closes_old_dbs_sync(temp_data_dir):
     col_db = store._dbs[key]
     assert col_db._rconn is not None
 
-    store._flush_caches(async_close=False)
+    store._flush_caches()
 
     assert key not in store._dbs
     assert key not in store._emb

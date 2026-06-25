@@ -171,7 +171,7 @@ class LocalClient(BaseClient):
         else:
             flush = getattr(self._store, "_flush_caches", None)
             if callable(flush):
-                flush(async_close=False)
+                flush()
         if self._ephemeral:
             shutil.rmtree(self.path, ignore_errors=True)
         self._closed = True

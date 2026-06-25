@@ -2008,7 +2008,7 @@ class LocalStore:
 
         return "; ".join(parts) if parts else "matched"
 
-    def _flush_caches(self, *, async_close: bool = True) -> None:
+    def _flush_caches(self) -> None:
         old_dbs = list(self._dbs.values())
         old_backends = list(self._emb.items())
         with self._catalog_guard:
@@ -2042,18 +2042,13 @@ class LocalStore:
                 except Exception:
                     pass
 
-        if async_close:
-            import threading
-
-            threading.Thread(target=_close_all, daemon=True).start()
-        else:
-            _close_all()
+        _close_all()
 
     def close(self) -> None:
         """Close open collection handles and cached runtime embedders."""
         if self._closed:
             return
-        self._flush_caches(async_close=False)
+        self._flush_caches()
         embedders = list(self._embedder_cache.values())
         if all(embedder is not self._embedder for embedder in embedders):
             embedders.append(self._embedder)
@@ -2162,7 +2157,7 @@ class LocalStore:
                 raise FileNotFoundError(
                     f"data directory not found: {data_dir_path}"
                 )
-            self._flush_caches(async_close=False)
+            self._flush_caches()
 
             if output_path is not None:
                 archive_path = Path(output_path).resolve()
@@ -2191,7 +2186,7 @@ class LocalStore:
                     self._validate_zip_members(zf)
                     zf.extractall(extract_dir)
 
-                self._flush_caches(async_close=False)
+                self._flush_caches()
                 for entry in data_dir_path.iterdir():
                     self._remove_path(entry)
 

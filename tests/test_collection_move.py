@@ -79,7 +79,7 @@ def test_move_reopens_backend_at_new_path(temp_data_dir):
         "doc2",
         [("0", "beta move persistence", {})],
     )
-    store._flush_caches(async_close=False)
+    store._flush_caches()
 
     assert not old_path.exists()
 
