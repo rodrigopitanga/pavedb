@@ -118,6 +118,56 @@ def test_close_waits_for_inflight_writer(tmp_path, db_cls, path_fn):
     assert db._wconn is None
 
 
+@pytest.mark.parametrize(
+    ("db_cls", "path_fn"),
+    [
+        (CollectionDB, _meta_db),
+        (CatalogDB, _catalog_db),
+    ],
+)
+def test_close_waits_for_inflight_reader(tmp_path, db_cls, path_fn):
+    db = db_cls()
+    db.open(path_fn(tmp_path))
+
+    reader_entered = threading.Event()
+    release_reader = threading.Event()
+    close_done = threading.Event()
+    close_errors: list[Exception] = []
+
+    def _reader():
+        with db._reader() as conn:
+            conn.execute("SELECT 1")
+            reader_entered.set()
+            assert release_reader.wait(timeout=1.0)
+
+    def _closer():
+        try:
+            db.close()
+        except Exception as exc:  # pragma: no cover - regression capture
+            close_errors.append(exc)
+        finally:
+            close_done.set()
+
+    reader_thread = threading.Thread(target=_reader)
+    reader_thread.start()
+    assert reader_entered.wait(timeout=1.0)
+
+    closer_thread = threading.Thread(target=_closer)
+    closer_thread.start()
+    time.sleep(0.05)
+
+    assert close_done.is_set() is False
+
+    release_reader.set()
+    reader_thread.join(timeout=1.0)
+    closer_thread.join(timeout=1.0)
+
+    assert not close_errors
+    assert close_done.is_set() is True
+    assert db._conn is None
+    assert db._wconn is None
+
+
 @pytest.mark.parametrize("legacy_name", ["catalog.json", "meta.json"])
 def test_legacy_json_detection(tmp_path, legacy_name):
     base = _meta_db(tmp_path).parent
