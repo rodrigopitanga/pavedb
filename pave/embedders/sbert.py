@@ -17,6 +17,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..config import get_cfg
+from ._device import resolve_device
 
 
 CONFIG_KEYS: tuple[str, ...] = ("runtime", "device", "batch_size", "workers")
@@ -99,7 +100,7 @@ class SbertEmbedder:
             raise RuntimeError("embedder.sbert.model must be configured")
         if device is None:
             device = cfg.get("embedder.sbert.device")
-        device = self._resolve_device(torch, device if device is not None else "auto")
+        device = resolve_device(device, torch)
         if batch_size is None:
             batch_size = cfg.get("embedder.sbert.batch_size")
         self.batch_size = int(batch_size if batch_size is not None else 64)
@@ -113,18 +114,6 @@ class SbertEmbedder:
             self._dim = int(get_dim()) if get_dim is not None else None
         except Exception:
             self._dim = None
-
-    @staticmethod
-    def _resolve_device(torch_mod, raw_device: object) -> str:
-        device = str(raw_device or "auto").strip().lower()
-        if device != "auto":
-            return device
-        if torch_mod.cuda.is_available():
-            return "cuda"
-        mps = getattr(torch_mod.backends, "mps", None)
-        if mps is not None and mps.is_available():
-            return "mps"
-        return "cpu"
 
     @property
     def dim(self) -> int:

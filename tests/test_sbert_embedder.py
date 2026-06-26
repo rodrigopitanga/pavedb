@@ -214,7 +214,7 @@ def test_explicit_model_overrides_cfg(monkeypatch):
         def encode(self, texts, **_kwargs):
             return np.array([[1.0] * 5 for _ in texts], dtype=np.float32)
 
-    _install_fake_deps(monkeypatch, FakeModel)
+    _install_fake_deps(monkeypatch, FakeModel, cuda=True)
     monkeypatch.setattr(
         sbert_mod,
         "get_cfg",

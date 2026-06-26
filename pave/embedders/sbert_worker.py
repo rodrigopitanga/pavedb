@@ -23,6 +23,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..config import get_cfg
+from ._device import resolve_device
 
 _STARTUP_TIMEOUT_S = 300.0
 _REQUEST_TIMEOUT_S = 300.0
@@ -39,26 +40,12 @@ class _WorkerSlot:
     conn: Any = None
 
 
-def _resolve_device(raw_device: object) -> str:
-    device = str(raw_device or "auto").strip().lower()
-    if device != "auto":
-        return device
-
-    import torch
-
-    if torch.cuda.is_available():
-        return "cuda"
-    mps = getattr(torch.backends, "mps", None)
-    if mps is not None and mps.is_available():
-        return "mps"
-    return "cpu"
-
-
 def _worker_main(conn, model_name: str, raw_device: str, batch_size: int) -> None:
     try:
+        import torch
         from sentence_transformers import SentenceTransformer
 
-        device = _resolve_device(raw_device)
+        device = resolve_device(raw_device, torch)
         model = SentenceTransformer(model_name, device=device)
         try:
             get_dim = getattr(
