@@ -20,7 +20,7 @@ def _ingest_txt(app, tenant: str, collection: str, docid: str):
 
 
 def test_ingest_keeps_document_and_chunk_metadata_split(app):
-    tenant, collection, docid = "acme", "meta_split", "DOCMETA-SPLIT"
+    tenant, collection, docid = "acme", "meta-split", "DOCMETA-SPLIT"
     _ingest_txt(app, tenant, collection, docid)
 
     store = app.state.store.impl
@@ -68,7 +68,7 @@ def test_ingest_keeps_document_and_chunk_metadata_split(app):
 
 
 def test_search_merges_document_and_chunk_metadata_after_ingest(app):
-    tenant, collection, docid = "acme", "meta_split_search", "DOCMETA-SEARCH"
+    tenant, collection, docid = "acme", "meta-split-search", "DOCMETA-SEARCH"
     _ingest_txt(app, tenant, collection, docid)
 
     matches = app.state.store.search(

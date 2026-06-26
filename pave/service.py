@@ -681,6 +681,10 @@ def _index_records_result(store, tenant: str, collection: str, baseid: str,
 def ingest_document(store, tenant: str, collection: str, filename: str, content: bytes,
                     docid: str | None, metadata: Metadata | None,
                     csv_options: CsvOptions | None = None) -> ServiceResult:
+    # Ingest auto-creates the collection, so validate the name here too —
+    # otherwise it mints names that create/delete reject, i.e. undeletable
+    # orphans (delete also format-validates before its existence check).
+    collection = _validate_collection_name(collection)
     _t0 = _time.perf_counter()
     with m_timed("ingest"):
         try:
@@ -756,6 +760,7 @@ def ingest_text(
     docid: str | None,
     metadata: Metadata | None,
 ) -> ServiceResult:
+    collection = _validate_collection_name(collection)
     _t0 = _time.perf_counter()
     with m_timed("ingest"):
         try:
@@ -882,6 +887,7 @@ def ingest_documents_batch(
     collection: str,
     documents: Iterable[Mapping[str, Any]],
 ) -> ServiceResult:
+    collection = _validate_collection_name(collection)
     items = list(documents)
     if not items:
         return {

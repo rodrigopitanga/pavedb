@@ -240,6 +240,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     "file_too_large": 413,
                     "invalid_csv_options": 400,
                     "invalid_metadata_keys": 400,
+                    "invalid_collection_name": 400,
                     "ingest_failed": 500,
                 }
                 return error(
@@ -345,6 +346,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                 status_map = {
                     "embedder_unavailable": 503,
                     "invalid_metadata_keys": 400,
+                    "invalid_collection_name": 400,
                     "ingest_failed": 500,
                 }
                 return error(
