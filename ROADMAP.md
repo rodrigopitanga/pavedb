@@ -188,7 +188,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-35 | ~~Rebranding phase 1 (PaveDB candidate); phase 2~~ | 🧱 | v0.5.9–v0.9 |
 | P3-36 | Multimodal collections (cross-modal search) | 🧱 | post-1.0 |
 | P3-37 | Collection migration tooling (version compat) | 🧱 | v1.7 |
-| P3-40 | Publish pip freeze snapshot + regenerate THIRD_PARTY_LICENSES | 🧩 | v1.0 |
+| P3-40 | ~~Publish pip freeze snapshot + regenerate THIRD_PARTY_LICENSES~~ | 🧩 | v1.0 |
 | P3-41 | Swagger UI tenant/collection defaults | 🧩 | v1.4 |
 | P3-42 | Alive test in CI | 🧩 | v1.4 |
 | P3-43 | Go client | 🧱 | post-1.8 |
