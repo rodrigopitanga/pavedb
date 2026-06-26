@@ -1,7 +1,7 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-from scripts.issue_key_sync import mr_texts, public_keys
+from scripts.issue_key_sync import mr_texts, public_keys, title_key
 
 
 class _FakeGL:
@@ -33,3 +33,12 @@ def test_mr_texts_sources_commit_keys_not_description(monkeypatch):
 def test_mr_texts_empty_without_mr_context(monkeypatch):
     monkeypatch.delenv("CI_MERGE_REQUEST_IID", raising=False)
     assert mr_texts(_FakeGL()) == {}
+
+
+def test_bfg_keys_recognized_alongside_rp():
+    # Commit text and issue titles must agree, else B/F/G never auto-close.
+    text = "[fix] x (B1) also B0, F2-10, G3; plus (R3-23) and P3-40"
+    assert public_keys(text) == {"B1", "B0", "F2-10", "G3", "R3-23", "P3-40"}
+    assert title_key("B1: native embedder device validation") == "B1"
+    assert title_key("B0: csv ingest loses columns") == "B0"
+    assert title_key("P1-53c: still works") == "P1-53c"  # R/P unregressed

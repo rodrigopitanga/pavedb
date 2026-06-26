@@ -15,7 +15,11 @@ import urllib.parse
 import urllib.request
 
 
-PUBLIC_KEY_RE = re.compile(r"\b(?:R[1-6]-\d{2}|P\d+-[A-Za-z0-9]+)\b")
+# Issue keys: R review, P PaveDB feature, B/F/G bug/Flymmatik/Patchgram.
+# Shared by PUBLIC_KEY_RE (commit text) and title_key (issue title) so they
+# can't drift — both must recognize a key for an issue to auto-close.
+_KEY_BODY = r"R[1-6]-\d{2}|P\d+-[A-Za-z0-9]+|[BFG]\d+(?:-[A-Za-z0-9]+)?"
+PUBLIC_KEY_RE = re.compile(rf"\b(?:{_KEY_BODY})\b")
 REVIEW_KEY_RE = re.compile(r"^(R[1-6])-(\d{2}):")
 ROADMAP = Path(__file__).resolve().parents[1] / "ROADMAP.md"
 TYPE_LABELS = {"FEAT", "REV", "BUG"}
@@ -133,7 +137,7 @@ def mr_texts(gl: GitLab) -> dict[str, str]:
 
 
 def title_key(title: str) -> str:
-    match = re.match(r"^((?:R[1-6]-\d{2}|P\d+-[A-Za-z0-9]+)):", title)
+    match = re.match(rf"^((?:{_KEY_BODY})):", title)
     return match.group(1) if match else ""
 
 
