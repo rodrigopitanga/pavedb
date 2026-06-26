@@ -34,8 +34,7 @@ def configure(dest: str | None) -> None:
 
     target = str(dest).strip()
     if target == "stdout":
-        with _lock:
-            _dest = "stdout"
+        _dest = "stdout"
         return
     try:
         path = Path(target).expanduser()
