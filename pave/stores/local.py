@@ -560,9 +560,9 @@ class LocalStore:
         """
         if embedder is None:
             return
-        if any(e is embedder for e in self._embedder_cache.values()):
+        if any(e is embedder for e in list(self._embedder_cache.values())):
             return
-        if any(e is embedder for e in self._collection_embedders.values()):
+        if any(e is embedder for e in list(self._collection_embedders.values())):
             return
         close = getattr(embedder, "close", None)
         if callable(close):
