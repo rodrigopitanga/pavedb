@@ -13,11 +13,11 @@ keep PRs focused.
 git clone https://gitlab.com/flowlexi/pavedb.git
 cd pavedb
 
-# GPU deps by default; add USE_CPU=1 if you want CPU-only torch wheels
+# default torch wheel (CUDA on Linux); TORCH_WHEEL_CPU=1 for the CPU-only wheel
 make install-dev
 
 # optional: run the service right away
-USE_CPU=1 make serve
+TORCH_WHEEL_CPU=1 make serve
 ```
 
 **macOS:** `brew install make bash` and invoke `gmake` instead of `make`.
@@ -33,10 +33,10 @@ explicitly, for example `CONFIG=./config.yml make serve` or
 The packaged entrypoints now also accept explicit instance paths:
 `pavesrv --home ~/pavedb-staging` and `pavecli list-tenants --home ~/pavedb-staging`.
 
-Run the test suite before pushing (`USE_CPU=1` if you installed CPU wheels):
+Run the test suite before pushing (`TORCH_WHEEL_CPU=1` if you installed CPU wheels):
 
 ```bash
-# USE_CPU=1 if you installed CPU-only deps
+# TORCH_WHEEL_CPU=1 if you installed CPU-only deps
 make test
 ```
 
@@ -179,7 +179,7 @@ changed, not-in-scope list.
 
 ## Pull request checklist
 
-- [ ] Tests pass locally (`make test`, always add `USE_CPU=1`, also run
+- [ ] Tests pass locally (`make test`, always add `TORCH_WHEEL_CPU=1`, also run
 without it if you have a properly configured GPU).
 - [ ] Inform OS and pip freeze.
 - [ ] Docs updated when behavior changes.
@@ -378,7 +378,7 @@ def test_purge_clears_index(monkeypatch, tmp_path):
 
 Run `make help` for the full list and flags. Key targets:
 
-- `make install` — install runtime deps (`USE_CPU=1` for CPU-only).
+- `make install` — install runtime deps (`TORCH_WHEEL_CPU=1` for CPU-only).
 - `make serve` — start the dev server (autoreload, auth=none).
 - `make test` — run the full pytest suite.
 - `make check` — end-to-end smoke test (ingest + search + delete).

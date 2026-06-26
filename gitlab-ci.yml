@@ -95,7 +95,7 @@ bench:
       LAT_CONCUR=${LAT_CONCUR:-8}
       STR_LENGTH=${STR_LENGTH:-30}
       STR_CONCUR=${STR_CONCUR:-4}
-      USE_CPU=1
+      TORCH_WHEEL_CPU=1
       make benchmark
   artifacts:
     when: always
@@ -163,14 +163,16 @@ publish-docker-rc:
     - export IMAGE_TAG="$VERSION-cpu"
     - export LATEST_TAG="latest-cpu"
     - export BUILD_ID="${CI_PIPELINE_ID:-0}-${CI_COMMIT_SHORT_SHA:-dev}-cpu"
-    - docker build --progress=plain --build-arg USE_CPU=1 --build-arg BUILD_ID="$BUILD_ID" -t "$IMAGE_BASE:$IMAGE_TAG" -f Dockerfile .
+    - docker build --progress=plain --build-arg TORCH_WHEEL_CPU=1 --build-arg BUILD_ID="$BUILD_ID" -t "$IMAGE_BASE:$IMAGE_TAG" -f Dockerfile .
     - docker push "$IMAGE_BASE:$IMAGE_TAG"
     - docker tag "$IMAGE_BASE:$IMAGE_TAG" "$IMAGE_BASE:$LATEST_TAG"
     - docker push "$IMAGE_BASE:$LATEST_TAG"
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}rc\d{1,3}$/'
 
-# Docker: final releases only (CPU + GPU)
+# Docker: final releases — CPU image only. CUDA is disabled here; build it
+# locally with `make docker-build RELEASE_TORCH=cuda` (or `=both`). See
+# THIRD_PARTY_LICENSES.md for why the published image stays CPU-only.
 publish-docker:
   stage: release
   image: docker:24.0.9
@@ -183,13 +185,8 @@ publish-docker:
   script:
     - export VERSION="${CI_COMMIT_TAG#v}"
     - export IMAGE_BASE="$CI_REGISTRY_IMAGE/pavedb"
-    - export BUILD_ID_GPU="${CI_PIPELINE_ID:-0}-${CI_COMMIT_SHORT_SHA:-dev}-gpu"
     - export BUILD_ID_CPU="${CI_PIPELINE_ID:-0}-${CI_COMMIT_SHORT_SHA:-dev}-cpu"
-    - docker build --progress=plain --build-arg USE_CPU=0 --build-arg BUILD_ID="$BUILD_ID_GPU" -t "$IMAGE_BASE:$VERSION-gpu" -f Dockerfile .
-    - docker push "$IMAGE_BASE:$VERSION-gpu"
-    - docker tag "$IMAGE_BASE:$VERSION-gpu" "$IMAGE_BASE:latest-gpu"
-    - docker push "$IMAGE_BASE:latest-gpu"
-    - docker build --progress=plain --build-arg USE_CPU=1 --build-arg BUILD_ID="$BUILD_ID_CPU" -t "$IMAGE_BASE:$VERSION-cpu" -f Dockerfile .
+    - docker build --progress=plain --build-arg TORCH_WHEEL_CPU=1 --build-arg BUILD_ID="$BUILD_ID_CPU" -t "$IMAGE_BASE:$VERSION-cpu" -f Dockerfile .
     - docker push "$IMAGE_BASE:$VERSION-cpu"
     - docker tag "$IMAGE_BASE:$VERSION-cpu" "$IMAGE_BASE:latest-cpu"
     - docker push "$IMAGE_BASE:latest-cpu"

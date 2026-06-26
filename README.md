@@ -198,7 +198,8 @@ pip install pavedb
 
 Pull the image that fits your hardware from the
 [Flowlexi Container Registry](https://gitlab.com/flowlexi/pavedb/container_registry) on
-GitLab (CUDA builds publish as `latest-gpu`, CPU-only as `latest-cpu`), then run it with
+GitLab (published images are CPU-only, tagged `latest-cpu` / `<version>-cpu`; build a
+CUDA image locally with `make docker-build RELEASE_TORCH=cuda`), then run it with
 the API port mapped locally:
 
 ```bash

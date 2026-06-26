@@ -1,10 +1,12 @@
 # PaveDB — Makefile
 #
 # Basic usage:
-#   make install            # default: base deps
-#   make install USE_CPU=1  # override: CPU-only deps (requirements-cpu.txt → setup.py[cpu])
+#   make install                     # default: platform torch wheel
+#   make install TORCH_WHEEL_CPU=1   # CPU-only torch wheel (no NVIDIA CUDA)
 #
-# Base deps by default. Set USE_CPU=1 to install CPU deps instead.
+# TORCH_WHEEL_CPU selects the torch wheel for the native sentence-transformers
+# embedder only — no effect on OpenAI/Ollama embedders, or on macOS (one
+# MPS-capable wheel). Runtime device is separate: embedder.sbert.device.
 # All dependency versions live in setup.py (single source of truth).
 
 # GNU Make 4+ and bash 4+ required.
@@ -59,8 +61,9 @@ OPS_LOG         ?= null
 ACCESS_LOG      ?= null
 INSTANCE_NAME   ?= dev
 
-# Requirements flavor (gpu default)
-USE_CPU ?= 0
+# Native sbert/torch embedder wheel: 0 = platform default (CUDA on Linux),
+# 1 = CPU-only wheel (no NVIDIA CUDA). See header note.
+TORCH_WHEEL_CPU ?= 0
 REQ_MAIN_CPU    ?= requirements-cpu.txt
 
 # Version helpers - pave/version.py source of truth
@@ -102,22 +105,26 @@ RELEASE_TAG_REMOTES_PRERELEASE ?= gitlab flowlexi
 RELEASE_BRANCH_REMOTES         ?= gitlab flowlexi origin
 REGISTRY        ?= $(REGISTRY_HOST)/$(REGISTRY_GROUP)/$(PKG_NAME)
 IMAGE_NAME 	?= $(PKG_NAME)
-ifeq ($(USE_CPU),1)
+
+# Release image variants: cpu | cuda | both (default). cpu/cuda also pin the
+# torch wheel (so IMAGE_TAG below matches); `both` builds one CPU and one CUDA
+# image. CI overrides this.
+RELEASE_TORCH ?= both
+ifeq ($(RELEASE_TORCH),cpu)
+  override TORCH_WHEEL_CPU := 1
+else ifeq ($(RELEASE_TORCH),cuda)
+  override TORCH_WHEEL_CPU := 0
+endif
+
+ifeq ($(TORCH_WHEEL_CPU),1)
     IMAGE_TAG 	:= $(ARCHIVE_VERSION)-cpu
     LATEST_TAG 	:= latest-cpu
 else
-    IMAGE_TAG 	:= $(ARCHIVE_VERSION)-gpu
-    LATEST_TAG 	:= latest-gpu
+    IMAGE_TAG 	:= $(ARCHIVE_VERSION)-cuda
+    LATEST_TAG 	:= latest-cuda
 endif
-BUILD_VARIANT 	:= $(if $(filter 1,$(USE_CPU)),cpu,gpu)
+BUILD_VARIANT 	:= $(if $(filter 1,$(TORCH_WHEEL_CPU)),cpu,cuda)
 BUILD_ID 	?= $(shell date -u +%Y%m%d%H%M%S)-$(shell git rev-parse --short HEAD)-$(BUILD_VARIANT)
-
-# Release CPU mode: build both images unless USE_CPU is explicitly set on command line
-ifeq ($(origin USE_CPU),command line)
-  RELEASE_CPU_MODE := single
-else
-  RELEASE_CPU_MODE := both
-endif
 
 DOC_REF_TARGETS := docs-ref-cli docs-ref-config docs-ref-openapi
 DOC_REF_CHECK_TARGETS := docs-ref-check-cli docs-ref-check-config docs-ref-check-openapi
@@ -133,8 +140,8 @@ help:
 	echo "$(PKG_LONGNAME) Make Targets"; \
 	echo ""; \
 	echo "Setup:"; \
-	echo "  $${B}install$${R}          Install runtime deps (GPU by default; USE_CPU=1 for CPU)"; \
-	echo "  install-dev      Install dev/test deps (GPU by default; USE_CPU=1 for CPU)"; \
+	echo "  $${B}install$${R}          Install runtime deps (TORCH_WHEEL_CPU=1 for CPU-only torch)"; \
+	echo "  install-dev      Install dev/test deps (TORCH_WHEEL_CPU=1 for CPU-only torch)"; \
 	echo "  venv             Create local virtualenv (.venv)"; \
 	echo ""; \
 	echo "Run:"; \
@@ -208,7 +215,7 @@ venv:
 
 # -------- install --------
 define install_main
-	@if [ "$(USE_CPU)" = "1" ]; then \
+	@if [ "$(TORCH_WHEEL_CPU)" = "1" ]; then \
 	  echo "Installing CPU deps from $(REQ_MAIN_CPU)"; \
 	  $(PIP_BIN) install -q -r $(REQ_MAIN_CPU); \
 	else \
@@ -356,25 +363,25 @@ package: build
 docker-build: install
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make docker-build VERSION=0.5.4')"; exit 1; fi
 	@echo "Docker image tag: $(IMAGE_TAG)"
-	@set -e; if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
-	  $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=$(RELEASE_ARTIFACT) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
-	  $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=$(RELEASE_ARTIFACT) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
+	@set -e; if [ "$(RELEASE_TORCH)" = "both" ]; then \
+	  $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=$(RELEASE_ARTIFACT) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" RELEASE_TORCH=cuda; \
+	  $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=$(RELEASE_ARTIFACT) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" RELEASE_TORCH=cpu; \
 	elif [ -n "$(REGISTRY)" ]; then \
 	  echo "Building $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) from $(DOCKERFILE)"; \
-	  DOCKER_BUILDKIT=1 docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) -f $(DOCKERFILE) $(CONTEXT); \
+	  DOCKER_BUILDKIT=1 docker build --progress=plain --build-arg TORCH_WHEEL_CPU=$(TORCH_WHEEL_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) -f $(DOCKERFILE) $(CONTEXT); \
 	  if [ "$(PUSH_LATEST)" = "1" ]; then docker tag $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG) $(REGISTRY)/$(IMAGE_NAME):$(LATEST_TAG); fi; \
 	else \
 	  echo "Building $(IMAGE_NAME):$(IMAGE_TAG) from $(DOCKERFILE)"; \
-	  DOCKER_BUILDKIT=1 docker build --progress=plain --build-arg USE_CPU=$(USE_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $(IMAGE_NAME):$(IMAGE_TAG) -f $(DOCKERFILE) $(CONTEXT); \
+	  DOCKER_BUILDKIT=1 docker build --progress=plain --build-arg TORCH_WHEEL_CPU=$(TORCH_WHEEL_CPU) --build-arg BUILD_ID=$(BUILD_ID) -t $(IMAGE_NAME):$(IMAGE_TAG) -f $(DOCKERFILE) $(CONTEXT); \
 	  if [ "$(PUSH_LATEST)" = "1" ]; then docker tag $(IMAGE_NAME):$(IMAGE_TAG) $(IMAGE_NAME):$(LATEST_TAG); fi; \
 	fi
 
 .PHONY: docker-push
 docker-push:
 	@if [ -z "$(VERSION)" ]; then echo "Set VERSION=x.y.z (e.g., 'make docker-push VERSION=0.5.4')"; exit 1; fi
-	@set -e; if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
-	  $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=$(RELEASE_ARTIFACT) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
-	  $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=$(RELEASE_ARTIFACT) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
+	@set -e; if [ "$(RELEASE_TORCH)" = "both" ]; then \
+	  $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=$(RELEASE_ARTIFACT) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" RELEASE_TORCH=cuda; \
+	  $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=$(RELEASE_ARTIFACT) REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" RELEASE_TORCH=cpu; \
 	elif [ -n "$(REGISTRY)" ]; then \
 	  echo "Pushing $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG)"; \
 	  docker push $(REGISTRY)/$(IMAGE_NAME):$(IMAGE_TAG); \
@@ -461,11 +468,11 @@ release:
 	fi; \
 	$(MAKE) -o build package VERSION=$(VERSION) RELEASE_ARTIFACT=1 || { echo "Packaging failed."; revert_changes; exit 1; }; \
 	if [ -n "$(REGISTRY)" ]; then IMAGE_BASE="$(REGISTRY)/$(IMAGE_NAME)"; else IMAGE_BASE="$(IMAGE_NAME)"; fi; \
-	if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
-	  IMAGE_REFS="$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-gpu $(REGISTRY)/$(IMAGE_NAME):$(VERSION)-cpu"; \
-	  if [ "$(PUSH_LATEST)" = "1" ]; then IMAGE_REFS="$$IMAGE_REFS $(REGISTRY)/$(IMAGE_NAME):latest-gpu $(REGISTRY)/$(IMAGE_NAME):latest-cpu"; fi; \
+	if [ "$(RELEASE_TORCH)" = "both" ]; then \
+	  IMAGE_REFS="$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-cuda $(REGISTRY)/$(IMAGE_NAME):$(VERSION)-cpu"; \
+	  if [ "$(PUSH_LATEST)" = "1" ]; then IMAGE_REFS="$$IMAGE_REFS $(REGISTRY)/$(IMAGE_NAME):latest-cuda $(REGISTRY)/$(IMAGE_NAME):latest-cpu"; fi; \
 	else \
-	  if [ "$(USE_CPU)" = "1" ]; then IMG_SUFFIX="cpu"; else IMG_SUFFIX="gpu"; fi; \
+	  if [ "$(TORCH_WHEEL_CPU)" = "1" ]; then IMG_SUFFIX="cpu"; else IMG_SUFFIX="cuda"; fi; \
 	  IMAGE_REFS="$(REGISTRY)/$(IMAGE_NAME):$(VERSION)-$$IMG_SUFFIX"; \
 	  if [ "$(PUSH_LATEST)" = "1" ]; then IMAGE_REFS="$$IMAGE_REFS $(REGISTRY)/$(IMAGE_NAME):latest-$$IMG_SUFFIX"; fi; \
 	fi; \
@@ -475,13 +482,13 @@ release:
 	  else \
 	    echo "Building and validating Docker image(s) (no push)..."; \
 	  fi; \
-	  if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
-	    $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0 || { echo "Docker build failed."; revert_changes; exit 1; }; \
-	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-gpu" || { echo "docker-check failed."; revert_changes; exit 1; }; \
-	    $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1 || { echo "Docker build failed."; revert_changes; exit 1; }; \
+	  if [ "$(RELEASE_TORCH)" = "both" ]; then \
+	    $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" RELEASE_TORCH=cuda || { echo "Docker build failed."; revert_changes; exit 1; }; \
+	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-cuda" || { echo "docker-check failed."; revert_changes; exit 1; }; \
+	    $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" RELEASE_TORCH=cpu || { echo "Docker build failed."; revert_changes; exit 1; }; \
 	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-cpu" || { echo "docker-check failed."; revert_changes; exit 1; }; \
 	  else \
-	    $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU) || { echo "Docker build failed."; revert_changes; exit 1; }; \
+	    $(MAKE) docker-build VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" TORCH_WHEEL_CPU=$(TORCH_WHEEL_CPU) || { echo "Docker build failed."; revert_changes; exit 1; }; \
 	    $(MAKE) _docker-check-run DOCKER_CHECK_IMAGE="$$IMAGE_BASE:$(VERSION)-$$IMG_SUFFIX" || { echo "docker-check failed."; revert_changes; exit 1; }; \
 	  fi; \
 	else \
@@ -524,11 +531,11 @@ release:
 	fi; \
 	if [ "$(RELEASE_PUBLISH)" = "1" ]; then \
 	  echo "Publishing Docker image(s)..."; \
-	  if [ "$(RELEASE_CPU_MODE)" = "both" ]; then \
-	    $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=0; \
-	    $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=1; \
+	  if [ "$(RELEASE_TORCH)" = "both" ]; then \
+	    $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" RELEASE_TORCH=cuda; \
+	    $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" RELEASE_TORCH=cpu; \
 	  else \
-	    $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" USE_CPU=$(USE_CPU); \
+	    $(MAKE) docker-push VERSION=$(VERSION) RELEASE_ARTIFACT=1 REGISTRY="$(REGISTRY)" IMAGE_NAME="$(IMAGE_NAME)" TORCH_WHEEL_CPU=$(TORCH_WHEEL_CPU); \
 	  fi; \
 	  DOCKER_PUBLISHED="yes"; \
 	  DOCKER_WHERE="$(REGISTRY)/$(IMAGE_NAME)"; \
@@ -757,7 +764,7 @@ _docker-check-run:
 	image="$(DOCKER_CHECK_IMAGE)"; \
 	if ! docker image inspect "$$image" >/dev/null 2>&1; then \
 	  echo "Docker image $$image not found."; \
-	  echo "Build it first with: make docker-build VERSION=$(VERSION) USE_CPU=$(USE_CPU)"; \
+	  echo "Build it first with: make docker-build VERSION=$(VERSION) TORCH_WHEEL_CPU=$(TORCH_WHEEL_CPU)"; \
 	  exit 1; \
 	fi; \
 	container_name="$(DOCKER_CHECK_CONTAINER_PREFIX)-$$(date +%s)-$$RANDOM"; \

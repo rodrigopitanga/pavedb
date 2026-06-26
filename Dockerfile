@@ -6,7 +6,9 @@ ARG BASE_IMAGE=python:3.11-slim
 FROM ${BASE_IMAGE}
 
 ARG BUILD_ID=unknown
-ARG USE_CPU=0
+# Native sbert/torch embedder wheel: 1 = CPU-only (no NVIDIA CUDA), 0 = default
+# (CUDA on Linux). Selects deps only; runtime device is embedder.sbert.device.
+ARG TORCH_WHEEL_CPU=0
 
 # make build args available at runtime and in RUN shells
 ENV BUILD_ID=${BUILD_ID} \
@@ -32,11 +34,11 @@ COPY pave/version.py /app/pave/version.py
 
 # install deps only (cached until setup.py changes)
 RUN --mount=type=cache,target=/root/.cache/pip \
-    if [ "${USE_CPU}" = "1" ] || [ "${USE_CPU}" = "true" ] ; then \
-      echo "=== Installing CPU deps ===" ; \
+    if [ "${TORCH_WHEEL_CPU}" = "1" ] || [ "${TORCH_WHEEL_CPU}" = "true" ] ; then \
+      echo "=== Installing CPU-only torch wheel ===" ; \
       pip install --progress-bar=off -r requirements-cpu.txt ; \
     else \
-      echo "=== Installing GPU deps ===" ; \
+      echo "=== Installing default torch wheel (CUDA on Linux) ===" ; \
       pip install --progress-bar=off "." ; \
     fi
 
