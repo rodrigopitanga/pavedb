@@ -109,20 +109,19 @@ def local_commit_texts() -> dict[str, str]:
     return texts
 
 
-def mr_texts(gl: GitLab) -> tuple[dict[str, str], dict[str, str]]:
+def mr_texts(gl: GitLab) -> dict[str, str]:
+    """Commit messages for the current merge request, keyed by SHA.
+
+    Issue keys are sourced only from commit messages, never the MR title
+    or description: a key merely referenced in the description (a deferred
+    item, an "earlier wave" list, a context note) must not get a sync note
+    or be auto-closed. Only a key in a landed commit counts as done.
+    """
     iid = os.environ.get("CI_MERGE_REQUEST_IID", "")
     if not iid:
-        return {}, {}
+        return {}
 
     mr_path = f"/projects/{gl.project_id}/merge_requests/{iid}"
-    mr = gl.request("GET", mr_path)
-    mr_refs: dict[str, str] = {}
-    if isinstance(mr, dict):
-        title = str(mr.get("title") or "")
-        desc = str(mr.get("description") or "")
-        web_url = str(mr.get("web_url") or "")
-        mr_refs[f"!{iid}"] = f"{title}\n\n{desc}\n\n{web_url}".strip()
-
     commits: dict[str, str] = {}
     for commit in gl.paged(f"{mr_path}/commits"):
         sha = str(commit.get("id") or "")
@@ -130,22 +129,7 @@ def mr_texts(gl: GitLab) -> tuple[dict[str, str], dict[str, str]]:
         message = str(commit.get("message") or title)
         if sha:
             commits[sha] = message
-    return mr_refs, commits
-
-
-def commit_mr_texts(gl: GitLab, sha: str) -> dict[str, str]:
-    path_sha = urllib.parse.quote(sha, safe="")
-    path = f"/projects/{gl.project_id}/repository/commits/{path_sha}/merge_requests"
-    refs: dict[str, str] = {}
-    for mr in gl.paged(path):
-        iid = str(mr.get("iid") or "")
-        if not iid:
-            continue
-        title = str(mr.get("title") or "")
-        desc = str(mr.get("description") or "")
-        web_url = str(mr.get("web_url") or "")
-        refs[f"!{iid}"] = f"{title}\n\n{desc}\n\n{web_url}".strip()
-    return refs
+    return commits
 
 
 def title_key(title: str) -> str:
@@ -357,36 +341,10 @@ def sync() -> int:
     on_default = bool(branch and branch == default_branch)
     mr_iid = os.environ.get("CI_MERGE_REQUEST_IID", "")
 
-    mr_refs, commit_refs = mr_texts(gl) if mr_iid else ({}, local_commit_texts())
+    commit_refs = mr_texts(gl) if mr_iid else local_commit_texts()
     if on_default:
-        for sha in commit_refs:
-            mr_refs.update(commit_mr_texts(gl, sha))
         sync_roadmap_issues(gl, issues)
     matched: set[str] = set()
-
-    for ref, text in mr_refs.items():
-        for key in sorted(public_keys(text)):
-            issue = issues.get(key)
-            if not issue:
-                print(f"{key}: no matching issue found", file=sys.stderr)
-                continue
-            issue_iid = int(issue["iid"])
-            title = str(issue.get("title") or key)
-            marker = f"<!-- flowlexi-issue-sync: {key}:mr:{ref.lstrip('!')} -->"
-            verb = "landed on the default branch" if on_default else "references"
-            add_note(
-                gl,
-                issue_iid,
-                f"{ref} {verb} {key}.\n\n{title}",
-                marker,
-            )
-            matched.add(key)
-            if on_default and issue.get("state") != "closed":
-                gl.request(
-                    "PUT",
-                    f"/projects/{gl.project_id}/issues/{issue_iid}",
-                    {"state_event": "close"},
-                )
 
     for sha, text in commit_refs.items():
         for key in sorted(public_keys(text)):
