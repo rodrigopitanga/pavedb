@@ -44,6 +44,11 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 COPY pave /app/pave
 RUN pip install --no-cache-dir --no-deps --progress-bar=off /app
 
+# Keep installed *.dist-info intact. Those directories carry the license/NOTICE
+# files for binary wheels that bundle third-party runtime components
+# (torch/scipy/numpy/faiss). They are the redistributed license payload — do
+# NOT add a slimming step that deletes *.dist-info (see THIRD_PARTY_LICENSES.md).
+
 # Write build id file and label the image. Use ${BUILD_ID} expansion.
 RUN printf "%s\n" "${BUILD_ID}" > /app/BUILD_ID
 LABEL org.opencontainers.image.revision=${BUILD_ID}

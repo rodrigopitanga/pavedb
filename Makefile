@@ -301,6 +301,14 @@ docs-ref-check-config: venv
 docs-ref-check-openapi: venv
 	PYTHONPATH=. $(PYTHON_BIN) scripts/openapi_snapshot.py --check
 
+# -------- third-party licenses --------
+# Refresh THIRD_PARTY_LICENSES.md from the resolved runtime closure. Tracks
+# external resolution (pip picks latest compatible), so it is a point-in-time
+# reference refreshed on demand — not a docs-ref-check drift gate.
+.PHONY: third-party-licenses
+third-party-licenses: venv
+	PYTHONPATH=. $(PYTHON_BIN) scripts/gen_third_party.py
+
 # -------- bump --------
 .PHONY: bump
 bump:
