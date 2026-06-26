@@ -36,13 +36,26 @@ def sanit_sql(value: Any, *, max_len: int | None = None) -> str:
 
 
 def sanit_field(name: Any) -> str:
+    """Sanitize a metadata field key.
+
+    Keeps alphanumerics (Unicode-aware) and ``-``; every run of other
+    characters — spaces, punctuation, and literal ``_`` — collapses to a
+    single ``_``, with leading/trailing ``_`` trimmed. So ``"first name"``
+    maps to ``"first_name"`` (through v0.9 the space was dropped, giving
+    ``"firstname"``). Hyphens are preserved: ``"first-name"`` stays as-is.
+    """
     if not isinstance(name, str):
         name = str(name)
-    safe = []
+    out: list[str] = []
+    prev_us = False
     for ch in name:
-        if ch.isalnum() or ch in {"_", "-"}:
-            safe.append(ch)
-    return "".join(safe)
+        if ch.isalnum() or ch == "-":
+            out.append(ch)
+            prev_us = False
+        elif not prev_us:  # space / punctuation / '_' -> one collapsed '_'
+            out.append("_")
+            prev_us = True
+    return "".join(out).strip("_")
 
 
 def lookup_meta(meta: Metadata | None, key: str) -> Any:

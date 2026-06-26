@@ -42,6 +42,28 @@ def _csv_parse_col_spec(spec: str) -> tuple[list[str], list[int]]:
 def _csv_stringify_row(row: Metadata, keys: list[str]) -> str:
     return "\n".join(f"{k}: {'' if row.get(k) is None else row.get(k)}" for k in keys)
 
+def _csv_unique_labels(header: list[Any]) -> list[str]:
+    """Give every column a unique, non-empty label.
+
+    Blank/whitespace headers become ``col_<N>`` (1-based, matching the
+    ``--csv-*-cols`` index spec); duplicate labels get a ``_<n>`` suffix
+    (``date``, ``date_2``). Using a positional identity instead of the raw
+    header string stops empty or duplicate headers from silently
+    overwriting one another in the per-row dict.
+    """
+    used: set[str] = set()
+    out: list[str] = []
+    for i, raw in enumerate(header):
+        label = (str(raw).strip() if raw is not None else "") or f"col_{i + 1}"
+        if label in used:
+            n = 2
+            while f"{label}_{n}" in used:
+                n += 1
+            label = f"{label}_{n}"
+        used.add(label)
+        out.append(label)
+    return out
+
 def _preprocess_csv(
     filename: str,
     content: bytes,
@@ -84,10 +106,10 @@ def _preprocess_csv(
             header_row = None
 
     if header_row is not None:
-        cols = header_row
+        cols = _csv_unique_labels(header_row)
         data_rows = reader
     else:
-        cols = [f"col_{i}" for i in range(len(first))]
+        cols = [f"col_{i + 1}" for i in range(len(first))]
         data_rows = [first, *list(reader)]
 
     ncols = len(cols)

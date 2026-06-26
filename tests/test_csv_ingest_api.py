@@ -26,7 +26,7 @@ def test_api_invalid_metadata_keys_returns_code(client):
     r = client.post(
         "/v1/collections/acme/metabad/documents",
         files=files,
-        data={"metadata": '{"doc id":"shadow-docid"}'},
+        data={"metadata": '{".docid.":"shadow-docid"}'},
     )
     assert r.status_code == 400
     data = r.json()

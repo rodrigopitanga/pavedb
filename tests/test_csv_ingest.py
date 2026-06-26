@@ -47,12 +47,12 @@ def test_csv_include_by_indices_no_header(store):
     hits = store.search("t2", "c2", "x", k=5)
     assert hits
     txt = hits[0].text
-    assert "col_0: x" in txt
-    assert "col_2: z" in txt
-    assert "col_1:" not in txt  # excluded as meta
+    assert "col_1: x" in txt
+    assert "col_3: z" in txt
+    assert "col_2:" not in txt  # excluded as meta
 
-    # meta persisted under synthesized header
-    hits_meta = store.search("t2", "c2", "x", k=5, filters={"col_1": "metaY"})
+    # meta persisted under the 1-based synthesized header (matches --csv-*-cols)
+    hits_meta = store.search("t2", "c2", "x", k=5, filters={"col_2": "metaY"})
     assert hits_meta
 
 def test_csv_refuse_names_without_header(store):
@@ -75,7 +75,7 @@ def test_ingest_rejects_colliding_sanitized_doc_metadata_keys(store):
             "f4.txt",
             _csv_bytes("hello world"),
             "D4",
-            {"doc id": "shadow-docid"},
+            {".docid.": "shadow-docid"},
         )
     assert excinfo.value.code == "invalid_metadata_keys"
     assert "sanitize to 'docid'" in excinfo.value.message
@@ -111,7 +111,7 @@ def test_ingest_rejects_metadata_key_sanitized_to_reserved_text(store):
             "f6.txt",
             _csv_bytes("hello world"),
             "D6",
-            {"te xt": "shadow-text"},
+            {" text ": "shadow-text"},
         )
     assert excinfo.value.code == "invalid_metadata_keys"
     assert "reserved key 'text'" in excinfo.value.message
@@ -138,4 +138,57 @@ def test_ingest_sanitizes_sqlish_doc_metadata_value_and_exact_filter_matches(sto
         filters={"so urce": raw_value},
     )
     assert len(hits) == 1
-    assert hits[0].meta["source"] == sanit_sql(raw_value)
+    assert hits[0].meta["so_urce"] == sanit_sql(raw_value)
+
+
+def test_doc_metadata_key_space_collapses_to_underscore(store):
+    # "doc id" is now a valid, distinct key (doc_id); no longer shadows docid
+    out = svc_ingest(
+        store, "tk", "ck", "fk.txt", _csv_bytes("hello world"), "DK",
+        {"doc id": "v1"},
+    )
+    assert out["ok"] is True
+    hits = store.search("tk", "ck", "hello", k=5, filters={"doc id": "v1"})
+    assert hits
+    assert hits[0].meta["doc_id"] == "v1"
+
+
+def test_csv_blank_header_cell_becomes_col_n_1based(store):
+    # middle header is blank -> indexed under col_2 (1-based), value not dropped
+    csv = "a,,c\nx,y,z\n"
+    out = svc_ingest(
+        store, "te", "ce", "fe.csv", _csv_bytes(csv), "DE", None,
+        csv_options={"has_header": "yes", "meta_cols": "", "include_cols": ""},
+    )
+    assert out["ok"] and out["chunks"] == 1
+    txt = store.search("te", "ce", "y", k=5)[0].text
+    assert "a: x" in txt
+    assert "col_2: y" in txt
+    assert "c: z" in txt
+
+
+def test_csv_duplicate_header_deduped_keeps_both_columns(store):
+    # two "date" columns -> date, date_2; the second value used to be lost
+    csv = "date,date\n2021,2022\n"
+    out = svc_ingest(
+        store, "td", "cd", "fd.csv", _csv_bytes(csv), "DD", None,
+        csv_options={"has_header": "yes", "meta_cols": "", "include_cols": ""},
+    )
+    assert out["ok"] and out["chunks"] == 1
+    txt = store.search("td", "cd", "2021", k=5)[0].text
+    assert "date: 2021" in txt
+    assert "date_2: 2022" in txt
+
+
+def test_csv_duplicate_header_select_first_by_name(store):
+    # --csv-meta-cols date selects the first "date"; date_2 stays indexed
+    csv = "date,date\n2021,2022\n"
+    out = svc_ingest(
+        store, "tn", "cn", "fn.csv", _csv_bytes(csv), "DN", None,
+        csv_options={"has_header": "yes", "meta_cols": "date", "include_cols": ""},
+    )
+    assert out["ok"] and out["chunks"] == 1
+    hits = store.search("tn", "cn", "2022", k=5)
+    assert "date_2: 2022" in hits[0].text
+    assert "date: 2021" not in hits[0].text
+    assert store.search("tn", "cn", "2022", k=5, filters={"date": "2021"})
