@@ -140,7 +140,9 @@ def cmd_init(args):
     skipped: list[str] = []
     config_path = pathlib.Path(paths.config)
     tenants_path = pathlib.Path(paths.tenants)
+    home_path = pathlib.Path(paths.home)
     data_dir = pathlib.Path(paths.data_dir)
+    home_path.mkdir(parents=True, exist_ok=True)
     data_dir.mkdir(parents=True, exist_ok=True)
     for label, path, text in (
         ("config", config_path, config_text),

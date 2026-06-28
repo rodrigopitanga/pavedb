@@ -887,6 +887,33 @@ def test_cli_update_collection_display_name(cli_env, capsys):
     assert ("update_collection", tenant, coll, "Label CLI") in store.calls
 
 
+def test_cli_init_creates_empty_explicit_home(cli_env, tmp_path, capsys):
+    pvcli, _, _ = cli_env
+    home = tmp_path / "empty-home"
+    config = tmp_path / "etc" / "config.yml"
+    tenants = tmp_path / "var" / "tenants.yml"
+    data_dir = tmp_path / "srv" / "data"
+
+    pvcli.main_cli([
+        "--home",
+        str(home),
+        "--config",
+        str(config),
+        "--tenants",
+        str(tenants),
+        "--data-dir",
+        str(data_dir),
+        "init",
+    ])
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["ok"] is True
+    assert home.is_dir()
+    assert config.is_file()
+    assert tenants.is_file()
+    assert data_dir.is_dir()
+
+
 def test_cli_init_writes_default_instance_files(cli_env, monkeypatch, tmp_path, capsys):
     pvcli, _, _ = cli_env
     home = tmp_path / "home"
