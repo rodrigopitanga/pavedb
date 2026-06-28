@@ -12,6 +12,7 @@ image: python:3.11
 
 variables:
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  HF_HOME: "$CI_PROJECT_DIR/.cache/huggingface"
   SAST_STAGE: security
   SECRET_DETECTION_STAGE: security
   SECRET_DETECTION_ENABLED: "true"
@@ -19,6 +20,7 @@ variables:
 cache:
   paths:
     - .cache/pip
+    - .cache/huggingface
 
 mirror-github:
   stage: mirror
@@ -77,6 +79,9 @@ pytest:
 
 bench:
   stage: benchmark
+  variables:
+    # Cold local runners download the model on first run; give startup headroom.
+    BENCH_STARTUP_TIMEOUT_S: "120"
   before_script:
     - apt-get update -qq
     - apt-get install -y -qq curl git make

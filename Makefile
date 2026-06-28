@@ -962,7 +962,7 @@ _results_dir ?= benchmarks/results
 BENCH_SAVE        ?= 0
 LAT_SLO_P99_MS    ?= 0
 STR_MAX_ERROR_PCT ?= 0
-_startup_timeout_s ?= 30
+BENCH_STARTUP_TIMEOUT_S ?= 30
 _server_log_level ?= warning
 
 .PHONY: _bench-with-server
@@ -1058,7 +1058,7 @@ _bench-with-server:
 	}; \
 	trap cleanup EXIT INT TERM; \
 	if [ "$$managed" = "1" ]; then \
-	  for i in $$(seq 1 $(_startup_timeout_s)); do \
+	  for i in $$(seq 1 $(BENCH_STARTUP_TIMEOUT_S)); do \
 	    if curl -fsS "$$bench_url/health/live" >/dev/null 2>&1; then \
 	      ready=1; \
 	      break; \
@@ -1067,7 +1067,7 @@ _bench-with-server:
 	  done; \
 	  if [ "$${ready:-0}" != "1" ]; then \
 	    keep_data_dir=1; \
-	    echo "ERROR: benchmark server did not become ready in $(_startup_timeout_s)s."; \
+	    echo "ERROR: benchmark server did not become ready in $(BENCH_STARTUP_TIMEOUT_S)s."; \
 	    tail -n 80 "$$log_file" || true; \
 	    exit 1; \
 	  fi; \
