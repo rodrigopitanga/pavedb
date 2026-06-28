@@ -32,6 +32,26 @@ def test_main_srv_accepts_home_flag(monkeypatch, tmp_path):
     assert calls["kwargs"]["port"] == 8086
 
 
+def test_main_srv_config_data_dir_beats_home(monkeypatch, tmp_path):
+    calls = _capture_server_run(monkeypatch)
+    home = tmp_path / "instance"
+    configured_data = tmp_path / "configured-data"
+    config = tmp_path / "etc" / "config.yml"
+    config.parent.mkdir(parents=True)
+    config.write_text(f"data_dir: '{configured_data}'\n", encoding="utf-8")
+
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
+    monkeypatch.setattr(main_mod, "enforce_policy", lambda _cfg: None)
+    monkeypatch.setattr(main_mod, "resolve_bind", lambda _cfg: ("127.0.0.1", 8086))
+
+    main_mod.main_srv(["--home", str(home), "--config", str(config)])
+    cfg = get_cfg()
+
+    assert cfg.get("data_dir") == str(configured_data)
+    assert cfg.get("auth.tenants_file") == str(home / "tenants.yml")
+    assert calls["kwargs"]["host"] == "127.0.0.1"
+
+
 def test_dev_mode_respects_explicit_log_level_env(monkeypatch, tmp_path):
     calls = _capture_server_run(monkeypatch)
     home = tmp_path / "instance"

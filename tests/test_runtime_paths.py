@@ -23,6 +23,24 @@ def test_resolve_runtime_paths_derives_from_home(tmp_path):
     assert paths.data_dir == str(home / "data")
 
 
+def test_resolve_runtime_paths_anchors_to_explicit_config(monkeypatch, tmp_path):
+    for name in (
+        "PAVEDB_HOME",
+        "PAVEDB_CONFIG",
+        "PAVEDB_AUTH__TENANTS_FILE",
+        "PAVEDB_DATA_DIR",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    config = tmp_path / "etc" / "config.yml"
+
+    paths = resolve_runtime_paths(config=str(config))
+
+    assert paths.home == str(config.parent)
+    assert paths.config == str(config)
+    assert paths.tenants == str(config.parent / "tenants.yml")
+    assert paths.data_dir == str(config.parent / "data")
+
+
 def test_explicit_runtime_paths_override_home_defaults(tmp_path):
     home = tmp_path / "instance"
     config = tmp_path / "etc" / "config.yml"
@@ -53,6 +71,7 @@ def test_render_config_template_injects_runtime_paths(tmp_path):
 
 def test_apply_runtime_env_sets_pavedb_vars(monkeypatch, tmp_path):
     for name in (
+        "PAVEDB_HOME",
         "PAVEDB_CONFIG",
         "PAVEDB_AUTH__TENANTS_FILE",
         "PAVEDB_DATA_DIR",
@@ -62,9 +81,10 @@ def test_apply_runtime_env_sets_pavedb_vars(monkeypatch, tmp_path):
     home = tmp_path / "instance"
     paths = apply_runtime_env(home=str(home))
 
-    assert os.environ["PAVEDB_CONFIG"] == str(home / "config.yml")
-    assert os.environ["PAVEDB_AUTH__TENANTS_FILE"] == str(home / "tenants.yml")
-    assert os.environ["PAVEDB_DATA_DIR"] == str(home / "data")
+    assert os.environ["PAVEDB_HOME"] == str(home)
+    assert "PAVEDB_CONFIG" not in os.environ
+    assert "PAVEDB_AUTH__TENANTS_FILE" not in os.environ
+    assert "PAVEDB_DATA_DIR" not in os.environ
     assert paths.config == str(home / "config.yml")
 
 

@@ -16,6 +16,7 @@ replace dots with double underscores, so `auth.mode` becomes
 - Default: `"~/pavedb/data"`
 - Env var: `PAVEDB_DATA_DIR`
 - Description: Root directory for local catalog, metadata, document chunks, and indexes.
+  When omitted at runtime, defaults to the instance home data directory.
 
 ### `common_enabled`
 
@@ -252,15 +253,16 @@ field from its own `config`; the per-instance value always wins.
 
 ### `log.ops_log`
 
-- Default: `"~/pavedb/ops.jsonl"`
+- Default: `null`
 - Env var: `PAVEDB_LOG__OPS_LOG`
-- Description: Destination for structured operation logs: null, stdout, or a file path.
+- Description: Destination for structured operation logs: null/off, stdout, or a file
+  path.
 
 ### `log.access_log`
 
-- Default: `"~/pavedb/access.log"`
+- Default: `null`
 - Env var: `PAVEDB_LOG__ACCESS_LOG`
-- Description: Destination for uvicorn access logs: null, stdout, or a file path.
+- Description: Destination for uvicorn access logs: null/off, stdout, or a file path.
 
 ### `log.debug`
 

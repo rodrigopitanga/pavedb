@@ -94,13 +94,14 @@ def _parse_filters_arg(raw: str | None) -> dict | None:
 
 def _prepare_runtime(args) -> None:
     global store
-    paths = apply_runtime_env(
+    has_runtime_args = any((args.home, args.config, args.tenants, args.data_dir))
+    apply_runtime_env(
         home=args.home,
         config=args.config,
         tenants=args.tenants,
         data_dir=args.data_dir,
     )
-    if any((paths.config, paths.tenants, paths.data_dir)):
+    if has_runtime_args:
         reload_cfg()
         store = None
 
@@ -117,8 +118,6 @@ def cmd_init(args):
     if args.root and args.home:
         raise SystemExit("use either positional ROOT or global --home, not both")
     home = args.root or args.home
-    if not home and not any((args.config, args.tenants, args.data_dir)):
-        home = DEFAULT_HOME
     paths = resolve_runtime_paths(
         home=home,
         config=args.config,
@@ -131,6 +130,8 @@ def cmd_init(args):
     config_text = render_config_template(
         data_dir=paths.data_dir,
         tenants_file=paths.tenants,
+        ops_log=str(pathlib.Path(paths.home) / "ops.jsonl"),
+        access_log=str(pathlib.Path(paths.home) / "access.log"),
     )
     tenants_text = load_asset_text("tenants.yml.example")
 
@@ -452,8 +453,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--home",
         help=(
-            f"Instance home directory; no global default; init uses "
-            f"{DEFAULT_HOME} when no explicit path is passed"
+            f"Instance home directory; omitted siblings default under it; "
+            f"defaults to {DEFAULT_HOME}"
         ),
     )
     p.add_argument(

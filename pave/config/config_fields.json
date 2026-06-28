@@ -8,7 +8,7 @@
     {
       "key": "data_dir",
       "default": "~/pavedb/data",
-      "description": "Root directory for local catalog, metadata, document chunks, and indexes."
+      "description": "Root directory for local catalog, metadata, document chunks, and indexes. When omitted at runtime, defaults to the instance home data directory."
     },
     {
       "key": "common_enabled",
@@ -172,13 +172,13 @@
     },
     {
       "key": "log.ops_log",
-      "default": "~/pavedb/ops.jsonl",
-      "description": "Destination for structured operation logs: null, stdout, or a file path."
+      "default": null,
+      "description": "Destination for structured operation logs: null/off, stdout, or a file path."
     },
     {
       "key": "log.access_log",
-      "default": "~/pavedb/access.log",
-      "description": "Destination for uvicorn access logs: null, stdout, or a file path."
+      "default": null,
+      "description": "Destination for uvicorn access logs: null/off, stdout, or a file path."
     },
     {
       "key": "log.debug",

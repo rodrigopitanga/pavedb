@@ -37,7 +37,7 @@ from pave.routes import (
     build_search_router,
 )
 from pave.ui import attach_ui
-from pave.runtime_paths import DEFAULT_HOME, apply_runtime_env
+from pave.runtime_paths import DEFAULT_HOME, HOME_ENV, apply_runtime_env
 from pave.version import (
     COPYRIGHT,
     VERSION,
@@ -578,8 +578,8 @@ def main_srv(argv=None):
     p.add_argument(
         "--home",
         help=(
-            "Instance home directory; no global default; maps config.yml, "
-            "tenants.yml, and data/ under that root"
+            "Instance home directory; omitted config.yml, tenants.yml, "
+            "and data/ default under that root"
         ),
     )
     p.add_argument(
@@ -606,6 +606,7 @@ def main_srv(argv=None):
         args.config,
         args.tenants,
         args.data_dir,
+        os.environ.get(HOME_ENV),
         os.environ.get("PAVEDB_CONFIG"),
         os.environ.get("PAVEDB_AUTH__TENANTS_FILE"),
         os.environ.get("PAVEDB_DATA_DIR"),

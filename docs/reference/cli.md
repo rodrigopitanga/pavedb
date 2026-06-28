@@ -40,8 +40,8 @@ There is NO WARRANTY, to the extent permitted by law.
 
 - `--compact` (optional): Emit compact JSON for scripting
 - `--version` (optional): Print version, copyright, and license information
-- `--home` (optional): Instance home directory; no global default; init uses ~/pavedb
-  when no explicit path is passed
+- `--home` (optional): Instance home directory; omitted siblings default under it;
+  defaults to ~/pavedb
 - `--config` (optional): Explicit config.yml path; default comes from
   PAVEDB_CONFIG/config search
 - `--tenants` (optional): Explicit tenants.yml path; default comes from

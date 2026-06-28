@@ -16,6 +16,10 @@ import yaml  # type: ignore
 load_dotenv()
 
 _ENV_PREFIX = "PAVEDB_"
+CONFIG_ENV = _ENV_PREFIX + "CONFIG"
+HOME_ENV = _ENV_PREFIX + "HOME"
+DEFAULT_HOME = "~/pavedb"
+_RUNTIME_ENV_VARS = {CONFIG_ENV, HOME_ENV}
 
 
 @dataclass(frozen=True)
@@ -145,15 +149,44 @@ def should_warm_default_embedder(cfg: "Config") -> bool:
 
 
 def _default_config_path() -> str | None:
-    configured = os.environ.get(_ENV_PREFIX + "CONFIG")
+    configured = os.environ.get(CONFIG_ENV)
     if configured:
         return str(Path(configured).expanduser())
+    configured_home = os.environ.get(HOME_ENV)
+    if configured_home:
+        return str(Path(configured_home).expanduser() / "config.yml")
     # In dev mode, do not implicitly load the installed user config file.
     if _env_flag("DEV"):
         return None
-    return str(Path("~/pavedb/config.yml").expanduser())
+    return str(_runtime_home_path() / "config.yml")
 
-_DEFAULTS = _config_defaults()
+_SCHEMA_DEFAULTS = _config_defaults()
+
+
+def _runtime_home_path(path: str | Path | None = None) -> Path:
+    configured_home = os.environ.get(HOME_ENV)
+    if configured_home:
+        return Path(configured_home).expanduser()
+    if path:
+        return Path(path).expanduser().parent
+    configured = os.environ.get(CONFIG_ENV)
+    if configured:
+        return Path(configured).expanduser().parent
+    return Path(DEFAULT_HOME).expanduser()
+
+
+def _defaults_for_home(home: Path | None = None) -> dict[str, Any]:
+    home_path = home or _runtime_home_path()
+    base = deepcopy(_SCHEMA_DEFAULTS)
+    base["data_dir"] = str(home_path / "data")
+    if os.environ.get(HOME_ENV) or os.environ.get(CONFIG_ENV):
+        auth = base.setdefault("auth", {})
+        if isinstance(auth, dict):
+            auth["tenants_file"] = str(home_path / "tenants.yml")
+    return base
+
+
+_DEFAULTS = _SCHEMA_DEFAULTS
 
 # Path-type config keys: ~ is expanded after the full config merge.
 # Supports dotted notation for nested keys (e.g. "log.ops_log").
@@ -204,6 +237,8 @@ def _env_to_dict() -> dict[str, Any]:
     envmap: dict[str, Any] = {}
     for k, v in os.environ.items():
         if not k.startswith(_ENV_PREFIX):
+            continue
+        if k in _RUNTIME_ENV_VARS:
             continue
         path = k[len(_ENV_PREFIX):].lower().split("__")
         cur = envmap
@@ -269,8 +304,10 @@ def _configured_embedder_instance_keys(cfg: dict[str, Any]) -> set[str]:
 def _base_defaults_for(
     file_cfg: dict[str, Any],
     env_cfg: dict[str, Any],
+    *,
+    home: Path | None = None,
 ) -> dict[str, Any]:
-    base = deepcopy(_DEFAULTS)
+    base = _defaults_for_home(home)
     configured_keys = (
         _configured_embedder_instance_keys(file_cfg)
         | _configured_embedder_instance_keys(env_cfg)
@@ -312,8 +349,10 @@ class Config:
     # --- main loader, now a static/class member ---
     @staticmethod
     def _load_dict(path: str | Path | None) -> dict[str, Any]:
+        home = _runtime_home_path(path)
         file_cfg = _resolve_env_in_obj(_load_yaml(path))
         env_cfg = _env_to_dict()
+        base_cfg = _base_defaults_for(file_cfg, env_cfg, home=home)
         file_auth = file_cfg.get("auth", {})
         if not isinstance(file_auth, dict):
             file_auth = {}
@@ -322,7 +361,10 @@ class Config:
             env_auth = {}
         # `auth.tenants_file` itself follows the normal precedence rules:
         # env > config.yml > defaults.
-        auth_cfg = _deep_merge(file_auth, env_auth)
+        base_auth = base_cfg.get("auth", {})
+        auth_cfg = deepcopy(base_auth) if isinstance(base_auth, dict) else {}
+        auth_cfg = _deep_merge(auth_cfg, file_auth)
+        auth_cfg = _deep_merge(auth_cfg, env_auth)
         tenants_file = auth_cfg.get("tenants_file")
         sidecar_cfg: dict[str, Any] = {}
         if tenants_file:
@@ -332,7 +374,7 @@ class Config:
             )
         # Sidecar tenant data is loaded first as a base. Inline tenant config in
         # config.yml then overrides it, and env vars override both.
-        merged = _deep_merge(_base_defaults_for(file_cfg, env_cfg), sidecar_cfg)
+        merged = _deep_merge(base_cfg, sidecar_cfg)
         merged = _deep_merge(merged, file_cfg)
         merged = _deep_merge(merged, env_cfg)
         for key in _PATH_KEYS:

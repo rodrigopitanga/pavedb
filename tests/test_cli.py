@@ -904,5 +904,8 @@ def test_cli_init_writes_default_instance_files(cli_env, monkeypatch, tmp_path, 
     assert Path(out["data_dir"]) == instance / "data"
     assert config_path.is_file()
     assert tenants_path.is_file()
-    assert "tenants_file:" in config_path.read_text(encoding="utf-8")
-    assert "data_dir:" in config_path.read_text(encoding="utf-8")
+    config_text = config_path.read_text(encoding="utf-8")
+    assert "tenants_file:" in config_text
+    assert "data_dir:" in config_text
+    assert f"# ops_log: '{instance / 'ops.jsonl'}'" in config_text
+    assert "~/pavedb" not in config_text

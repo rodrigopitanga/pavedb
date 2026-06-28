@@ -20,6 +20,8 @@ def test_patchvec_env_is_ignored_when_pavedb_is_set(monkeypatch, tmp_path):
 
 
 def test_patchvec_only_env_is_ignored(monkeypatch, tmp_path):
+    monkeypatch.delenv("PAVEDB_HOME", raising=False)
+    monkeypatch.delenv("PAVEDB_CONFIG", raising=False)
     monkeypatch.delenv("PAVEDB_DATA_DIR", raising=False)
     monkeypatch.setenv("PATCHVEC_DATA_DIR", str(tmp_path / "patchvec"))
 

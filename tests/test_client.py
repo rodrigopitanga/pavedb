@@ -20,7 +20,7 @@ from pavesdk.errors import (
     Unavailable,
 )
 from pavesdk.interface import Collection
-from pave.config import get_cfg
+from pave.config import get_cfg, reload_cfg
 from pave.service import ServiceError
 
 
@@ -100,6 +100,36 @@ def test_provider_accepts_target_and_tenant(tmp_path):
     finally:
         ephemeral.close()
     assert not os.path.exists(ephemeral_path)
+
+
+def test_provider_target_beats_ambient_config_data_dir(tmp_path, monkeypatch):
+    ambient_data = tmp_path / "ambient-data"
+    config = tmp_path / "config.yml"
+    config.write_text(f"data_dir: '{ambient_data}'\n", encoding="utf-8")
+    monkeypatch.setenv("PAVEDB_CONFIG", str(config))
+    reload_cfg()
+    get_cfg().set("dev", True)
+    stores = []
+
+    class CapturingStore:
+        def __init__(self, data_dir, *_args, **_kwargs):
+            self.data_dir = data_dir
+            stores.append(self)
+
+        def warm(self):
+            pass
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(localclient_mod, "LocalStore", CapturingStore)
+    target = tmp_path / "target-data"
+
+    client = provider(target)
+    try:
+        assert stores[0].data_dir == str(target)
+    finally:
+        client.close()
 
 
 def test_provider_warms_store_when_warmup_enabled(tmp_path, monkeypatch):
