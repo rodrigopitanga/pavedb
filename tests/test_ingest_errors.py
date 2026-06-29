@@ -97,6 +97,16 @@ def test_batch_ingest_rejects_overlong_docid(client):
     assert r.json()["code"] == "invalid_docid"
 
 
+def test_multipart_ingest_rejects_non_object_metadata(client):
+    r = client.post(
+        "/v1/collections/acme/bad-metadata/documents",
+        files={"file": ("x.txt", b"hello world", "text/plain")},
+        data={"metadata": "[1, 2, 3]"},
+    )
+    assert r.status_code == 400
+    assert r.json()["code"] == "invalid_metadata"
+
+
 def test_ingest_overloaded_returns_503(client, app, monkeypatch):
     """Counter at max returns 503 ingest_overloaded immediately."""
     client.post("/v1/collections/acme/ingestlimitcol")

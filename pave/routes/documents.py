@@ -240,6 +240,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     "embedder_unavailable": 503,
                     "file_too_large": 413,
                     "invalid_csv_options": 400,
+                    "invalid_metadata": 400,
                     "invalid_metadata_keys": 400,
                     "invalid_collection_name": 400,
                     "invalid_docid": 400,

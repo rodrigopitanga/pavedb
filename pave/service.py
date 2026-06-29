@@ -136,6 +136,14 @@ def _validate_docid(value: str) -> str:
     return value
 
 
+def _validate_metadata(value: Metadata | None) -> Metadata:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ServiceError("invalid_metadata", "metadata must be an object")
+    return value
+
+
 def _resolve_global_embedder_config() -> tuple[str, str]:
     try:
         spec = resolve_embedder_spec(get_cfg())
@@ -707,7 +715,7 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             stage = "prepare"
             _enforce_ingest_size_limit(len(content))
             baseid = _validate_docid(docid or _default_docid(filename))
-            meta_from_call = metadata or {}
+            meta_from_call = _validate_metadata(metadata)
             now = datetime.now(tz.utc).isoformat(timespec="seconds")
             now = now.replace("+00:00", "Z")
             doc_meta = {
@@ -782,7 +790,7 @@ def ingest_text(
         try:
             _enforce_ingest_size_limit(len(text.encode("utf-8")))
             baseid = _validate_docid(docid or _default_docid(""))
-            meta_from_call = metadata or {}
+            meta_from_call = _validate_metadata(metadata)
             now = datetime.now(tz.utc).isoformat(timespec="seconds")
             now = now.replace("+00:00", "Z")
             doc_meta = {
