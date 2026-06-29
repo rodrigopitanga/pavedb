@@ -28,7 +28,7 @@ parse time otherwise.
 `make serve` in the source tree runs with `DEV=1`, so it uses defaults and explicit
 env overrides. If you need to exercise a file-based config from the checkout, pass it
 explicitly, for example `CONFIG=./config.yml make serve` or
-`./pavesrv.sh --config ./config.yml --tenants ./tenants.yml`.
+`PYTHONPATH=. python -m pave.main --config ./config.yml --tenants ./tenants.yml`.
 
 The packaged entrypoints now also accept explicit instance paths:
 `pavesrv --home ~/pavedb-staging` and `pavecli list-tenants --home ~/pavedb-staging`.
@@ -42,8 +42,12 @@ make test
 
 Need to inspect behaviour without reloads? Run
 `DEV=0 AUTH_MODE=static GLOBAL_KEY=<your-secret> make serve` for an almost
-production-like stack, or call the wrapper script directly:
-`PAVEDB_AUTH__GLOBAL_KEY=<your-secret> ./pavesrv.sh --config ./config.yml --tenants ./tenants.yml`.
+production-like stack, or call the server module directly:
+
+```bash
+PAVEDB_AUTH__GLOBAL_KEY=<your-secret> PYTHONPATH=. python -m pave.main \
+  --config ./config.yml --tenants ./tenants.yml
+```
 
 ## Workflow
 
@@ -226,8 +230,8 @@ asking for permission to ask.
   (`SbertEmbedder`, `OpenAIEmbedder`).
 - `pave/service.py` wires the FastAPI application and injects the store into
 `app.state`.
-- CLI entrypoints are defined in `pave/cli.py`; shell shims `pavecli.sh`/`pavesrv.sh`
-  wrap the same commands for repo contributors.
+- CLI entrypoints are defined in `pave/cli.py`; source-tree runs use the Makefile
+  targets or `python -m pave.cli` / `python -m pave.main`.
 
 ## Concurrency model
 
