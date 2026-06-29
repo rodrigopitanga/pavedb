@@ -138,7 +138,8 @@ field from its own `config`; the per-instance value always wins.
 
 - Default: `"auto"`
 - Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__RUNTIME`
-- Description: Native SBERT runtime mode: auto, process, or direct.
+- Description: Native SBERT runtime mode: auto, process, or direct. On macOS with FAISS,
+  auto selects process; direct is blocked.
 
 ### `embedder.instances.native.config.device`
 

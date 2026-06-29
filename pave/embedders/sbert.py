@@ -59,6 +59,12 @@ def build_embedder(cfg, *, model=None, embedder_config=None, api_key=None):
         runtime = "direct"
     elif runtime not in {"process", "direct"}:
         raise RuntimeError(f"Unknown embedder.sbert.runtime: {runtime}")
+    if runtime == "direct" and sys.platform == "darwin" and backend_type == "faiss":
+        raise RuntimeError(
+            "embedder.sbert.runtime=direct runs torch in-process, which "
+            "crashes on macOS alongside the FAISS backend. Use "
+            "runtime=auto or runtime=process."
+        )
 
     kwargs = {
         "model_name": model_name,

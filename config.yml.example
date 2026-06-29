@@ -121,7 +121,8 @@ embedder:
 
       config:
 
-        # Native SBERT runtime mode: auto, process, or direct.
+        # Native SBERT runtime mode: auto, process, or direct. On macOS with FAISS, auto
+        # selects process; direct is blocked.
         # Env: PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__RUNTIME
         runtime: 'auto'
 

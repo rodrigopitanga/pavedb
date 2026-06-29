@@ -132,21 +132,44 @@ def test_factory_uses_process_mode_when_explicitly_requested(monkeypatch):
     assert emb.kwargs["workers"] == 3
 
 
-def test_factory_uses_none_mode_for_direct_sbert(monkeypatch):
+@pytest.mark.parametrize(
+    ("platform", "store"),
+    [("darwin", "qdrant"), ("linux", "faiss")],
+)
+def test_factory_allows_direct_sbert_outside_darwin_faiss(
+    monkeypatch,
+    platform,
+    store,
+):
     factory = _reload_factory()
 
     class FakeSbert:
         def __init__(self, **kwargs):
             self.kwargs = kwargs
 
-    _patch_platform(monkeypatch, "darwin")
+    _patch_platform(monkeypatch, platform)
     _patch_sbert_class(monkeypatch, FakeSbert)
 
     emb = factory.get_embedder(
-        _registry_cfg(runtime="direct")
+        _registry_cfg(runtime="direct", store=store)
     )
 
     assert isinstance(emb, FakeSbert)
+
+
+@pytest.mark.parametrize("runtime", ["direct", "none"])
+def test_factory_rejects_in_process_sbert_on_darwin_faiss(
+    monkeypatch,
+    runtime,
+):
+    factory = _reload_factory()
+
+    _patch_platform(monkeypatch, "darwin")
+
+    with pytest.raises(RuntimeError, match="runtime=direct.*FAISS"):
+        factory.get_embedder(
+            _registry_cfg(runtime=runtime, store="faiss")
+        )
 
 
 def test_factory_uses_process_sbert_for_auto_mode_on_darwin_faiss(
