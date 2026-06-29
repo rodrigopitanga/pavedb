@@ -222,6 +222,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     code = result.get("code", "ingest_failed")
                     status_map = {
                         "embedder_unavailable": 503,
+                        "invalid_docid": 400,
                         "no_text_extracted": 400,
                         "ingest_failed": 500,
                     }
@@ -241,6 +242,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     "invalid_csv_options": 400,
                     "invalid_metadata_keys": 400,
                     "invalid_collection_name": 400,
+                    "invalid_docid": 400,
                     "ingest_failed": 500,
                 }
                 return error(
@@ -332,6 +334,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     code = result.get("code", "ingest_batch_failed")
                     status_map = {
                         "invalid_batch": 400,
+                        "invalid_docid": 400,
                         "ingest_batch_failed": 500,
                     }
                     return error(
@@ -347,6 +350,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     "embedder_unavailable": 503,
                     "invalid_metadata_keys": 400,
                     "invalid_collection_name": 400,
+                    "invalid_docid": 400,
                     "ingest_failed": 500,
                 }
                 return error(

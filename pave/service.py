@@ -74,6 +74,8 @@ class ServiceError(RuntimeError):
 
 
 _MAX_DISPLAY_NAME_LEN = 120
+_MAX_DOCID_LEN = 200
+_MAX_DOCID_BYTES = 200
 _COLLECTION_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 
 
@@ -118,6 +120,20 @@ def _validate_collection_name(value: str | None) -> str:
             "collection name must match ^[a-z0-9][a-z0-9-]{0,62}$",
         )
     return raw
+
+
+def _validate_docid(value: str) -> str:
+    if len(value) > _MAX_DOCID_LEN:
+        raise ServiceError(
+            "invalid_docid",
+            f"docid must be at most {_MAX_DOCID_LEN} characters",
+        )
+    if len(value.encode("utf-8")) > _MAX_DOCID_BYTES:
+        raise ServiceError(
+            "invalid_docid",
+            f"docid must be at most {_MAX_DOCID_BYTES} UTF-8 bytes",
+        )
+    return value
 
 
 def _resolve_global_embedder_config() -> tuple[str, str]:
@@ -690,7 +706,7 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
         try:
             stage = "prepare"
             _enforce_ingest_size_limit(len(content))
-            baseid = docid or _default_docid(filename)
+            baseid = _validate_docid(docid or _default_docid(filename))
             meta_from_call = metadata or {}
             now = datetime.now(tz.utc).isoformat(timespec="seconds")
             now = now.replace("+00:00", "Z")
@@ -765,7 +781,7 @@ def ingest_text(
     with m_timed("ingest"):
         try:
             _enforce_ingest_size_limit(len(text.encode("utf-8")))
-            baseid = docid or _default_docid("")
+            baseid = _validate_docid(docid or _default_docid(""))
             meta_from_call = metadata or {}
             now = datetime.now(tz.utc).isoformat(timespec="seconds")
             now = now.replace("+00:00", "Z")
@@ -946,7 +962,7 @@ def ingest_documents_batch(
     now = now.replace("+00:00", "Z")
 
     for index, item in enumerate(items):
-        baseid = item.get("docid") or _default_docid("")
+        baseid = _validate_docid(item.get("docid") or _default_docid(""))
         if baseid in seen_docids:
             duplicate_docid = True
             break
