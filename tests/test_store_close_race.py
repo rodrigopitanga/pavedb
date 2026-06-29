@@ -349,7 +349,7 @@ def test_catalog_metrics_recovers_from_closed_cached_db(temp_data_dir):
 
     store._dbs[(tenant, collection)].close()
 
-    metrics = store.catalog_metrics()
+    metrics = store.refresh_catalog_metrics()
 
     assert metrics["tenant_count"] >= 1
     assert metrics["collection_count"] >= 1
@@ -395,7 +395,7 @@ def test_catalog_metrics_retries_after_transient_catalog_close(
 
     monkeypatch.setattr(store, "_ensure_catalog", flaky_ensure_catalog)
 
-    metrics = store.catalog_metrics()
+    metrics = store.refresh_catalog_metrics()
 
     assert attempts["count"] >= 2
     assert metrics["tenant_count"] >= 1

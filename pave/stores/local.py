@@ -63,10 +63,8 @@ log = get_logger()
 
 CollectionConfig = dict[str, Any]
 
-# `catalog_metrics()` walks every collection under its read lock to count
-# docs/chunks, so its result is memoized for this many seconds. Keeps
-# concurrent /metrics scrapers from each re-running the walk and stampeding
-# the per-collection locks under load.
+# `refresh_catalog_metrics()` walks every collection under its read lock to
+# count docs/chunks. Request-path `catalog_metrics()` only reads this cache.
 _CATALOG_METRICS_TTL_S = 5.0
 _QUERY_VECTOR_CACHE_MAX = 256
 _INDEX_DIRTY_FILE = ".pavedb-index-dirty"
@@ -1331,29 +1329,36 @@ class LocalStore:
         )
 
     def catalog_metrics(self) -> dict[str, int]:
-        """Return tenant/collection/doc/chunk counters from store metadata.
+        """Return cached tenant/collection/doc/chunk counters.
 
-        Doc/chunk counts require walking every collection under its read
-        lock, so the result is memoized for `_CATALOG_METRICS_TTL_S`. The walk
-        runs outside `_catalog_metrics_lock`; the lock only guards the cache
-        swap, so a slow walk never blocks concurrent callers (at worst two
-        cold callers repeat the walk).
+        This is used by `/health/metrics` and `/metrics`, so it must never walk
+        collections on the request path.
         """
-        cached = self._catalog_metrics_cache
-        if cached is not None:
-            ts, value = cached
-            if _time.monotonic() - ts < _CATALOG_METRICS_TTL_S:
-                return dict(value)
-
-        metrics = self._compute_catalog_metrics()
         with self._catalog_metrics_lock:
             cached = self._catalog_metrics_cache
-            if cached is not None:
-                ts, value = cached
-                if _time.monotonic() - ts < _CATALOG_METRICS_TTL_S:
-                    return dict(value)
+            if cached is None:
+                return {
+                    "tenant_count": 0,
+                    "collection_count": 0,
+                    "doc_count": 0,
+                    "chunk_count": 0,
+                }
+            return dict(cached[1])
+
+    def refresh_catalog_metrics(self) -> dict[str, int]:
+        """Refresh cached catalog counters with the expensive collection walk."""
+        metrics = self._compute_catalog_metrics()
+        with self._catalog_metrics_lock:
             self._catalog_metrics_cache = (_time.monotonic(), metrics)
             return dict(metrics)
+
+    def catalog_metrics_freshness(self) -> tuple[float | None, bool]:
+        with self._catalog_metrics_lock:
+            cached = self._catalog_metrics_cache
+            if cached is None:
+                return None, True
+            age = _time.monotonic() - cached[0]
+            return age, age > _CATALOG_METRICS_TTL_S
 
     def _compute_catalog_metrics(self) -> dict[str, int]:
         doc_count = 0

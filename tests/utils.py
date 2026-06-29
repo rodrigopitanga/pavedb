@@ -777,6 +777,14 @@ class SpyStore:
         self.calls.append(("catalog_metrics",))
         return self.impl.catalog_metrics()
 
+    def refresh_catalog_metrics(self) -> dict[str, int]:
+        self.calls.append(("refresh_catalog_metrics",))
+        return self.impl.refresh_catalog_metrics()
+
+    def catalog_metrics_freshness(self) -> tuple[float | None, bool]:
+        self.calls.append(("catalog_metrics_freshness",))
+        return self.impl.catalog_metrics_freshness()
+
     def dump_archive(
         self,
         output_path: str | os.PathLike[str] | None = None,

@@ -88,15 +88,19 @@ def test_health_metrics_include_store_catalog_counts(client):
         data={"docid": "B1"},
     )
 
+    client.app.state.store.refresh_catalog_metrics()
     snap = client.get("/health/metrics").json()
     assert snap["tenant_count"] >= 2
     assert snap["collection_count"] >= 3
     assert snap["doc_count"] >= 2
     assert snap["chunk_count"] >= 2
+    assert snap["catalog_metrics_stale"] == 0
+    assert snap["catalog_metrics_age_s"] >= 0
 
 
 def test_metrics_prometheus_includes_store_catalog_counts(client):
     client.post("/v1/collections/acme/promc")
+    client.app.state.store.refresh_catalog_metrics()
     r = client.get("/metrics")
     assert r.status_code == 200
     txt = r.text
@@ -104,6 +108,27 @@ def test_metrics_prometheus_includes_store_catalog_counts(client):
     assert "pavedb_collection_count" in txt
     assert "pavedb_doc_count" in txt
     assert "pavedb_chunk_count" in txt
+    assert "pavedb_catalog_metrics_stale" in txt
+
+
+def test_health_metrics_catalog_read_is_cache_only(client, monkeypatch):
+    calls = {"n": 0}
+
+    def fail_if_walked():
+        calls["n"] += 1
+        raise AssertionError("request path walked catalog metrics")
+
+    monkeypatch.setattr(
+        client.app.state.store.impl,
+        "_compute_catalog_metrics",
+        fail_if_walked,
+    )
+
+    snap = client.get("/health/metrics").json()
+
+    assert calls["n"] == 0
+    assert snap["catalog_metrics_age_s"] == -1.0
+    assert snap["catalog_metrics_stale"] == 1
 
 def test_latency_percentiles_in_snapshot(client):
     """After search and ingest, latency percentiles should appear in metrics."""

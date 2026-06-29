@@ -50,12 +50,21 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
         details["version"] = version
         return details
 
-    def store_metrics(store: BaseStore) -> dict[str, int]:
+    def store_metrics(store: BaseStore) -> dict[str, int | float]:
         try:
-            return store.catalog_metrics()
+            metrics: dict[str, int | float] = dict(store.catalog_metrics())
+            age, stale = store.catalog_metrics_freshness()
+            metrics["catalog_metrics_age_s"] = (
+                -1.0 if age is None else round(age, 3)
+            )
+            metrics["catalog_metrics_stale"] = int(stale)
+            return metrics
         except Exception as e:
             set_error(f"store_metrics: {e}")
-            return {}
+            return {
+                "catalog_metrics_age_s": -1.0,
+                "catalog_metrics_stale": 1,
+            }
 
     @router.get(
         "/health",

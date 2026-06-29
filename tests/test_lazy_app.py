@@ -148,6 +148,31 @@ def test_metrics_periodic_flush_task(monkeypatch):
     assert all(call == m.METRICS_SNAPSHOT_IDLE_SECONDS for call in calls)
 
 
+def test_catalog_metrics_periodic_refresh_task():
+    import pave.main as m
+
+    calls = []
+
+    class Store:
+        def refresh_catalog_metrics(self):
+            calls.append("refresh")
+
+    async def run_probe():
+        task = asyncio.create_task(
+            m._refresh_catalog_metrics_periodically(Store())
+        )
+        try:
+            await asyncio.sleep(0.01)
+        finally:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+
+    asyncio.run(run_probe())
+
+    assert calls
+
+
 def test_lifespan_flushes_metrics_on_shutdown(monkeypatch, tmp_path):
     import pave.main as m
     from pave.config import get_cfg

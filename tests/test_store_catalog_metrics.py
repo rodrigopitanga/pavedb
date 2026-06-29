@@ -33,14 +33,14 @@ def test_catalog_metrics_counts_docs_and_chunks(cfg, tmp_path):
     data_dir = Path(cfg.get("data_dir"))
     (data_dir / "t_empty").mkdir(parents=True, exist_ok=True)
 
-    snap = store.catalog_metrics()
+    snap = store.refresh_catalog_metrics()
     assert snap["tenant_count"] == 1
     assert snap["collection_count"] == 2
     assert snap["doc_count"] == 3
     assert snap["chunk_count"] == 4
 
 
-def test_catalog_metrics_memoized_within_ttl(cfg, tmp_path, monkeypatch):
+def test_catalog_metrics_is_cache_only(cfg, tmp_path, monkeypatch):
     cfg.set("data_dir", str(tmp_path))
     store = LocalStore(str(tmp_path), FakeEmbedder())
     store.index_records(
@@ -56,7 +56,7 @@ def test_catalog_metrics_memoized_within_ttl(cfg, tmp_path, monkeypatch):
 
     monkeypatch.setattr(store, "_compute_catalog_metrics", counting)
 
-    first = store.catalog_metrics()
+    first = store.refresh_catalog_metrics()
     second = store.catalog_metrics()
     assert calls["n"] == 1  # second call served from cache
     assert first == second
@@ -70,7 +70,12 @@ def test_catalog_metrics_memoized_within_ttl(cfg, tmp_path, monkeypatch):
     ts, value = store._catalog_metrics_cache
     store._catalog_metrics_cache = (ts - 3600.0, value)
     store.catalog_metrics()
+    assert calls["n"] == 1
+    assert store.catalog_metrics_freshness()[1] is True
+
+    refreshed = store.refresh_catalog_metrics()
     assert calls["n"] == 2
+    assert refreshed == first
 
 
 def test_catalog_probe_does_not_walk_collections(cfg, tmp_path):
@@ -88,5 +93,3 @@ def test_catalog_probe_does_not_walk_collections(cfg, tmp_path):
     # so a closed cached CollectionDB handle must not affect it.
     store._dbs[("acme", "c1")].close()
     assert store.catalog_probe() is None
-
-

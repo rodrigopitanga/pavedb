@@ -267,6 +267,18 @@ class BaseStore(Protocol):
             "chunk_count": 0,
         }
 
+    def refresh_catalog_metrics(self) -> dict[str, int]:
+        """Refresh store-level catalog counters.
+
+        Backends with expensive catalog metrics should override this so
+        `catalog_metrics()` can stay cheap on request paths.
+        """
+        return self.catalog_metrics()
+
+    def catalog_metrics_freshness(self) -> tuple[float | None, bool]:
+        """Return (age_seconds, stale) for cached catalog metrics."""
+        return 0.0, False
+
     def dump_archive(
         self,
         output_path: str | os.PathLike[str] | None = None,

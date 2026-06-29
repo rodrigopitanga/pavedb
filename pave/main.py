@@ -24,6 +24,7 @@ from pave.metrics import (
     flush as metrics_flush,
     flush_if_idle as metrics_flush_if_idle,
     record_http_request,
+    set_error as metrics_set_error,
     set_data_dir as metrics_set_data_dir,
 )
 from pave.stores.local import LocalStore
@@ -50,6 +51,7 @@ import pave.log as ops_log
 
 METRICS_FLUSH_INTERVAL_SECONDS = 10.5
 METRICS_SNAPSHOT_IDLE_SECONDS = 0.5
+CATALOG_METRICS_REFRESH_INTERVAL_SECONDS = 10.0
 GRACEFUL_SHUTDOWN_MESSAGE = (
     "Finishing current work, shutting down soon. Press Ctrl+C again to "
     "shut down immediately (potential data loss)."
@@ -89,6 +91,16 @@ async def _flush_metrics_periodically() -> None:
     while True:
         await asyncio.sleep(METRICS_FLUSH_INTERVAL_SECONDS)
         metrics_flush_if_idle(METRICS_SNAPSHOT_IDLE_SECONDS)
+
+
+async def _refresh_catalog_metrics_periodically(store) -> None:
+    loop = asyncio.get_running_loop()
+    while True:
+        try:
+            await loop.run_in_executor(None, store.refresh_catalog_metrics)
+        except Exception as exc:
+            metrics_set_error(f"catalog_metrics_refresh: {exc}")
+        await asyncio.sleep(CATALOG_METRICS_REFRESH_INTERVAL_SECONDS)
 
 
 class PaveServer(Server):
@@ -196,6 +208,9 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         metrics_flush_task = asyncio.create_task(_flush_metrics_periodically())
+        catalog_metrics_task = asyncio.create_task(
+            _refresh_catalog_metrics_periodically(app.state.store)
+        )
         if should_warm_default_embedder(cfg):
             started = time.perf_counter()
             try:
@@ -213,8 +228,11 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             yield
         finally:
             metrics_flush_task.cancel()
+            catalog_metrics_task.cancel()
             with suppress(asyncio.CancelledError):
                 await metrics_flush_task
+            with suppress(asyncio.CancelledError):
+                await catalog_metrics_task
             # Drain in-flight search/ingest work before flushing metrics and
             # closing the ops log, so their accounting is not lost.
             for _exec in (app.state.search_executor, app.state.ingest_executor):
