@@ -397,13 +397,13 @@ class CollectionSummary(BaseModel):
     embedder_label: str | None = Field(
         default=None,
         description="Embedding backend and model in one label.",
-        examples=["sbert:all-MiniLM-L6-v2"],
+        examples=["sbert:sentence-transformers/all-MiniLM-L6-v2"],
     )
     vector_space_key: str | None = Field(
         default=None,
-        description="Identifier for the embedding model and size shared by "
-        "this collection's vectors.",
-        examples=["sbert:all-MiniLM-L6-v2:384"],
+        description="Identifier for the embedding model and any space-affecting "
+        "config shared by this collection's vectors.",
+        examples=["sbert:sentence-transformers/all-MiniLM-L6-v2:"],
     )
 
 
@@ -434,7 +434,7 @@ class CollectionDetailResponse(OkResponse):
     embed_model: str | None = Field(
         default=None,
         description="Embedding model name.",
-        examples=["all-MiniLM-L6-v2"],
+        examples=["sentence-transformers/all-MiniLM-L6-v2"],
     )
     embedder_config: dict[str, Any] = Field(
         default_factory=dict,
@@ -443,9 +443,9 @@ class CollectionDetailResponse(OkResponse):
     )
     vector_space_key: str | None = Field(
         default=None,
-        description="Identifier for the embedding model and size shared by "
-        "this collection's vectors.",
-        examples=["sbert:all-MiniLM-L6-v2:384"],
+        description="Identifier for the embedding model and any space-affecting "
+        "config shared by this collection's vectors.",
+        examples=["sbert:sentence-transformers/all-MiniLM-L6-v2:"],
     )
     created_at: str | None = Field(
         default=None,

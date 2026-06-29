@@ -437,7 +437,7 @@
             ],
             "description": "Embedding model name.",
             "examples": [
-              "all-MiniLM-L6-v2"
+              "sentence-transformers/all-MiniLM-L6-v2"
             ],
             "title": "Embed Model"
           },
@@ -530,9 +530,9 @@
                 "type": "null"
               }
             ],
-            "description": "Identifier for the embedding model and size shared by this collection's vectors.",
+            "description": "Identifier for the embedding model and any space-affecting config shared by this collection's vectors.",
             "examples": [
-              "sbert:all-MiniLM-L6-v2:384"
+              "sbert:sentence-transformers/all-MiniLM-L6-v2:"
             ],
             "title": "Vector Space Key"
           }
@@ -575,7 +575,7 @@
             ],
             "description": "Embedding backend and model in one label.",
             "examples": [
-              "sbert:all-MiniLM-L6-v2"
+              "sbert:sentence-transformers/all-MiniLM-L6-v2"
             ],
             "title": "Embedder Label"
           },
@@ -596,9 +596,9 @@
                 "type": "null"
               }
             ],
-            "description": "Identifier for the embedding model and size shared by this collection's vectors.",
+            "description": "Identifier for the embedding model and any space-affecting config shared by this collection's vectors.",
             "examples": [
-              "sbert:all-MiniLM-L6-v2:384"
+              "sbert:sentence-transformers/all-MiniLM-L6-v2:"
             ],
             "title": "Vector Space Key"
           }
