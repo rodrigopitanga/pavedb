@@ -224,6 +224,8 @@ class LocalStore:
         self._catalog = cat_db or self._catalog_factory()
         self._catalog_path: Path | None = None
         self._catalog_guard = Lock()
+        self._catalog_bootstrap_guard = Lock()
+        self._catalog_bootstrapped = False
         self._collection_locks: dict[str, _CollectionReadWriteLock] = {}
         self._collection_locks_guard = Lock()
         self._state_lock = _StoreStateLock()
@@ -452,40 +454,69 @@ class LocalStore:
     def _ensure_catalog(self) -> CatalogDB:
         catalog_path = self._catalog_db_path()
         cat = self._catalog
-        if self._catalog_path == catalog_path and cat._conn is not None:
+        if (
+            self._catalog_path == catalog_path
+            and self._catalog_bootstrapped
+            and cat._conn is not None
+        ):
             return cat
         with self._catalog_guard:
             if (
                 self._catalog_path == catalog_path
+                and self._catalog_bootstrapped
                 and self._catalog._conn is not None
             ):
                 return self._catalog
 
-            if self._catalog._conn is not None:
-                try:
-                    self._catalog.close()
-                except Exception:
-                    pass
+            if (
+                self._catalog_path != catalog_path
+                or self._catalog._conn is None
+            ):
+                if self._catalog._conn is not None:
+                    try:
+                        self._catalog.close()
+                    except Exception:
+                        pass
 
-            self._catalog.open(catalog_path)
-            defaults = self._default_collection_config()
-            seeded, removed = self._catalog.bootstrap(
-                Path(self._data_dir),
-                backend_type=defaults["backend_type"],
-                backend_config=defaults["backend_config"],
-                embedder_type=defaults["embedder_type"],
-                embed_model=defaults["embed_model"],
-                embed_config=defaults["embedder_config"],
-            )
-            if seeded or removed:
-                log.info(
-                    "CatalogDB bootstrap: seeded=%s removed_orphans=%s path=%s",
-                    seeded,
-                    removed,
-                    catalog_path,
+                self._catalog.open(catalog_path)
+                self._catalog_path = catalog_path
+                self._catalog_bootstrapped = False
+            catalog = self._catalog
+
+        with self._catalog_bootstrap_guard:
+            if (
+                self._catalog_path == catalog_path
+                and self._catalog_bootstrapped
+                and self._catalog._conn is not None
+            ):
+                return self._catalog
+            if self._catalog is catalog:
+                defaults = self._default_collection_config()
+                seeded, removed = catalog.bootstrap(
+                    Path(self._data_dir),
+                    backend_type=defaults["backend_type"],
+                    backend_config=defaults["backend_config"],
+                    embedder_type=defaults["embedder_type"],
+                    embed_model=defaults["embed_model"],
+                    embed_config=defaults["embedder_config"],
                 )
-            self._catalog_path = catalog_path
-            return self._catalog
+                if seeded or removed:
+                    log.info(
+                        "CatalogDB bootstrap: seeded=%s "
+                        "removed_orphans=%s path=%s",
+                        seeded,
+                        removed,
+                        catalog_path,
+                    )
+                with self._catalog_guard:
+                    if (
+                        self._catalog is catalog
+                        and self._catalog_path == catalog_path
+                        and self._catalog._conn is not None
+                    ):
+                        self._catalog_bootstrapped = True
+                        return catalog
+        return self._ensure_catalog()
 
     def _register_catalog_collection(
         self,
@@ -2065,22 +2096,23 @@ class LocalStore:
         return "; ".join(parts) if parts else "matched"
 
     def _flush_caches(self) -> None:
-        old_dbs = list(self._dbs.values())
-        old_backends = list(self._emb.items())
-        with self._catalog_guard:
-            old_catalog = self._catalog
-            self._catalog = self._catalog_factory()
-            self._catalog_path = None
+        with self._catalog_bootstrap_guard:
+            old_dbs = list(self._dbs.values())
+            old_backends = list(self._emb.items())
+            with self._catalog_guard:
+                old_catalog = self._catalog
+                self._catalog = self._catalog_factory()
+                self._catalog_path = None
+                self._catalog_bootstrapped = False
+            if old_catalog._conn is not None:
+                try:
+                    old_catalog.close()
+                except Exception:
+                    pass
         self._dbs.clear()
         self._emb.clear()
         self._collection_embedders.clear()
         self._drop_query_vector_cache()
-
-        if old_catalog._conn is not None:
-            try:
-                old_catalog.close()
-            except Exception:
-                pass
 
         if not old_dbs and not old_backends:
             return

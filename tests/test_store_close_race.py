@@ -368,6 +368,100 @@ def test_flush_caches_replaces_catalog_handle_before_close(temp_data_dir):
     assert store._catalog._conn is None
 
 
+def test_ensure_catalog_releases_guard_before_bootstrap(
+    monkeypatch,
+    temp_data_dir,
+):
+    store = _store(temp_data_dir)
+    store._flush_caches()
+    started = threading.Event()
+    release = threading.Event()
+    errors: list[BaseException] = []
+    real_bootstrap = CatalogDB.bootstrap
+
+    def blocking_bootstrap(self, *args, **kwargs):
+        started.set()
+        if not release.wait(timeout=2.0):
+            raise TimeoutError("bootstrap was not released")
+        return real_bootstrap(self, *args, **kwargs)
+
+    monkeypatch.setattr(CatalogDB, "bootstrap", blocking_bootstrap)
+
+    def ensure_catalog():
+        try:
+            store._ensure_catalog()
+        except BaseException as exc:
+            errors.append(exc)
+
+    thread = threading.Thread(target=ensure_catalog, daemon=True)
+    thread.start()
+    assert started.wait(timeout=1.0)
+
+    acquired = store._catalog_guard.acquire(timeout=0.5)
+    if acquired:
+        store._catalog_guard.release()
+    release.set()
+    thread.join(timeout=2.0)
+
+    assert acquired, "_catalog_guard was held during catalog bootstrap"
+    assert not errors
+
+
+def test_flush_caches_waits_for_catalog_bootstrap(
+    monkeypatch,
+    temp_data_dir,
+):
+    store = _store(temp_data_dir)
+    store._flush_caches()
+    started = threading.Event()
+    release = threading.Event()
+    flushed = threading.Event()
+    flush_started = threading.Event()
+    errors: list[BaseException] = []
+    flush_errors: list[BaseException] = []
+    real_bootstrap = CatalogDB.bootstrap
+
+    def blocking_bootstrap(self, *args, **kwargs):
+        started.set()
+        if not release.wait(timeout=2.0):
+            raise TimeoutError("bootstrap was not released")
+        return real_bootstrap(self, *args, **kwargs)
+
+    monkeypatch.setattr(CatalogDB, "bootstrap", blocking_bootstrap)
+
+    def ensure_catalog():
+        try:
+            store._ensure_catalog()
+        except BaseException as exc:
+            errors.append(exc)
+
+    def flush_caches():
+        flush_started.set()
+        try:
+            store._flush_caches()
+        except BaseException as exc:
+            flush_errors.append(exc)
+        finally:
+            flushed.set()
+
+    thread = threading.Thread(target=ensure_catalog, daemon=True)
+    thread.start()
+    assert started.wait(timeout=1.0)
+
+    flush_thread = threading.Thread(target=flush_caches, daemon=True)
+    flush_thread.start()
+    assert flush_started.wait(timeout=1.0)
+    assert not flushed.wait(timeout=0.2)
+
+    release.set()
+    thread.join(timeout=2.0)
+    flush_thread.join(timeout=2.0)
+
+    assert flushed.is_set()
+    assert not errors
+    assert not flush_errors
+
+
 def test_catalog_metrics_retries_after_transient_catalog_close(
     monkeypatch,
     temp_data_dir,
