@@ -3,10 +3,17 @@
 
 # PLAN-RELICENSE-REBRAND
 
-Plan for relicensing (AGPLv3+), author contact update,
+Historical plan for relicensing (AGPLv3+), author contact update,
 and staged rebranding.
 
-## Decisions
+## Status
+
+Relicensing and the PatchVec to PaveDB rebrand are complete. This file is
+retained as historical rationale for P3-34/P3-35 only; use `README.md`,
+`ROADMAP.md`, and the generated references for current package, runtime, and
+operator guidance.
+
+## Historical decisions
 
 - License: **AGPL-3.0-or-later** (done, verbatim in
   `LICENSE`).
