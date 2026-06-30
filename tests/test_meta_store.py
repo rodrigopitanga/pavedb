@@ -116,6 +116,8 @@ def test_close_waits_for_inflight_writer(tmp_path, db_cls, path_fn):
     assert close_done.is_set() is True
     assert db._conn is None
     assert db._wconn is None
+    if isinstance(db, CollectionDB):
+        assert db._log_conn is None
 
 
 @pytest.mark.parametrize(
@@ -166,6 +168,8 @@ def test_close_waits_for_inflight_reader(tmp_path, db_cls, path_fn):
     assert close_done.is_set() is True
     assert db._conn is None
     assert db._wconn is None
+    if isinstance(db, CollectionDB):
+        assert db._log_conn is None
 
 
 @pytest.mark.parametrize("legacy_name", ["catalog.json", "meta.json"])
@@ -234,6 +238,7 @@ def test_open_read_only_skips_wconn_and_migrations(tmp_path):
     ro.open(db_path, read_only=True)
     assert ro._rconn is not None
     assert ro._wconn is None
+    assert ro._log_conn is None
     assert ro.has_doc("doc1") is True
     meta = ro.get_meta_batch(["doc1::chunk_0"])
     assert meta["doc1::chunk_0"]["docid"] == "doc1"

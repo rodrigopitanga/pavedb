@@ -171,17 +171,20 @@ _CATALOG_SCHEMA_SQL: list[str] = [
 class CollectionDB:
     """Per-collection SQLite metadata store (impl2).
 
-    Two persistent connections with check_same_thread=False:
+    Three persistent connections with check_same_thread=False:
       _rconn: used for reads (WAL, protected by _read_lock)
       _wconn: used for writes (protected by _write_lock and _writer)
+      _log_conn: used for query_log writes (protected by _log_lock)
     """
 
     def __init__(self) -> None:
         self.path: Path | None = None
         self._rconn: sqlite3.Connection | None = None
         self._wconn: sqlite3.Connection | None = None
+        self._log_conn: sqlite3.Connection | None = None
         self._read_lock = threading.Lock()
         self._write_lock = threading.Lock()
+        self._log_lock = threading.Lock()
         self._state_cv = threading.Condition()
         self._active_readers = 0
         self._active_writers = 0
@@ -236,8 +239,11 @@ class CollectionDB:
                 path,
                 read_only=read_only,
             )
+            self._wconn = None
+            self._log_conn = None
             if not read_only:
                 self._wconn = self._open_conn(path)
+                self._log_conn = self._open_conn(path)
             self._active_readers = 0
             self._active_writers = 0
             self._closing = False
@@ -257,7 +263,11 @@ class CollectionDB:
 
     def close(self) -> None:
         with self._state_cv:
-            if self._rconn is None and self._wconn is None:
+            if (
+                self._rconn is None
+                and self._wconn is None
+                and self._log_conn is None
+            ):
                 self._closing = False
                 return
             self._closing = True
@@ -265,14 +275,18 @@ class CollectionDB:
                 self._state_cv.wait(timeout=0.05)
             rconn = self._rconn
             wconn = self._wconn
+            log_conn = self._log_conn
             self._rconn = None
             self._wconn = None
+            self._log_conn = None
             self._closing = False
 
         if rconn is not None:
             rconn.close()
         if wconn is not None:
             wconn.close()
+        if log_conn is not None:
+            log_conn.close()
 
     @property
     def _conn(self) -> sqlite3.Connection | None:
@@ -314,18 +328,22 @@ class CollectionDB:
                     self._state_cv.notify_all()
 
     @contextmanager
-    def _writer(self) -> Iterator[sqlite3.Connection]:
-        self._write_lock.acquire()
+    def _writer_for(
+        self,
+        lock,
+        attr: str,
+    ) -> Iterator[sqlite3.Connection]:
+        lock.acquire()
         try:
             with self._state_cv:
-                if self._wconn is None:
+                conn = getattr(self, attr)
+                if conn is None:
                     raise RuntimeError(
                         "CollectionDB not opened; call open() first."
                     )
                 if self._closing:
                     raise RuntimeError("CollectionDB is closing.")
                 self._active_writers += 1
-                conn = self._wconn
             try:
                 yield conn
             finally:
@@ -339,7 +357,17 @@ class CollectionDB:
                     ):
                         self._state_cv.notify_all()
         finally:
-            self._write_lock.release()
+            lock.release()
+
+    @contextmanager
+    def _writer(self) -> Iterator[sqlite3.Connection]:
+        with self._writer_for(self._write_lock, "_wconn") as conn:
+            yield conn
+
+    @contextmanager
+    def _query_log_writer(self) -> Iterator[sqlite3.Connection]:
+        with self._writer_for(self._log_lock, "_log_conn") as conn:
+            yield conn
 
     def _apply_migrations(self) -> None:
         with self._writer() as conn, conn:
@@ -532,7 +560,7 @@ class CollectionDB:
         request_id: str | None = None,
         replay_of: str | None = None,
     ) -> None:
-        with self._writer() as conn, conn:
+        with self._query_log_writer() as conn, conn:
             conn.execute(
                 "INSERT INTO query_log "
                 "(query_id, tenant, collection, actor, query_text, k, filters_json, "

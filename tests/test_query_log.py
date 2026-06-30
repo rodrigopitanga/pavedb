@@ -182,6 +182,43 @@ def test_collection_db_query_log_executed_at_auto_generated(tmp_path):
     db.close()
 
 
+def test_collection_db_log_query_does_not_take_document_writer_lock(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    done = threading.Event()
+    errors: list[Exception] = []
+
+    db._write_lock.acquire()
+    try:
+        def _write_query():
+            try:
+                db.log_query(
+                    query_id="qid-log-lock",
+                    tenant="acme",
+                    collection="docs",
+                    actor="admin",
+                    query_text="alpha",
+                    k=1,
+                )
+            except Exception as exc:  # pragma: no cover - regression aid
+                errors.append(exc)
+            finally:
+                done.set()
+
+        thread = threading.Thread(target=_write_query)
+        thread.start()
+        completed = done.wait(timeout=0.5)
+    finally:
+        db._write_lock.release()
+
+    thread.join(timeout=1.0)
+
+    assert completed is True
+    assert errors == []
+    assert db.get_query_log_entry("qid-log-lock") is not None
+    db.close()
+
+
 def test_catalog_db_query_home_roundtrip_and_filters(tmp_path):
     db = CatalogDB()
     db.open(_catalog_db(tmp_path))
