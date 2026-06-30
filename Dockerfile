@@ -25,7 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # copy packaging metadata early for good Docker layer caching
 COPY setup.py /app/
-COPY pave.toml /app/
+COPY pyproject.toml /app/
 COPY requirements-cpu.txt /app/
 
 # create a dummy package so setup.py can resolve deps without full source
