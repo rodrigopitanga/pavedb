@@ -2096,41 +2096,42 @@ class LocalStore:
         return "; ".join(parts) if parts else "matched"
 
     def _flush_caches(self) -> None:
-        with self._catalog_bootstrap_guard:
-            old_dbs = list(self._dbs.values())
-            old_backends = list(self._emb.items())
-            with self._catalog_guard:
-                old_catalog = self._catalog
-                self._catalog = self._catalog_factory()
-                self._catalog_path = None
-                self._catalog_bootstrapped = False
-            if old_catalog._conn is not None:
-                try:
-                    old_catalog.close()
-                except Exception:
-                    pass
-        self._dbs.clear()
-        self._emb.clear()
-        self._collection_embedders.clear()
-        self._drop_query_vector_cache()
+        with self._state_lock.write_lock():
+            with self._catalog_bootstrap_guard:
+                old_dbs = list(self._dbs.values())
+                old_backends = list(self._emb.items())
+                with self._catalog_guard:
+                    old_catalog = self._catalog
+                    self._catalog = self._catalog_factory()
+                    self._catalog_path = None
+                    self._catalog_bootstrapped = False
+                if old_catalog._conn is not None:
+                    try:
+                        old_catalog.close()
+                    except Exception:
+                        pass
+            self._dbs.clear()
+            self._emb.clear()
+            self._collection_embedders.clear()
+            self._drop_query_vector_cache()
 
-        if not old_dbs and not old_backends:
-            return
+            if not old_dbs and not old_backends:
+                return
 
-        def _close_all() -> None:
-            for db in old_dbs:
-                try:
-                    db.close()
-                except Exception:
-                    pass
-            for (tenant, collection), backend in old_backends:
-                try:
-                    backend.close()
-                    self._clear_index_dirty(tenant, collection)
-                except Exception:
-                    pass
+            def _close_all() -> None:
+                for db in old_dbs:
+                    try:
+                        db.close()
+                    except Exception:
+                        pass
+                for (tenant, collection), backend in old_backends:
+                    try:
+                        backend.close()
+                        self._clear_index_dirty(tenant, collection)
+                    except Exception:
+                        pass
 
-        _close_all()
+            _close_all()
 
     def close(self) -> None:
         """Close open collection handles and cached runtime embedders."""
