@@ -432,9 +432,9 @@ latency on every search/ingest/delete.~~
   `--home`, explicit runtime paths) (P1-34).~~
 - ~~Config reference doc + CI drift check — lands as a side effect
   of P1-53c (P1-26).~~
-- Publish `pip freeze` snapshot as release artifact; regenerate
+- ~~Publish `pip freeze` snapshot as release artifact; regenerate
   `THIRD_PARTY_LICENSES.md` from the runtime-only closure (drops stale
-  dev-venv cruft) and keep `*.dist-info` in the Docker image (P3-40).
+  dev-venv cruft) and keep `*.dist-info` in the Docker image (P3-40).~~
 - ~~List tenants and collections via API (CLI parity) (P2-12).~~
 - ~~HTTP request metrics middleware (v1.0 slice): single middleware
   records per-endpoint count labeled by method, path template, and
