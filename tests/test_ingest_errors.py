@@ -116,6 +116,20 @@ def test_multipart_ingest_rejects_metadata_without_file(client):
     assert r.json()["code"] == "missing_document_file"
 
 
+def test_batch_ingest_rejects_non_object_metadata(client):
+    r = client.post(
+        "/v1/collections/acme/bad-metadata-batch/documents:batch",
+        json={"documents": [{"text": "hello", "metadata": [1, 2, 3]}]},
+    )
+    assert r.status_code == 422
+    data = r.json()
+    assert data["code"] == "validation_error"
+    assert any(
+        err["loc"] == ["body", "documents", 0, "metadata"]
+        for err in data["details"]["errors"]
+    )
+
+
 def test_ingest_overloaded_returns_503(client, app, monkeypatch):
     """Counter at max returns 503 ingest_overloaded immediately."""
     client.post("/v1/collections/acme/ingestlimitcol")
