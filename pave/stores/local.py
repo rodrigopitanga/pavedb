@@ -36,7 +36,7 @@ import time as _time
 sqlite3.register_adapter(date, date.isoformat)
 sqlite3.register_adapter(datetime, datetime.isoformat)
 
-from pave.backends import FaissBackend, VectorBackend
+from pave.backends import FaissBackend
 from pave.embedders import Embedder, EmbedderUnavailableError
 import pave.embedders.factory as embedder_factory_mod
 from pave.filters import lookup_meta, matches_filters, sanit_field, sanit_meta_dict
@@ -216,7 +216,7 @@ class LocalStore:
         self._data_dir = data_dir
         self._embedder = embedder
         self._embedder_factory = embedder_factory or self._make_embedder
-        self._emb: dict[tuple[str, str], VectorBackend] = {}
+        self._emb: dict[tuple[str, str], FaissBackend] = {}
         self._collection_embedders: dict[tuple[str, str], Embedder] = {}
         self._embedder_cache: dict[str, Embedder] = {}
         self._dbs: dict[tuple[str, str], CollectionDB] = {}
@@ -599,7 +599,7 @@ class LocalStore:
         self._embedder_dim_for_config(cfg, embedder)
 
     @staticmethod
-    def _backend_vector_count(backend: VectorBackend) -> int | None:
+    def _backend_vector_count(backend: FaissBackend) -> int | None:
         count = getattr(backend, "count", None)
         if callable(count):
             try:
@@ -619,7 +619,7 @@ class LocalStore:
         self,
         tenant: str,
         collection: str,
-        backend: VectorBackend,
+        backend: FaissBackend,
         col_db: CollectionDB,
     ) -> bool:
         if self._index_is_dirty(tenant, collection):
@@ -635,7 +635,7 @@ class LocalStore:
         self,
         tenant: str,
         collection: str,
-        backend: VectorBackend,
+        backend: FaissBackend,
         col_db: CollectionDB,
         embedder: Embedder,
     ) -> None:
@@ -1828,7 +1828,7 @@ class LocalStore:
             else:
                 normed_filters[safe_key] = [vals]
 
-        def _backend_count(backend: VectorBackend) -> int | None:
+        def _backend_count(backend: FaissBackend) -> int | None:
             count = getattr(backend, "count", None)
             if callable(count):
                 try:
@@ -1845,7 +1845,7 @@ class LocalStore:
                 return None
 
         def _search_loaded(
-            backend: VectorBackend,
+            backend: FaissBackend,
             col_db: CollectionDB,
             q_vec: Any,
             embed_ms: float,
