@@ -1,8 +1,14 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+from pave.stores.base import SearchOutput
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
+
+
+def test_search_output_equality_stays_on_output_objects():
+    assert SearchOutput(matches=[]) == SearchOutput(matches=[])
+    assert SearchOutput(matches=[]) != []
 
 
 def test_search_returns_phase_timing_and_list_like_matches(temp_data_dir):

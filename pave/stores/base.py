@@ -63,11 +63,6 @@ class SearchOutput:
     def __getitem__(self, index):
         return self.matches[index]
 
-    def __eq__(self, other: object) -> bool:
-        if isinstance(other, SearchOutput):
-            return self.matches == other.matches and self.timing == other.timing
-        return NotImplemented
-
 
 @dataclass(frozen=True)
 class IndexResult:
