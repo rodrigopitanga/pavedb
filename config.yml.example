@@ -52,6 +52,21 @@ query_log:
 
 
 # ---------------------------------------------------------------------------
+# Other
+# ---------------------------------------------------------------------------
+
+cache:
+
+  # Max open collection backend and metadata handles; values below 1 become 1.
+  # Env: PAVEDB_CACHE__COLLECTION_MAX
+  collection_max: 64
+
+  # Max runtime embedder instances in the hot cache; active collections stay pinned.
+  # Env: PAVEDB_CACHE__EMBEDDER_MAX
+  embedder_max: 32
+
+
+# ---------------------------------------------------------------------------
 # Authentication
 # ---------------------------------------------------------------------------
 

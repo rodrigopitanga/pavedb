@@ -65,6 +65,7 @@ from pave.stores.base import (
     SearchResult,
 )
 from pave.config import get_cfg, get_logger
+from pave.metrics import inc_labeled as m_inc_labeled
 
 log = get_logger()
 
@@ -76,6 +77,8 @@ _CATALOG_METRICS_TTL_S = 5.0
 _CHUNK_DRIFT_METRICS_TTL_S = 60.0
 _QUERY_LOG_GAUGE_METRICS_TTL_S = 60.0
 _QUERY_VECTOR_CACHE_MAX = 256
+_COLLECTION_CACHE_DEFAULT_MAX = 64
+_EMBEDDER_CACHE_DEFAULT_MAX = 32
 _INDEX_DIRTY_FILE = ".pavedb-index-dirty"
 
 
@@ -201,6 +204,21 @@ class _CollectionReadWriteLock:
                 self._writer = False
                 self._cond.notify_all()
 
+    @contextmanager
+    def try_write_lock(self) -> Iterator[bool]:
+        acquired = False
+        with self._cond:
+            if not self._writer and not self._readers and not self._pending_writers:
+                self._writer = True
+                acquired = True
+        try:
+            yield acquired
+        finally:
+            if acquired:
+                with self._cond:
+                    self._writer = False
+                    self._cond.notify_all()
+
 
 class LocalStore:
     """Default `BaseStore` implementation backed by local files.
@@ -225,10 +243,18 @@ class LocalStore:
         self._data_dir = data_dir
         self._embedder = embedder
         self._embedder_factory = embedder_factory or self._make_embedder
-        self._emb: dict[tuple[str, str], FaissBackend] = {}
+        self._emb: OrderedDict[tuple[str, str], FaissBackend] = OrderedDict()
         self._collection_embedders: dict[tuple[str, str], Embedder] = {}
-        self._embedder_cache: dict[str, Embedder] = {}
-        self._dbs: dict[tuple[str, str], CollectionDB] = {}
+        self._embedder_cache: OrderedDict[Any, Embedder] = OrderedDict()
+        self._dbs: OrderedDict[tuple[str, str], CollectionDB] = OrderedDict()
+        self._collection_cache_max = self._positive_config_int(
+            "cache.collection_max",
+            _COLLECTION_CACHE_DEFAULT_MAX,
+        )
+        self._embedder_cache_max = self._positive_config_int(
+            "cache.embedder_max",
+            _EMBEDDER_CACHE_DEFAULT_MAX,
+        )
         self._catalog_factory = cat_db.__class__ if cat_db is not None else CatalogDB
         self._catalog = cat_db or self._catalog_factory()
         self._catalog_path: Path | None = None
@@ -268,8 +294,24 @@ class LocalStore:
             default_resolution.vector_key,
             ",".join(instance.key for instance in default_resolution.instances),
         )
-        self._embedder_cache[default_resolution.vector_key] = embedder
+        default_key = embedder_factory_mod.embedder_cache_key(
+            default_resolution.instances[0].spec
+        )
+        self._embedder_cache[default_key] = embedder
         self._ensure_catalog()
+
+    @staticmethod
+    def _positive_config_int(key: str, default: int) -> int:
+        try:
+            return max(1, int(get_cfg().get(key)))
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _touch_cache_entry(cache, key) -> None:
+        move_to_end = getattr(cache, "move_to_end", None)
+        if callable(move_to_end) and key in cache:
+            move_to_end(key)
 
     @staticmethod
     def _make_embedder(
@@ -350,6 +392,17 @@ class LocalStore:
                         self._get_collection_lock(key).write_lock()
                     )
                 yield
+
+    @contextmanager
+    def _collection_try_write_lock(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> Iterator[bool]:
+        with self._state_lock.read_lock():
+            lock = self._get_collection_lock(f"t_{tenant}:c_{collection}")
+            with lock.try_write_lock() as acquired:
+                yield acquired
 
     def _base_path(self, tenant: str, collection: str) -> str:
         return os.path.join(self._data_dir, f"t_{tenant}", f"c_{collection}")
@@ -637,29 +690,61 @@ class LocalStore:
         return cfg
 
     def _get_embedder_for_config(self, cfg: CollectionConfig) -> Embedder:
-        key = embedder_factory_mod.vector_space_key(cfg)
-        embedder = self._embedder_cache.get(key)
-        if embedder is None:
-            try:
-                runtime = embedder_factory_mod.runtime_embedder_spec_for_vector(
-                    get_cfg(),
-                    cfg,
-                )
-                embedder = self._embedder_factory(
-                    str(runtime["embedder_type"]),
-                    str(runtime["embed_model"]),
-                    dict(runtime.get("embedder_config") or {}),
-                )
-            except EmbedderUnavailableError:
-                raise
-            except Exception as exc:
-                raise EmbedderUnavailableError(
-                    f"embedder {cfg.get('embedder_type')!s}:"
-                    f"{cfg.get('embed_model')!s} could not be initialised: "
-                    f"{exc}"
-                ) from exc
-            self._embedder_cache[key] = embedder
+        try:
+            runtime = embedder_factory_mod.runtime_embedder_spec_for_vector(
+                get_cfg(),
+                cfg,
+            )
+            key = embedder_factory_mod.embedder_cache_key(runtime)
+            embedder = self._embedder_cache.get(key)
+            if embedder is not None:
+                self._touch_cache_entry(self._embedder_cache, key)
+                return embedder
+            embedder = self._embedder_factory(
+                str(runtime["embedder_type"]),
+                str(runtime["embed_model"]),
+                dict(runtime.get("embedder_config") or {}),
+            )
+        except EmbedderUnavailableError:
+            raise
+        except Exception as exc:
+            raise EmbedderUnavailableError(
+                f"embedder {cfg.get('embedder_type')!s}:"
+                f"{cfg.get('embed_model')!s} could not be initialised: "
+                f"{exc}"
+            ) from exc
+        self._embedder_cache[key] = embedder
         return embedder
+
+    def _drop_cached_embedder(self, embedder: Embedder) -> None:
+        for key, cached in list(self._embedder_cache.items()):
+            if cached is embedder:
+                self._embedder_cache.pop(key, None)
+        self._close_embedder_if_orphaned(embedder)
+
+    def _evict_embedder_cache_if_needed(self) -> None:
+        if not isinstance(self._embedder_cache, OrderedDict):
+            return
+        while len(self._embedder_cache) > self._embedder_cache_max:
+            for key, embedder in list(self._embedder_cache.items()):
+                if embedder is self._embedder:
+                    continue
+                if any(
+                    cached is embedder
+                    for cached in self._collection_embedders.values()
+                ):
+                    continue
+                self._embedder_cache.pop(key, None)
+                self._close_embedder_if_orphaned(embedder)
+                m_inc_labeled("cache_evictions_total", {"kind": "embedder"})
+                break
+            else:
+                return
+
+    def _drop_collection_embedder(self, key: tuple[str, str]) -> None:
+        embedder = self._collection_embedders.pop(key, None)
+        self._close_embedder_if_orphaned(embedder)
+        self._evict_embedder_cache_if_needed()
 
     def _close_embedder_if_orphaned(self, embedder: Embedder | None) -> None:
         """Close an embedder's worker once no cache still references it.
@@ -690,18 +775,10 @@ class LocalStore:
         try:
             return int(embedder.dim)
         except EmbedderUnavailableError:
-            self._embedder_cache.pop(
-                embedder_factory_mod.vector_space_key(cfg),
-                None,
-            )
-            self._close_embedder_if_orphaned(embedder)
+            self._drop_cached_embedder(embedder)
             raise
         except Exception as exc:
-            self._embedder_cache.pop(
-                embedder_factory_mod.vector_space_key(cfg),
-                None,
-            )
-            self._close_embedder_if_orphaned(embedder)
+            self._drop_cached_embedder(embedder)
             raise EmbedderUnavailableError(
                 f"embedder {cfg.get('embedder_type')!s}:"
                 f"{cfg.get('embed_model')!s} dimension unavailable: {exc}"
@@ -721,6 +798,7 @@ class LocalStore:
     def _validate_embedder_for_config(self, cfg: CollectionConfig) -> None:
         embedder = self._get_embedder_for_config(cfg)
         self._embedder_dim_for_config(cfg, embedder)
+        self._evict_embedder_cache_if_needed()
 
     @staticmethod
     def _backend_vector_count(backend: FaissBackend) -> int | None:
@@ -816,6 +894,8 @@ class LocalStore:
             and key in self._dbs
             and key in self._collection_embedders
         ):
+            self._touch_cache_entry(self._emb, key)
+            self._touch_cache_entry(self._dbs, key)
             return
 
         base = self._base_path(tenant, collection)
@@ -871,6 +951,65 @@ class LocalStore:
         self._emb[key] = backend
         self._collection_embedders[key] = embedder
         self._dbs[key] = col_db
+        self._evict_embedder_cache_if_needed()
+        self._touch_cache_entry(self._emb, key)
+        self._touch_cache_entry(self._dbs, key)
+        self._evict_collection_cache_if_needed(current_key=key)
+
+    def _evict_collection_cache_if_needed(
+        self,
+        *,
+        current_key: tuple[str, str],
+    ) -> None:
+        if not isinstance(self._emb, OrderedDict):
+            return
+        if not isinstance(self._dbs, OrderedDict):
+            return
+
+        over_budget = (
+            len(self._emb) > self._collection_cache_max
+            or len(self._dbs) > self._collection_cache_max
+        )
+        while over_budget:
+            candidates = list(dict.fromkeys([*self._emb.keys(), *self._dbs.keys()]))
+            evicted = False
+            for tenant, collection in candidates:
+                key = (tenant, collection)
+                if key == current_key:
+                    continue
+                with self._collection_try_write_lock(tenant, collection) as locked:
+                    if not locked:
+                        continue
+                    self._evict_collection_cache_entry(key)
+                    evicted = True
+                    break
+            if not evicted:
+                return
+            over_budget = (
+                len(self._emb) > self._collection_cache_max
+                or len(self._dbs) > self._collection_cache_max
+            )
+
+    def _evict_collection_cache_entry(self, key: tuple[str, str]) -> None:
+        tenant, collection = key
+        backend = self._emb.pop(key, None)
+        col_db = self._dbs.pop(key, None)
+        self._drop_collection_embedder(key)
+        self._drop_query_vector_cache(tenant, collection)
+        if backend is not None:
+            try:
+                backend.flush()
+                backend.close()
+                self._clear_index_dirty(tenant, collection)
+                m_inc_labeled("cache_evictions_total", {"kind": "backend"})
+            except Exception:
+                pass
+        if col_db is not None:
+            try:
+                col_db.close()
+                m_inc_labeled("cache_evictions_total", {"kind": "db"})
+            except Exception:
+                pass
 
     def _save(self, tenant: str, collection: str) -> None:
         key = (tenant, collection)
@@ -991,7 +1130,7 @@ class LocalStore:
                     if db is not None:
                         with suppress(Exception):
                             db.close()
-                    self._collection_embedders.pop(key, None)
+                    self._drop_collection_embedder(key)
                     self._drop_query_vector_cache(tenant, name)
                     with suppress(Exception):
                         self._with_catalog_retry(
@@ -1017,7 +1156,7 @@ class LocalStore:
                     backend.close()
                 except Exception:
                     pass
-            self._collection_embedders.pop(key, None)
+            self._drop_collection_embedder(key)
             self._drop_query_vector_cache(tenant, collection)
             col_db = self._dbs.pop(key, None)
             if col_db is not None:
@@ -1102,7 +1241,7 @@ class LocalStore:
             if old_backend is not None:
                 old_backend.close()
                 self._emb.pop(old_key, None)
-            self._collection_embedders.pop(old_key, None)
+            self._drop_collection_embedder(old_key)
             self._drop_query_vector_cache(tenant, old_name)
             self._drop_query_vector_cache(tenant, new_name)
 
@@ -1280,6 +1419,19 @@ class LocalStore:
             "doc_count": doc_count,
             "chunk_count": chunk_count,
         }
+
+    def _cache_estimated_bytes(self) -> int:
+        total = 0
+        for backend in list(self._emb.values()):
+            count = self._backend_vector_count(backend)
+            dim = getattr(backend, "_dimension", None)
+            if count is None or dim is None:
+                continue
+            try:
+                total += count * int(dim) * 4
+            except (TypeError, ValueError):
+                continue
+        return total
 
     def list_tenants(self) -> list[str]:
         return self._with_catalog_retry(
@@ -1596,6 +1748,7 @@ class LocalStore:
             ),
             "doc_count": doc_count,
             "chunk_count": chunk_count,
+            "cache_estimated_bytes": self._cache_estimated_bytes(),
         }
 
     def get_document(
@@ -2239,6 +2392,8 @@ class LocalStore:
                     and col_db is not None
                     and current_embedder is embedder
                 ):
+                    self._touch_cache_entry(self._emb, key)
+                    self._touch_cache_entry(self._dbs, key)
                     return _search_loaded(
                         backend,
                         col_db,

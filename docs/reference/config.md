@@ -52,6 +52,22 @@ replace dots with double underscores, so `auth.mode` becomes
 - Env var: `PAVEDB_QUERY_LOG__ENABLED`
 - Description: Enable persisted query history and query-home lookup pointers.
 
+## Other
+
+### `cache.collection_max`
+
+- Default: `64`
+- Env var: `PAVEDB_CACHE__COLLECTION_MAX`
+- Description: Max open collection backend and metadata handles; values below 1 become
+  1.
+
+### `cache.embedder_max`
+
+- Default: `32`
+- Env var: `PAVEDB_CACHE__EMBEDDER_MAX`
+- Description: Max runtime embedder instances in the hot cache; active collections stay
+  pinned.
+
 ## Authentication
 
 ### `auth.mode`

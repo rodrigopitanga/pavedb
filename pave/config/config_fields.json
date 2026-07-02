@@ -31,6 +31,16 @@
       "description": "Enable persisted query history and query-home lookup pointers."
     },
     {
+      "key": "cache.collection_max",
+      "default": 64,
+      "description": "Max open collection backend and metadata handles; values below 1 become 1."
+    },
+    {
+      "key": "cache.embedder_max",
+      "default": 32,
+      "description": "Max runtime embedder instances in the hot cache; active collections stay pinned."
+    },
+    {
       "key": "dev",
       "default": false,
       "description": "Enable development startup behavior such as allowing auth.mode=none on loopback and verbose PaveDB logging."

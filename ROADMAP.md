@@ -85,7 +85,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-19 | ~~`build_app()` lazy init~~ | 🧩 | Testability, startup safety | v0.5.8 |
 | P1-20 | ~~Search timeout + concurrency cap~~ | 🔧 | Graceful degradation | v0.5.8 |
 | P1-21 | ~~Serve listings + store catalog counts in health/metrics~~ | 🧩 | Internal store query layer | v0.5.8 |
-| P1-22 | Per-collection hot caches | 🧱 | Performance isolation; clarified for v1.1 so v1.0 can focus on the stable client/API contract | v1.1 |
+| P1-22 | ~~Per-collection hot caches~~ | 🧱 | Performance isolation — per-collection LRU-bounded backend/db/embedder caches with safe non-blocking eviction; pulled into v1.0 | v1.0 |
 | P1-23 | ~~Freeze search response schema~~ | 🧩 | SDK contract; `query_id` added additively after freeze | v0.9 |
 | P1-24 | ~~Python SDK package~~ | 🧱 | SDK foundation; v1.0 now includes `HttpClient` parity with `LocalClient`. Distribution target: `pavedb-sdk` package; `pavedb` provides optional local provider. | v1.0 |
 | P1-25 | ~~Dev vs prod config defaults~~ | 🔧 | Safe defaults — code defaults are prod-safe (`auth.mode=none` refuses to boot outside dev); dev overlay lives in the `make serve` env | v1.0 |
@@ -508,9 +508,9 @@ latency on every search/ingest/delete.~~
   multi-embedder registry (P1-58) (P3-48 v1.0 slice).~~
 
 **Deferred from v1.0** (to lean the path; pulled in by next
-release, see v1.1 and v1.2 sections): P1-22 per-collection hot
-caches, P1-27 admin key auto-gen, P1-35 filter pushdown parity
-harness, P1-49 histogram polish, P1-52 concurrency chaos test.
+release, see v1.1 and v1.2 sections): P1-27 admin key auto-gen,
+P1-35 filter pushdown parity harness, P1-49 histogram polish,
+P1-52 concurrency chaos test.
 None blocks the documented-contract promise that defines v1.0; each
 lands where it has more impact during post-contract hardening.
 
@@ -518,7 +518,6 @@ lands where it has more impact during post-contract hardening.
 
 - Exact flat cosine, inner-product, and L2 metrics selected per collection;
   the VectorDBBench adapter expands beyond its v1.0 cosine cases (P2-51).
-- Per-collection hot caches with isolation (P1-22).
 - ~~Batch ingest endpoint (list of documents in one call) (P1-16).~~
 - ~~Admin key auto-generate + persist on first boot; CLI rotate /
   show; mode-`0600` enforced (P1-27).~~
