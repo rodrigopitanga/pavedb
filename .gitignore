@@ -46,8 +46,10 @@ transformers_cache/
 .env
 *.env
 config.yml
+tenants.yml
 tenants.secrets.yml
 !config.yml.example
+!tenants.yml.example
 
 # Logs
 *.log
