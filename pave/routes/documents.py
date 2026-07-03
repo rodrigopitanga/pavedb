@@ -266,7 +266,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
             "may provide text, docid, and metadata."
         ),
         response_model=BatchIngestDocumentsResponse,
-        responses=resp(400, 401, 403, 429, 500, 503),
+        responses=resp(400, 401, 403, 413, 429, 500, 503),
         tags=["Documents"],
     )
     @ops_event(
@@ -349,6 +349,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
             except ServiceError as exc:
                 status_map = {
                     "embedder_unavailable": 503,
+                    "file_too_large": 413,
                     "invalid_metadata_keys": 400,
                     "invalid_collection_name": 400,
                     "invalid_docid": 400,

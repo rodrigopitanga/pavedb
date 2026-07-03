@@ -16,6 +16,22 @@ def test_ingest_rejects_oversized_file(client, cfg):
     assert data["code"] == "file_too_large"
 
 
+def test_batch_ingest_rejects_oversized_text(client, cfg):
+    client.post("/v1/collections/acme/batchsizelimit")
+
+    cfg.set("ingest.max_file_size_mb", 0.000001)  # ~1 byte limit
+
+    r = client.post(
+        "/v1/collections/acme/batchsizelimit/documents:batch",
+        json={"documents": [{"text": "hello world", "docid": "too-big"}]},
+    )
+
+    assert r.status_code == 413
+    data = r.json()
+    assert data["ok"] is False
+    assert data["code"] == "file_too_large"
+
+
 def test_ingest_accepts_file_within_limit(client, cfg):
     client.post("/v1/collections/acme/sizelimit2")
 

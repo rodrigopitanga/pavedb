@@ -937,6 +937,7 @@ def ingest_documents_batch(
                 "error": f"documents[{index}].text must be a string",
                 "error_type": "invalid",
             }
+        _enforce_ingest_size_limit(len(text.encode("utf-8")))
         docid_value = item.get("docid")
         if docid_value is not None and not isinstance(docid_value, str):
             return {
