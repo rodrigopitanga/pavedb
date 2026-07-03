@@ -136,6 +136,14 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     request=request,
                     request_id=rid,
                 )
+        elif file is None:
+            return error(
+                400,
+                "missing_document_file",
+                "multipart document ingest requires a file",
+                request=request,
+                request_id=rid,
+            )
         elif metadata:
             try:
                 meta_obj = json.loads(metadata)
@@ -147,14 +155,6 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     request=request,
                     request_id=rid,
                 )
-        elif file is None:
-            return error(
-                400,
-                "missing_document_file",
-                "multipart document ingest requires a file",
-                request=request,
-                request_id=rid,
-            )
         if file is not None:
             content = await file.read()
 
