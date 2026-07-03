@@ -123,7 +123,12 @@ class SearchResponse(OkResponse):
 class SearchBody(BaseModel):
     """Search request body."""
     q: str = Field(description="The search text.", examples=["captain nemo"])
-    k: int = Field(default=5, description="Maximum number of hits.", examples=[5])
+    k: int = Field(
+        default=5,
+        ge=1,
+        description="Maximum number of hits.",
+        examples=[5],
+    )
     filters: dict[str, Any] | None = Field(
         default=None,
         description="Metadata equality filters to narrow results.",

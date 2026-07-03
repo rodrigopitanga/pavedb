@@ -2744,6 +2744,7 @@
             "examples": [
               5
             ],
+            "minimum": 1.0,
             "title": "K",
             "type": "integer"
           },

@@ -172,3 +172,13 @@ def test_validation_error_includes_trace_fields(client):
     assert isinstance(data["latency_ms"], (int, float))
     assert data["code"] == "validation_error"
     assert isinstance(data["details"]["errors"], list)
+
+
+def test_post_search_rejects_invalid_k(client):
+    for path in ("/v1/collections/acme/postk/search", "/v1/search"):
+        for k in (0, -1):
+            r = client.post(path, json={"q": "x", "k": k})
+            assert r.status_code == 422
+            data = r.json()
+            assert data["code"] == "validation_error"
+            assert isinstance(data["details"]["errors"], list)
