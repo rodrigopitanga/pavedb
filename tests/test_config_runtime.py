@@ -25,9 +25,13 @@ def test_overlay_get_set_snapshot(cfg):
 def test_runtime_overlay_reflected_in_app(app, client):
     # muda runtime no cfg do app e checa que /health reflete esses valores
     app.state.cfg.set("auth.mode", "static")
+    app.state.cfg.set("auth.global_key", "root")
     app.state.cfg.set("vector_store.type", "custom")
 
-    r = client.get("/health/metrics")
+    r = client.get(
+        "/health/metrics",
+        headers={"Authorization": "Bearer root"},
+    )
     assert r.status_code == 200
     j = r.json()
     assert j["auth"] == "static"

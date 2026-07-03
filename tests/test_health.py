@@ -25,8 +25,25 @@ def test_health_ready_contains_effective_fields(client):
     r = client.get("/health/ready")
     assert r.status_code in (200, 503)
     j = r.json()
-    # never None; when config.yml absent, code defaults fill in
-    assert j.get("data_dir") is not None
+    assert "data_dir" not in j
     assert j.get("vector_store") == "faiss"
     assert "writable" in j and isinstance(j["writable"], bool)
     assert "vector_backend_init" in j and isinstance(j["vector_backend_init"], bool)
+
+
+def test_metrics_require_admin_when_static_auth(client, cfg):
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", "root")
+    cfg.set("auth.api_keys", {"acme": "sekret"})
+
+    for path in ("/health/metrics", "/metrics"):
+        missing = client.get(path)
+        assert missing.status_code == 401
+        assert missing.json()["code"] == "auth_invalid"
+
+        tenant = client.get(path, headers={"Authorization": "Bearer sekret"})
+        assert tenant.status_code == 403
+        assert tenant.json()["code"] == "admin_required"
+
+        admin = client.get(path, headers={"Authorization": "Bearer root"})
+        assert admin.status_code == 200

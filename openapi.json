@@ -3167,7 +3167,7 @@
     },
     "/health/metrics": {
       "get": {
-        "description": "Counters, version, and hardware info as JSON.",
+        "description": "Counters, version, and hardware info as JSON. Requires the admin key when auth.mode=static.",
         "operationId": "health_metrics_health_metrics_get",
         "responses": {
           "200": {
@@ -3179,6 +3179,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Metrics snapshot",
         "tags": [
           "Health"
@@ -3187,7 +3192,7 @@
     },
     "/health/ready": {
       "get": {
-        "description": "Returns 503 until storage and embeddings are usable.",
+        "description": "Returns 503 until storage and embeddings are usable. Does not expose local filesystem paths.",
         "operationId": "health_ready_health_ready_get",
         "responses": {
           "200": {
@@ -3207,7 +3212,7 @@
     },
     "/metrics": {
       "get": {
-        "description": "The same counters in Prometheus exposition format.",
+        "description": "The same counters in Prometheus exposition format. Requires the admin key when auth.mode=static.",
         "operationId": "metrics_prom_metrics_get",
         "responses": {
           "200": {
@@ -3219,6 +3224,11 @@
             "description": "Successful Response"
           }
         },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
         "summary": "Prometheus metrics",
         "tags": [
           "Health"

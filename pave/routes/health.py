@@ -5,9 +5,10 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
+from pave.auth import AuthContext, auth_ctx
 from pave.metrics import set_error, snapshot, to_prometheus
 from pave.routes._deps import current_store
 from pave.stores.base import BaseStore
@@ -16,9 +17,19 @@ from pave.stores.base import BaseStore
 def build_health_router(cfg, version: str, trace) -> APIRouter:
     router = APIRouter()
 
+    def require_admin(ctx: AuthContext = Depends(auth_ctx)) -> AuthContext:
+        if not ctx.is_admin:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "code": "admin_required",
+                    "error": "admin access required",
+                },
+            )
+        return ctx
+
     def readiness_check(request: Request):
         details = {
-            "data_dir": cfg.get("data_dir"),
             "vector_store": cfg.get("vector_store.type"),
             "writable": False,
             "vector_backend_init": False,
@@ -95,7 +106,10 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
     @router.get(
         "/health/ready",
         summary="Readiness check",
-        description="Returns 503 until storage and embeddings are usable.",
+        description=(
+            "Returns 503 until storage and embeddings are usable. "
+            "Does not expose local filesystem paths."
+        ),
         tags=["Health"],
     )
     def health_ready(request: Request):
@@ -106,11 +120,15 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
     @router.get(
         "/health/metrics",
         summary="Metrics snapshot",
-        description="Counters, version, and hardware info as JSON.",
+        description=(
+            "Counters, version, and hardware info as JSON. Requires the "
+            "admin key when auth.mode=static."
+        ),
         tags=["Health"],
     )
     def health_metrics(
         request: Request,
+        _ctx: AuthContext = Depends(require_admin),
         store: BaseStore = Depends(current_store),
     ):
         extra = {
@@ -125,10 +143,16 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
     @router.get(
         "/metrics",
         summary="Prometheus metrics",
-        description="The same counters in Prometheus exposition format.",
+        description=(
+            "The same counters in Prometheus exposition format. Requires the "
+            "admin key when auth.mode=static."
+        ),
         tags=["Health"],
     )
-    def metrics_prom(store: BaseStore = Depends(current_store)):
+    def metrics_prom(
+        _ctx: AuthContext = Depends(require_admin),
+        store: BaseStore = Depends(current_store),
+    ):
         extra = store_metrics(store)
         txt = to_prometheus(
             build={
