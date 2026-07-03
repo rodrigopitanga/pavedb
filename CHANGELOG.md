@@ -237,7 +237,8 @@
 
 ### Config
 - Fix tenants sidecar precedence and dev config loading
-- Map supported legacy PATCHVEC_* env vars to PAVEDB_* (P3-35)
+- Temporarily map supported legacy `PATCHVEC_*` env vars to `PAVEDB_*`
+  during the phase-1 migration; removed in the 0.9 rebrand series (P3-35)
 - [fix] isolate default config state across instances
 
 ### Service
