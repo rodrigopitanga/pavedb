@@ -2,7 +2,7 @@
   "components": {
     "schemas": {
       "BatchDocumentInput": {
-        "description": "One raw-text document in a batch ingest request.",
+        "description": "One raw-text or raw-vector document in a batch ingest request.",
         "properties": {
           "docid": {
             "anyOf": [
@@ -38,17 +38,43 @@
             "title": "Metadata"
           },
           "text": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "Raw text to index as one document.",
             "examples": [
               "Captain Nemo commands the Nautilus."
             ],
-            "title": "Text",
-            "type": "string"
+            "title": "Text"
+          },
+          "vector": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Raw embedding vector (BYOV). Provide exactly one of text or vector.",
+            "examples": [
+              [
+                0.1,
+                0.2,
+                0.3
+              ]
+            ],
+            "title": "Vector"
           }
         },
-        "required": [
-          "text"
-        ],
         "title": "BatchDocumentInput",
         "type": "object"
       },
@@ -2749,17 +2775,43 @@
             "type": "integer"
           },
           "q": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "description": "The search text.",
             "examples": [
               "captain nemo"
             ],
-            "title": "Q",
-            "type": "string"
+            "title": "Q"
+          },
+          "v": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Raw query vector (BYOV). Provide exactly one of q or v.",
+            "examples": [
+              [
+                0.1,
+                0.2,
+                0.3
+              ]
+            ],
+            "title": "V"
           }
         },
-        "required": [
-          "q"
-        ],
         "title": "SearchBody",
         "type": "object"
       },

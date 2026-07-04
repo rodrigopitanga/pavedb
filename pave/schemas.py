@@ -122,7 +122,16 @@ class SearchResponse(OkResponse):
 
 class SearchBody(BaseModel):
     """Search request body."""
-    q: str = Field(description="The search text.", examples=["captain nemo"])
+    q: str | None = Field(
+        default=None,
+        description="The search text.",
+        examples=["captain nemo"],
+    )
+    v: list[float] | None = Field(
+        default=None,
+        description="Raw query vector (BYOV). Provide exactly one of q or v.",
+        examples=[[0.1, 0.2, 0.3]],
+    )
     k: int = Field(
         default=5,
         ge=1,
@@ -152,6 +161,14 @@ class SearchBody(BaseModel):
                 "X-Request-ID header instead"
             )
         return data
+
+    @model_validator(mode="after")
+    def require_q_or_v(self) -> "SearchBody":
+        if (self.q is None) == (self.v is None):
+            raise ValueError(
+                "Provide exactly one of 'q' (text query) or 'v' (vector query)."
+            )
+        return self
 
 
 class QueryLogEntry(BaseModel):
@@ -536,10 +553,18 @@ class IngestDocumentResponse(OkResponse):
 
 
 class IngestTextDocumentBody(BaseModel):
-    """Raw-text document ingest request."""
-    text: str = Field(
+    """Raw-text or raw-vector document ingest request."""
+    text: str | None = Field(
+        default=None,
         description="Raw text to index as one document.",
         examples=["Captain Nemo commands the Nautilus."],
+    )
+    vector: list[float] | None = Field(
+        default=None,
+        description=(
+            "Raw embedding vector (BYOV). Provide exactly one of text or vector."
+        ),
+        examples=[[0.1, 0.2, 0.3]],
     )
     docid: str | None = Field(
         default=None,
@@ -551,13 +576,27 @@ class IngestTextDocumentBody(BaseModel):
         description="Optional user metadata stored with the document.",
         examples=[{"source": "manual"}],
     )
+
+    @model_validator(mode="after")
+    def require_text_or_vector(self) -> "IngestTextDocumentBody":
+        if (self.text is None) == (self.vector is None):
+            raise ValueError("Provide exactly one of 'text' or 'vector'.")
+        return self
 
 
 class BatchDocumentInput(BaseModel):
-    """One raw-text document in a batch ingest request."""
-    text: str = Field(
+    """One raw-text or raw-vector document in a batch ingest request."""
+    text: str | None = Field(
+        default=None,
         description="Raw text to index as one document.",
         examples=["Captain Nemo commands the Nautilus."],
+    )
+    vector: list[float] | None = Field(
+        default=None,
+        description=(
+            "Raw embedding vector (BYOV). Provide exactly one of text or vector."
+        ),
+        examples=[[0.1, 0.2, 0.3]],
     )
     docid: str | None = Field(
         default=None,
@@ -569,6 +608,12 @@ class BatchDocumentInput(BaseModel):
         description="Optional user metadata stored with the document.",
         examples=[{"source": "manual"}],
     )
+
+    @model_validator(mode="after")
+    def require_text_or_vector(self) -> "BatchDocumentInput":
+        if (self.text is None) == (self.vector is None):
+            raise ValueError("Provide exactly one of 'text' or 'vector'.")
+        return self
 
 
 class BatchIngestDocumentsBody(BaseModel):
