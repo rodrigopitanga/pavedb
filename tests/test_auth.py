@@ -91,3 +91,16 @@ def test_bearer_scheme_case_insensitive(monkeypatch):
     for scheme in ("bearer", "BEARER", "Bearer"):
         r = client.post("/collections/acme/x", headers={"Authorization": f"{scheme} sekret"})
         assert r.status_code == 200, f"scheme {scheme!r} rejected"
+
+def test_enforce_policy_unknown_mode_raises():
+    from pave.auth import enforce_policy
+    from pave.config.config import Config
+    cfg = Config(data={"dev": True, "auth": {"mode": "key"}})
+    with pytest.raises(RuntimeError, match="unknown auth.mode"):
+        enforce_policy(cfg)
+
+def test_auth_env_key_not_coerced(monkeypatch):
+    monkeypatch.setenv("PAVEDB_AUTH__GLOBAL_KEY", "0123456789")
+    from pave.config.config import Config
+    cfg = Config()
+    assert cfg.get("auth.global_key") == "0123456789", "digit-like key must not be int-coerced"

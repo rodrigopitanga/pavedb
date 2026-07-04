@@ -259,6 +259,11 @@ def enforce_policy(cfg) -> None:
                 "auth.mode=static requires global_key or api_keys"
             )
 
+    if mode not in ("none", "static"):
+        raise RuntimeError(
+            f"unknown auth.mode: {mode!r}. Valid values: none, static."
+        )
+
 def resolve_bind(cfg) -> tuple[str, int]:
     # return host/port after policy enforcement
     host = str(cfg.get("server.host"))

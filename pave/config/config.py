@@ -265,7 +265,8 @@ def _env_to_dict() -> dict[str, Any]:
                     if item.strip()
                 ]
             continue
-        cur[path[-1]] = _coerce(v)
+        # never coerce auth values — API keys are always strings
+        cur[path[-1]] = v if path[0] == "auth" else _coerce(v)
     return envmap
 
 def _load_yaml(path: str | Path | None) -> dict[str, Any]:
