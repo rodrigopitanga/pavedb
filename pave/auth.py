@@ -66,9 +66,7 @@ def auth_ctx(
         return AuthContext(tenant=tenant, is_admin=True)
 
     if mode == "static":
-        token = None
-        if credentials and credentials.scheme == "Bearer":
-            token = credentials.credentials.strip()
+        token = credentials.credentials.strip() if credentials else None
         if not token:
             _raise_401()
 

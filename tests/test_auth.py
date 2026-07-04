@@ -69,3 +69,18 @@ def test_static_auth_global_key(monkeypatch):
         r = client.post(f"/collections/{tenant}/invoices", headers={"Authorization": "Bearer topsekret"})
         assert r.status_code == 200
         assert r.json()["tenant"] == tenant
+
+def test_bearer_scheme_case_insensitive(monkeypatch):
+    import pave.auth as auth_mod
+    class CFGGlobal:
+        data_dir = "/tmp"
+        def get(self, key, default=None):
+            if key == "auth.mode": return "static"
+            if key == "auth.global_key": return "sekret"
+            return default
+    monkeypatch.setattr(auth_mod, "get_cfg", lambda: CFGGlobal(), raising=True)
+    app = build_app()
+    client = TestClient(app)
+    for scheme in ("bearer", "BEARER", "Bearer"):
+        r = client.post("/collections/acme/x", headers={"Authorization": f"{scheme} sekret"})
+        assert r.status_code == 200, f"scheme {scheme!r} rejected"
