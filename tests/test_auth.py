@@ -70,6 +70,13 @@ def test_static_auth_global_key(monkeypatch):
         assert r.status_code == 200
         assert r.json()["tenant"] == tenant
 
+def test_enforce_policy_dev_loopback_coercion():
+    from pave.auth import enforce_policy, resolve_bind
+    from pave.config.config import Config
+    cfg = Config(data={"dev": True, "auth": {"mode": "none"}, "server": {"host": "0.0.0.0", "port": 8086}})
+    enforce_policy(cfg)
+    assert resolve_bind(cfg) == ("127.0.0.1", 8086)
+
 def test_bearer_scheme_case_insensitive(monkeypatch):
     import pave.auth as auth_mod
     class CFGGlobal:

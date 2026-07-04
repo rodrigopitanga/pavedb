@@ -249,11 +249,7 @@ def enforce_policy(cfg) -> None:
             )
         host = str(cfg.get("server.host")).strip()
         if host not in ("127.0.0.1", "localhost"):
-            # enforce loopback in dev
-            try:
-                cfg._data["server.host"] = "127.0.0.1"
-            except Exception:
-                pass
+            cfg.set("server.host", "127.0.0.1")
 
     if mode == "static":
         has_global = bool(cfg.get("auth.global_key"))
