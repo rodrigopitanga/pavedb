@@ -141,44 +141,11 @@ async def tenant_rate_limit(
     ctx: AuthContext = Depends(authorize_tenant),
 ):
     """Per-tenant concurrent cap. Admin and unconfigured tenants bypass."""
-    tenant = ctx.tenant
-    if ctx.is_admin or tenant is None:
+    if ctx.is_admin or ctx.tenant is None:
         yield ctx
         return
-
-    # per-tenant override → global default → 0 (unlimited)
-    max_c = request.app.state.tenant_limits.get(
-        tenant, request.app.state.tenant_default_limit
-    )
-    if max_c <= 0:
+    async with tenant_limit_gate(request, response, ctx.tenant):
         yield ctx
-        return
-
-    active = request.app.state.tenant_active
-    current = active.get(tenant, 0)
-    if current >= max_c:
-        source = (
-            "tenant-scoped cap"
-            if tenant in request.app.state.tenant_limits
-            else "instance-scoped tenant cap"
-        )
-        raise _tenant_limit_exception(
-            tenant=tenant,
-            active=current,
-            limit=max_c,
-            source=source,
-            target=_tenant_cap_target(request.url.path, request.method),
-            path=request.url.path,
-            request_id=getattr(request.state, "request_id", None),
-        )
-    active[tenant] = active.get(tenant, 0) + 1
-    remaining = max(0, max_c - active[tenant])
-    response.headers["X-RateLimit-Limit"] = str(max_c)
-    response.headers["X-RateLimit-Remaining"] = str(remaining)
-    try:
-        yield ctx
-    finally:
-        active[tenant] = max(0, active[tenant] - 1)
 
 
 @asynccontextmanager
