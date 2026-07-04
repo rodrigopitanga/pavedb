@@ -361,6 +361,24 @@ def _require_compatible_embeddings(
             "embedder configs",
         )
 
+def _coll_cfg(store, tenant: str, collection: str):
+    fn = getattr(store, "get_collection_config", None)
+    return fn(tenant, collection) if fn else None
+
+
+def _is_identity_collection(store, tenant: str, collection: str) -> bool:
+    cfg = _coll_cfg(store, tenant, collection)
+    return cfg is not None and str(cfg.get("embedder_type") or "").lower() == "identity"
+
+
+def _get_collection_vector_dim(store, tenant: str, collection: str) -> int | None:
+    cfg = _coll_cfg(store, tenant, collection)
+    if not cfg:
+        return None
+    raw = (cfg.get("embedder_config") or {}).get("dim")
+    return int(raw) if raw is not None else None
+
+
 def delete_collection(store, tenant: str, name: str) -> ServiceResult:
     try:
         resolved_name = _validate_collection_name(name)
@@ -793,14 +811,30 @@ def ingest_text(
     store,
     tenant: str,
     collection: str,
-    text: str,
+    text: str | None,
     docid: str | None,
     metadata: Metadata | None,
+    *,
+    vector: list[float] | None = None,
 ) -> ServiceResult:
     collection = _validate_collection_name(collection)
     _t0 = _time.perf_counter()
     with m_timed("ingest"):
         try:
+            if _is_identity_collection(store, tenant, collection):
+                if text is not None:
+                    raise ServiceError("vectors_only", "collection accepts vectors only")
+            elif vector is not None:
+                expected_dim = _get_collection_vector_dim(store, tenant, collection)
+                if expected_dim is not None and len(vector) != expected_dim:
+                    raise ServiceError(
+                        "dim_mismatch",
+                        f"vector length {len(vector)} does not match "
+                        f"collection dim {expected_dim}",
+                    )
+            if text is None:
+                # ponytail: vector ingest path — routing added in chunk 4
+                raise ServiceError("not_implemented", "vector ingest not yet routed")
             _enforce_ingest_size_limit(len(text.encode("utf-8")))
             baseid = _validate_docid(docid or _default_docid(""))
             meta_from_call = _validate_metadata(metadata)
@@ -1119,7 +1153,7 @@ def ingest_documents_batch(
     }
 
 
-def search(store, tenant: str, collection: str, q: str, k: int = 5,
+def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
            filters: FilterSpec | None = None,
            include_common: bool = False,
            common_tenant: str | None = None,
@@ -1127,10 +1161,25 @@ def search(store, tenant: str, collection: str, q: str, k: int = 5,
            *,
            request_id: str | None = None,
            actor: str,
-           _log: bool = True) -> ServiceResult:
+           _log: bool = True,
+           v: list[float] | None = None) -> ServiceResult:
     start = _time.perf_counter()
     m_inc("search_total", 1.0)
     try:
+        if _is_identity_collection(store, tenant, collection):
+            if q is not None:
+                raise ServiceError("vectors_only", "collection accepts vectors only")
+        elif v is not None:
+            expected_dim = _get_collection_vector_dim(store, tenant, collection)
+            if expected_dim is not None and len(v) != expected_dim:
+                raise ServiceError(
+                    "dim_mismatch",
+                    f"vector length {len(v)} does not match "
+                    f"collection dim {expected_dim}",
+                )
+        if q is None:
+            # ponytail: vector search path — routing added in chunk 5
+            raise ServiceError("not_implemented", "vector search not yet routed")
         merge_common = bool(
             include_common and common_tenant and common_collection
         )
