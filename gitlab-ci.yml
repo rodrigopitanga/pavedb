@@ -18,6 +18,7 @@ default:
       - stuck_or_timeout_failure
 
 variables:
+  GET_SOURCES_ATTEMPTS: "3"
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   HF_HOME: "$CI_PROJECT_DIR/.cache/huggingface"
   SAST_STAGE: security
