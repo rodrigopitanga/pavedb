@@ -1,7 +1,14 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-from scripts.issue_key_sync import mr_texts, public_keys, title_key
+import pytest
+
+from scripts.issue_key_sync import (
+    mr_texts,
+    public_keys,
+    title_key,
+    validate_review_keys,
+)
 
 
 class _FakeGL:
@@ -23,6 +30,15 @@ class _FakeGL:
         ]
 
 
+class _IssuesGL:
+    def __init__(self, titles):
+        self.project_id = "1"
+        self.titles = titles
+
+    def paged(self, path):
+        return [{"title": title} for title in self.titles]
+
+
 def test_mr_texts_sources_commit_keys_not_description(monkeypatch):
     monkeypatch.setenv("CI_MERGE_REQUEST_IID", "5")
     text = " ".join(mr_texts(_FakeGL()).values())
@@ -42,3 +58,12 @@ def test_bfg_keys_recognized_alongside_rp():
     assert title_key("B1: native embedder device validation") == "B1"
     assert title_key("B0: csv ingest loses columns") == "B0"
     assert title_key("P1-53c: still works") == "P1-53c"  # R/P unregressed
+
+
+def test_review_key_validation_allows_reserved_suffix_gaps():
+    validate_review_keys(_IssuesGL(["R4-65: done", "R2-68: done"]))
+
+
+def test_review_key_validation_rejects_duplicate_suffixes():
+    with pytest.raises(RuntimeError, match="duplicate suffixes found: 68"):
+        validate_review_keys(_IssuesGL(["R4-68: one", "R2-68: two"]))

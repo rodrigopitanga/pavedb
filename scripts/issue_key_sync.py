@@ -183,17 +183,6 @@ def validate_review_keys(gl: GitLab) -> None:
             f"{detail}"
         )
 
-    if keys:
-        numbers = sorted(by_number)
-        expected = list(range(1, numbers[-1] + 1))
-        if numbers != expected:
-            missing = sorted(set(expected) - set(numbers))
-            raise RuntimeError(
-                "Review issue keys must be sequential across waves; "
-                "missing suffixes: "
-                + ", ".join(f"{number:02d}" for number in missing)
-            )
-
 
 def note_exists(gl: GitLab, issue_iid: int, marker: str) -> bool:
     path = f"/projects/{gl.project_id}/issues/{issue_iid}/notes"
