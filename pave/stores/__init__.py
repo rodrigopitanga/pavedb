@@ -13,6 +13,11 @@ See `pave.stores.base.BaseStore` for the typed contract and
 `pave.stores.local.LocalStore` for the on-disk implementation.
 """
 
-from .local import LocalStore
+def __getattr__(name: str):
+    if name == "LocalStore":
+        from .local import LocalStore
+        return LocalStore
+    raise AttributeError(name)
+
 
 __all__ = ["LocalStore"]
