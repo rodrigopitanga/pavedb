@@ -1217,6 +1217,25 @@ bench-stress-run:
 	    $$suite_arg $$api_arg $$err_arg; \
 	fi
 
+# Chaos + correctness suite (P1-52 Level-1 prototype): drives a server and
+# asserts invariants stress.py is blind to (silent corruption, cross-collection
+# bleed) under concurrent churn. Exits non-zero on any violation. Reuses the
+# ephemeral-server harness; reproducible via CHAOS_SEED.
+CHAOS_SEED      ?= 1337
+CHAOS_DURATION  ?= 120
+CHAOS_CONCUR    ?= 24
+
+.PHONY: chaos chaos-run
+chaos: install-dev
+	@$(MAKE) -o install-dev _run_target=chaos-run _ts="$(_ts)" _bench-with-server
+
+chaos-run:
+	@api_arg=""; \
+	if [ -n "$(BENCH_API_KEY)" ]; then api_arg="--api-key $(BENCH_API_KEY)"; fi; \
+	PYTHONPATH=. $(PYTHON_BIN) benchmarks/chaos.py \
+	  --url $(_url) --seed $(CHAOS_SEED) \
+	  --duration $(CHAOS_DURATION) --concurrency $(CHAOS_CONCUR) $$api_arg
+
 .PHONY: benchmark
 benchmark: install-dev
 	@ts="$(_ts)"; \

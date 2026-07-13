@@ -109,6 +109,30 @@ Reports per-operation counts, error rates, and p50/p95/p99/max latencies.
 Seed collection + ingest steps retry a few times before aborting. Timed
 ingest/search operations during the run are not retried.
 
+---
+
+## chaos.py
+
+Correctness + concurrency suite for P1-52. It checks the invariants that
+`stress.py` cannot see: count drift, search visibility, cross-collection bleed,
+clean 4xx handling for malformed inputs, and stable-doc retrieval under churn.
+Nightly CI triage and catalog↔disk post-run invariants remain follow-up work.
+
+```bash
+# run with defaults (seed=1337, 120s chaos phase, 24 churn threads)
+make chaos
+
+# customize (CHAOS_SEED makes a run reproducible)
+make chaos CHAOS_SEED=42 CHAOS_DURATION=60 CHAOS_CONCUR=16
+
+# or directly against a running server
+python benchmarks/chaos.py --url http://localhost:8086 --seed 1337 \
+  --duration 20 --concurrency 8
+```
+
+Thread interleaving is inherently nondeterministic; `--seed` fixes the collection
+names and op distribution so a finding is reproducible.
+
 ## Saving results
 
 To save outputs with a UTC timestamp and tag:
