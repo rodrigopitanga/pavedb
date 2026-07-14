@@ -60,6 +60,28 @@ def test_move_collection_basic(client):
     assert len(r.json()["matches"]) == 0
 
 
+def test_tenant_move_collection_route_accepts_tenant_token(client, cfg):
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", "root")
+    cfg.set("auth.api_keys", {"acme": "sekret"})
+
+    r = client.post(
+        "/v1/collections/acme/tenantinvoices",
+        headers={"Authorization": "Bearer sekret"},
+    )
+    assert r.status_code == 201
+
+    r = client.post(
+        "/v1/collections/acme/tenantinvoices/move",
+        json={"new_name": "tenantbills"},
+        headers={"Authorization": "Bearer sekret"},
+    )
+
+    assert r.status_code == 200
+    assert r.json()["old_name"] == "tenantinvoices"
+    assert r.json()["new_name"] == "tenantbills"
+
+
 def test_move_reopens_backend_at_new_path(temp_data_dir):
     store = LocalStore(str(temp_data_dir), FakeEmbedder())
     tenant, old_name, new_name = "acme", "old_vectors", "new_vectors"

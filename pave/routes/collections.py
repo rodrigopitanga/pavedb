@@ -14,6 +14,8 @@ from pave.schemas import (
     DeleteCollectionResponse,
     EmbedderInventoryResponse,
     ListCollectionsResponse,
+    MoveCollectionBody,
+    MoveCollectionResponse,
     UpdateCollectionBody,
     UpdateCollectionResponse,
 )
@@ -23,6 +25,7 @@ from pave.service import (
     get_collection_detail as svc_get_collection_detail,
     list_embedders as svc_list_embedders,
     list_collections as svc_list_collections,
+    move_collection as svc_move_collection,
     update_collection as svc_update_collection,
 )
 from pave.routes._deps import current_store
@@ -182,6 +185,46 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
                 status_map.get(error_type, 500),
                 result.get("code", "update_collection_failed"),
                 result.get("error", "failed to update collection"),
+                request=request,
+                request_id=rid,
+            )
+        return trace(result, request, request_id=rid)
+
+    @router.post(
+        "/collections/{tenant}/{name}/move",
+        summary="Rename a collection",
+        description="Changes the collection slug and therefore its URL.",
+        response_model=MoveCollectionResponse,
+        responses=resp(400, 401, 403, 404, 409, 429, 500),
+        tags=["Collection Catalog"],
+    )
+    @ops_event(
+        "move_collection",
+        coll="name",
+        new_name=lambda kw, r: kw["body"].new_name,
+        request_id="rid",
+    )
+    def move_collection(
+        request: Request,
+        tenant: str,
+        name: str,
+        body: MoveCollectionBody,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(tenant_rate_limit),
+        store: BaseStore = Depends(current_store),
+    ):
+        result = svc_move_collection(store, tenant, name, body.new_name)
+        if not result.get("ok"):
+            status_map = {
+                "not_found": 404,
+                "conflict": 409,
+                "invalid": 400,
+                "failed": 500,
+            }
+            return error(
+                status_map.get(result.get("error_type"), 500),
+                result.get("code", "move_collection_failed"),
+                result.get("error", "failed to move collection"),
                 request=request,
                 request_id=rid,
             )
