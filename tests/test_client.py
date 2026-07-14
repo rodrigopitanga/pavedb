@@ -384,6 +384,14 @@ def test_get_query_and_replay_are_collection_scoped(tmp_path):
             other.replay(qid)
 
 
+def test_local_provider_rename_returns_none_like_http_client(tmp_path):
+    with provider(tmp_path / "db") as db:
+        db.create_collection("books")
+
+        assert db._rename("default", "books", "library") is None
+        assert db.collection("library").detail()["name"] == "library"
+
+
 def test_sdk_empty_text_raises_invalid_request(tmp_path):
     with provider(tmp_path / "db") as db:
         books = db.create_collection("books")
