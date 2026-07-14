@@ -197,28 +197,78 @@ def test_search_runs_while_batch_ingest_embeds(temp_data_dir):
         [("0", "fast searchable probe", {"lang": "en"})],
     )
 
+    def ingest():
+        store.index_documents(
+            tenant,
+            collection,
+            [
+                (
+                    "DOC-2",
+                    [("0", "slow ingest payload", {"lang": "en"})],
+                    None,
+                )
+            ],
+        )
+
+    _assert_search_runs_while_ingest_embeds(
+        store,
+        embedder,
+        tenant,
+        collection,
+        ingest,
+        "search waited for batch ingest embedding",
+    )
+
+
+def test_search_runs_while_single_doc_ingest_embeds(temp_data_dir):
+    embedder = BlockingIngestEmbedder()
+    store = LocalStore(str(temp_data_dir), embedder)
+    tenant, collection = "acme", "single_ingest_search_overlap"
+    store.index_records(
+        tenant,
+        collection,
+        "DOC-1",
+        [("0", "fast searchable probe", {"lang": "en"})],
+    )
+
+    def ingest():
+        store.index_records(
+            tenant,
+            collection,
+            "DOC-2",
+            [("0", "slow ingest payload", {"lang": "en"})],
+        )
+
+    _assert_search_runs_while_ingest_embeds(
+        store,
+        embedder,
+        tenant,
+        collection,
+        ingest,
+        "search waited for index_records embedding",
+    )
+
+
+def _assert_search_runs_while_ingest_embeds(
+    store,
+    embedder,
+    tenant,
+    collection,
+    ingest_fn,
+    wait_message,
+):
     ingest_done = threading.Event()
     ingest_error: list[BaseException] = []
 
-    def ingest():
+    def run_ingest():
         try:
-            store.index_documents(
-                tenant,
-                collection,
-                [
-                    (
-                        "DOC-2",
-                        [("0", "slow ingest payload", {"lang": "en"})],
-                        None,
-                    )
-                ],
-            )
+            ingest_fn()
         except BaseException as exc:
             ingest_error.append(exc)
         finally:
             ingest_done.set()
 
-    thread = threading.Thread(target=ingest, daemon=True)
+    thread = threading.Thread(target=run_ingest, daemon=True)
     thread.start()
     assert embedder.started.wait(timeout=2.0)
 
@@ -241,7 +291,7 @@ def test_search_runs_while_batch_ingest_embeds(temp_data_dir):
     embedder.release.set()
     thread.join(timeout=2.0)
 
-    assert search_done.is_set(), "search waited for ingest embedding"
+    assert search_done.is_set(), wait_message
     assert search_result["hits"]
     assert ingest_done.is_set()
     assert not ingest_error
