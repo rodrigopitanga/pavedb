@@ -116,7 +116,8 @@ ingest/search operations during the run are not retried.
 Correctness + concurrency suite for P1-52. It checks the invariants that
 `stress.py` cannot see: count drift, search visibility, cross-collection bleed,
 clean 4xx handling for malformed inputs, and stable-doc retrieval under churn.
-Nightly CI triage and catalog↔disk post-run invariants remain follow-up work.
+Scheduled CI runs it nightly without blocking release pipelines, and managed
+runs also check catalog rows against collection directories after churn.
 
 ```bash
 # run with defaults (seed=1337, 120s chaos phase, 24 churn threads)

@@ -1088,7 +1088,8 @@ _bench-with-server:
 	    exit 1; \
 	  fi; \
 	fi; \
-	$(MAKE) -o install-dev _url="$$bench_url" _ts="$(_ts)" $(_run_target) || \
+	$(MAKE) -o install-dev _url="$$bench_url" _data_dir="$$data_dir" \
+	  _ts="$(_ts)" $(_run_target) || \
 	  bench_status=$$?; \
 	if [ "$$managed" = "1" ] && [ -n "$$srv_pid" ] && \
 	   ! kill -0 "$$srv_pid" >/dev/null 2>&1; then \
@@ -1232,9 +1233,12 @@ chaos: install-dev
 chaos-run:
 	@api_arg=""; \
 	if [ -n "$(BENCH_API_KEY)" ]; then api_arg="--api-key $(BENCH_API_KEY)"; fi; \
+	data_arg=(); \
+	if [ -n "$(_data_dir)" ]; then data_arg=(--data-dir "$(_data_dir)"); fi; \
 	PYTHONPATH=. $(PYTHON_BIN) benchmarks/chaos.py \
 	  --url $(_url) --seed $(CHAOS_SEED) \
-	  --duration $(CHAOS_DURATION) --concurrency $(CHAOS_CONCUR) $$api_arg
+	  --duration $(CHAOS_DURATION) --concurrency $(CHAOS_CONCUR) \
+	  $$api_arg "$${data_arg[@]}"
 
 .PHONY: benchmark
 benchmark: install-dev

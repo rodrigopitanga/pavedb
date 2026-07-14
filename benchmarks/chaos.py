@@ -9,7 +9,7 @@ cross-collection bleed (a 200-OK can still return wrong data). Three phases:
 
   Phase 1 - correctness invariants (sequential): ingest-count integrity,
     search visibility, cross-collection isolation, delete-removes-from-search,
-    re-ingest-is-update, byte-exact chunk round-trip.
+    re-ingest-is-update, byte-exact chunk round-trip, catalog<->disk agreement.
   Phase 2 - fuzz: malformed / empty / oversized inputs (control bytes, bad
     JSON, huge docids/metadata, degenerate k, large docs + batches) must return
     a clean 4xx or 2xx - never a 5xx - and leave the server live + uncorrupted.
@@ -21,19 +21,18 @@ Reproducible via --seed (controls collection names + the op distribution;
 thread interleaving is inherently nondeterministic). Exits non-zero on any
 invariant violation, so it doubles as a regression gate for the v1.0 fixes.
 
-NOT the full P1-52: no nightly-CI wiring and no catalog<->disk post-run
-invariants (those stay v1.1). This is the runnable net promoted from the
-pre-1.0 bug-hunt prototypes.
-
 Usage:
     python benchmarks/chaos.py [--url URL] [--seed N] [--duration S]
                                [--concurrency C] [--api-key TOKEN]
+                               [--data-dir PATH]
 """
 from __future__ import annotations
 
 import argparse
 import os
+from pathlib import Path
 import random
+import sqlite3
 import sys
 import threading
 import time
@@ -120,6 +119,40 @@ def _search(c: httpx.Client, coll: str, q: str, k: int = 8):
         if r.status_code == 200 else []
     )
     return r.status_code, docids
+
+
+def catalog_disk_violations(data_dir: str | os.PathLike[str]) -> list[str]:
+    root = Path(data_dir)
+    catalog = root / "catalog.db"
+    if not catalog.is_file():
+        return [f"catalog.db missing under {root}"]
+
+    with sqlite3.connect(f"file:{catalog}?mode=ro", uri=True) as conn:
+        rows = conn.execute("SELECT tenant, name FROM collections").fetchall()
+    cataloged = {(str(tenant), str(name)) for tenant, name in rows}
+
+    on_disk: set[tuple[str, str]] = set()
+    for tenant_dir in root.iterdir():
+        if not tenant_dir.is_dir() or not tenant_dir.name.startswith("t_"):
+            continue
+        tenant = tenant_dir.name[2:]
+        for coll_dir in tenant_dir.iterdir():
+            if (
+                coll_dir.is_dir()
+                and coll_dir.name.startswith("c_")
+                and (coll_dir / "meta.db").is_file()
+            ):
+                on_disk.add((tenant, coll_dir.name[2:]))
+
+    violations = [
+        f"catalog row missing disk collection {tenant}/{name}"
+        for tenant, name in sorted(cataloged - on_disk)
+    ]
+    violations.extend(
+        f"disk collection missing catalog row {tenant}/{name}"
+        for tenant, name in sorted(on_disk - cataloged)
+    )
+    return violations
 
 
 def _ingest_raw(c: httpx.Client, coll: str, content: bytes, *,
@@ -516,6 +549,11 @@ def main() -> None:
         default=None,
         help="Bearer token (omit when auth.mode=none)",
     )
+    p.add_argument(
+        "--data-dir",
+        default=None,
+        help="Optional local data dir for catalog<->disk post-run invariants",
+    )
     args = p.parse_args()
 
     rng = random.Random(args.seed)
@@ -535,6 +573,12 @@ def main() -> None:
     finally:
         c.close()
     phase3_chaos(args.url, args.api_key, rng, args.duration, args.concurrency, viol)
+    if args.data_dir:
+        print("\n[post-run] catalog<->disk invariants")
+        for msg in catalog_disk_violations(args.data_dir):
+            viol.append(f"[catalog-disk] {msg}")
+        if not any(v.startswith("[catalog-disk]") for v in viol):
+            print("  ok   catalog rows match collection dirs")
 
     print("\n" + "=" * 60)
     if viol:

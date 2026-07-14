@@ -149,6 +149,33 @@ bench:
     - if: '$CI_COMMIT_TAG'
   allow_failure: false
 
+chaos-nightly:
+  stage: benchmark
+  variables:
+    BENCH_FORCE_EPHEMERAL: "1"
+    BENCH_STARTUP_TIMEOUT_S: "120"
+    TORCH_WHEEL_CPU: "1"
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq curl git make
+    - python -m pip install --upgrade pip -q
+    - pip install -r requirements-cpu.txt -q
+    - pip install ".[test]" -q
+  script:
+    - >-
+      bash -o pipefail -c
+      'CHAOS_DURATION="${CHAOS_DURATION:-120}"
+      CHAOS_CONCUR="${CHAOS_CONCUR:-24}"
+      make chaos 2>&1 | tee chaos.log'
+  artifacts:
+    when: always
+    paths:
+      - chaos.log
+    expire_in: 4 weeks
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  allow_failure: true
+
 # PyPI publish for final releases only (vX.Y.Z)
 publish-pypi:
   stage: release
