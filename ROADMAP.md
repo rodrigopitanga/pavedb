@@ -100,7 +100,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-32 | ~~Per-collection embeddings~~ | 🧱 | Model per collection | v1.0 |
 | P1-33 | ~~CatalogDB + catalog separation~~ | 🧱 | Catalog + collection backend/embedder config source | v0.9 |
 | P1-34 | ~~Server config bootstrap~~ | 🧩 | Explicit `pavecli init` + `--home` / explicit runtime paths for pip installs | v1.0 |
-| P1-35 | Metadata-filter SQL parity | 🔧 | CI-only differential harness: SQL never drops canonical matches and equals canonical results for supported operators | v1.2 |
+| P1-35 | ~~Metadata-filter SQL parity~~ | 🔧 | CI-only differential harness: SQL never drops canonical matches and equals canonical results for supported operators | v1.2 |
 | P1-36 | ~~Reject empty/colliding sanitized metadata keys~~ | 🧩 | Avoid silent key drops/coalescing under current sanitization rules | v0.5.9 |
 | P1-37 | ~~Pre-orchestrator cleanup~~ | 🔧 | Drop txtai dep, rename store/embedder, dead code removal, filter path simplification | v0.5.9 |
 | P1-40 | ~~Search timing breakdown in response~~ | 🔧 | Latency debugging: embed/search/filter/hydrate split | v0.9 |
@@ -549,10 +549,10 @@ lands where it has more impact during post-contract hardening.
   recall and throughput are gated by VectorDBBench (P2-52).
 - General embedder worker pools with bounded concurrency across providers
   (P1-61).
-- Metadata-filter SQL parity: a CI-only differential corpus proves
+- ~~Metadata-filter SQL parity: a CI-only differential corpus proves
   canonical matches are a subset of SQL survivors, with equality
   where SQL claims full support. No request-time double execution
-  (P1-35).
+  (P1-35).~~
 - SQLite chunk-text index and additive content filters: migrate
   sidecar text into the collection database, index it with native
   FTS5, and expose contains/phrase/prefix matching (P1-70).

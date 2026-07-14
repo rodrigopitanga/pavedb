@@ -918,6 +918,10 @@ class CollectionDB:
                 f"SELECT c.rid FROM chunks AS c "
                 f"JOIN document_meta AS dm ON dm.docid = c.docid "
                 f"WHERE dm.key=? AND dm.value=? "
+                f"AND NOT EXISTS ("
+                f"SELECT 1 FROM chunk_meta AS cm "
+                f"WHERE cm.rid=c.rid AND cm.key=dm.key"
+                f") "
                 f"AND c.rid IN ({placeholders})",
                 [key, value, *batch],
             )
@@ -964,7 +968,7 @@ class CollectionDB:
             return set(candidate_rids)
 
         current = set(candidate_rids)
-        skip_prefixes = (">=", "<=", "!=", ">", "<")
+        skip_prefixes = ("!", ">=", "<=", ">", "<")
 
         with self._reader() as conn:
             for key, values in filters.items():
@@ -977,11 +981,7 @@ class CollectionDB:
                     if not isinstance(raw_value, str):
                         continue
                     value = sanit_sql(raw_value)
-                    if (
-                        "*" in value
-                        or value.startswith(skip_prefixes)
-                        or (value.startswith("!") and len(value) > 1)
-                    ):
+                    if "*" in value or value.startswith(skip_prefixes):
                         mixed_semantics = True
                         break
                     normalized_values.append(value)
