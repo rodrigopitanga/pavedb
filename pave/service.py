@@ -271,11 +271,17 @@ def update_collection(
                 "error": f"collection '{resolved_name}' does not exist",
                 "error_type": "not_found",
             }
-        store.update_collection(
+        if store.update_collection(
             tenant,
             resolved_name,
             display_name=resolved_display_name,
-        )
+        ) is None:
+            return {
+                "ok": False,
+                "code": "collection_not_found",
+                "error": f"collection '{resolved_name}' does not exist",
+                "error_type": "not_found",
+            }
         return {
             "ok": True,
             "tenant": tenant,

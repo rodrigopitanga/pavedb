@@ -7,6 +7,7 @@ import logging
 from pave import cli as pvcli
 from pave.config import get_cfg
 from pave.metadb import CatalogDB, CollectionDB
+from pave.service import update_collection
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
@@ -200,6 +201,26 @@ def test_update_collection_not_found(client):
     )
     assert r.status_code == 404
     assert r.json()["code"] == "collection_not_found"
+
+
+def test_update_collection_vanished_after_preflight():
+    class VanishingStore:
+        def get_collection_config(self, tenant, name):
+            return {"name": name}
+
+        def update_collection(self, tenant, name, *, display_name=None):
+            return None
+
+    result = update_collection(
+        VanishingStore(),
+        "acme",
+        "vanished",
+        display_name="Vanished",
+    )
+
+    assert result["ok"] is False
+    assert result["code"] == "collection_not_found"
+    assert result["error_type"] == "not_found"
 
 
 def test_delete_collection_not_found(client):

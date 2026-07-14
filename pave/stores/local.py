@@ -911,7 +911,7 @@ class LocalStore:
     ) -> CollectionInfo | None:
         with self._collection_write_lock(tenant, name):
             if not os.path.isdir(self._base_path(tenant, name)):
-                raise ValueError(f"collection '{name}' does not exist")
+                return None
             self._with_catalog_retry(
                 "update_collection",
                 lambda catalog: catalog.update_collection(
