@@ -60,8 +60,12 @@ def test_bfg_keys_recognized_alongside_rp():
     assert title_key("P1-53c: still works") == "P1-53c"  # R/P unregressed
 
 
-def test_review_key_validation_allows_reserved_suffix_gaps():
-    validate_review_keys(_IssuesGL(["R4-65: done", "R2-68: done"]))
+def test_review_key_validation_warns_for_reserved_suffix_gaps(capsys):
+    titles = [f"R4-{number:02d}: done" for number in range(1, 66)]
+    titles.append("R2-67: done")
+    validate_review_keys(_IssuesGL(titles))
+
+    assert "reserved or skipped suffixes: 66" in capsys.readouterr().err
 
 
 def test_review_key_validation_rejects_duplicate_suffixes():

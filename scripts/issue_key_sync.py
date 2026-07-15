@@ -156,7 +156,6 @@ def validate_review_keys(gl: GitLab) -> None:
     # numeric suffix, so validate against state=all before any sync work.
     # R6 is the zero-weight/refuted trace wave; R0 is not a valid review key.
     by_number: dict[int, list[str]] = {}
-    keys: list[str] = []
     for issue in gl.paged(f"/projects/{gl.project_id}/issues?state=all"):
         title = str(issue.get("title") or "")
         match = REVIEW_KEY_RE.match(title)
@@ -165,7 +164,6 @@ def validate_review_keys(gl: GitLab) -> None:
         key = f"{match.group(1)}-{match.group(2)}"
         number = int(match.group(2))
         by_number.setdefault(number, []).append(key)
-        keys.append(key)
 
     duplicate_numbers = {
         number: sorted(set(values))
@@ -183,6 +181,18 @@ def validate_review_keys(gl: GitLab) -> None:
             f"{detail}"
         )
 
+    if by_number:
+        missing = [
+            number for number in range(1, max(by_number) + 1)
+            if number not in by_number
+        ]
+        if missing:
+            detail = ", ".join(f"{number:02d}" for number in missing)
+            print(
+                "Review issue keys have reserved or skipped suffixes: "
+                f"{detail}",
+                file=sys.stderr,
+            )
 
 def note_exists(gl: GitLab, issue_iid: int, marker: str) -> bool:
     path = f"/projects/{gl.project_id}/issues/{issue_iid}/notes"
