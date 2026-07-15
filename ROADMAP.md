@@ -127,6 +127,8 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-59 | ~~Admin embedder inventory endpoint~~ | 🧩 | v1.0 slice: admin-only `GET /v1/admin/embedders` and tenant-scoped `GET /v1/embedders/{tenant}` surface configured instance keys, vector-space keys, types, models, and default resolution. No credentials, no readiness probe. Mirrored by `Client.embedders()` and `pavecli list-embedders`. v1.6 expansion: readiness probe + credential-ref identity per P2-49. Per-tenant embedder assignment stays a post-1.0 direction once tenant profiles (P2-26) land. Builds on P1-58. | v1.0 / v1.6 |
 | P1-60 | Embedder selection shorthand + routing policy | 🧱 | Collection create accepts an `embedder` selector shorthand; compatible instance routing grows from deterministic first configured to explicit policy (`first`, `round_robin`, weighted/failover). Any pinning is operational config, not catalog state. | v1.7 |
 | P1-61 | General embedder worker pools | 🧱 | Extend the SBERT worker-pool idea across all embedders with bounded concurrency as the default behavior where safe. Worker counts stay operational config and never enter vector-space identity. See `docs/design/PLAN-EMBEDDER-WORKERS.md`. | v1.2 |
+| P1-63 | VectorDBBench adapter | 🔧 | Standard benchmark adapter over BYOV HTTP raw-vector ingest/search, with flat FAISS recall baseline and no PaveDB runtime dependency on VectorDBBench. External adapter (separate repo/fork), not in-repo. Depends on P1-64 (BYOV raw-vector round trip). | v1.0 |
+| P1-64 | Bring-your-own-vector (BYOV) raw-vector mode | 🔧 | Additive raw-vector ingest/search mirroring Chroma. New `identity` embedder (`encode(x)→x`, dim from `embedder_config`); raw-vector schema fields `vector`/`v` paired with `text`/`q` (exactly-one). Embedding collections stay permissive (text or raw vector); identity collections are vector-only. No new endpoints; FAISS backend unchanged. Serves pre-computed-embedding users and unblocks P1-63. | v1.0 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -202,6 +204,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-51 | ~~`make docker-check`: alive test against prebuilt Docker image~~ | 🧩 | v0.5.9 |
 | P3-52 | ~~`make build-check`: install from local wheel in temp venv, alive test~~ | 🧩 | v0.5.9 |
 | P3-53 | Micro-batch concurrent query embeddings | 🧱 | v1.8 |
+| P3-54 | Optional FAISS HNSW/IVF indexes | 🧱 | Per-collection `backend_config` selects flat/HNSW/IVF; no search-time API change. VectorDBBench supplies the recall/QPS gate. | v1.8 |
 
 P1-53e includes a checked-in `openapi.json` snapshot plus a
 `docs-ref-openapi` dump and drift check, mirroring P1-53b's CLI gate.
