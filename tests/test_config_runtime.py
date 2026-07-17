@@ -69,6 +69,32 @@ def test_list_valued_env_overrides_are_split(monkeypatch, tmp_path):
     assert cfg.get("log.watch") == ["pave.routes", "pave.cli"]
 
 
+def test_invalid_text_chunk_overlap_is_rejected(monkeypatch, tmp_path):
+    config_path = tmp_path / "config.yml"
+    config_path.write_text(
+        "preprocess:\n"
+        "  txt_chunk_size: 100\n"
+        "  txt_chunk_overlap: 100\n",
+        encoding="utf-8",
+    )
+
+    try:
+        Config(path=config_path)
+    except ValueError as exc:
+        assert "txt_chunk_overlap" in str(exc)
+    else:
+        raise AssertionError("expected invalid chunk overlap to fail")
+
+    monkeypatch.setenv("PAVEDB_PREPROCESS__TXT_CHUNK_OVERLAP", "1000")
+
+    try:
+        Config(path=tmp_path / "missing.yml")
+    except ValueError as exc:
+        assert "txt_chunk_overlap" in str(exc)
+    else:
+        raise AssertionError("expected invalid env chunk overlap to fail")
+
+
 def test_replace_keeps_child_views_live(tmp_path):
     cfg = Config(data={"auth": {"mode": "none"}})
     auth_view = cfg.auth

@@ -326,6 +326,23 @@ def _base_defaults_for(
                 }
     return base
 
+
+def _validate_config(cfg: dict[str, Any]) -> None:
+    preprocess = cfg.get("preprocess")
+    if not isinstance(preprocess, dict):
+        return
+    size = int(preprocess.get("txt_chunk_size", 0))
+    overlap = int(preprocess.get("txt_chunk_overlap", 0))
+    if size <= 0:
+        raise ValueError("preprocess.txt_chunk_size must be greater than 0")
+    if overlap < 0:
+        raise ValueError("preprocess.txt_chunk_overlap must be non-negative")
+    if overlap >= size:
+        raise ValueError(
+            "preprocess.txt_chunk_overlap must be less than "
+            "preprocess.txt_chunk_size"
+        )
+
 # --------------- singleton wrapper ----------------
 class Config:
     """
@@ -344,6 +361,7 @@ class Config:
             data = self._load_dict(path)
         else:
             data = _deep_merge(_base_defaults_for(data, {}), data)
+            _validate_config(data)
         self._cfg: dict[str, Any] = deepcopy(data)
         self._data = self._cfg  # shared backing store for child views/tests
 
@@ -390,6 +408,7 @@ class Config:
                 val = cur.get(parts[-1])
                 if isinstance(val, str) and val:
                     cur[parts[-1]] = str(Path(val).expanduser())
+        _validate_config(merged)
         return merged
 
     # -------- path ops --------
