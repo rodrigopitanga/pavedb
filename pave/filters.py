@@ -158,6 +158,8 @@ def matches_filters(
                         value_dt = datetime.fromisoformat(value)
                         return op_fn(have_dt, value_dt)
                     except Exception:
+                        if op_str == "!=":
+                            return have_text != value
                         return False
         if safe_cond == "*":
             return True

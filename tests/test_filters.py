@@ -3,7 +3,7 @@
 
 import pytest
 
-from pave.filters import sanit_field
+from pave.filters import matches_filters, sanit_field
 
 
 @pytest.mark.parametrize("raw, expected", [
@@ -23,3 +23,8 @@ from pave.filters import sanit_field
 ])
 def test_sanit_field_collapses_disallowed_to_underscore(raw, expected):
     assert sanit_field(raw) == expected
+
+
+def test_string_not_equal_filter_matches_non_equal_value():
+    assert matches_filters({"status": "published"}, {"status": ["!=draft"]})
+    assert not matches_filters({"status": "draft"}, {"status": ["!=draft"]})
