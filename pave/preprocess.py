@@ -169,7 +169,7 @@ def preprocess(filename: str, content: bytes, csv_options: CsvOptions \
     Yields (local_id, text, extra_meta):
     - PDF: one chunk per page
     - TXT: charcount-based chunks
-    - CSV: one chunk per row ("; " join)
+    - CSV: one chunk per row as newline-joined "key: value" fields
     """
     mt, _ = mimetypes.guess_type(filename)
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""

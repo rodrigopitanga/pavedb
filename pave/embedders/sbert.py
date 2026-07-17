@@ -81,9 +81,8 @@ def build_embedder(cfg, *, model=None, embedder_config=None, api_key=None):
 class SbertEmbedder:
     """In-process Sentence-Transformers `Embedder`.
 
-    Loads a local SBERT model and encodes batches with
-    `convert_to_numpy=True, normalize_embeddings=True`. `device`
-    accepts `"auto"`, `"cpu"`, or any torch device string;
+    Loads a local SBERT model and returns raw float32 vectors.
+    `device` accepts `"auto"`, `"cpu"`, or any torch device string;
     `batch_size` controls the per-call batching inside ST.
     """
     def __init__(
