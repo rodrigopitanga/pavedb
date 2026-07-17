@@ -40,7 +40,12 @@ from pave.embedders.factory import (
 from pave.metrics import (
     inc as m_inc, timed as m_timed, record_latency as m_record_latency
 )
-from pave.preprocess import CsvOptions, preprocess, preprocess_text
+from pave.preprocess import (
+    CsvOptions,
+    PreprocessError,
+    preprocess,
+    preprocess_text,
+)
 from pave.stores.base import (
     BaseStore,
     FilterSpec,
@@ -753,6 +758,8 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             raise
         except MetadataValidationError as exc:
             raise ServiceError("invalid_metadata_keys", str(exc)) from exc
+        except PreprocessError as exc:
+            raise ServiceError("unsupported_or_invalid_document", str(exc)) from exc
         except ValueError as exc:
             raise ServiceError("invalid_csv_options", str(exc)) from exc
         except EmbedderUnavailableError as exc:

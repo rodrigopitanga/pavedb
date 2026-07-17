@@ -7,6 +7,7 @@ from .config import get_cfg
 from collections.abc import Iterable, Iterator
 from typing import Any
 from pypdf import PdfReader
+from pypdf.errors import PyPdfError
 
 from pave.stores.base import Metadata
 
@@ -15,6 +16,11 @@ TXT_CHUNK_SIZE = int(_cfg.get("preprocess.txt_chunk_size"))
 TXT_CHUNK_OVERLAP = int(_cfg.get("preprocess.txt_chunk_overlap"))
 
 CsvOptions = dict[str, Any]
+
+
+class PreprocessError(ValueError):
+    """Client-supplied document content cannot be preprocessed."""
+
 
 def _chunks(text: str, size: int = TXT_CHUNK_SIZE, overlap: int = TXT_CHUNK_OVERLAP):
     text = text or ""
@@ -168,10 +174,13 @@ def preprocess(filename: str, content: bytes, csv_options: CsvOptions \
     mt, _ = mimetypes.guess_type(filename)
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
     if ext == "pdf":
-        reader = PdfReader(io.BytesIO(content))
-        for i, page in enumerate(reader.pages):
-            text = page.extract_text() or ""
-            yield f"page_{i}", text, {"page": i}
+        try:
+            reader = PdfReader(io.BytesIO(content))
+            for i, page in enumerate(reader.pages):
+                text = page.extract_text() or ""
+                yield f"page_{i}", text, {"page": i}
+        except PyPdfError as exc:
+            raise PreprocessError("invalid PDF document") from exc
     elif ext == "txt":
         text = content.decode("utf-8", errors="ignore")
         step = max(TXT_CHUNK_SIZE - TXT_CHUNK_OVERLAP, 1)
@@ -181,7 +190,7 @@ def preprocess(filename: str, content: bytes, csv_options: CsvOptions \
         yield from _preprocess_csv(filename, content, csv_options or {})
         return
     else:
-        raise ValueError(f"unsupported file type: {ext or 'unknown'}")
+        raise PreprocessError(f"unsupported file type: {ext or 'unknown'}")
 
 
 def preprocess_text(text: str) -> Iterator[tuple[str, str, Metadata]]:

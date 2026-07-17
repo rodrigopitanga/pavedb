@@ -224,6 +224,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                         "embedder_unavailable": 503,
                         "invalid_docid": 400,
                         "no_text_extracted": 400,
+                        "unsupported_or_invalid_document": 400,
                         "ingest_failed": 500,
                     }
                     return error(
@@ -244,6 +245,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     "invalid_metadata_keys": 400,
                     "invalid_collection_name": 400,
                     "invalid_docid": 400,
+                    "unsupported_or_invalid_document": 400,
                     "ingest_failed": 500,
                 }
                 return error(

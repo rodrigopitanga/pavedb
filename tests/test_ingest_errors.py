@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import pytest
+from pypdf.errors import PyPdfError
 
 # Names that create/delete reject (^[a-z0-9][a-z0-9-]{0,62}$) and that ingest
 # used to auto-create anyway, minting undeletable orphan collections.
@@ -114,6 +115,45 @@ def test_multipart_ingest_rejects_metadata_without_file(client):
     )
     assert r.status_code == 400
     assert r.json()["code"] == "missing_document_file"
+
+
+def test_multipart_ingest_rejects_corrupt_pdf_as_client_error(client):
+    r = client.post(
+        "/v1/collections/acme/bad-pdf/documents",
+        files={"file": ("bad.pdf", b"%PDF-1.4\nbroken", "application/pdf")},
+    )
+    assert r.status_code == 400
+    assert r.json()["code"] == "unsupported_or_invalid_document"
+
+
+def test_multipart_ingest_rejects_lazy_pdf_error(client, monkeypatch):
+    class BrokenPage:
+        def extract_text(self):
+            raise PyPdfError("broken page")
+
+    reader = type("Reader", (), {"pages": [BrokenPage()]})()
+    monkeypatch.setattr("pave.preprocess.PdfReader", lambda _: reader)
+    r = client.post(
+        "/v1/collections/acme/bad-pdf-page/documents",
+        files={"file": ("bad.pdf", b"ignored", "application/pdf")},
+    )
+    assert r.status_code == 400
+    assert r.json()["code"] == "unsupported_or_invalid_document"
+
+
+def test_multipart_ingest_rejects_unsupported_extension_as_document_error(client):
+    r = client.post(
+        "/v1/collections/acme/bad-type/documents",
+        files={
+            "file": (
+                "bad.docx",
+                b"not a supported document",
+                "application/octet-stream",
+            )
+        },
+    )
+    assert r.status_code == 400
+    assert r.json()["code"] == "unsupported_or_invalid_document"
 
 
 def test_batch_ingest_rejects_non_object_metadata(client):
