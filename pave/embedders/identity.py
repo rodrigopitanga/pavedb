@@ -18,6 +18,9 @@ import numpy as np
 
 CONFIG_KEYS: tuple[str, ...] = ("dim",)
 SPACE_KEYS: tuple[str, ...] = ("dim",)
+# Identity owns no model; the vector space is pinned by `dim` alone. Signals
+# the factory to skip the "no model configured" requirement for this type.
+MODELLESS: bool = True
 
 
 def validate_spec(resolved_config: dict) -> dict:

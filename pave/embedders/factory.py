@@ -101,6 +101,16 @@ def _embedder_schema(etype: str) -> tuple[tuple[str, ...], tuple[str, ...]] | No
     )
 
 
+def _is_modelless(etype: str) -> bool:
+    """True for embedder types that own no model (e.g. identity/BYOV).
+
+    Such types pin their vector space via `embedder_config` alone, so the
+    "no model configured" requirement in spec resolution is skipped for them.
+    """
+    mod = _embedder_module(etype)
+    return bool(getattr(mod, "MODELLESS", False)) if mod is not None else False
+
+
 class LazyEmbedder:
     """Defers embedder construction until first `encode` / `dim` use.
 
@@ -200,7 +210,7 @@ def _spec_from_parts(
     if not etype:
         raise ValueError("embedder type is required")
     model = str(model or "").strip()
-    if not model:
+    if not model and not _is_modelless(etype):
         raise ValueError(f"no model configured for embedder.{etype}.model")
     cfg: EmbedderConfig = {
         str(key): val
@@ -413,12 +423,21 @@ def runtime_embedder_spec_for_vector(
     cfg: Config,
     spec: Mapping[str, Any],
 ) -> EmbedderSpec:
+    etype = str(spec.get("embedder_type") or "")
+    if _is_modelless(etype):
+        # Self-sufficient: the vector space is fully defined by embedder_config
+        # (identity reads `dim` from it), so there is no configured instance to
+        # match — the spec is its own runtime spec.
+        return {
+            "embedder_type": etype,
+            "embed_model": str(spec.get("embed_model") or ""),
+            "embedder_config": dict(spec.get("embedder_config") or {}),
+        }
     vector_key = vector_space_key(spec)
     instances = embedder_instances(cfg)
     for instance in instances:
         if instance.vector_key == vector_key:
             return instance.spec
-    etype = str(spec.get("embedder_type") or "")
     same_type = [
         instance for instance in instances
         if str(instance.spec["embedder_type"]) == etype
@@ -497,7 +516,7 @@ def resolve_embedder_spec(
         elif default_spec is not None:
             resolved_model = default_spec["embed_model"]
     resolved_model = str(resolved_model or "").strip()
-    if not resolved_model:
+    if not resolved_model and not _is_modelless(etype):
         raise ValueError(f"no model configured for embedder type {etype!r}")
 
     resolved_config: EmbedderConfig = {}
