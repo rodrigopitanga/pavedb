@@ -1866,7 +1866,8 @@ class LocalStore:
         return results
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
-               filters: FilterSpec | None = None) -> SearchOutput:
+               filters: FilterSpec | None = None,
+               *, query_vector: list[float] | None = None) -> SearchOutput:
         """
         Queries the FAISS backend for top-k and keeps overfetch inside the
         store.
@@ -2043,14 +2044,19 @@ class LocalStore:
             if backend is None or col_db is None or embedder is None:
                 return None
 
-            t0 = _perf()
-            q_vec, query_cache_hit = self._encode_query_cached(
-                tenant,
-                collection,
-                embedder,
-                query,
-            )
-            embed_ms = 0.0 if query_cache_hit else _ms_since(t0)
+            if query_vector is not None:
+                # BYOV: caller supplied a raw query vector; skip the embed.
+                q_vec = np.asarray(query_vector, dtype=np.float32)
+                embed_ms = 0.0
+            else:
+                t0 = _perf()
+                q_vec, query_cache_hit = self._encode_query_cached(
+                    tenant,
+                    collection,
+                    embedder,
+                    query,
+                )
+                embed_ms = 0.0 if query_cache_hit else _ms_since(t0)
 
             with self._collection_read_lock(tenant, collection):
                 backend = self._emb.get(key)

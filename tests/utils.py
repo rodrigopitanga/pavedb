@@ -597,13 +597,15 @@ class SpyStore:
 
     def index_records(self, tenant: str, collection: str, docid: str,
                       records: Iterable[Record],
-                      doc_meta: dict[str, Any] | None = None) -> IndexResult:
+                      doc_meta: dict[str, Any] | None = None,
+                      *, vectors=None) -> IndexResult:
         recs = list(records)
         self.calls.append(
             ("index_records", tenant, collection, docid, len(recs), doc_meta)
         )
+        extra = {"vectors": vectors} if vectors is not None else {}
         return self.impl.index_records(
-            tenant, collection, docid, recs, doc_meta=doc_meta
+            tenant, collection, docid, recs, doc_meta=doc_meta, **extra
         )
 
     def index_documents(
@@ -632,9 +634,11 @@ class SpyStore:
         ]
 
     def search(self, tenant: str, collection: str, text: str, k: int = 5,
-               filters: dict[str, Any] | None = None) -> SearchOutput:
+               filters: dict[str, Any] | None = None,
+               *, query_vector=None) -> SearchOutput:
         self.calls.append(("search", tenant, collection, text, k, filters))
-        return self.impl.search(tenant, collection, text, k, filters)
+        extra = {"query_vector": query_vector} if query_vector is not None else {}
+        return self.impl.search(tenant, collection, text, k, filters, **extra)
 
     def log_query(
         self,

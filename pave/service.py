@@ -1247,11 +1247,8 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
                     f"vector length {len(v)} does not match "
                     f"collection dim {expected_dim}",
                 )
-        if q is None:
-            # ponytail: vector search path — routing added in chunk 5
-            raise ServiceError("not_implemented", "vector search not yet routed")
         merge_common = bool(
-            include_common and common_tenant and common_collection
+            q is not None and include_common and common_tenant and common_collection
         )
         effective_common_tenant = (
             common_tenant if merge_common else None
@@ -1283,6 +1280,12 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
             timing = _sum_timing(local.timing, common.timing)
             from heapq import nlargest
             top = nlargest(k, matches, key=lambda x: x.score)
+        elif q is None:
+            # BYOV: q is None → pass the raw query vector, store skips embed.
+            result = store.search(tenant, collection, "", k,
+                                  filters=filters, query_vector=v)
+            top = result.matches
+            timing = result.timing
         else:
             result = store.search(tenant, collection, q, k, filters=filters)
             top = result.matches
@@ -1308,7 +1311,9 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
                     tenant=tenant,
                     collection=collection,
                     actor=actor,
-                    query_text=q,
+                    # ponytail: BYOV queries have no text; log "" (replay of a
+                    # raw-vector query is out of scope until the log stores v).
+                    query_text=q or "",
                     k=k,
                     filters=filters,
                     include_common=merge_common,

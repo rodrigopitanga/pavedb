@@ -175,7 +175,8 @@ class BaseStore(Protocol):
     ) -> IndexResult: ...
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
-               filters: FilterSpec | None = None) -> SearchOutput:
+               filters: FilterSpec | None = None,
+               *, query_vector: list[float] | None = None) -> SearchOutput:
         """Search for similar documents."""
         ...
 

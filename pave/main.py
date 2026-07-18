@@ -428,6 +428,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 status_map = {
                     "embedder_unavailable": 503,
                     "collection_not_found": 404,
+                    "vectors_only": 400,
+                    "dim_mismatch": 400,
                 }
                 return _error(
                     status_map.get(exc.code, 500),

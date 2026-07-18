@@ -195,6 +195,7 @@ def build_search_router(
                 body.q,
                 body.k,
                 filters=body.filters,
+                v=body.v,
                 include_common=include_common,
                 common_tenant=cfg.common_tenant,
                 common_collection=cfg.common_collection,
