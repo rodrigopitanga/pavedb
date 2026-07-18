@@ -77,7 +77,7 @@ def _error_class(code: str, error_type: str | None = None) -> type[PaveError]:
     if (
         code.startswith("invalid_")
         or code.endswith("_invalid")
-        or code == "no_text_extracted"
+        or code in ("no_text_extracted", "vectors_only", "dim_mismatch")
     ):
         return InvalidRequest
     return PaveError
@@ -94,6 +94,14 @@ def _raise_result(result: Mapping[str, Any]) -> None:
 def _translate_service_error(exc: ServiceError) -> PaveError:
     cls = _error_class(exc.code)
     return cls(exc.code, exc.message)
+
+
+def _batch_item_with_vector(document: object) -> dict[str, Any]:
+    # pavesdk.batch_item drops `vector`; re-attach it for BYOV batches.
+    item = batch_item(document)
+    if isinstance(document, Mapping) and document.get("vector") is not None:
+        item["vector"] = document["vector"]
+    return item
 
 
 def _unwrap(result: dict[str, Any]) -> dict[str, Any]:
@@ -290,7 +298,7 @@ class LocalClient(BaseClient):
             svc_ingest_documents_batch,
             tenant,
             collection,
-            [batch_item(document) for document in documents],
+            [_batch_item_with_vector(document) for document in documents],
         )
         return _unwrap(result)
 
@@ -298,11 +306,12 @@ class LocalClient(BaseClient):
         self,
         tenant: str,
         collection: str,
-        q: str,
+        q: str | None,
         k: int = 5,
         *,
         filters: FilterSpec | None = None,
         include_common: bool | None = None,
+        v: list[float] | None = None,
     ) -> list[dict]:
         cfg = get_cfg()
         result = self._call(
@@ -316,6 +325,7 @@ class LocalClient(BaseClient):
             common_tenant=cfg.common_tenant,
             common_collection=cfg.common_collection,
             actor="library",
+            v=v,
         )
         return list(_unwrap(result)["matches"])
 

@@ -203,6 +203,32 @@ def test_local_client_close_delegates_store_close(tmp_path):
     assert store.flush_count == 0
 
 
+def test_local_byov_vector_round_trip(tmp_path):
+    # Identity collection: bulk-ingest raw vectors via the public add_many,
+    # search by raw vector via the LocalClient path. Public Collection.search
+    # cannot pass `v` yet (needs a pavesdk bump), so search hits _search direct.
+    with provider(tmp_path / "db") as db:
+        vecs = db.create_collection(
+            "vecs",
+            embedder_type="identity",
+            embedder_config={"dim": 4},
+        )
+        batch = vecs.add_many([
+            {"vector": [1.0, 0.0, 0.0, 0.0], "docid": "A"},
+            {"vector": [0.0, 1.0, 0.0, 0.0], "docid": "B"},
+        ])
+        assert batch["succeeded"] == 2
+        assert batch["failed"] == 0
+
+        hits = db._search("default", "vecs", None, k=2, v=[1.0, 0.0, 0.0, 0.0])
+        assert hits
+        assert hits[0]["meta"]["docid"] == "A"
+
+        # Text on a vector-only collection is rejected.
+        with pytest.raises(InvalidRequest):
+            vecs.add("plain text", docid="C")
+
+
 def test_collection_surface_returns_clean_data(tmp_path):
     file_path = tmp_path / "book.txt"
     file_path.write_text("Captain Nemo commands the Nautilus", encoding="utf-8")
