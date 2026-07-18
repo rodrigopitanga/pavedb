@@ -31,6 +31,8 @@ from threading import Condition, Lock, get_ident
 from typing import Any
 import time as _time
 
+import numpy as np
+
 # Python 3.12 deprecated the default sqlite3 datetime adapters.
 # Register explicit ISO adapters so sqlite I/O doesn't warn.
 sqlite3.register_adapter(date, date.isoformat)
@@ -1660,14 +1662,25 @@ class LocalStore:
 
         return rids_to_add, texts_to_encode, chunk_rows, safe_doc_meta
 
-    def index_records(self, tenant: str, collection: str, docid: str,
-                      records: Iterable[Record],
-                      doc_meta: Metadata | None = None
-                      ) -> IndexResult:
+    def index_records(
+        self,
+        tenant: str,
+        collection: str,
+        docid: str,
+        records: Iterable[Record],
+        doc_meta: Metadata | None = None,
+        *,
+        vectors=None,
+    ) -> IndexResult:
         """
         Ingests records as (rid, text, meta). Guarantees non-null text, coerces
         dict-records, updates SQLite metadata, saves index. Thread critical.
+
+        BYOV: when ``vectors`` is given (one raw vector per record) the embed
+        step and the chunk-text sidecar are skipped; the vectors go straight to
+        the backend and hydration returns no text for those records.
         """
+        byov = vectors is not None
         chunk_count = 0
         purged = 0
         key = (tenant, collection)
@@ -1686,10 +1699,13 @@ class LocalStore:
                 save_text=False,
             )
         )
-        vectors = (
-            self._encode_embedder(embedder, texts_to_encode)
-            if rids_to_add else None
-        )
+        if byov:
+            vectors = np.asarray(vectors, dtype=np.float32)
+        else:
+            vectors = (
+                self._encode_embedder(embedder, texts_to_encode)
+                if rids_to_add else None
+            )
 
         with self._collection_write_lock(tenant, collection):
             self._load_or_init(tenant, collection)
@@ -1710,13 +1726,18 @@ class LocalStore:
                 return IndexResult(indexed_chunks=0, purged_chunks=purged)
 
             self._mark_index_dirty(tenant, collection)
-            for rid, text in zip(rids_to_add, texts_to_encode, strict=False):
-                self._save_chunk_text(tenant, collection, rid, text)
-            if current_embedder is not embedder:
-                vectors = self._encode_embedder(
-                    current_embedder,
+            if not byov:
+                for rid, text in zip(
+                    rids_to_add,
                     texts_to_encode,
-                )
+                    strict=False,
+                ):
+                    self._save_chunk_text(tenant, collection, rid, text)
+                if current_embedder is not embedder:
+                    vectors = self._encode_embedder(
+                        current_embedder,
+                        texts_to_encode,
+                    )
             assert vectors is not None
 
             # Write metadata to SQLite (inside collection_lock)

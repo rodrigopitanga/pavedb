@@ -163,10 +163,16 @@ class BaseStore(Protocol):
 
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int: ...
 
-    def index_records(self, tenant: str, collection: str, docid: str,
-                      records: Iterable[Record],
-                      doc_meta: Metadata | None = None
-                      ) -> IndexResult: ...
+    def index_records(
+        self,
+        tenant: str,
+        collection: str,
+        docid: str,
+        records: Iterable[Record],
+        doc_meta: Metadata | None = None,
+        *,
+        vectors=None,
+    ) -> IndexResult: ...
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: FilterSpec | None = None) -> SearchOutput:

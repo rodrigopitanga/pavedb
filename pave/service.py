@@ -372,6 +372,11 @@ def _is_identity_collection(store, tenant: str, collection: str) -> bool:
 
 
 def _get_collection_vector_dim(store, tenant: str, collection: str) -> int | None:
+    # ponytail: reads embedder_config.dim only — set for identity collections.
+    # Embedding-collection BYOV dim goes unvalidated here (real text models
+    # have no configured dim); a wrong-dim vector there fails later at FAISS.
+    # Wire _collection_embedders[key].dim via a store accessor if that path
+    # needs a clean 400.
     cfg = _coll_cfg(store, tenant, collection)
     if not cfg:
         return None
@@ -708,10 +713,29 @@ def _enforce_ingest_size_limit(size_bytes: int) -> None:
             f"file exceeds the {int(limit_bytes / (1024 * 1024))} MB limit",
         )
 
-def _index_records_result(store, tenant: str, collection: str, baseid: str,
-                          records, doc_meta, t0: float, label: str) -> ServiceResult:
+
+def _index_records_result(
+    store,
+    tenant: str,
+    collection: str,
+    baseid: str,
+    records,
+    doc_meta,
+    t0: float,
+    label: str,
+    *,
+    vectors=None,
+) -> ServiceResult:
     """Shared tail for ingest paths: index records, metrics, log, envelope."""
-    result = store.index_records(tenant, collection, baseid, records, doc_meta)
+    extra = {"vectors": vectors} if vectors is not None else {}
+    result = store.index_records(
+        tenant,
+        collection,
+        baseid,
+        records,
+        doc_meta,
+        **extra,
+    )
     if result.purged_chunks:
         m_inc("purge_total", float(result.purged_chunks))
     m_inc("documents_indexed_total", 1.0)
@@ -821,11 +845,17 @@ def ingest_text(
     _t0 = _time.perf_counter()
     with m_timed("ingest"):
         try:
-            if _is_identity_collection(store, tenant, collection):
-                if text is not None:
-                    raise ServiceError("vectors_only", "collection accepts vectors only")
-            elif vector is not None:
-                expected_dim = _get_collection_vector_dim(store, tenant, collection)
+            if (
+                _is_identity_collection(store, tenant, collection)
+                and text is not None
+            ):
+                raise ServiceError("vectors_only", "collection accepts vectors only")
+            if vector is not None:
+                expected_dim = _get_collection_vector_dim(
+                    store,
+                    tenant,
+                    collection,
+                )
                 if expected_dim is not None and len(vector) != expected_dim:
                     raise ServiceError(
                         "dim_mismatch",
@@ -833,8 +863,28 @@ def ingest_text(
                         f"collection dim {expected_dim}",
                     )
             if text is None:
-                # ponytail: vector ingest path — routing added in chunk 4
-                raise ServiceError("not_implemented", "vector ingest not yet routed")
+                baseid = docid or _default_docid("")
+                now = datetime.now(tz.utc).isoformat(timespec="seconds")
+                now = now.replace("+00:00", "Z")
+                doc_meta = {
+                    "docid": baseid,
+                    "ingested_at": now,
+                    **(metadata or {}),
+                }
+                # 1 vector = 1 record, rid namespaced under docid; store's
+                # vector branch skips embed + chunk-text sidecar.
+                records = [(f"{baseid}::0", "", {})]
+                return _index_records_result(
+                    store,
+                    tenant,
+                    collection,
+                    baseid,
+                    records,
+                    doc_meta,
+                    _t0,
+                    "ingest_text",
+                    vectors=[vector],
+                )
             _enforce_ingest_size_limit(len(text.encode("utf-8")))
             baseid = _validate_docid(docid or _default_docid(""))
             meta_from_call = _validate_metadata(metadata)
@@ -913,9 +963,10 @@ def _ingest_documents_batch_serial(
                 store,
                 tenant,
                 collection,
-                str(item["text"]),
+                item.get("text"),
                 item.get("docid"),
                 item.get("metadata"),
+                vector=item.get("vector"),
             )
         except ServiceError as exc:
             result = {
@@ -977,14 +1028,20 @@ def ingest_documents_batch(
                 "error_type": "invalid",
             }
         text = item.get("text")
-        if not isinstance(text, str):
+        has_text = isinstance(text, str)
+        has_vector = isinstance(item.get("vector"), list)
+        if has_text == has_vector:
             return {
                 "ok": False,
                 "code": "invalid_batch",
-                "error": f"documents[{index}].text must be a string",
+                "error": (
+                    f"documents[{index}] must provide exactly one of "
+                    "text (string) or vector (list of floats)"
+                ),
                 "error_type": "invalid",
             }
-        _enforce_ingest_size_limit(len(text.encode("utf-8")))
+        if has_text:
+            _enforce_ingest_size_limit(len(text.encode("utf-8")))
         docid_value = item.get("docid")
         if docid_value is not None and not isinstance(docid_value, str):
             return {
@@ -1002,8 +1059,15 @@ def ingest_documents_batch(
                 "error_type": "invalid",
             }
 
+    # ponytail: vector batches take the serial path (per-item ingest_text),
+    # skipping index_documents' single encode/add cycle. Identity batches are
+    # homogeneous all-vector; add an all-vector branch to index_documents only
+    # if bulk-BYOV throughput ever demands it.
+    has_any_vector = any(
+        isinstance(item.get("vector"), list) for item in items
+    )
     batch_index = getattr(store, "index_documents", None)
-    if not callable(batch_index):
+    if has_any_vector or not callable(batch_index):
         return _ingest_documents_batch_serial(store, tenant, collection, items)
 
     from pave.filters import sanit_meta_dict
@@ -1166,11 +1230,17 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
     start = _time.perf_counter()
     m_inc("search_total", 1.0)
     try:
-        if _is_identity_collection(store, tenant, collection):
-            if q is not None:
-                raise ServiceError("vectors_only", "collection accepts vectors only")
-        elif v is not None:
-            expected_dim = _get_collection_vector_dim(store, tenant, collection)
+        if (
+            _is_identity_collection(store, tenant, collection)
+            and q is not None
+        ):
+            raise ServiceError("vectors_only", "collection accepts vectors only")
+        if v is not None:
+            expected_dim = _get_collection_vector_dim(
+                store,
+                tenant,
+                collection,
+            )
             if expected_dim is not None and len(v) != expected_dim:
                 raise ServiceError(
                     "dim_mismatch",

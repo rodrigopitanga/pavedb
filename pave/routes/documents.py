@@ -201,6 +201,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                         text_body.text,
                         text_body.docid,
                         text_body.metadata,
+                        vector=text_body.vector,
                     )
                 else:
                     call = functools.partial(
@@ -246,6 +247,8 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     "invalid_collection_name": 400,
                     "invalid_docid": 400,
                     "unsupported_or_invalid_document": 400,
+                    "vectors_only": 400,
+                    "dim_mismatch": 400,
                     "ingest_failed": 500,
                 }
                 return error(
