@@ -372,11 +372,11 @@ def _is_identity_collection(store, tenant: str, collection: str) -> bool:
 
 
 def _get_collection_vector_dim(store, tenant: str, collection: str) -> int | None:
-    # ponytail: reads embedder_config.dim only — set for identity collections.
-    # Embedding-collection BYOV dim goes unvalidated here (real text models
-    # have no configured dim); a wrong-dim vector there fails later at FAISS.
-    # Wire _collection_embedders[key].dim via a store accessor if that path
-    # needs a clean 400.
+    get_dim = getattr(store, "get_collection_vector_dim", None)
+    if callable(get_dim):
+        resolved = get_dim(tenant, collection)
+        if resolved is not None:
+            return int(resolved)
     cfg = _coll_cfg(store, tenant, collection)
     if not cfg:
         return None

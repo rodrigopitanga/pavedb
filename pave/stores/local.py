@@ -1204,6 +1204,16 @@ class LocalStore:
             lambda catalog: catalog.get_collection_config(tenant, collection),
         )
 
+    def get_collection_vector_dim(self, tenant: str, collection: str) -> int:
+        key = (tenant, collection)
+        with self._collection_read_lock(tenant, collection):
+            embedder = self._collection_embedders.get(key)
+            if embedder is not None:
+                return int(embedder.dim)
+        with self._collection_write_lock(tenant, collection):
+            self._load_or_init(tenant, collection)
+            return int(self._collection_embedders[key].dim)
+
     def log_query(
         self,
         *,

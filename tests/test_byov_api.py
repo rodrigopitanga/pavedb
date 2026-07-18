@@ -74,6 +74,17 @@ def test_dim_mismatch_ingest_and_search_are_400(client):
     assert r.json()["code"] == "dim_mismatch"
 
 
+def test_embedding_collection_dim_mismatch_is_400(client):
+    client.post("/v1/collections/acme/mixed-dim")
+    for path, payload in (
+        ("documents", {"vector": [1.0, 2.0], "docid": "bad"}),
+        ("search", {"v": [1.0, 2.0]}),
+    ):
+        r = client.post(f"/v1/collections/acme/mixed-dim/{path}", json=payload)
+        assert r.status_code == 400, r.text
+        assert r.json()["code"] == "dim_mismatch"
+
+
 def test_text_on_identity_collection_is_400(client):
     tenant, name = _mk_identity(client)
     r = client.post(

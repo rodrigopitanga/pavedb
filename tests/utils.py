@@ -547,6 +547,14 @@ class SpyStore:
             return None
         return get_config(tenant, collection)
 
+    def get_collection_vector_dim(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> int | None:
+        get_dim = getattr(self.impl, "get_collection_vector_dim", None)
+        return get_dim(tenant, collection) if callable(get_dim) else None
+
     def purge_doc(self, tenant: str, collection: str, docid: str) -> int:
         self.calls.append(("purge_doc", tenant, collection, docid))
         return self.impl.purge_doc(tenant, collection, docid)

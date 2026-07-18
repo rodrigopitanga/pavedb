@@ -123,6 +123,10 @@ class BaseStore(Protocol):
         name: str,
     ) -> CollectionInfo | None: ...
 
+    def get_collection_vector_dim(self, tenant: str, collection: str) -> int:
+        """Return the collection's resolved runtime vector dimension."""
+        ...
+
     def list_tenants(self) -> list[str]:
         """List all tenants."""
         ...
