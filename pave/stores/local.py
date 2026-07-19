@@ -73,6 +73,7 @@ CollectionConfig = dict[str, Any]
 # `refresh_catalog_metrics()` walks every collection under its read lock to
 # count docs/chunks. Request-path `catalog_metrics()` only reads this cache.
 _CATALOG_METRICS_TTL_S = 5.0
+_CHUNK_DRIFT_METRICS_TTL_S = 60.0
 _QUERY_VECTOR_CACHE_MAX = 256
 _INDEX_DIRTY_FILE = ".pavedb-index-dirty"
 
@@ -238,6 +239,8 @@ class LocalStore:
         self._state_lock = _StoreStateLock()
         self._catalog_metrics_lock = Lock()
         self._catalog_metrics_cache: tuple[float, dict[str, int]] | None = None
+        self._chunk_drift_metrics_lock = Lock()
+        self._chunk_drift_metrics_cache: tuple[float, dict[str, int]] | None = None
         self._query_vector_cache: OrderedDict[
             tuple[str, str, int, str],
             tuple[Embedder, Any],
@@ -1497,6 +1500,60 @@ class LocalStore:
                 return None, True
             age = _time.monotonic() - cached[0]
             return age, age > _CATALOG_METRICS_TTL_S
+
+    def query_log_gauge_stats(self) -> tuple[int, float | None]:
+        total = 0
+        oldest: float | None = None
+        refs = self._with_catalog_retry(
+            "query_log_collection_refs",
+            lambda catalog: catalog.list_collection_refs(),
+        )
+        for tenant, collection in refs:
+            count, first = self._read_collection_db(
+                tenant,
+                collection,
+                op_name="query_log_gauge_stats",
+                default=(0, None),
+                reader=lambda db: db.query_log_gauge_stats(),
+            )
+            total += count
+            if first is not None and (oldest is None or first < oldest):
+                oldest = first
+        return total, oldest
+
+    def chunk_drift_stats(self) -> dict[str, int]:
+        with self._chunk_drift_metrics_lock:
+            now = _time.monotonic()
+            cached = self._chunk_drift_metrics_cache
+            if cached is not None and now - cached[0] < _CHUNK_DRIFT_METRICS_TTL_S:
+                return dict(cached[1])
+
+            orphaned = 0
+            missing = 0
+            refs = self._with_catalog_retry(
+                "chunk_drift_collection_refs",
+                lambda catalog: catalog.list_collection_refs(),
+            )
+            for tenant, collection in refs:
+                paths = self._read_collection_db(
+                    tenant,
+                    collection,
+                    op_name="chunk_drift_paths",
+                    default=set(),
+                    reader=lambda db: db.chunk_paths(),
+                )
+                base = Path(self._base_path(tenant, collection))
+                expected = {base / path for path in paths}
+                sidecars = set((base / "chunks").glob("*.txt"))
+                orphaned += len(sidecars - expected)
+                missing += len(expected - sidecars)
+
+            stats = {
+                "orphaned_sidecars": orphaned,
+                "missing_sidecars": missing,
+            }
+            self._chunk_drift_metrics_cache = (now, stats)
+            return dict(stats)
 
     def _compute_catalog_metrics(self) -> dict[str, int]:
         doc_count = 0

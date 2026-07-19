@@ -221,6 +221,10 @@ class BaseStore(Protocol):
         offset: int = 0,
     ) -> list[QueryLogEntry]: ...
 
+    def query_log_gauge_stats(self) -> tuple[int, float | None]: ...
+
+    def chunk_drift_stats(self) -> dict[str, int]: ...
+
     def put_query_home(
         self,
         query_id: str,

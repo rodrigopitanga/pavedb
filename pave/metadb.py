@@ -659,6 +659,21 @@ class CollectionDB:
             for row in rows
         ]
 
+    def query_log_gauge_stats(self) -> tuple[int, float | None]:
+        with self._reader() as conn:
+            row = conn.execute(
+                "SELECT COUNT(*), MIN(strftime('%s', executed_at)) "
+                "FROM query_log"
+            ).fetchone()
+        return int(row[0]), None if row[1] is None else float(row[1])
+
+    def chunk_paths(self) -> set[str]:
+        with self._reader() as conn:
+            rows = conn.execute(
+                "SELECT chunk_path FROM chunks WHERE chunk_path IS NOT NULL"
+            ).fetchall()
+        return {str(row[0]) for row in rows}
+
     # ------------------------------------------------------------------
     # Read operations — use _rconn serialized by _read_lock (WAL)
     # ------------------------------------------------------------------

@@ -15,6 +15,7 @@ from __future__ import annotations
 import numpy as np
 
 from ..config import get_cfg
+from ..metrics import inc_labeled
 
 
 CONFIG_KEYS: tuple[str, ...] = ("dim", "base_url", "batch_size")
@@ -126,4 +127,10 @@ class OpenAIEmbedder:
         if self._dim is not None:
             kwargs["dimensions"] = int(self._dim)
         res = self.client.embeddings.create(**kwargs)
+        inc_labeled("embedder_embeddings_total", {"model": self.model})
+        inc_labeled(
+            "embedder_embeddings_samples_total",
+            {"model": self.model},
+            float(len(texts)),
+        )
         return np.array([d.embedding for d in res.data], dtype=np.float32)

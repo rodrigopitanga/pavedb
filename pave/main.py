@@ -23,6 +23,7 @@ from pave.embedders import LazyEmbedder, get_embedder
 from pave.metrics import (
     flush as metrics_flush,
     flush_if_idle as metrics_flush_if_idle,
+    inc as metrics_inc,
     record_http_request,
     set_error as metrics_set_error,
     set_data_dir as metrics_set_data_dir,
@@ -442,6 +443,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 # Thread keeps running; suppress its eventual result/exception.
                 release_in_finally = False
                 completion_future.add_done_callback(finish_background_search)
+                metrics_inc("searches_timeout_total", 1.0)
                 return _error(
                     503, "search_timeout",
                     f"search timed out after {int(timeout_s * 1000)}ms",

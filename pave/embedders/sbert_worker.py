@@ -23,6 +23,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..config import get_cfg
+from ..metrics import inc_labeled
 from ._device import resolve_device
 
 _STARTUP_TIMEOUT_S = 300.0
@@ -340,7 +341,14 @@ class ProcessSbertEmbedder:
 
         slot = self._choose_slot()
         with slot.lock:
-            return self._encode_slot_locked(slot, texts)
+            vectors = self._encode_slot_locked(slot, texts)
+        inc_labeled("embedder_embeddings_total", {"model": self.model_name})
+        inc_labeled(
+            "embedder_embeddings_samples_total",
+            {"model": self.model_name},
+            float(len(texts)),
+        )
+        return vectors
 
     def close(self) -> None:
         for slot in self._slots:

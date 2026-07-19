@@ -17,6 +17,7 @@ import numpy as np
 from numpy.typing import NDArray
 
 from ..config import get_cfg
+from ..metrics import inc_labeled
 from ._device import resolve_device
 
 
@@ -103,6 +104,7 @@ class SbertEmbedder:
         ).strip()
         if not model_name:
             raise RuntimeError("embedder.sbert.model must be configured")
+        self.model_name = model_name
         if device is None:
             device = cfg.get("embedder.sbert.device")
         device = resolve_device(device, torch)
@@ -136,5 +138,11 @@ class SbertEmbedder:
             batch_size=self.batch_size,
             show_progress_bar=False,
             convert_to_numpy=True,
+        )
+        inc_labeled("embedder_embeddings_total", {"model": self.model_name})
+        inc_labeled(
+            "embedder_embeddings_samples_total",
+            {"model": self.model_name},
+            float(len(texts)),
         )
         return vecs.astype(np.float32)

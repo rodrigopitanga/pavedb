@@ -25,6 +25,49 @@ _counters: dict[str, float] = {
     "errors_total": 0.0,
 }
 _labeled_counters: dict[str, dict[tuple[tuple[str, str], ...], float]] = {}
+_gauges: dict[str, float] = {}
+
+_METRIC_META: dict[str, tuple[str, str]] = {
+    "http_requests_total": ("counter", "HTTP requests by route and status."),
+    "searches_zero_matches_total": (
+        "counter",
+        "Completed searches that returned no matches.",
+    ),
+    "searches_with_filters_total": (
+        "counter",
+        "Completed searches that used metadata filters.",
+    ),
+    "searches_without_filters_total": (
+        "counter",
+        "Completed searches that did not use metadata filters.",
+    ),
+    "searches_common_merge_total": (
+        "counter",
+        "Completed searches that merged a distinct common collection.",
+    ),
+    "searches_timeout_total": ("counter", "Searches that timed out."),
+    "query_log_rows": ("gauge", "Stored query-log rows."),
+    "query_log_oldest_age_seconds": (
+        "gauge",
+        "Age in seconds of the oldest stored query-log row.",
+    ),
+    "embedder_embeddings_total": (
+        "counter",
+        "Completed embedder encode calls by model.",
+    ),
+    "embedder_embeddings_samples_total": (
+        "counter",
+        "Embedded samples by model.",
+    ),
+    "chunks_orphaned_total": (
+        "gauge",
+        "Chunk sidecar files without a metadata row.",
+    ),
+    "chunks_missing_sidecar_total": (
+        "gauge",
+        "Chunk metadata rows whose sidecar file is missing.",
+    ),
+}
 
 _last_error: str | None = None
 
@@ -160,10 +203,11 @@ def flush_if_idle(min_idle_seconds: float) -> bool:
 
 def reset() -> dict[str, Any]:
     """Reset all metrics to initial state and persist."""
-    global _counters, _last_error, _latencies, _started, _labeled_counters
+    global _counters, _gauges, _last_error, _latencies, _started, _labeled_counters
     with _lock:
         _counters = {k: 0.0 for k in _counters}
         _labeled_counters = {}
+        _gauges = {}
         _last_error = None
         for op in _latencies:
             _latencies[op].clear()
@@ -188,6 +232,11 @@ def inc_labeled(name: str, labels: dict[str, str], value: float = 1.0):
         series = _labeled_counters.setdefault(name, {})
         series[key] = series.get(key, 0.0) + value
         _mark_dirty_locked()
+
+
+def _set_gauge(name: str, value: float) -> None:
+    with _lock:
+        _gauges[name] = value
 
 def record_http_request(method: str, path: str, status_code: int):
     status_class = f"{status_code // 100}xx"
@@ -251,12 +300,39 @@ def latency_percentiles(op: str) -> dict[str, float]:
         "count": len(samples),
     }
 
-def snapshot(extra: dict[str, Any] | None = None) -> dict[str, Any]:
+def _refresh_product_gauges(store: Any | None) -> None:
+    if store is None:
+        return
+    try:
+        rows, oldest = store.query_log_gauge_stats()
+        _set_gauge("query_log_rows", float(rows))
+        _set_gauge(
+            "query_log_oldest_age_seconds",
+            0.0 if oldest is None else max(0.0, time.time() - oldest),
+        )
+    except Exception:
+        pass
+    try:
+        drift = store.chunk_drift_stats()
+        _set_gauge("chunks_orphaned_total", float(drift["orphaned_sidecars"]))
+        _set_gauge(
+            "chunks_missing_sidecar_total",
+            float(drift["missing_sidecars"]),
+        )
+    except Exception:
+        pass
+
+
+def snapshot(
+    extra: dict[str, Any] | None = None,
+    store: Any | None = None,
+) -> dict[str, Any]:
+    _refresh_product_gauges(store)
     with _lock:
         data = dict(_counters)
-        data["http_requests_total"] = _labeled_counter_snapshot(
-            "http_requests_total"
-        )
+        data.update(_gauges)
+        for name in _labeled_counters:
+            data[name] = _labeled_counter_snapshot(name)
         data.update({
             "uptime_seconds": time.time() - _started,
             "last_error": _last_error,
@@ -303,19 +379,44 @@ def _prom_labels(labels: dict[str, str]) -> str:
         for key, value in sorted(labels.items())
     )
 
+
+def _metric_meta(name: str) -> tuple[str, str]:
+    return _METRIC_META.get(
+        name,
+        ("counter" if name.endswith("_total") else "gauge", name.replace("_", " ")),
+    )
+
+
+def _prom_help_value(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("\n", "\\n")
+
+
+def _prom_metric_header(name: str) -> list[str]:
+    metric_type, help_text = _metric_meta(name)
+    metric = f"pavedb_{name}"
+    return [
+        f"# HELP {metric} {_prom_help_value(help_text)}",
+        f"# TYPE {metric} {metric_type}",
+    ]
+
 def to_prometheus(
     extra: dict[str, Any] | None = None,
     build: dict[str, str] | None = None,
+    store: Any | None = None,
 ) -> str:
     s = []
-    snap = snapshot(extra)
+    snap = snapshot(extra, store=store)
     for k, v in snap.items():
         if isinstance(v, (int, float)):
+            s.extend(_prom_metric_header(k))
             s.append(f"pavedb_{k} {float(v)}")
-    for item in snap.get("http_requests_total", []):
-        labels = _prom_labels(item["labels"])
-        s.append(f"pavedb_http_requests_total{{{labels}}} {float(item['value'])}")
+        elif isinstance(v, list):
+            s.extend(_prom_metric_header(k))
+            for item in v:
+                labels = _prom_labels(item["labels"])
+                s.append(f"pavedb_{k}{{{labels}}} {float(item['value'])}")
     if build:
-        labels = ",".join([f'{key}="{val}"' for key, val in build.items()])
+        s.extend(_prom_metric_header("build_info"))
+        labels = _prom_labels(build)
         s.append(f"pavedb_build_info{{{labels}}} 1")
     return "\n".join(s) + "\n"

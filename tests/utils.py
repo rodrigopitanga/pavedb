@@ -731,6 +731,14 @@ class SpyStore:
         )
         return self.impl.list_query_logs(tenant, collection, limit, offset)
 
+    def query_log_gauge_stats(self) -> tuple[int, float | None]:
+        self.calls.append(("query_log_gauge_stats",))
+        return self.impl.query_log_gauge_stats()
+
+    def chunk_drift_stats(self) -> dict[str, int]:
+        self.calls.append(("chunk_drift_stats",))
+        return self.impl.chunk_drift_stats()
+
     def put_query_home(
         self,
         query_id: str,
