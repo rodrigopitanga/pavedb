@@ -22,6 +22,25 @@ def test_search_failure_returns_code(client, app, monkeypatch):
     assert data["code"] == "search_failed"
 
 
+def test_search_encode_failure_returns_503(client, app, monkeypatch):
+    client.post("/v1/collections/acme/encode-failure-search")
+    embedder = app.state.store.impl._collection_embedders[
+        ("acme", "encode-failure-search")
+    ]
+
+    def fail_encode(_texts):
+        raise RuntimeError("embedder offline")
+
+    monkeypatch.setattr(embedder, "encode", fail_encode)
+    response = client.post(
+        "/v1/collections/acme/encode-failure-search/search",
+        json={"q": "hello", "k": 1},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "embedder_unavailable"
+
+
 def test_search_timeout_returns_503(client, app, monkeypatch):
     """Search that exceeds timeout_ms returns 503 search_timeout."""
     client.post("/v1/collections/acme/timeouttestcol")

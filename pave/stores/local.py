@@ -594,6 +594,17 @@ class LocalStore:
                 f"{cfg.get('embed_model')!s} dimension unavailable: {exc}"
             ) from exc
 
+    @staticmethod
+    def _encode_embedder(embedder: Embedder, texts: list[str]) -> Any:
+        try:
+            return embedder.encode(texts)
+        except EmbedderUnavailableError:
+            raise
+        except Exception as exc:
+            raise EmbedderUnavailableError(
+                f"embedder encode failed: {exc}"
+            ) from exc
+
     def _validate_embedder_for_config(self, cfg: CollectionConfig) -> None:
         embedder = self._get_embedder_for_config(cfg)
         self._embedder_dim_for_config(cfg, embedder)
@@ -662,7 +673,7 @@ class LocalStore:
                 rids.append(rid)
                 texts.append(text)
         if rids:
-            backend.add(rids, embedder.encode(texts))
+            backend.add(rids, self._encode_embedder(embedder, texts))
         backend.flush()
         self._clear_index_dirty(tenant, collection)
 
@@ -776,7 +787,7 @@ class LocalStore:
                 self._query_vector_cache.move_to_end(cache_key)
                 return cached, True
 
-        vector = embedder.encode([query])[0]
+        vector = self._encode_embedder(embedder, [query])[0]
         with self._query_vector_cache_lock:
             self._query_vector_cache[cache_key] = vector
             self._query_vector_cache.move_to_end(cache_key)
@@ -1645,7 +1656,7 @@ class LocalStore:
             )
         )
         vectors = (
-            embedder.encode(texts_to_encode)
+            self._encode_embedder(embedder, texts_to_encode)
             if rids_to_add else None
         )
 
@@ -1671,7 +1682,10 @@ class LocalStore:
             for rid, text in zip(rids_to_add, texts_to_encode, strict=False):
                 self._save_chunk_text(tenant, collection, rid, text)
             if current_embedder is not embedder:
-                vectors = current_embedder.encode(texts_to_encode)
+                vectors = self._encode_embedder(
+                    current_embedder,
+                    texts_to_encode,
+                )
             assert vectors is not None
 
             # Write metadata to SQLite (inside collection_lock)
@@ -1740,7 +1754,7 @@ class LocalStore:
             all_texts.extend(texts)
 
         vectors = (
-            embedder.encode(all_texts)
+            self._encode_embedder(embedder, all_texts)
             if all_rids else None
         )
 
@@ -1781,7 +1795,10 @@ class LocalStore:
             if all_rids:
                 self._mark_index_dirty(tenant, collection)
                 if current_embedder is not embedder:
-                    vectors = current_embedder.encode(all_texts)
+                    vectors = self._encode_embedder(
+                        current_embedder,
+                        all_texts,
+                    )
                 assert vectors is not None
                 backend.add(all_rids, vectors)
                 _rids = all_rids[:3]

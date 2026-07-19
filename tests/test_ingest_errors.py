@@ -185,3 +185,22 @@ def test_ingest_overloaded_returns_503(client, app, monkeypatch):
     data = r.json()
     assert data["ok"] is False
     assert data["code"] == "ingest_overloaded"
+
+
+def test_ingest_encode_failure_returns_503(client, app, monkeypatch):
+    client.post("/v1/collections/acme/encode-failure-ingest")
+    embedder = app.state.store.impl._collection_embedders[
+        ("acme", "encode-failure-ingest")
+    ]
+
+    def fail_encode(_texts):
+        raise RuntimeError("embedder offline")
+
+    monkeypatch.setattr(embedder, "encode", fail_encode)
+    response = client.post(
+        "/v1/collections/acme/encode-failure-ingest/documents",
+        json={"text": "hello", "docid": "d1"},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["code"] == "embedder_unavailable"
