@@ -25,6 +25,7 @@ from pave.metrics import (
     flush_if_idle as metrics_flush_if_idle,
     inc as metrics_inc,
     record_http_request,
+    refresh_product_gauges as metrics_refresh_product_gauges,
     set_error as metrics_set_error,
     set_data_dir as metrics_set_data_dir,
 )
@@ -104,6 +105,7 @@ async def _refresh_catalog_metrics_periodically(store) -> None:
     while True:
         try:
             await loop.run_in_executor(None, store.refresh_catalog_metrics)
+            await loop.run_in_executor(None, metrics_refresh_product_gauges, store)
         except Exception as exc:
             metrics_set_error(f"catalog_metrics_refresh: {exc}")
         await asyncio.sleep(CATALOG_METRICS_REFRESH_INTERVAL_SECONDS)

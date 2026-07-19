@@ -4,6 +4,8 @@
 from pathlib import Path
 import time
 
+from pave.metrics import refresh_product_gauges
+
 
 def _series(snapshot, name):
     return {
@@ -33,6 +35,7 @@ def test_product_search_metrics(client, app, cfg):
     )
 
     assert plain.status_code == filtered.status_code == merged.status_code == 200
+    refresh_product_gauges(app.state.store)
     snap = client.get("/health/metrics").json()
     labels = (("collection", "metrics"), ("tenant", "acme"))
     assert _series(snap, "searches_zero_matches_total")[labels] >= 3
@@ -59,6 +62,7 @@ def test_chunk_drift_metrics(client, app):
     path = Path(app.state.cfg.data_dir) / "t_acme" / "c_drift" / chunk["chunk_path"]
     path.unlink()
     app.state.store.impl._chunk_drift_metrics_cache = None
+    refresh_product_gauges(app.state.store)
 
     snap = client.get("/health/metrics").json()
     assert snap["chunks_missing_sidecar_total"] >= 1

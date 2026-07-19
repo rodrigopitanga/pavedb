@@ -138,7 +138,7 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
             **request.app.state.hw_info,
         }
         extra.update(store_metrics(store))
-        return trace(snapshot(extra, store=store), request)
+        return trace(snapshot(extra), request)
 
     @router.get(
         "/metrics",
@@ -161,7 +161,6 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
                 "auth": cfg.get("auth.mode"),
             },
             extra=extra,
-            store=store,
         )
         return PlainTextResponse(txt, media_type="text/plain; version=0.0.4")
 

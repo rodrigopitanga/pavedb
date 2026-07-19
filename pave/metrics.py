@@ -300,7 +300,7 @@ def latency_percentiles(op: str) -> dict[str, float]:
         "count": len(samples),
     }
 
-def _refresh_product_gauges(store: Any | None) -> None:
+def refresh_product_gauges(store: Any | None) -> None:
     if store is None:
         return
     try:
@@ -325,9 +325,7 @@ def _refresh_product_gauges(store: Any | None) -> None:
 
 def snapshot(
     extra: dict[str, Any] | None = None,
-    store: Any | None = None,
 ) -> dict[str, Any]:
-    _refresh_product_gauges(store)
     with _lock:
         data = dict(_counters)
         data.update(_gauges)
@@ -402,10 +400,9 @@ def _prom_metric_header(name: str) -> list[str]:
 def to_prometheus(
     extra: dict[str, Any] | None = None,
     build: dict[str, str] | None = None,
-    store: Any | None = None,
 ) -> str:
     s = []
-    snap = snapshot(extra, store=store)
+    snap = snapshot(extra)
     for k, v in snap.items():
         if isinstance(v, (int, float)):
             s.extend(_prom_metric_header(k))
