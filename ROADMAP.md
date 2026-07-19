@@ -90,7 +90,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-24 | ~~Python SDK package~~ | 🧱 | SDK foundation; v1.0 now includes `HttpClient` parity with `LocalClient`. Distribution target: `pavedb-sdk` package; `pavedb` provides optional local provider. | v1.0 |
 | P1-25 | ~~Dev vs prod config defaults~~ | 🔧 | Safe defaults — code defaults are prod-safe (`auth.mode=none` refuses to boot outside dev); dev overlay lives in the `make serve` env | v1.0 |
 | P1-26 | ~~Config reference + CI doc check~~ | 🧩 | Config clarity | v1.0 |
-| P1-27 | Admin key auto-generate + persist | 🧩 | Secure bootstrap | v1.1 |
+| P1-27 | ~~Admin key auto-generate + persist~~ | 🧩 | Secure bootstrap | v1.1 |
 | P1-28 | Moving-window rate limiting per tenant | 🔧 | req/min, req/hour — needs `rate_limit_buckets` table (Phase 3) | post-SQLite |
 | P1-29 | ~~VectorBackend protocol~~ | 🔧 | Initial backend seam for store split | v0.5.9 |
 | P1-29b | ~~Clean protocol + Faiss path~~ | 🔧 | Finish FAISS cutover | v0.5.9 |
@@ -495,8 +495,8 @@ and post-contract hardening.
   marketing chrome (P1-46).
 - Per-collection hot caches with isolation (P1-22).
 - ~~Batch ingest endpoint (list of documents in one call) (P1-16).~~
-- Admin key auto-generate + persist on first boot; CLI rotate /
-  show; mode-`0600` enforced (P1-27).
+- ~~Admin key auto-generate + persist on first boot; CLI rotate /
+  show; mode-`0600` enforced (P1-27).~~
 - HTTP metrics polish + product-signal metrics: histogram refactor
   with `# HELP`/`# TYPE` metadata (deferred P1-49 slice) plus
   zero-match search rate, filter usage, common-merge count, search

@@ -48,7 +48,7 @@
     {
       "key": "auth.global_key",
       "default": null,
-      "description": "Bearer token that grants admin access when auth.mode is static."
+      "description": "Admin bearer token. Server startup generates admin.key when omitted."
     },
     {
       "key": "auth.api_keys",

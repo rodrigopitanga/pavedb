@@ -71,7 +71,7 @@ replace dots with double underscores, so `auth.mode` becomes
 
 - Default: `null`
 - Env var: `PAVEDB_AUTH__GLOBAL_KEY`
-- Description: Bearer token that grants admin access when auth.mode is static.
+- Description: Admin bearer token. Server startup generates admin.key when omitted.
 
 ### `auth.api_keys`
 

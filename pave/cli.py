@@ -34,6 +34,7 @@ from pave.service import (
     search as svc_search,
     ServiceError,
 )
+from pave.auth import current_admin_key, rotate_admin_key
 from pave.config import get_cfg, reload_cfg
 from pave import metrics
 from pave.runtime_paths import (
@@ -160,6 +161,26 @@ def cmd_init(args):
         "skipped": skipped,
     }
     return out
+
+
+def _admin_key_error(exc: RuntimeError) -> dict[str, str | bool]:
+    return {"ok": False, "code": "admin_key_unavailable", "error": str(exc)}
+
+
+def cmd_admin_show_key(args):
+    try:
+        key = current_admin_key(get_cfg(), resolve_runtime_paths().home)
+    except RuntimeError as exc:
+        return _admin_key_error(exc)
+    return RawCLIOutput(f"{key}\n".encode())
+
+
+def cmd_admin_rotate_key(args):
+    try:
+        key = rotate_admin_key(get_cfg(), resolve_runtime_paths().home)
+    except RuntimeError as exc:
+        return _admin_key_error(exc)
+    return RawCLIOutput(f"{key}\n".encode())
 
 def cmd_create(args):
     embedder_config = (
@@ -498,6 +519,34 @@ def build_parser() -> argparse.ArgumentParser:
         help="Overwrite config and tenants files if they already exist",
     )
     p_init.set_defaults(func=cmd_init)
+
+    p_admin = _command(
+        sub,
+        "admin",
+        help="Manage the local admin key.",
+        description="Show or rotate the local instance admin key.",
+        example=(
+            "pavecli admin show-key",
+            "pavecli admin rotate-key",
+        ),
+    )
+    admin_sub = p_admin.add_subparsers(dest="admin_cmd", required=True)
+    p_show_key = _command(
+        admin_sub,
+        "show-key",
+        help="Print the existing admin key.",
+        description="Print the existing admin key without generating one.",
+        example="pavecli admin show-key",
+    )
+    p_show_key.set_defaults(func=cmd_admin_show_key)
+    p_rotate_key = _command(
+        admin_sub,
+        "rotate-key",
+        help="Replace the local admin key.",
+        description="Atomically replace the local admin key and print it once.",
+        example="pavecli admin rotate-key",
+    )
+    p_rotate_key.set_defaults(func=cmd_admin_rotate_key)
 
     p_create = _command(
         sub,

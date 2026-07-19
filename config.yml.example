@@ -66,7 +66,7 @@ auth:
   # Env: PAVEDB_AUTH__DEFAULT_ACCESS_TENANT
   default_access_tenant: 'public'
 
-  # Bearer token that grants admin access when auth.mode is static.
+  # Admin bearer token. Server startup generates admin.key when omitted.
   # Env: PAVEDB_AUTH__GLOBAL_KEY
   # global_key: null
 

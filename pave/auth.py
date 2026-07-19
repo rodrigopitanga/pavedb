@@ -6,6 +6,12 @@
 from __future__ import annotations
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+import os
+from pathlib import Path
+import secrets
+import stat
+import sys
+import tempfile
 # typing imports removed
 from fastapi import HTTPException, Depends, Security, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -13,6 +19,114 @@ from .config import get_cfg, get_logger
 
 bearer = HTTPBearer(auto_error=False)
 log = get_logger()
+
+
+def _admin_key_path(home: str | Path) -> Path:
+    return Path(home).expanduser() / "admin.key"
+
+
+def _read_admin_key(path: Path) -> str:
+    mode = stat.S_IMODE(path.stat().st_mode)
+    if mode & 0o077:
+        raise RuntimeError(
+            f"admin key file must be mode 0600; run chmod 600 {path}"
+        )
+    key = path.read_text(encoding="utf-8").strip()
+    if not key:
+        raise RuntimeError(f"admin key file is empty: {path}")
+    return key
+
+
+def _write_admin_key(path: Path, key: str, *, replace: bool) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not replace:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as key_file:
+                key_file.write(f"{key}\n")
+                key_file.flush()
+                os.fsync(key_file.fileno())
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+        os.chmod(path, 0o600)
+        return
+
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=".admin.key.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as key_file:
+            key_file.write(f"{key}\n")
+            key_file.flush()
+            os.fsync(key_file.fileno())
+        os.chmod(temporary, 0o600)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+def current_admin_key(cfg, home: str | Path) -> str:
+    configured = cfg.get("auth.global_key")
+    if configured:
+        return str(configured)
+    path = _admin_key_path(home)
+    cfg.set("auth.admin_key_file", str(path))
+    try:
+        return _read_admin_key(path)
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"admin key file does not exist: {path}") from exc
+
+
+def ensure_admin_key(cfg, home: str | Path) -> str:
+    configured = cfg.get("auth.global_key")
+    if configured:
+        return str(configured)
+    path = _admin_key_path(home)
+    cfg.set("auth.admin_key_file", str(path))
+    try:
+        return _read_admin_key(path)
+    except FileNotFoundError:
+        key = secrets.token_urlsafe(32)
+        try:
+            _write_admin_key(path, key, replace=False)
+        except FileExistsError:
+            return _read_admin_key(path)
+        print(
+            f"pavedb: generated admin key (prefix={key[:4]}...); "
+            f"full key in {path}",
+            file=sys.stderr,
+        )
+        return key
+
+
+def bootstrap_admin_key(cfg, home: str | Path) -> str | None:
+    """Generate/persist the admin key only when static auth needs it.
+
+    In ``auth.mode=none`` (dev), ``auth_ctx`` short-circuits to admin and never
+    reads the key file, so bootstrapping a 0600 admin.key there is pointless.
+    """
+    if str(cfg.get("auth.mode")).strip().lower() != "static":
+        return None
+    return ensure_admin_key(cfg, home)
+
+
+def rotate_admin_key(cfg, home: str | Path) -> str:
+    if cfg.get("auth.global_key"):
+        raise RuntimeError(
+            "admin key is configured explicitly; update auth.global_key instead"
+        )
+    path = _admin_key_path(home)
+    if path.exists():
+        _read_admin_key(path)
+    key = secrets.token_urlsafe(32)
+    _write_admin_key(path, key, replace=True)
+    cfg.set("auth.admin_key_file", str(path))
+    return key
+
+
+def _file_admin_key(cfg) -> str | None:
+    path = cfg.get("auth.admin_key_file")
+    return _read_admin_key(Path(path)) if path else None
 
 @dataclass
 class AuthContext:
@@ -71,7 +185,7 @@ def auth_ctx(
             _raise_401()
 
         # global key
-        global_key = cfg.get("auth.global_key")
+        global_key = cfg.get("auth.global_key") or _file_admin_key(cfg)
         if global_key and token == str(global_key):
             return AuthContext(tenant=None, is_admin=True)
 
@@ -221,7 +335,8 @@ def enforce_policy(cfg) -> None:
     if mode == "static":
         has_global = bool(cfg.get("auth.global_key"))
         has_map = bool(cfg.get("auth.api_keys"))
-        if not (has_global or has_map):
+        has_file = bool(cfg.get("auth.admin_key_file"))
+        if not (has_global or has_map or has_file):
             raise RuntimeError(
                 "auth.mode=static requires global_key or api_keys"
             )

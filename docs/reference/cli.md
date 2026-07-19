@@ -54,6 +54,7 @@ There is NO WARRANTY, to the extent permitted by law.
 | Command | Description |
 |---|---|
 | `init` | Create a PaveDB instance config and data directory. |
+| `admin` | Manage the local admin key. |
 | `create-collection` | Create a collection. |
 | `ingest` | Index a file into a collection. |
 | `ingest-batch` | Index raw-text documents into a collection. |
@@ -103,6 +104,27 @@ pavecli --config /etc/pavedb/config.yml \
 
 - `root` (optional): Instance home directory
 - `--force` (optional): Overwrite config and tenants files if they already exist
+
+## `admin`
+
+Show or rotate the local instance admin key.
+
+### Usage
+
+```bash
+pavecli admin [-h] {show-key,rotate-key} ...
+```
+
+### Examples
+
+```bash
+pavecli admin show-key
+pavecli admin rotate-key
+```
+
+### Arguments And Options
+
+- `admin_cmd` (required): (choices: show-key, rotate-key)
 
 ## `create-collection`
 

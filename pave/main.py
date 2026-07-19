@@ -18,7 +18,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from pave.config import get_cfg, get_logger, reload_cfg, should_warm_default_embedder
-from pave.auth import enforce_policy, resolve_bind
+from pave.auth import bootstrap_admin_key, enforce_policy, resolve_bind
 from pave.embedders import LazyEmbedder, get_embedder
 from pave.metrics import (
     flush as metrics_flush,
@@ -630,7 +630,7 @@ def main_srv(argv=None):
         os.environ.get("PAVEDB_DATA_DIR"),
     ))
 
-    apply_runtime_env(
+    paths = apply_runtime_env(
         home=args.home,
         config=args.config,
         tenants=args.tenants,
@@ -639,6 +639,12 @@ def main_srv(argv=None):
     global _app
     _app = None
     cfg = reload_cfg()
+    # Bootstrap the file admin key only under static auth (none mode never
+    # reads it). ponytail: under server.workers>1 the auto-generated key is not
+    # visible to worker subprocesses (they import build_app, which does not
+    # bootstrap), so admin auth fails-closed there — deferred, same known
+    # degradation as metrics persistence under workers>1.
+    bootstrap_admin_key(cfg, paths.home)
     log = get_logger()
     if not has_explicit_instance and not os.path.isfile(default_config):
         log.warning(
