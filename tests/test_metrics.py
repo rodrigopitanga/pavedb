@@ -130,6 +130,17 @@ def test_health_metrics_catalog_read_is_cache_only(client, monkeypatch):
     assert snap["catalog_metrics_age_s"] == -1.0
     assert snap["catalog_metrics_stale"] == 1
 
+
+def test_metrics_endpoints_do_not_refresh_product_gauges(client, monkeypatch):
+    def fail_if_refreshed():
+        raise AssertionError("request path refreshed product gauges")
+
+    for name in ("query_log_gauge_stats", "chunk_drift_stats"):
+        monkeypatch.setattr(client.app.state.store, name, fail_if_refreshed)
+
+    assert client.get("/health/metrics").status_code == 200
+    assert client.get("/metrics").status_code == 200
+
 def test_latency_percentiles_in_snapshot(client):
     """After search and ingest, latency percentiles should appear in metrics."""
     # create collection and ingest a document
