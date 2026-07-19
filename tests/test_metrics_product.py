@@ -7,13 +7,6 @@ import time
 from pave.metrics import refresh_product_gauges
 
 
-def _series(snapshot, name):
-    return {
-        tuple(sorted(item["labels"].items())): item["value"]
-        for item in snapshot[name]
-    }
-
-
 def test_product_search_metrics(client, app, cfg):
     cfg.set("common_enabled", True)
     cfg.set("common_tenant", "global")
@@ -37,18 +30,17 @@ def test_product_search_metrics(client, app, cfg):
     assert plain.status_code == filtered.status_code == merged.status_code == 200
     refresh_product_gauges(app.state.store)
     snap = client.get("/health/metrics").json()
-    labels = (("collection", "metrics"), ("tenant", "acme"))
-    assert _series(snap, "searches_zero_matches_total")[labels] >= 3
-    assert _series(snap, "searches_with_filters_total")[labels] >= 1
-    assert _series(snap, "searches_without_filters_total")[labels] >= 2
+    assert snap["searches_zero_matches_total"] >= 3
+    assert snap["searches_with_filters_total"] >= 1
+    assert snap["searches_without_filters_total"] >= 2
     assert snap["searches_common_merge_total"] >= 1
     assert snap["query_log_rows"] >= 3
     assert snap["query_log_oldest_age_seconds"] >= 0
 
     prom = client.get("/metrics").text
     assert "# TYPE pavedb_searches_zero_matches_total counter" in prom
-    assert "pavedb_searches_zero_matches_total" in prom
-    assert 'collection="metrics",tenant="acme"' in prom
+    assert "pavedb_searches_zero_matches_total " in prom
+    assert "pavedb_searches_zero_matches_total{" not in prom
 
 
 def test_chunk_drift_metrics(client, app):
