@@ -78,6 +78,32 @@ def test_catalog_metrics_is_cache_only(cfg, tmp_path, monkeypatch):
     assert refreshed == first
 
 
+def test_query_log_gauge_stats_is_cached(cfg, tmp_path, monkeypatch):
+    cfg.set("data_dir", str(tmp_path))
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.index_records(
+        "acme", "c1", "doc1", [("0", "alpha", {"lang": "en"})]
+    )
+
+    calls = {"n": 0}
+    real = store._read_collection_db
+
+    def counting(*args, **kwargs):
+        calls["n"] += 1
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(store, "_read_collection_db", counting)
+
+    first = store.query_log_gauge_stats()
+    assert store.query_log_gauge_stats() == first
+    assert calls["n"] == 1
+
+    ts, value = store._query_log_gauge_metrics_cache
+    store._query_log_gauge_metrics_cache = (ts - 3600.0, value)
+    assert store.query_log_gauge_stats() == first
+    assert calls["n"] == 2
+
+
 def test_catalog_probe_does_not_walk_collections(cfg, tmp_path):
     cfg.set("data_dir", str(tmp_path))
     store = LocalStore(str(tmp_path), FakeEmbedder())

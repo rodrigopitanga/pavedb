@@ -74,6 +74,7 @@ CollectionConfig = dict[str, Any]
 # count docs/chunks. Request-path `catalog_metrics()` only reads this cache.
 _CATALOG_METRICS_TTL_S = 5.0
 _CHUNK_DRIFT_METRICS_TTL_S = 60.0
+_QUERY_LOG_GAUGE_METRICS_TTL_S = 60.0
 _QUERY_VECTOR_CACHE_MAX = 256
 _INDEX_DIRTY_FILE = ".pavedb-index-dirty"
 
@@ -241,6 +242,11 @@ class LocalStore:
         self._catalog_metrics_cache: tuple[float, dict[str, int]] | None = None
         self._chunk_drift_metrics_lock = Lock()
         self._chunk_drift_metrics_cache: tuple[float, dict[str, int]] | None = None
+        self._query_log_gauge_metrics_lock = Lock()
+        self._query_log_gauge_metrics_cache: tuple[
+            float,
+            tuple[int, float | None],
+        ] | None = None
         self._query_vector_cache: OrderedDict[
             tuple[str, str, int, str],
             tuple[Embedder, Any],
@@ -1502,24 +1508,35 @@ class LocalStore:
             return age, age > _CATALOG_METRICS_TTL_S
 
     def query_log_gauge_stats(self) -> tuple[int, float | None]:
-        total = 0
-        oldest: float | None = None
-        refs = self._with_catalog_retry(
-            "query_log_collection_refs",
-            lambda catalog: catalog.list_collection_refs(),
-        )
-        for tenant, collection in refs:
-            count, first = self._read_collection_db(
-                tenant,
-                collection,
-                op_name="query_log_gauge_stats",
-                default=(0, None),
-                reader=lambda db: db.query_log_gauge_stats(),
+        with self._query_log_gauge_metrics_lock:
+            now = _time.monotonic()
+            cached = self._query_log_gauge_metrics_cache
+            if (
+                cached is not None
+                and now - cached[0] < _QUERY_LOG_GAUGE_METRICS_TTL_S
+            ):
+                return cached[1]
+
+            total = 0
+            oldest: float | None = None
+            refs = self._with_catalog_retry(
+                "query_log_collection_refs",
+                lambda catalog: catalog.list_collection_refs(),
             )
-            total += count
-            if first is not None and (oldest is None or first < oldest):
-                oldest = first
-        return total, oldest
+            for tenant, collection in refs:
+                count, first = self._read_collection_db(
+                    tenant,
+                    collection,
+                    op_name="query_log_gauge_stats",
+                    default=(0, None),
+                    reader=lambda db: db.query_log_gauge_stats(),
+                )
+                total += count
+                if first is not None and (oldest is None or first < oldest):
+                    oldest = first
+            stats = total, oldest
+            self._query_log_gauge_metrics_cache = now, stats
+            return stats
 
     def chunk_drift_stats(self) -> dict[str, int]:
         with self._chunk_drift_metrics_lock:
