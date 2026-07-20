@@ -39,6 +39,7 @@ from pave.embedders.factory import (
 )
 from pave.metrics import (
     inc as m_inc,
+    inc_labeled as m_inc_labeled,
     timed as m_timed,
     record_latency as m_record_latency,
 )
@@ -1294,12 +1295,14 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
             top = result.matches
             timing = result.timing
         m_inc("matches_total", float(len(top) or 0))
+        labels = {"tenant": tenant, "collection": collection}
         if not top:
-            m_inc("searches_zero_matches_total")
-        m_inc(
+            m_inc_labeled("searches_zero_matches_total", labels)
+        m_inc_labeled(
             "searches_with_filters_total"
             if filters
-            else "searches_without_filters_total"
+            else "searches_without_filters_total",
+            labels,
         )
         if merge_common and (
             effective_common_tenant != tenant
