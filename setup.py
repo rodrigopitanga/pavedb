@@ -53,7 +53,6 @@ setup(
         "pavedb-sdk>=0.1.0,<0.2.0",
         "numpy>=2.0",
         "faiss-cpu>=1.7.1",
-        "torch>=2.10.0",
         "sentence-transformers>=5.0,<6",
     ],
     extras_require={
