@@ -123,3 +123,6 @@ under `benchmarks/results/` as:
 ```
 {latency,stress}-YYYY-MM-DD_HHmmss_<tag>.txt
 ```
+
+Generated outputs are gitignored: keep them local or publish them as CI
+artifacts; commit only curated benchmark comparisons to documentation.
