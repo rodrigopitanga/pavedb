@@ -863,13 +863,14 @@ def ingest_text(
                         f"collection dim {expected_dim}",
                     )
             if text is None:
-                baseid = docid or _default_docid("")
+                baseid = _validate_docid(docid or _default_docid(""))
+                meta_from_call = _validate_metadata(metadata)
                 now = datetime.now(tz.utc).isoformat(timespec="seconds")
                 now = now.replace("+00:00", "Z")
                 doc_meta = {
                     "docid": baseid,
                     "ingested_at": now,
-                    **(metadata or {}),
+                    **meta_from_call,
                 }
                 # 1 vector = 1 record, rid namespaced under docid; store's
                 # vector branch skips embed + chunk-text sidecar.

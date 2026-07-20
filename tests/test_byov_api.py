@@ -85,6 +85,25 @@ def test_embedding_collection_dim_mismatch_is_400(client):
         assert r.json()["code"] == "dim_mismatch"
 
 
+def test_raw_vector_ingest_validates_docid_and_metadata(client):
+    tenant, name = _mk_identity(client)
+    vector = [1.0, 0.0, 0.0, 0.0]
+
+    r = client.post(
+        f"/v1/collections/{tenant}/{name}/documents",
+        json={"vector": vector, "docid": "x" * 201},
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["code"] == "invalid_docid"
+
+    r = client.post(
+        f"/v1/collections/{tenant}/{name}/documents",
+        json={"vector": vector, "docid": "valid", "metadata": {"text": "x"}},
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["code"] == "invalid_metadata_keys"
+
+
 def test_text_on_identity_collection_is_400(client):
     tenant, name = _mk_identity(client)
     r = client.post(
