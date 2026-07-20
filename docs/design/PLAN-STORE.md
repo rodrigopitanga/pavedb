@@ -378,12 +378,12 @@ Stress per-operation highlights (p50 / p95):
 | ingest\_chunked | 1976 / 3217ms | 1009 / 1920ms | −49% | −40% |
 | health | 7 / 503ms | 7 / 19ms | — | −96% |
 
-**Result files**:
+**Historical result files** (available in Git history):
 
-- [latency-2026-03-08_225319_before_faiss-a52c9fe.txt](../benchmarks/results/latency-2026-03-08_225319_before_faiss-a52c9fe.txt)
-- [stress-2026-03-08_225319_before_faiss-a52c9fe.txt](../benchmarks/results/stress-2026-03-08_225319_before_faiss-a52c9fe.txt)
-- [latency-2026-03-09_033453_after_faiss-fc52178.txt](../benchmarks/results/latency-2026-03-09_033453_after_faiss-fc52178.txt)
-- [stress-2026-03-09_033453_after_faiss-30f4a53.txt](../benchmarks/results/stress-2026-03-09_033453_after_faiss-30f4a53.txt)
+- `latency-2026-03-08_225319_before_faiss-a52c9fe.txt`
+- `stress-2026-03-08_225319_before_faiss-a52c9fe.txt`
+- `latency-2026-03-09_033453_after_faiss-fc52178.txt`
+- `stress-2026-03-09_033453_after_faiss-30f4a53.txt`
 
 **Analysis**:
 
@@ -502,16 +502,16 @@ only the latency benchmark is reported here.
 | search\_mixed | after\_metakvtable | 690ms | 719ms | **848ms** | 60.1 ops/s |
 | search\_mixed | Δ | ≈0% | +1% | −1% | ≈0% |
 
-**Result files**:
+**Historical result files** (available in Git history):
 
-- [latency-2026-03-09_230807_before_metakvtable-b971101-none.txt](../benchmarks/results/latency-2026-03-09_230807_before_metakvtable-b971101-none.txt)
-- [latency-2026-03-09_230807_before_metakvtable-b971101-exact.txt](../benchmarks/results/latency-2026-03-09_230807_before_metakvtable-b971101-exact.txt)
-- [latency-2026-03-09_230807_before_metakvtable-b971101-wildcard.txt](../benchmarks/results/latency-2026-03-09_230807_before_metakvtable-b971101-wildcard.txt)
-- [latency-2026-03-09_230807_before_metakvtable-b971101-mixed.txt](../benchmarks/results/latency-2026-03-09_230807_before_metakvtable-b971101-mixed.txt)
-- [latency-2026-03-10_194207_after_metakvtable-11becc6-none.txt](../benchmarks/results/latency-2026-03-10_194207_after_metakvtable-11becc6-none.txt)
-- [latency-2026-03-10_194207_after_metakvtable-11becc6-exact.txt](../benchmarks/results/latency-2026-03-10_194207_after_metakvtable-11becc6-exact.txt)
-- [latency-2026-03-10_194207_after_metakvtable-11becc6-wildcard.txt](../benchmarks/results/latency-2026-03-10_194207_after_metakvtable-11becc6-wildcard.txt)
-- [latency-2026-03-10_194207_after_metakvtable-11becc6-mixed.txt](../benchmarks/results/latency-2026-03-10_194207_after_metakvtable-11becc6-mixed.txt)
+- `latency-2026-03-09_230807_before_metakvtable-b971101-none.txt`
+- `latency-2026-03-09_230807_before_metakvtable-b971101-exact.txt`
+- `latency-2026-03-09_230807_before_metakvtable-b971101-wildcard.txt`
+- `latency-2026-03-09_230807_before_metakvtable-b971101-mixed.txt`
+- `latency-2026-03-10_194207_after_metakvtable-11becc6-none.txt`
+- `latency-2026-03-10_194207_after_metakvtable-11becc6-exact.txt`
+- `latency-2026-03-10_194207_after_metakvtable-11becc6-wildcard.txt`
+- `latency-2026-03-10_194207_after_metakvtable-11becc6-mixed.txt`
 
 **Analysis**:
 
@@ -805,18 +805,18 @@ Comparing the original txtai baseline (`before_faiss`,
 | archive\_download | 2150 / 5860ms | 1023 / 1659ms | **−52%** | **−72%** |
 | archive\_restore | 2382 / 3475ms | 1672 / 3270ms | **−30%** | −6% |
 
-**Result files**:
+**Historical result files** (available in Git history):
 
-- [latency-2026-03-20\_040541\_after\_rmv\_txtai-70b5b35-none.txt](../benchmarks/results/latency-2026-03-20_040541_after_rmv_txtai-70b5b35-none.txt)
-- [latency-2026-03-20\_040541\_after\_rmv\_txtai-70b5b35-exact.txt](../benchmarks/results/latency-2026-03-20_040541_after_rmv_txtai-70b5b35-exact.txt)
-- [latency-2026-03-20\_040541\_after\_rmv\_txtai-70b5b35-wildcard.txt](../benchmarks/results/latency-2026-03-20_040541_after_rmv_txtai-70b5b35-wildcard.txt)
-- [latency-2026-03-20\_040541\_after\_rmv\_txtai-70b5b35-mixed.txt](../benchmarks/results/latency-2026-03-20_040541_after_rmv_txtai-70b5b35-mixed.txt)
-- [stress-2026-03-20\_040541\_after\_rmv\_txtai-70b5b35.txt](../benchmarks/results/stress-2026-03-20_040541_after_rmv_txtai-70b5b35.txt)
-- [latency-2026-03-27\_000011\_after\_store-4d5d2ca-none.txt](../benchmarks/results/latency-2026-03-27_000011_after_store-4d5d2ca-none.txt)
-- [latency-2026-03-27\_000011\_after\_store-4d5d2ca-exact.txt](../benchmarks/results/latency-2026-03-27_000011_after_store-4d5d2ca-exact.txt)
-- [latency-2026-03-27\_000011\_after\_store-4d5d2ca-wildcard.txt](../benchmarks/results/latency-2026-03-27_000011_after_store-4d5d2ca-wildcard.txt)
-- [latency-2026-03-27\_000011\_after\_store-4d5d2ca-mixed.txt](../benchmarks/results/latency-2026-03-27_000011_after_store-4d5d2ca-mixed.txt)
-- [stress-2026-03-27\_000011\_after\_store-4d5d2ca.txt](../benchmarks/results/stress-2026-03-27_000011_after_store-4d5d2ca.txt)
+- `latency-2026-03-20_040541_after_rmv_txtai-70b5b35-none.txt`
+- `latency-2026-03-20_040541_after_rmv_txtai-70b5b35-exact.txt`
+- `latency-2026-03-20_040541_after_rmv_txtai-70b5b35-wildcard.txt`
+- `latency-2026-03-20_040541_after_rmv_txtai-70b5b35-mixed.txt`
+- `stress-2026-03-20_040541_after_rmv_txtai-70b5b35.txt`
+- `latency-2026-03-27_000011_after_store-4d5d2ca-none.txt`
+- `latency-2026-03-27_000011_after_store-4d5d2ca-exact.txt`
+- `latency-2026-03-27_000011_after_store-4d5d2ca-wildcard.txt`
+- `latency-2026-03-27_000011_after_store-4d5d2ca-mixed.txt`
+- `stress-2026-03-27_000011_after_store-4d5d2ca.txt`
 
 **Analysis**:
 

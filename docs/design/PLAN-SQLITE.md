@@ -276,7 +276,7 @@ Three `CollectionDB` implementations were evaluated (branches
 | impl1 | 1091 | 12.0 ops/s | **0.1%** | **0.0%** | 1× "unable to open database file" |
 | impl2 ✓ | 1016 | 11.0 ops/s | **0.2%** | **0.0%** | 2× "unable to open database file" |
 
-**Result files** (canonical runs after all bug-fixes):
+**Historical result files** (available in Git history):
 
 ```
 # Baseline (before Phase 1)
