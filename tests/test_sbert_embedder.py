@@ -46,6 +46,7 @@ def _install_fake_deps(
 
 def test_encode_returns_float32_ndarray(monkeypatch):
     seen: dict[str, object] = {}
+    metric_calls = []
 
     class FakeModel:
         def __init__(self, model_name: str, *, device: str):
@@ -72,6 +73,11 @@ def test_encode_returns_float32_ndarray(monkeypatch):
     _install_fake_deps(monkeypatch, FakeModel)
     monkeypatch.setattr(
         sbert_mod,
+        "inc_labeled",
+        lambda *args: metric_calls.append(args),
+    )
+    monkeypatch.setattr(
+        sbert_mod,
         "get_cfg",
         lambda: _DummyCFG(
             {
@@ -95,6 +101,14 @@ def test_encode_returns_float32_ndarray(monkeypatch):
     assert seen["batch_size"] == 16
     assert seen["show_progress_bar"] is False
     assert seen["convert_to_numpy"] is True
+    assert metric_calls == [
+        ("embedder_embeddings_total", {"model": "sentence-transformers/test-model"}),
+        (
+            "embedder_embeddings_samples_total",
+            {"model": "sentence-transformers/test-model"},
+            2.0,
+        ),
+    ]
 
 
 def test_auto_device_resolves_to_cpu_when_no_accelerator(monkeypatch):

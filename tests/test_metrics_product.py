@@ -60,12 +60,13 @@ def test_chunk_drift_metrics(client, app):
     )
     chunk = app.state.store.list_chunks("acme", "drift", "doc-1")[0]
     path = Path(app.state.cfg.data_dir) / "t_acme" / "c_drift" / chunk["chunk_path"]
-    path.unlink()
+    path.rename(path.with_name("orphan.txt"))
     app.state.store.impl._chunk_drift_metrics_cache = None
     refresh_product_gauges(app.state.store)
 
     snap = client.get("/health/metrics").json()
     assert snap["chunks_missing_sidecar_total"] >= 1
+    assert snap["chunks_orphaned_total"] >= 1
 
 
 def test_search_timeout_metric(client, app):
