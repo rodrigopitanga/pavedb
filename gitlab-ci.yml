@@ -167,6 +167,11 @@ chaos-nightly:
       'CHAOS_DURATION="${CHAOS_DURATION:-120}"
       CHAOS_CONCUR="${CHAOS_CONCUR:-24}"
       make chaos 2>&1 | tee chaos.log'
+  after_script:
+    - |
+      if [ "$CI_JOB_STATUS" = "failed" ]; then
+        python scripts/issue_key_sync.py chaos-failure
+      fi
   artifacts:
     when: always
     paths:

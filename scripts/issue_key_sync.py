@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -25,6 +26,7 @@ REVIEW_KEY_RE = re.compile(r"^(R[1-6])-(\d{2}):")
 ROADMAP = Path(__file__).resolve().parents[1] / "ROADMAP.md"
 TYPE_LABELS = {"FEAT", "REV", "BUG"}
 ZERO_SHA = "0" * 40
+CHAOS_FAILURE_MARKER = "<!-- flowlexi-ci-failure: pavedb-chaos-level1 -->"
 
 
 class GitLab:
@@ -333,6 +335,127 @@ def ensure_label(gl: GitLab, name: str, color: str) -> None:
     )
 
 
+def chaos_failure_body(log: str) -> str:
+    seed = os.environ.get("CHAOS_SEED", "1337")
+    duration = os.environ.get("CHAOS_DURATION", "120")
+    concurrency = os.environ.get("CHAOS_CONCUR", "24")
+    config = re.search(
+        r"seed=(\S+)\s+duration=(\S+)s\s+concurrency=(\S+)",
+        log,
+    )
+    if config:
+        seed, duration, concurrency = config.groups()
+
+    op_counts = re.findall(
+        r"^\s*((?:\d+ fuzz cases handled without a 5xx|"
+        r"ran \d+s, \d+ checker rounds, \d+ churn exceptions))$",
+        log,
+        flags=re.MULTILINE,
+    )
+    failures = re.findall(
+        r"^\s+- (\[[^\n]+)$",
+        log,
+        flags=re.MULTILINE,
+    )
+    failure_lines = [f"- {failure}" for failure in failures[:20]]
+    if len(failures) > 20:
+        failure_lines.append(f"- ... {len(failures) - 20} more; see chaos.log")
+
+    pipeline_url = os.environ.get("CI_PIPELINE_URL", "")
+    job_url = os.environ.get("CI_JOB_URL", "")
+    artifact_url = f"{job_url}/artifacts/file/chaos.log" if job_url else ""
+    replay = " ".join(
+        (
+            "make chaos",
+            f"CHAOS_SEED={shlex.quote(seed)}",
+            f"CHAOS_DURATION={shlex.quote(duration)}",
+            f"CHAOS_CONCUR={shlex.quote(concurrency)}",
+        )
+    )
+    return "\n".join(
+        [
+            CHAOS_FAILURE_MARKER,
+            "",
+            "## Latest failure",
+            "PaveDB Level-1 nightly chaos failed.",
+            "",
+            f"- Pipeline: {pipeline_url or 'unavailable'}",
+            f"- Job: {job_url or 'unavailable'}",
+            f"- chaos.log: {artifact_url or 'unavailable'}",
+            f"- Seed: `{seed}`",
+            f"- Duration: `{duration}s`",
+            f"- Concurrency: `{concurrency}`",
+            "- Release blocking: no",
+            "- Rerun note: the seed fixes inputs, not thread scheduling.",
+            "",
+            "## Operation counts",
+            *(
+                [f"- {count}" for count in op_counts]
+                or ["- unavailable; see chaos.log"]
+            ),
+            "",
+            "## Invariant failures",
+            *(failure_lines or ["- no invariant summary; see chaos.log"]),
+            "",
+            "## Rerun",
+            f"`{replay}`",
+        ]
+    )
+
+
+def sync_chaos_failure() -> int:
+    gl = GitLab()
+    log_path = Path("chaos.log")
+    log = (
+        log_path.read_text(encoding="utf-8", errors="replace")
+        if log_path.exists()
+        else ""
+    )
+    body = chaos_failure_body(log)
+    ensure_label(gl, "BUG", "#D9534F")
+    ensure_label(gl, "bench", "#1F75CB")
+    issues = gl.paged(f"/projects/{gl.project_id}/issues?state=all")
+    issue = next(
+        (
+            issue
+            for issue in issues
+            if CHAOS_FAILURE_MARKER in str(issue.get("description") or "")
+        ),
+        None,
+    )
+    if issue is None:
+        bug_numbers = [
+            int(key[1:].split("-", 1)[0])
+            for issue in issues
+            if (key := title_key(str(issue.get("title") or ""))).startswith("B")
+        ]
+        # ponytail: scheduled CI is the single key writer; add a counter service
+        # only if concurrent bug-key minting becomes real.
+        key = f"B{max(bug_numbers, default=0) + 1}"
+        gl.request(
+            "POST",
+            f"/projects/{gl.project_id}/issues",
+            {
+                "title": f"{key}: Nightly PaveDB chaos failure",
+                "description": body,
+                "labels": "BUG,bench",
+            },
+        )
+        print(f"Created chaos failure issue {key}")
+        return 0
+
+    fields = {"description": body}
+    if issue.get("state") == "closed":
+        fields["state_event"] = "reopen"
+    gl.request(
+        "PUT",
+        f"/projects/{gl.project_id}/issues/{issue['iid']}",
+        fields,
+    )
+    print(f"Updated chaos failure issue {issue['iid']}")
+    return 0
+
+
 def labels_with_type(labels: list[str], wanted: str) -> list[str]:
     out = [label for label in labels if label not in TYPE_LABELS]
     if wanted not in out:
@@ -537,6 +660,10 @@ if __name__ == "__main__":
     if "--selfcheck" in sys.argv:
         raise SystemExit(selfcheck())
     try:
+        if sys.argv[1:] == ["chaos-failure"]:
+            raise SystemExit(sync_chaos_failure())
+        if sys.argv[1:]:
+            raise SystemExit("usage: issue_key_sync.py [chaos-failure]")
         raise SystemExit(sync())
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
