@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone as tz
 from pathlib import Path
@@ -182,7 +183,7 @@ class CollectionDB:
         self._rconn: sqlite3.Connection | None = None
         self._wconn: sqlite3.Connection | None = None
         self._log_conn: sqlite3.Connection | None = None
-        self._read_lock = threading.Lock()
+        self._read_lock = threading.RLock()
         self._write_lock = threading.Lock()
         self._log_lock = threading.Lock()
         self._state_cv = threading.Condition()
@@ -991,7 +992,30 @@ class CollectionDB:
                     if isinstance(chunk_meta, dict):
                         merged.update(chunk_meta)
                     out[rid] = merged
-            return out
+        return out
+
+    def filter_meta_batch(
+        self,
+        candidate_rids: list[str],
+        filters: dict[str, list[Any]],
+    ) -> tuple[set[str], dict[str, dict[str, Any]], dict[str, float]]:
+        """Filter and hydrate candidates from one read transaction."""
+        with self._reader() as conn:
+            conn.execute("BEGIN")
+            try:
+                t0 = time.perf_counter()
+                surviving = self.filter_by_meta(candidate_rids, filters)
+                filter_ms = (time.perf_counter() - t0) * 1000.0
+                rids = [rid for rid in candidate_rids if rid in surviving]
+                t0 = time.perf_counter()
+                meta = self.get_meta_batch(rids)
+                hydrate_ms = (time.perf_counter() - t0) * 1000.0
+                return surviving, meta, {
+                    "filter_ms": filter_ms,
+                    "hydrate_ms": hydrate_ms,
+                }
+            finally:
+                conn.execute("ROLLBACK")
 
 
 class CatalogDB:

@@ -172,6 +172,38 @@ def test_search_calls_pushdown_for_postfilter_only_conditions(temp_data_dir):
     assert len(hits) == 5
 
 
+def test_filtered_search_hydrates_from_filter_snapshot(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    tenant, collection = "tenant", "meta_scope_snapshot"
+    store.index_records(tenant, collection, "doc", _seed_records(1))
+
+    col_db = store._dbs[(tenant, collection)]
+    original_filter = col_db.filter_by_meta
+
+    def _filter_then_mutate(rids, filters):
+        surviving = original_filter(rids, filters)
+        rid = next(iter(surviving))
+        col_db.upsert_chunks("doc", [(rid, None, {"lang": "pt"})])
+        return surviving
+
+    col_db.filter_by_meta = _filter_then_mutate  # type: ignore[method-assign]
+
+    hits = store.search(
+        tenant,
+        collection,
+        "shared",
+        k=1,
+        filters={"lang": "en"},
+    )
+
+    assert len(hits) == 1
+    assert {hit.meta["lang"] for hit in hits} == {"en"}
+    current_meta = col_db.get_meta_batch([hit.id for hit in hits])
+    assert {
+        meta["lang"] for meta in current_meta.values()
+    } == {"pt"}
+
+
 def test_filtered_search_expands_candidate_window_until_match(temp_data_dir):
     store = LocalStore(str(temp_data_dir), _RankedEmbedder())
     tenant, collection = "tenant", "meta_scope_expand"

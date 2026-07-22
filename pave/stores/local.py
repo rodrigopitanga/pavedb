@@ -1951,10 +1951,11 @@ class LocalStore:
                 candidate_rids = [rid for rid, _score in raw if rid]
 
                 if normed_filters:
-                    t0 = _perf()
-                    surviving = col_db.filter_by_meta(
-                        candidate_rids,
-                        normed_filters,
+                    surviving, meta_batch, meta_timing = (
+                        col_db.filter_meta_batch(
+                            candidate_rids,
+                            normed_filters,
+                        )
                     )
                     raw = [
                         (rid, score)
@@ -1962,15 +1963,16 @@ class LocalStore:
                         if rid in surviving
                     ]
                     candidate_rids = [rid for rid, _score in raw if rid]
-                    filter_push_ms += _ms_since(t0)
-
-                t0 = _perf()
-                meta_batch = self._read_meta_batch_safe(
-                    tenant,
-                    collection,
-                    candidate_rids,
-                )
-                hydrate_meta_ms += _ms_since(t0)
+                    filter_push_ms += meta_timing["filter_ms"]
+                    hydrate_meta_ms += meta_timing["hydrate_ms"]
+                else:
+                    t0 = _perf()
+                    meta_batch = self._read_meta_batch_safe(
+                        tenant,
+                        collection,
+                        candidate_rids,
+                    )
+                    hydrate_meta_ms += _ms_since(t0)
 
                 kept = []
                 if normed_filters:
