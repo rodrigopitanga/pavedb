@@ -14,9 +14,10 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, asdict, field
 import os
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
-from pave.embedders.base import EmbedderConfig
+if TYPE_CHECKING:
+    from pave.embedders.base import EmbedderConfig
 
 
 Metadata = dict[str, Any]

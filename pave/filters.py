@@ -3,14 +3,14 @@
 
 from __future__ import annotations
 
+import logging
 import operator
 from datetime import datetime
 from typing import Any
 
-from pave.config import get_logger
 from pave.stores.base import FilterSpec, Metadata, MetadataValidationError
 
-log = get_logger()
+log = logging.getLogger(__name__)
 
 _SQL_TRANS = str.maketrans({
     ";": " ",

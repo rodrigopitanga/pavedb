@@ -1,9 +1,21 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import subprocess
+import sys
+
 import pytest
 
 from pave.filters import matches_filters, sanit_field
+
+
+def test_filters_imports_in_a_fresh_interpreter():
+    result = subprocess.run(
+        [sys.executable, "-c", "import pave.filters"],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize("raw, expected", [
