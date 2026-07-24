@@ -153,6 +153,26 @@ def test_cli_create_collection_accepts_embedder_args(cli_env, capsys):
     assert ("create_collection", tenant, coll) in store.calls
 
 
+def test_cli_create_collection_rejects_malformed_embedder_config(cli_env, capsys):
+    pvcli, store, _ = cli_env
+
+    rc = pvcli.main_cli(
+        [
+            "create-collection",
+            "acme",
+            "bad-json",
+            "--embedder-config",
+            "{",
+        ]
+    )
+    out = json.loads(capsys.readouterr().out)
+
+    assert rc == 1
+    assert out["ok"] is False
+    assert out["code"] == "invalid_embedder_config"
+    assert not any(call[0] == "create_collection" for call in store.calls)
+
+
 def test_cli_create_collection_accepts_embed_model(cli_env, capsys):
     pvcli, _, _ = cli_env
 

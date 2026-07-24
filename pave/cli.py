@@ -81,15 +81,16 @@ def _read(path: str) -> bytes:
     return pathlib.Path(path).read_bytes()
 
 
-def _parse_filters_arg(raw: str | None) -> dict | None:
+def _parse_json_object_arg(raw: str | None, option: str) -> dict | None:
     if not raw:
         return None
+    code = f"invalid_{option[2:].replace('-', '_')}"
     try:
         parsed = json.loads(raw)
     except json.JSONDecodeError as exc:
-        raise ServiceError("invalid_filters", f"--filters is not valid JSON: {exc}")
+        raise ServiceError(code, f"{option} is not valid JSON: {exc}")
     if not isinstance(parsed, dict):
-        raise ServiceError("invalid_filters", "--filters must be a JSON object")
+        raise ServiceError(code, f"{option} must be a JSON object")
     return parsed
 
 
@@ -185,10 +186,8 @@ def cmd_admin_rotate_key(args):
     return RawCLIOutput(f"{key}\n".encode())
 
 def cmd_create(args):
-    embedder_config = (
-        json.loads(args.embedder_config)
-        if args.embedder_config
-        else None
+    embedder_config = _parse_json_object_arg(
+        args.embedder_config, "--embedder-config"
     )
     return svc_create_collection(
         _get_store(),
@@ -202,7 +201,7 @@ def cmd_create(args):
 
 def cmd_ingest(args):
     baseid = args.docid
-    meta = json.loads(args.metadata) if args.metadata else {}
+    meta = _parse_json_object_arg(args.metadata, "--metadata") or {}
     content = _read(args.file)
 
     # CSV controls (optional)
@@ -245,7 +244,7 @@ def cmd_ingest_batch(args):
 
 
 def cmd_ingest_text(args):
-    meta = json.loads(args.metadata) if args.metadata else {}
+    meta = _parse_json_object_arg(args.metadata, "--metadata") or {}
     return svc_ingest_text(
         _get_store(),
         args.tenant,
@@ -258,7 +257,7 @@ def cmd_ingest_text(args):
 
 def cmd_search(args):
     cfg = get_cfg()
-    filters = _parse_filters_arg(args.filters)
+    filters = _parse_json_object_arg(args.filters, "--filters")
     include_common = bool(args.include_common and cfg.common_enabled)
     return svc_search(
         _get_store(),
