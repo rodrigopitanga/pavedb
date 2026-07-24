@@ -208,11 +208,13 @@ the API port mapped locally:
 ```bash
 docker pull registry.gitlab.com/flowlexi/pavedb/pavedb:latest-cpu
 docker run -d --name pavedb -p 8086:8086 \
+  -v pavedb-data:/root/pavedb \
   registry.gitlab.com/flowlexi/pavedb/pavedb:latest-cpu
 ```
 
-The server is now reachable at `http://localhost:8086` — drive it as in
-[Server & REST API](#-server--rest-api).
+The named `pavedb-data` volume preserves the instance home across container
+replacement. The server is now reachable at `http://localhost:8086` — drive it
+as in [Server & REST API](#-server--rest-api).
 
 ### 🛠️ From source
 
