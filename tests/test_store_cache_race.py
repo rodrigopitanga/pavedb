@@ -359,3 +359,19 @@ def test_search_reuses_cached_query_vector(temp_data_dir):
         "filter_ms",
         "hydrate_ms",
     }
+
+
+def test_query_cache_rejects_reused_embedder_id(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    old_embedder = CountingEmbedder()
+    new_embedder = CountingEmbedder()
+    key = ("acme", "docs", id(new_embedder), "query")
+    store._query_vector_cache[key] = (old_embedder, old_embedder.encode(["stale"])[0])
+
+    _vector, hit = store._encode_query_cached(
+        "acme", "docs", new_embedder, "query"
+    )
+
+    assert not hit
+    assert new_embedder.calls == [("query",)]
+    assert store._query_vector_cache[key][0] is new_embedder

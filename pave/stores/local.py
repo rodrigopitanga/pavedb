@@ -239,7 +239,7 @@ class LocalStore:
         self._catalog_metrics_cache: tuple[float, dict[str, int]] | None = None
         self._query_vector_cache: OrderedDict[
             tuple[str, str, int, str],
-            Any,
+            tuple[Embedder, Any],
         ] = OrderedDict()
         self._query_vector_cache_lock = Lock()
         self._closed = False
@@ -841,13 +841,13 @@ class LocalStore:
         cache_key = (tenant, collection, id(embedder), query)
         with self._query_vector_cache_lock:
             cached = self._query_vector_cache.get(cache_key)
-            if cached is not None:
+            if cached is not None and cached[0] is embedder:
                 self._query_vector_cache.move_to_end(cache_key)
-                return cached, True
+                return cached[1], True
 
         vector = self._encode_embedder(embedder, [query])[0]
         with self._query_vector_cache_lock:
-            self._query_vector_cache[cache_key] = vector
+            self._query_vector_cache[cache_key] = (embedder, vector)
             self._query_vector_cache.move_to_end(cache_key)
             while len(self._query_vector_cache) > _QUERY_VECTOR_CACHE_MAX:
                 self._query_vector_cache.popitem(last=False)
