@@ -231,7 +231,7 @@ resolve in order of precedence: the `PAVEDB_*` environment scheme (`PAVEDB_SERVE
 `PAVEDB_AUTH__MODE`, `PAVEDB_DATA_DIR`, …) overrides `config.yml`, and `PAVEDB_CONFIG` can
 point at an explicit file. For alternate instances, `pavecli init /path/to/instance` and
 target it with `pavesrv --home=/path/to/instance` (or
-`pavecli <command> ... --home /path/to/instance`). See `config.yml.example` for every
+`pavecli --home /path/to/instance <command> ...`). See `config.yml.example` for every
 setting.
 
 ### Logging
@@ -267,7 +267,7 @@ barely changes along the way:
    a point-in-time copy of every tenant and collection:
    ```bash
    # local: snapshot the data dir
-   pavecli dump-archive --data-dir ./data --output snapshot.zip
+   pavecli --data-dir ./data dump-archive --output snapshot.zip
 
    # remote: load the snapshot into the container, then restart it
    docker cp snapshot.zip pavedb:/tmp/snapshot.zip
