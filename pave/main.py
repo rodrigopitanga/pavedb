@@ -238,6 +238,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             for _exec in (app.state.search_executor, app.state.ingest_executor):
                 if _exec is not None:
                     _exec.shutdown(wait=True)
+            app.state.store.close()
             metrics_flush()
             ops_log.close()
 

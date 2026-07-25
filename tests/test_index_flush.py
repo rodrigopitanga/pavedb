@@ -74,6 +74,45 @@ def test_close_flushes_pending_index_and_clears_dirty_marker(tmp_path):
     assert not (index_dir / ".pavedb-index-dirty").exists()
 
 
+def test_byov_ingest_survives_reopen_with_a_dirty_marker(tmp_path):
+    tenant, collection = "acme", "byov_reopen"
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection(
+        tenant,
+        collection,
+        embedder_type="identity",
+        embedder_config={"dim": 4},
+    )
+    store.index_records(
+        tenant,
+        collection,
+        "doc1",
+        [("0", "", {})],
+        vectors=[[1.0, 0.0, 0.0, 0.0]],
+    )
+
+    index_dir = _index_dir(store, tenant, collection)
+    assert (index_dir / "faiss.index").is_file()
+    assert not (index_dir / ".pavedb-index-dirty").exists()
+
+    store._mark_index_dirty(tenant, collection)
+    for db in store._dbs.values():
+        db.close()
+    store._catalog.close()
+
+    reopened = LocalStore(str(tmp_path), FakeEmbedder())
+    hits = reopened.search(
+        tenant,
+        collection,
+        "",
+        k=1,
+        query_vector=[1.0, 0.0, 0.0, 0.0],
+    )
+
+    assert hits[0].meta["docid"] == "doc1"
+    assert (index_dir / ".pavedb-index-dirty").is_file()
+
+
 def test_dirty_index_rebuilds_from_chunks_on_reopen(tmp_path):
     tenant, collection = "acme", "rebuild"
     store = LocalStore(str(tmp_path), FakeEmbedder())

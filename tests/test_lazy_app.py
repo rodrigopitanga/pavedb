@@ -187,7 +187,8 @@ def test_lifespan_flushes_metrics_on_shutdown(monkeypatch, tmp_path):
     monkeypatch.setattr(m, "metrics_flush", lambda: calls.append("flush"))
 
     app = m.build_app(cfg)
+    app.state.store.close = lambda: calls.append("close")
     with TestClient(app):
         assert calls == []
 
-    assert calls == ["flush"]
+    assert calls == ["close", "flush"]

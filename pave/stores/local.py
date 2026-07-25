@@ -681,9 +681,10 @@ class LocalStore:
         backend: FaissBackend,
         col_db: CollectionDB,
         embedder: Embedder,
-    ) -> None:
+    ) -> FaissBackend:
         rids: list[str] = []
         texts: list[str] = []
+        missing_source = False
         for document in col_db.list_documents():
             docid = str(document.get("docid") or "")
             if not docid:
@@ -694,6 +695,7 @@ class LocalStore:
                     continue
                 text = self._load_chunk_text(tenant, collection, rid)
                 if text is None:
+                    missing_source = True
                     log.warning(
                         "Skipping missing chunk text during index rebuild "
                         "tenant=%s coll=%s rid=%s",
@@ -704,10 +706,21 @@ class LocalStore:
                     continue
                 rids.append(rid)
                 texts.append(text)
+        if missing_source and backend.count():
+            log.warning(
+                "Preserving existing index because not every chunk has "
+                f"rebuild source tenant={tenant} coll={collection}"
+            )
+            return backend
+        rebuilt = FaissBackend(
+            int(embedder.dim),
+            storage_dir=self._index_dir(tenant, collection),
+        )
         if rids:
-            backend.add(rids, self._encode_embedder(embedder, texts))
-        backend.flush()
+            rebuilt.add(rids, self._encode_embedder(embedder, texts))
+        rebuilt.flush()
         self._clear_index_dirty(tenant, collection)
+        return rebuilt
 
     def _load_or_init(
         self,
@@ -766,8 +779,7 @@ class LocalStore:
                 tenant,
                 collection,
             )
-            backend = FaissBackend(embedder_dim, storage_dir=idx_dir)
-            self._rebuild_index_from_chunks(
+            backend = self._rebuild_index_from_chunks(
                 tenant,
                 collection,
                 backend,
@@ -1761,6 +1773,8 @@ class LocalStore:
 
             if chunk_count:
                 self._register_catalog_collection(tenant, collection)
+            if byov:
+                self._save(tenant, collection)
         return IndexResult(indexed_chunks=chunk_count, purged_chunks=purged)
 
     def index_documents(
