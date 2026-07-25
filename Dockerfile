@@ -27,6 +27,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY setup.py /app/
 COPY pyproject.toml /app/
 COPY requirements-cpu.txt /app/
+COPY LICENSE /app/
 
 # create a dummy package so setup.py can resolve deps without full source
 RUN mkdir -p /app/pave && touch /app/pave/__init__.py
