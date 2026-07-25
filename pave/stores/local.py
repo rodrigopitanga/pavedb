@@ -39,7 +39,7 @@ sqlite3.register_adapter(date, date.isoformat)
 sqlite3.register_adapter(datetime, datetime.isoformat)
 
 from pave.backends import FaissBackend
-from pave.embedders import Embedder, EmbedderUnavailableError
+from pave.embedders import Embedder, EmbedderConfig, EmbedderUnavailableError
 import pave.embedders.factory as embedder_factory_mod
 from pave.filters import lookup_meta, matches_filters, sanit_field, sanit_meta_dict
 from pave.metadb import CatalogDB, CollectionDB, UnsupportedSchemaVersionError
@@ -48,7 +48,6 @@ from pave.stores.base import (
     ChunkInfo,
     CollectionInfo,
     DocumentInfo,
-    EmbedderConfig,
     FilterSpec,
     IndexResult,
     Metadata,
