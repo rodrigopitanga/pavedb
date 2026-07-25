@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import threading
+import time
 import pave.routes.search as search_routes
 
 
@@ -43,29 +44,45 @@ def test_search_encode_failure_returns_503(client, app, monkeypatch):
 
 def test_search_timeout_returns_503(client, app, monkeypatch):
     """Search that exceeds timeout_ms returns 503 search_timeout."""
-    client.post("/v1/collections/acme/timeouttestcol")
-
     release = threading.Event()
+    started = threading.Event()
 
     def slow(*args, **kwargs):
+        started.set()
         release.wait(timeout=5)
         return []
 
+    monkeypatch.setattr(app.state, "max_searches", 1)
     monkeypatch.setattr(app.state, "search_timeout_s", 0.05)
     monkeypatch.setattr(app.state.store, "search", slow, raising=True)
 
-    r = client.post(
-        "/v1/collections/acme/timeouttestcol/search",
-        json={"q": "x", "k": 1},
-    )
-    # Timeout has already fired; release the worker so it drains and logs
-    # within the test instead of orphaning a thread that logs post-teardown.
-    release.set()
+    with client:
+        client.post("/v1/collections/acme/timeouttestcol")
+        try:
+            r = client.post(
+                "/v1/collections/acme/timeouttestcol/search",
+                json={"q": "x", "k": 1},
+            )
+            assert started.wait(timeout=1)
+            assert r.status_code == 503
+            data = r.json()
+            assert data["ok"] is False
+            assert data["code"] == "search_timeout"
 
-    assert r.status_code == 503
-    data = r.json()
-    assert data["ok"] is False
-    assert data["code"] == "search_timeout"
+            capped = client.post(
+                "/v1/collections/acme/timeouttestcol/search",
+                json={"q": "x", "k": 1},
+            )
+            assert capped.status_code == 503
+            assert capped.json()["code"] == "search_overloaded"
+
+            release.set()
+            deadline = time.monotonic() + 1
+            while app.state.active_searches:
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
+        finally:
+            release.set()
 
 
 def test_search_overloaded_returns_503(client, app, monkeypatch):

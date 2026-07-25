@@ -365,6 +365,13 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         """Concurrency gate + timeout wrapper for all search handlers."""
         timeout_s = app.state.search_timeout_s
         max_s = app.state.max_searches
+        release_in_finally = max_s > 0
+
+        def _finish_search(future):
+            if not future.cancelled():
+                future.exception()
+            app.state.active_searches -= 1
+
         # Check-and-increment has no await between them: atomic in asyncio.
         if max_s > 0:
             if app.state.active_searches >= max_s:
@@ -388,6 +395,9 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         try:
             loop = asyncio.get_running_loop()
             future = loop.run_in_executor(app.state.search_executor, fn)
+            if release_in_finally:
+                future.add_done_callback(_finish_search)
+                release_in_finally = False
             try:
                 if timeout_s > 0:
                     result = await asyncio.wait_for(
@@ -415,10 +425,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                     )
                 return result
             except asyncio.TimeoutError:
-                # Thread keeps running; suppress its eventual result/exception.
-                future.add_done_callback(
-                    lambda f: f.exception() if not f.cancelled() else None
-                )
+                # The worker keeps its slot until its future completes.
                 return _error(
                     503, "search_timeout",
                     f"search timed out after {int(timeout_s * 1000)}ms",
@@ -440,7 +447,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                     request_id=request_id,
                 )
         finally:
-            if max_s > 0:
+            if release_in_finally:
                 app.state.active_searches -= 1
 
     @app.exception_handler(HTTPException)
