@@ -41,8 +41,13 @@ class UnsupportedSchemaVersionError(RuntimeError):
     pass
 
 
+class CollectionConfigRecoveryError(RuntimeError):
+    pass
+
+
 _COLLECTION_SCHEMA_VERSION = 6
 _CATALOG_SCHEMA_VERSION = 3
+COLLECTION_CONFIG_FILENAME = "collection.json"
 
 _COLLECTION_SCHEMA_SQL: list[str] = [
     """
@@ -1169,22 +1174,47 @@ class CatalogDB:
             return {}
         return loaded if isinstance(loaded, dict) else {}
 
-    def bootstrap(
-        self,
-        data_dir: Path,
-        *,
-        display_name: str | None = None,
-        meta: dict[str, Any] | None = None,
-        backend_type: str | None = None,
-        backend_config: dict[str, Any] | None = None,
-        embedder_type: str | None = None,
-        embed_model: str | None = None,
-        embed_config: dict[str, Any] | None = None,
-    ) -> tuple[int, int]:
+    @staticmethod
+    def _recovery_config(collection_dir: Path) -> dict[str, Any] | None:
+        path = collection_dir / COLLECTION_CONFIG_FILENAME
+        try:
+            config = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError) as exc:
+            raise CollectionConfigRecoveryError(
+                f"catalog recovery requires collection config: {path}"
+            ) from exc
+        if not isinstance(config, dict):
+            raise CollectionConfigRecoveryError(
+                f"catalog recovery requires collection config: {path}"
+            )
+        required = (
+            "backend_type",
+            "backend_config",
+            "embedder_type",
+            "embed_model",
+            "embedder_config",
+        )
+        if any(key not in config for key in required) or not (
+            isinstance(config["backend_type"], str)
+            and config["backend_type"]
+            and isinstance(config["backend_config"], dict)
+            and isinstance(config["embedder_type"], str)
+            and config["embedder_type"]
+            and isinstance(config["embed_model"], str)
+            and isinstance(config["embedder_config"], dict)
+        ):
+            raise CollectionConfigRecoveryError(
+                f"catalog recovery requires collection config: {path}"
+            )
+        return config
+
+    def bootstrap(self, data_dir: Path) -> tuple[int, int]:
         data_dir = data_dir.resolve()
         data_dir.mkdir(parents=True, exist_ok=True)
 
-        discovered: set[tuple[str, str]] = set()
+        discovered: dict[tuple[str, str], Path] = {}
         for tenant_dir in data_dir.iterdir():
             if not tenant_dir.is_dir() or not tenant_dir.name.startswith("t_"):
                 continue
@@ -1198,7 +1228,7 @@ class CatalogDB:
                 if not name:
                     continue
                 if (coll_dir / "meta.db").is_file():
-                    discovered.add((tenant, name))
+                    discovered[(tenant, name)] = coll_dir
 
         seeded = 0
         removed = 0
@@ -1207,22 +1237,26 @@ class CatalogDB:
                 "SELECT tenant, name FROM collections"
             ).fetchall()
             existing = {(str(row[0]), str(row[1])) for row in rows}
-            to_seed = discovered - existing
+            to_seed = set(discovered) - existing
             if to_seed:
-                payload_rows = [
-                    (
-                        tenant,
-                        name,
-                        display_name,
-                        self._dump_json(meta),
-                        backend_type,
-                        self._dump_json(backend_config),
-                        embedder_type,
-                        embed_model,
-                        self._dump_json(embed_config),
+                payload_rows = []
+                for tenant, name in sorted(to_seed):
+                    config = (
+                        self._recovery_config(discovered[(tenant, name)]) or {}
                     )
-                    for tenant, name in sorted(to_seed)
-                ]
+                    payload_rows.append(
+                        (
+                            tenant,
+                            name,
+                            None,
+                            None,
+                            config.get("backend_type"),
+                            self._dump_json(config.get("backend_config")),
+                            config.get("embedder_type"),
+                            config.get("embed_model"),
+                            self._dump_json(config.get("embedder_config")),
+                        )
+                    )
                 conn.executemany(
                     """
                     INSERT OR IGNORE INTO collections (
@@ -1241,7 +1275,7 @@ class CatalogDB:
                 )
                 seeded = len(payload_rows)
 
-            orphans = existing - discovered
+            orphans = existing - set(discovered)
             if orphans:
                 conn.executemany(
                     "DELETE FROM collections WHERE tenant=? AND name=?",

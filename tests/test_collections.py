@@ -4,9 +4,15 @@
 import json
 import logging
 
+import pytest
+
 from pave import cli as pvcli
 from pave.config import get_cfg
-from pave.metadb import CatalogDB, CollectionDB
+from pave.metadb import (
+    CatalogDB,
+    CollectionConfigRecoveryError,
+    CollectionDB,
+)
 from pave.service import update_collection
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
@@ -330,27 +336,53 @@ def test_list_collections_cli(tmp_path, capsys, monkeypatch):
     assert out["count"] == 2
 
 
-def test_list_collections_bootstraps_existing_collection_db(tmp_path):
+def test_catalog_rebuild_recovers_legacy_collection_without_config(tmp_path):
+    collection_dir = tmp_path / "t_acme" / "c_bootstrap"
     db = CollectionDB()
-    db.open(tmp_path / "t_acme" / "c_bootstrap" / "meta.db")
+    db.open(collection_dir / "meta.db")
     db.close()
 
     store = LocalStore(str(tmp_path), FakeEmbedder())
 
     assert store.list_tenants() == ["acme"]
-    summaries = store.list_collections("acme")
-    assert len(summaries) == 1
-    s = summaries[0]
-    assert s["name"] == "bootstrap"
-    assert s["display_name"] is None
-    assert s["embedder_label"] == "sbert:fake"
-    assert s["vector_space_key"] == "sbert:fake:"
+    config = store.get_collection_config("acme", "bootstrap")
+    assert config is not None
+    assert config["backend_type"] is None
+    assert config["embedder_type"] is None
+    assert config["embed_model"] is None
+    assert not (collection_dir / "collection.json").exists()
 
-    cfg = store.get_collection_config("acme", "bootstrap")
-    assert cfg is not None
-    assert cfg["backend_type"] == "faiss"
-    assert cfg["embedder_type"] == "sbert"
-    assert cfg["embed_model"] == "fake"
+
+def test_catalog_rebuild_rejects_malformed_collection_config(tmp_path):
+    collection_dir = tmp_path / "t_acme" / "c_bootstrap"
+    db = CollectionDB()
+    db.open(collection_dir / "meta.db")
+    db.close()
+    (collection_dir / "collection.json").write_text("{", encoding="utf-8")
+
+    with pytest.raises(CollectionConfigRecoveryError, match="collection config"):
+        LocalStore(str(tmp_path), FakeEmbedder())
+
+
+def test_catalog_rebuild_preserves_collection_embedder_config(tmp_path):
+    store = LocalStore(str(tmp_path), FakeEmbedder(dim=8))
+    store.create_collection(
+        "acme",
+        "vectors",
+        embedder_type="identity",
+        embedder_config={"dim": 4},
+    )
+    store._flush_caches()
+    store._catalog_db_path().unlink()
+
+    recovered = LocalStore(str(tmp_path), FakeEmbedder(dim=8))
+    recovered.create_collection("acme", "vectors")
+
+    config = recovered.get_collection_config("acme", "vectors")
+    assert config is not None
+    assert config["embedder_type"] == "identity"
+    assert config["embedder_config"] == {"dim": 4}
+    assert recovered._collection_embedders[("acme", "vectors")].dim == 4
 
 
 def test_local_store_accepts_injected_catalog_db(tmp_path):

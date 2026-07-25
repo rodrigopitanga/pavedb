@@ -42,7 +42,12 @@ from pave.backends import FaissBackend
 from pave.embedders import Embedder, EmbedderConfig, EmbedderUnavailableError
 import pave.embedders.factory as embedder_factory_mod
 from pave.filters import lookup_meta, matches_filters, sanit_field, sanit_meta_dict
-from pave.metadb import CatalogDB, CollectionDB, UnsupportedSchemaVersionError
+from pave.metadb import (
+    COLLECTION_CONFIG_FILENAME,
+    CatalogDB,
+    CollectionDB,
+    UnsupportedSchemaVersionError,
+)
 from pave.stores.base import (
     BaseStore,
     ChunkInfo,
@@ -372,6 +377,23 @@ class LocalStore:
     def _catalog_db_path(self) -> Path:
         return Path(self._data_dir).resolve() / "catalog.db"
 
+    def _collection_config_path(self, tenant: str, collection: str) -> Path:
+        return (
+            Path(self._base_path(tenant, collection))
+            / COLLECTION_CONFIG_FILENAME
+        )
+
+    def _write_collection_config(
+        self,
+        tenant: str,
+        collection: str,
+        config: CollectionConfig,
+    ) -> None:
+        self._collection_config_path(tenant, collection).write_text(
+            json.dumps(config, sort_keys=True),
+            encoding="utf-8",
+        )
+
     def _resolve_collection_config(
         self,
         *,
@@ -492,15 +514,7 @@ class LocalStore:
             ):
                 return self._catalog
             if self._catalog is catalog:
-                defaults = self._default_collection_config()
-                seeded, removed = catalog.bootstrap(
-                    Path(self._data_dir),
-                    backend_type=defaults["backend_type"],
-                    backend_config=defaults["backend_config"],
-                    embedder_type=defaults["embedder_type"],
-                    embed_model=defaults["embed_model"],
-                    embed_config=defaults["embedder_config"],
-                )
+                seeded, removed = catalog.bootstrap(Path(self._data_dir))
                 if seeded or removed:
                     log.info(
                         "CatalogDB bootstrap: seeded=%s "
@@ -892,6 +906,7 @@ class LocalStore:
                     collection_config=requested,
                 )
                 self._save(tenant, name)
+                self._write_collection_config(tenant, name, requested)
                 self._register_catalog_collection(
                     tenant,
                     name,

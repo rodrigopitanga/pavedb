@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 import time
@@ -11,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from pave.metadb import (
+    COLLECTION_CONFIG_FILENAME,
     CatalogDB,
     CollectionDB,
     LegacyMetadataError,
@@ -396,26 +398,35 @@ def test_list_chunks_and_get_chunk_return_chunk_metadata(tmp_path):
 
 def test_catalog_db_bootstrap_seeds_and_prunes_orphans(tmp_path):
     existing = CollectionDB()
-    existing.open(tmp_path / "t_acme" / "c_docs" / "meta.db")
+    collection_dir = tmp_path / "t_acme" / "c_docs"
+    existing.open(collection_dir / "meta.db")
     existing.close()
+    (collection_dir / COLLECTION_CONFIG_FILENAME).write_text(
+        json.dumps(
+            {
+                "backend_type": "faiss",
+                "backend_config": {},
+                "embedder_type": "identity",
+                "embed_model": "",
+                "embedder_config": {"dim": 4},
+            }
+        ),
+        encoding="utf-8",
+    )
 
     db = CatalogDB()
     db.open(_catalog_db(tmp_path))
     db.register_collection("ghost", "orphan", backend_type="faiss")
 
-    seeded, removed = db.bootstrap(
-        tmp_path,
-        backend_type="faiss",
-        backend_config={},
-        embedder_type="sbert",
-        embed_model="fake",
-        embed_config={},
-    )
+    seeded, removed = db.bootstrap(tmp_path)
 
     assert seeded == 1
     assert removed == 1
     assert db.list_tenants() == ["acme"]
     assert db.list_collections("acme") == ["docs"]
+    assert db.get_collection_config("acme", "docs")["embedder_config"] == {
+        "dim": 4
+    }
     db.close()
 
 
