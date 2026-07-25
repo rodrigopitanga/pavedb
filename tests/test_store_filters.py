@@ -99,26 +99,24 @@ def test_no_filters_returns_all(store):
     assert len(res) >= 4
 
 
-def test_negation_prefilter(store):
-    """Negation !value should be pushed to SQL pre-filter for performance."""
+def test_negation_postfilter(store):
+    """Negation !value is evaluated by the canonical post-filter."""
     s, tenant, coll = store
     # Exclude name=zulu, should return r1, r2, r3
     f = {"name": ["!zulu"]}
     res = s.search(tenant, coll, "foo", 10, filters=f)
     ids = _ids(res)
-    assert "r4" not in ids
-    assert "r1" in ids or "r2" in ids  # at least some non-zulu results
+    assert set(ids) == {"r1", "r2", "r3"}
 
 
 def test_negation_combined_with_exact(store):
-    """Negation combined with exact match in OR."""
+    """Exact and negated values retain their canonical OR semantics."""
     s, tenant, coll = store
     # name=foobar OR name!=zulu -> should match r1 (foobar) plus others not zulu
     f = {"name": ["foobar", "!zulu"]}
     res = s.search(tenant, coll, "foo", 10, filters=f)
     ids = _ids(res)
-    assert "r1" in ids  # foobar matches
-    assert "r4" not in ids  # zulu excluded
+    assert set(ids) == {"r1", "r2", "r3"}
 
 
 @pytest.fixture()
