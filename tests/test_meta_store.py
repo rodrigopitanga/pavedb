@@ -593,7 +593,7 @@ def test_chunk_meta_reupsert_replaces_stale_rows(tmp_path):
     db.close()
 
 
-def test_filter_by_meta_applies_exact_negation_or_and_semantics(tmp_path):
+def test_filter_by_meta_applies_exact_or_and_semantics(tmp_path):
     db = CollectionDB()
     db.open(_meta_db(tmp_path))
     db.upsert_chunks(
@@ -637,12 +637,12 @@ def test_filter_by_meta_applies_exact_negation_or_and_semantics(tmp_path):
             "doc2::chunk_1",
         ],
         {
-            "lang": ["en", "!pt"],
+            "lang": ["en", "pt"],
             "category": ["ml"],
         },
     )
 
-    assert matched == {"doc1::chunk_0"}
+    assert matched == {"doc1::chunk_0", "doc2::chunk_0"}
     db.close()
 
 
@@ -675,7 +675,7 @@ def test_filter_by_meta_matches_document_level_fields(tmp_path):
     db.close()
 
 
-def test_filter_by_meta_negates_document_level_fields(tmp_path):
+def test_filter_by_meta_defers_negated_fields_to_canonical_postfilter(tmp_path):
     db = CollectionDB()
     db.open(_meta_db(tmp_path))
     db.upsert_chunks(
@@ -704,10 +704,10 @@ def test_filter_by_meta_negates_document_level_fields(tmp_path):
     all_rids = ["doc1::chunk_0", "doc2::chunk_0"]
 
     matched = db.filter_by_meta(all_rids, {"lang": ["!pt"]})
-    assert matched == {"doc1::chunk_0"}
+    assert matched == set(all_rids)
 
     matched = db.filter_by_meta(all_rids, {"lang": ["!en"]})
-    assert matched == {"doc2::chunk_0"}
+    assert matched == set(all_rids)
     db.close()
 
 

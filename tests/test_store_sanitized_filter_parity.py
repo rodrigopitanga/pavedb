@@ -169,3 +169,24 @@ def test_sqlish_chunk_metadata_wildcard_filter_matches_with_and_without_pushdown
     assert pushed == canonical
     assert {rid for rid, _score, _meta in pushed} == {"doc1::r1"}
     assert pushed[0][2]["ta_g"] == sanit_sql(wildcard_value)
+
+
+def test_negated_filter_keeps_chunk_metadata_overrides(tmp_path):
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    tenant, collection = "tenant", "negated_filter_override"
+    store.index_records(
+        tenant,
+        collection,
+        "doc1",
+        [("r1", "shared token", {"visibility": "public"})],
+        doc_meta={"visibility": "private"},
+    )
+    filters = {"visibility": "!private"}
+
+    pushed = _snapshot(store.search(tenant, collection, "shared", 1, filters))
+    canonical = _snapshot(
+        _search_without_pushdown(store, tenant, collection, "shared", filters)
+    )
+
+    assert pushed == canonical
+    assert [rid for rid, _score, _meta in pushed] == ["doc1::r1"]

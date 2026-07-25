@@ -854,8 +854,8 @@ class CollectionDB:
     ) -> set[str]:
         """Reduce candidates via SQL on chunk/document metadata.
 
-        Handles exact-match and negation (!value) only.
-        Values with *, >, <, >=, <= are skipped (left for
+        Handles exact-match only.
+        Negation (!value), values with *, >, <, >=, <= are skipped (left for
         caller's canonical post-filter). If a single key mixes
         pushdown-able and non-pushdown values, that key is skipped
         entirely to preserve OR semantics before the canonical
@@ -882,7 +882,11 @@ class CollectionDB:
                     if not isinstance(raw_value, str):
                         continue
                     value = sanit_sql(raw_value)
-                    if "*" in value or value.startswith(skip_prefixes):
+                    if (
+                        "*" in value
+                        or value.startswith(skip_prefixes)
+                        or (value.startswith("!") and len(value) > 1)
+                    ):
                         mixed_semantics = True
                         break
                     normalized_values.append(value)
@@ -897,32 +901,6 @@ class CollectionDB:
                 key_matches: set[str] = set()
 
                 for value in normalized_values:
-                    if value.startswith("!") and len(value) > 1:
-                        neg_val = value[1:]
-                        if key == "docid":
-                            matched = self._docid_matches(
-                                conn,
-                                current_batch,
-                                neg_val,
-                            )
-                        else:
-                            matched = self._chunk_meta_matches(
-                                conn,
-                                current_batch,
-                                key,
-                                neg_val,
-                            )
-                            matched.update(
-                                self._document_meta_matches(
-                                    conn,
-                                    current_batch,
-                                    key,
-                                    neg_val,
-                                )
-                            )
-                        key_matches.update(current - matched)
-                        continue
-
                     if key == "docid":
                         matched = self._docid_matches(
                             conn,
