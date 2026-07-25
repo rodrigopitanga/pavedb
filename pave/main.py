@@ -38,7 +38,12 @@ from pave.routes import (
     build_search_router,
 )
 from pave.ui import attach_ui
-from pave.runtime_paths import DEFAULT_HOME, HOME_ENV, apply_runtime_env
+from pave.runtime_paths import (
+    DEFAULT_HOME,
+    HOME_ENV,
+    apply_runtime_env,
+    resolve_runtime_paths,
+)
 from pave.version import (
     COPYRIGHT,
     VERSION,
@@ -199,7 +204,7 @@ def _run_pave_server(app: str, **kwargs) -> None:
 
 # Dependency injection builder
 def build_app(cfg=get_cfg()) -> FastAPI:
-
+    bootstrap_admin_key(cfg, resolve_runtime_paths().home)
     log = get_logger()
 
     def _resp(*codes: int) -> dict[int, dict[str, type[ErrorResponse]]]:
@@ -649,11 +654,8 @@ def main_srv(argv=None):
     global _app
     _app = None
     cfg = reload_cfg()
-    # Bootstrap the file admin key only under static auth (none mode never
-    # reads it). ponytail: under server.workers>1 the auto-generated key is not
-    # visible to worker subprocesses (they import build_app, which does not
-    # bootstrap), so admin auth fails-closed there — deferred, same known
-    # degradation as metrics persistence under workers>1.
+    # Parent bootstrap lets policy validate first boot; workers repeat it in
+    # build_app so their fresh config sees the generated key file.
     bootstrap_admin_key(cfg, paths.home)
     log = get_logger()
     if not has_explicit_instance and not os.path.isfile(default_config):

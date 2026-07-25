@@ -10,6 +10,7 @@ import pytest
 
 from pave import auth as auth_mod
 from pave import cli as cli_mod
+from pave import main as main_mod
 from pave.config import Config, get_cfg
 
 
@@ -117,6 +118,17 @@ def test_bootstrap_then_enforce_static_accepts_generated_key(tmp_path, monkeypat
     assert wrong.status_code == 403
     missing = client.get("/")
     assert missing.status_code == 401
+
+
+def test_worker_app_reuses_generated_admin_key(tmp_path, monkeypatch):
+    monkeypatch.setenv("PAVEDB_HOME", str(tmp_path))
+    key = auth_mod.bootstrap_admin_key(_config(), tmp_path)
+    assert key is not None
+    worker_cfg = _config()
+
+    main_mod.build_app(worker_cfg)
+
+    assert auth_mod._file_admin_key(worker_cfg) == key
 
 
 def test_bootstrap_skips_key_file_when_auth_none(tmp_path):
