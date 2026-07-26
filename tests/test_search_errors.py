@@ -1,8 +1,13 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import asyncio
 import threading
 import time
+
+import httpx
+import pytest
+
 import pave.routes.search as search_routes
 
 
@@ -44,45 +49,122 @@ def test_search_encode_failure_returns_503(client, app, monkeypatch):
 
 def test_search_timeout_returns_503(client, app, monkeypatch):
     """Search that exceeds timeout_ms returns 503 search_timeout."""
+    client.post("/v1/collections/acme/timeouttestcol")
+
     release = threading.Event()
     started = threading.Event()
+    drained = threading.Event()
 
     def slow(*args, **kwargs):
         started.set()
-        release.wait(timeout=5)
-        return []
+        try:
+            release.wait(timeout=5)
+            return []
+        finally:
+            drained.set()
 
     monkeypatch.setattr(app.state, "max_searches", 1)
     monkeypatch.setattr(app.state, "search_timeout_s", 0.05)
     monkeypatch.setattr(app.state.store, "search", slow, raising=True)
 
-    with client:
-        client.post("/v1/collections/acme/timeouttestcol")
+    try:
+        r = client.post(
+            "/v1/collections/acme/timeouttestcol/search",
+            json={"q": "x", "k": 1},
+        )
+        assert r.status_code == 503
+        data = r.json()
+        assert data["ok"] is False
+        assert data["code"] == "search_timeout"
+        assert started.wait(timeout=1.0)
+        assert not drained.is_set()
+        assert app.state.active_searches == 1
+
+        capped = client.post(
+            "/v1/collections/acme/timeouttestcol/search",
+            json={"q": "x", "k": 1},
+        )
+        assert capped.status_code == 503
+        assert capped.json()["code"] == "search_overloaded"
+    finally:
+        release.set()
+
+    assert drained.wait(timeout=1.0)
+    deadline = time.monotonic() + 1.0
+    while app.state.active_searches != 0 and time.monotonic() < deadline:
+        time.sleep(0.001)
+    assert app.state.active_searches == 0
+
+
+def test_cancelled_search_keeps_slot(client, app, monkeypatch):
+    client.post("/v1/collections/acme/canceltestcol")
+
+    release = threading.Event()
+    started = threading.Event()
+    drained = threading.Event()
+
+    def slow(*args, **kwargs):
+        started.set()
         try:
-            r = client.post(
-                "/v1/collections/acme/timeouttestcol/search",
-                json={"q": "x", "k": 1},
-            )
-            assert started.wait(timeout=1)
-            assert r.status_code == 503
-            data = r.json()
-            assert data["ok"] is False
-            assert data["code"] == "search_timeout"
-
-            capped = client.post(
-                "/v1/collections/acme/timeouttestcol/search",
-                json={"q": "x", "k": 1},
-            )
-            assert capped.status_code == 503
-            assert capped.json()["code"] == "search_overloaded"
-
-            release.set()
-            deadline = time.monotonic() + 1
-            while app.state.active_searches:
-                assert time.monotonic() < deadline
-                time.sleep(0.01)
+            release.wait(timeout=5)
+            return []
         finally:
-            release.set()
+            drained.set()
+
+    monkeypatch.setattr(app.state, "max_searches", 1)
+    monkeypatch.setattr(app.state.store, "search", slow, raising=True)
+
+    async def cancel_request():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://test"
+        ) as async_client:
+            request = asyncio.create_task(
+                async_client.post(
+                    "/v1/collections/acme/canceltestcol/search",
+                    json={"q": "x", "k": 1},
+                )
+            )
+            deadline = time.monotonic() + 1.0
+            while not started.is_set() and time.monotonic() < deadline:
+                await asyncio.sleep(0.001)
+            assert started.is_set()
+            request.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await request
+
+    try:
+        asyncio.run(cancel_request())
+        assert not drained.is_set()
+        assert app.state.active_searches == 1
+
+        capped = client.post(
+            "/v1/collections/acme/canceltestcol/search",
+            json={"q": "x", "k": 1},
+        )
+        assert capped.status_code == 503
+        assert capped.json()["code"] == "search_overloaded"
+    finally:
+        release.set()
+
+    assert drained.wait(timeout=1.0)
+    deadline = time.monotonic() + 1.0
+    while app.state.active_searches != 0 and time.monotonic() < deadline:
+        time.sleep(0.001)
+    assert app.state.active_searches == 0
+
+
+def test_search_unlimited_uses_default_executor(client, app, monkeypatch):
+    client.post("/v1/collections/acme/unlimitedcol")
+    monkeypatch.setattr(app.state, "max_searches", 0)
+    monkeypatch.setattr(app.state, "search_executor", None)
+
+    r = client.post(
+        "/v1/collections/acme/unlimitedcol/search",
+        json={"q": "x", "k": 1},
+    )
+
+    assert r.status_code == 200
 
 
 def test_search_overloaded_returns_503(client, app, monkeypatch):

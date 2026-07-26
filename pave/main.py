@@ -278,10 +278,10 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     app.state.search_executor = (
         ThreadPoolExecutor(max_workers=_max_conc) if _max_conc > 0 else None
     )
-    # Plain counter instead of threading.Semaphore: check+increment has no
-    # await between them, so it is atomic in the asyncio event loop.
+    # Background workers release slots after timeouts or cancellation.
     app.state.max_searches = _max_conc
     app.state.active_searches = 0
+    app.state.search_lock = threading.Lock()
     app.state.search_timeout_s = _to_ms / 1000.0 if _to_ms > 0 else 0.0
 
     _max_iconc = int(cfg.get("ingest.max_concurrent"))
@@ -370,39 +370,48 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         """Concurrency gate + timeout wrapper for all search handlers."""
         timeout_s = app.state.search_timeout_s
         max_s = app.state.max_searches
+        if max_s > 0:
+            with app.state.search_lock:
+                if app.state.active_searches >= max_s:
+                    active = app.state.active_searches
+                    log.warning(
+                        "search capped by instance-scoped search cap active=%s "
+                        "limit=%s path=%s request_id=%s",
+                        active,
+                        max_s,
+                        request.url.path,
+                        request_id,
+                    )
+                    return _error(
+                        503, "search_overloaded",
+                        "search capped by instance-scoped search cap "
+                        f"(active={active}, limit={max_s})",
+                        request=request,
+                        request_id=request_id,
+                    )
+                app.state.active_searches += 1
         release_in_finally = max_s > 0
 
-        def _finish_search(future):
-            if not future.cancelled():
-                future.exception()
-            app.state.active_searches -= 1
+        def release_search_slot():
+            with app.state.search_lock:
+                app.state.active_searches -= 1
 
-        # Check-and-increment has no await between them: atomic in asyncio.
-        if max_s > 0:
-            if app.state.active_searches >= max_s:
-                active = app.state.active_searches
-                log.warning(
-                    "search capped by instance-scoped search cap active=%s "
-                    "limit=%s path=%s request_id=%s",
-                    active,
-                    max_s,
-                    request.url.path,
-                    request_id,
-                )
-                return _error(
-                    503, "search_overloaded",
-                    "search capped by instance-scoped search cap "
-                    f"(active={active}, limit={max_s})",
-                    request=request,
-                    request_id=request_id,
-                )
-            app.state.active_searches += 1
+        def finish_background_search(done):
+            try:
+                if not done.cancelled():
+                    done.exception()
+            finally:
+                if max_s > 0:
+                    release_search_slot()
         try:
             loop = asyncio.get_running_loop()
-            future = loop.run_in_executor(app.state.search_executor, fn)
-            if release_in_finally:
-                future.add_done_callback(_finish_search)
-                release_in_finally = False
+            executor = app.state.search_executor
+            if executor is None:
+                future = loop.run_in_executor(None, fn)
+                completion_future = future
+            else:
+                completion_future = executor.submit(fn)
+                future = asyncio.wrap_future(completion_future)
             try:
                 if timeout_s > 0:
                     result = await asyncio.wait_for(
@@ -430,13 +439,19 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                     )
                 return result
             except asyncio.TimeoutError:
-                # The worker keeps its slot until its future completes.
+                # Thread keeps running; suppress its eventual result/exception.
+                release_in_finally = False
+                completion_future.add_done_callback(finish_background_search)
                 return _error(
                     503, "search_timeout",
                     f"search timed out after {int(timeout_s * 1000)}ms",
                     request=request,
                     request_id=request_id,
                 )
+            except asyncio.CancelledError:
+                release_in_finally = False
+                completion_future.add_done_callback(finish_background_search)
+                raise
             except ServiceError as exc:
                 status_map = {
                     "embedder_unavailable": 503,
@@ -453,7 +468,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 )
         finally:
             if release_in_finally:
-                app.state.active_searches -= 1
+                release_search_slot()
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):
