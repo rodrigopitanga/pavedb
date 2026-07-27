@@ -273,8 +273,9 @@ class LocalClient(BaseClient):
         self,
         tenant: str,
         collection: str,
-        text: str,
+        text: str | None = None,
         *,
+        vector: list[float] | None = None,
         docid: str | None = None,
         metadata: Metadata | None = None,
     ) -> dict:
@@ -285,6 +286,7 @@ class LocalClient(BaseClient):
             text,
             docid,
             metadata or {},
+            vector=vector,
         )
         return _unwrap(result)
 
@@ -311,7 +313,7 @@ class LocalClient(BaseClient):
         *,
         filters: FilterSpec | None = None,
         include_common: bool | None = None,
-        v: list[float] | None = None,
+        vector: list[float] | None = None,
     ) -> list[dict]:
         cfg = get_cfg()
         result = self._call(
@@ -325,7 +327,7 @@ class LocalClient(BaseClient):
             common_tenant=cfg.common_tenant,
             common_collection=cfg.common_collection,
             actor="library",
-            v=v,
+            v=vector,
         )
         return list(_unwrap(result)["matches"])
 

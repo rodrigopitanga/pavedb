@@ -205,22 +205,22 @@ def test_local_client_close_delegates_store_close(tmp_path):
 
 def test_local_byov_vector_round_trip(tmp_path):
     # Identity collection: bulk-ingest raw vectors via the public add_many,
-    # search by raw vector via the LocalClient path. Public Collection.search
-    # cannot pass `v` yet (needs a pavesdk bump), so search hits _search direct.
+    # search by raw vector through the public Collection surface.
     with provider(tmp_path / "db") as db:
         vecs = db.create_collection(
             "vecs",
             embedder_type="identity",
             embedder_config={"dim": 4},
         )
+        added = vecs.add(vector=[1.0, 0.0, 0.0, 0.0], docid="A")
+        assert added["docid"] == "A"
         batch = vecs.add_many([
-            {"vector": [1.0, 0.0, 0.0, 0.0], "docid": "A"},
             {"vector": [0.0, 1.0, 0.0, 0.0], "docid": "B"},
         ])
-        assert batch["succeeded"] == 2
+        assert batch["succeeded"] == 1
         assert batch["failed"] == 0
 
-        hits = db._search("default", "vecs", None, k=2, v=[1.0, 0.0, 0.0, 0.0])
+        hits = vecs.search(vector=[1.0, 0.0, 0.0, 0.0], k=2)
         assert hits
         assert hits[0]["meta"]["docid"] == "A"
 
