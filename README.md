@@ -208,6 +208,7 @@ the API port mapped locally:
 ```bash
 docker pull registry.gitlab.com/flowlexi/pavedb/pavedb:latest-cpu
 docker run -d --name pavedb -p 8086:8086 \
+  -e PAVEDB_AUTH__GLOBAL_KEY \
   -v pavedb-data:/root/pavedb \
   registry.gitlab.com/flowlexi/pavedb/pavedb:latest-cpu
 ```
