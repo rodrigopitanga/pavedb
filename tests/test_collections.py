@@ -385,6 +385,62 @@ def test_catalog_rebuild_preserves_collection_embedder_config(tmp_path):
     assert recovered._collection_embedders[("acme", "vectors")].dim == 4
 
 
+def test_catalog_backfills_legacy_custom_embedder_config(tmp_path):
+    _set_openai_instance("legacy-custom", dim=4)
+
+    def make_embedder(_embedder_type, _embed_model, embedder_config):
+        return FakeEmbedder(dim=int(embedder_config["dim"]))
+
+    collection_dir = tmp_path / "t_acme" / "c_legacy"
+    sidecar = collection_dir / "collection.json"
+    store = LocalStore(
+        str(tmp_path),
+        FakeEmbedder(dim=8),
+        embedder_factory=make_embedder,
+    )
+    store.create_collection(
+        "acme",
+        "legacy",
+        embedder_type="openai",
+        embed_model="bge-m3",
+        embedder_config={"dim": 4},
+    )
+    store.index_records(
+        "acme",
+        "legacy",
+        "doc",
+        [("doc::0", "legacy vector space", {})],
+    )
+    sidecar.unlink()
+    store.close()
+
+    upgraded = LocalStore(
+        str(tmp_path),
+        FakeEmbedder(dim=8),
+        embedder_factory=make_embedder,
+    )
+    assert json.loads(sidecar.read_text(encoding="utf-8"))[
+        "embedder_config"
+    ] == {"dim": 4}
+    assert upgraded.get_collection_vector_dim("acme", "legacy") == 4
+    assert upgraded.search("acme", "legacy", "legacy", k=1)[0].id == "doc::0"
+    upgraded.close()
+
+    (tmp_path / "catalog.db").unlink()
+    recovered = LocalStore(
+        str(tmp_path),
+        FakeEmbedder(dim=8),
+        embedder_factory=make_embedder,
+    )
+    config = recovered.get_collection_config("acme", "legacy")
+    assert config is not None
+    assert config["embedder_type"] == "openai"
+    assert config["embed_model"] == "bge-m3"
+    assert config["embedder_config"] == {"dim": 4}
+    assert recovered.get_collection_vector_dim("acme", "legacy") == 4
+    assert recovered.search("acme", "legacy", "legacy", k=1)[0].id == "doc::0"
+
+
 def test_local_store_accepts_injected_catalog_db(tmp_path):
     cat_db = CatalogDB()
     store = LocalStore(str(tmp_path), FakeEmbedder(), cat_db=cat_db)

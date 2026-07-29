@@ -45,6 +45,7 @@ from pave.filters import lookup_meta, matches_filters, sanit_field, sanit_meta_d
 from pave.metadb import (
     COLLECTION_CONFIG_FILENAME,
     CatalogDB,
+    CollectionConfigRecoveryError,
     CollectionDB,
     UnsupportedSchemaVersionError,
 )
@@ -388,11 +389,29 @@ class LocalStore:
         tenant: str,
         collection: str,
         config: CollectionConfig,
+        *,
+        replace: bool = True,
     ) -> None:
-        self._collection_config_path(tenant, collection).write_text(
-            json.dumps(config, sort_keys=True),
-            encoding="utf-8",
+        path = self._collection_config_path(tenant, collection)
+        fd, temporary = tempfile.mkstemp(
+            dir=path.parent,
+            prefix=f".{path.name}.",
         )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as config_file:
+                config_file.write(json.dumps(config, sort_keys=True))
+                config_file.flush()
+                os.fsync(config_file.fileno())
+            if replace:
+                os.replace(temporary, path)
+            else:
+                try:
+                    os.link(temporary, path)
+                except FileExistsError:
+                    pass
+        finally:
+            with suppress(FileNotFoundError):
+                Path(temporary).unlink()
 
     def _resolve_collection_config(
         self,
@@ -515,6 +534,45 @@ class LocalStore:
                 return self._catalog
             if self._catalog is catalog:
                 seeded, removed = catalog.bootstrap(Path(self._data_dir))
+                for tenant, collection in catalog.list_collection_refs():
+                    path = self._collection_config_path(tenant, collection)
+                    if path.exists():
+                        continue
+                    stored = catalog.get_collection_config(tenant, collection)
+                    if stored is None:
+                        continue
+                    config: CollectionConfig = {
+                        "backend_type": stored.get("backend_type"),
+                        "backend_config": stored.get("backend_config"),
+                        "embedder_type": stored.get("embedder_type"),
+                        "embed_model": stored.get("embed_model"),
+                        "embedder_config": stored.get("embedder_config"),
+                    }
+                    if not any((
+                        config["embedder_type"] is not None,
+                        config["embed_model"] is not None,
+                        bool(config["embedder_config"]),
+                    )):
+                        continue
+                    if not (
+                        isinstance(config["backend_type"], str)
+                        and config["backend_type"]
+                        and isinstance(config["backend_config"], dict)
+                        and isinstance(config["embedder_type"], str)
+                        and config["embedder_type"]
+                        and isinstance(config["embed_model"], str)
+                        and isinstance(config["embedder_config"], dict)
+                    ):
+                        raise CollectionConfigRecoveryError(
+                            "catalog contains invalid collection config: "
+                            f"{tenant}/{collection}"
+                        )
+                    self._write_collection_config(
+                        tenant,
+                        collection,
+                        config,
+                        replace=False,
+                    )
                 if seeded or removed:
                     log.info(
                         "CatalogDB bootstrap: seeded=%s "
