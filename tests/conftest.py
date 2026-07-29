@@ -10,6 +10,7 @@ from utils import SpyStore, FakeEmbedder
 from fastapi.testclient import TestClient
 from pave.config import get_cfg, reload_cfg
 import pave.main as main_mod
+from pave.stores.local import LocalStore
 from pave.ui import attach_ui
 
 @pytest.fixture(scope="session")
@@ -81,6 +82,20 @@ def _reset_cfg_between_tests(monkeypatch, temp_data_dir, request):
         )
     yield
 
+@pytest.fixture(autouse=True)
+def _close_stores_between_tests(monkeypatch):
+    stores = []
+    init = LocalStore.__init__
+
+    def track(store, *args, **kwargs):
+        init(store, *args, **kwargs)
+        stores.append(store)
+
+    monkeypatch.setattr(LocalStore, "__init__", track)
+    yield
+    for store in stores:
+        store.close()
+
 @pytest.fixture()
 def app(temp_data_dir):
     cfg = get_cfg()
@@ -94,7 +109,11 @@ def app(temp_data_dir):
 
 @pytest.fixture()
 def client(app):
-    return TestClient(app)
+    client = TestClient(app)
+    try:
+        yield client
+    finally:
+        client.close()
 
 @pytest.fixture()
 def cfg(app):
