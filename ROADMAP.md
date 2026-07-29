@@ -107,8 +107,8 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-41 | ~~Persistent query log~~ | 🔧 | Queryable search history (query, filters, config, result IDs) in SQLite | v0.9 |
 | P1-42 | ~~Query replay endpoint~~ | 🧩 | Re-execute stored query; depends on P1-41 | v0.9 |
 | P1-43 | ~~`/v1/` route prefix~~ | 🔧 | Versioned API base path; frozen at v1.0, additive after | v0.9 |
-| P1-46 | Docs site — preview | 🔧 | MkDocs static site; user + developer sections; published via GitLab Pages. Most reference content auto-rendered from the source plumbing landed in v1.0 (P1-53a–d) | v1.1 |
-| P1-47 | Docs site — 1.0 | 🧱 | Full coverage: guides, core concepts, inspect/debug, operations, architecture, plugins; versioned via `mike`, custom domain | v1.2 |
+| P1-46 | Distribution documentation | 🔧 | Ship public guides, generated references, OpenAPI, release/legal material, and a CI-verified documentation manifest in the PaveDB source distribution. | v1.0 |
+| P1-47 | Docs site renderer | 🧱 | `pavedb-site` renders the released PaveDB and SDK documentation with Hugo; product sources and generators stay in their owning distributions. | v1.0 |
 | P1-48 | ~~Remove `SearchBody.request_id`~~ | 🧩 | `X-Request-ID` becomes the only request-correlation input | v0.9 |
 | P1-49 | ~~HTTP request metrics middleware~~ |  | v1.0 ships labeled `http_requests_total` middleware + handler-side `inc("requests_total")` cleanup; histogram + `# HELP`/`# TYPE` metadata ride P1-50 at v1.1 | v1.0 / v1.1 |
 | P1-50 | Product-signal metrics + metrics polish | 🧩 | Zero-match searches, filter usage, query-log readiness, embedder counters, sidecar drift — competitor gap. Bundled with P1-49's histogram + HELP/TYPE refactor and docs-site coverage so the new gauges are discoverable | v1.1 |
@@ -117,7 +117,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-53a | ~~Reference-source plumbing: OpenAPI completeness pass~~ | 🔧 | Every route gets `summary`/`description`/`tags`/`responses`; every Pydantic `Field` gets `description` + at least one example. Unblocks an auto-rendered API reference. | v1.0 |
 | P1-53b | ~~Reference-source plumbing: CLI completeness + dumper~~ | 🔧 | Every subcommand gets `help`/`epilog`-example; `scripts/cli_to_markdown.py` renders `docs/reference/cli.md` committed in-repo. | v1.0 |
 | P1-53c | ~~Reference-source plumbing: config schema refactor~~ | 🔧 | Single (key, default, description, env_var) source for `_DEFAULTS`, `config.yml.example`, and `docs/reference/config.md`. Closes P1-26 (drift check) as a side effect. | v1.0 |
-| P1-53d | ~~Reference-source plumbing: module/class docstrings on public seams~~ | 🔧 | `pave/stores`, `pave/backends`, `pave/embedders`, catalog, `pave/service.py` public functions. Powers `mkdocstrings` once the docs site lands. | v1.0 |
+| P1-53d | ~~Reference-source plumbing: module/class docstrings on public seams~~ | 🔧 | `pave/stores`, `pave/backends`, `pave/embedders`, catalog, and `pave/service.py` public functions provide source documentation for supported seams. | v1.0 |
 | P1-53e | ~~API contract snapshot + drift check~~ | 🔧 | Commit `openapi.json` as a checked-in snapshot; `docs-ref-openapi` dump + drift check (mirrors P1-53b's CLI gate) enforces the P1-43 "frozen at v1.0, additive-after" contract — breaking changes fail CI. Depends on P1-53a. | v1.0 |
 | P1-54 | Per-collection archive (dump + restore) | 🧱 | Admin-only `GET`/`POST` archive endpoints for a single collection. Carries `manifest.json` (PaveDB version, embedder spec, schema version), `meta.db`, FAISS index, sidecars. Restore must verify embedder spec is resolvable locally before touching disk. Same-version restore only at v1.5; cross-version waits on P3-37. Depends on P2-25. | v1.5 |
 | P1-55 | Per-collection reindex | 🧱 | Admin-only operation: rebuild vectors against a new embedder spec. Needs a job model (interruptible, resumable, status-trackable). Splits cleanly from PATCH (cheap label edit) and `move` (slug/path move + disk move) because it's the only one that rewrites stored vectors. | v1.6 |
@@ -127,6 +127,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-59 | ~~Admin embedder inventory endpoint~~ | 🧩 | v1.0 slice: admin-only `GET /v1/admin/embedders` and tenant-scoped `GET /v1/embedders/{tenant}` surface configured instance keys, vector-space keys, types, models, and default resolution. No credentials, no readiness probe. Mirrored by `Client.embedders()` and `pavecli list-embedders`. v1.6 expansion: readiness probe + credential-ref identity per P2-49. Per-tenant embedder assignment stays a post-1.0 direction once tenant profiles (P2-26) land. Builds on P1-58. | v1.0 / v1.6 |
 | P1-60 | Embedder selection shorthand + routing policy | 🧱 | Collection create accepts an `embedder` selector shorthand; compatible instance routing grows from deterministic first configured to explicit policy (`first`, `round_robin`, weighted/failover). Any pinning is operational config, not catalog state. | v1.7 |
 | P1-61 | General embedder worker pools | 🧱 | Extend the SBERT worker-pool idea across all embedders with bounded concurrency as the default behavior where safe. Worker counts stay operational config and never enter vector-space identity. See `docs/design/PLAN-EMBEDDER-WORKERS.md`. | v1.2 |
+| P1-62 | Python API reference + runnable examples | 🔧 | `pavedb-sdk` generates a drift-checked public API reference and owns tested Python/book examples; its sdist ships both, while the book and site reference tagged sources. See `docs/design/PLAN-EXAMPLES.md`. | v1.0 |
 | P1-63 | VectorDBBench adapter | 🔧 | Standard benchmark adapter over BYOV HTTP raw-vector ingest/search, with flat FAISS recall baseline and no PaveDB runtime dependency on VectorDBBench. External adapter (separate repo/fork), not in-repo. Depends on P1-64 (BYOV raw-vector round trip). | v1.0 |
 | P1-64 | Bring-your-own-vector (BYOV) raw-vector mode | 🔧 | Additive raw-vector ingest/search mirroring Chroma. New `identity` embedder (`encode(x)→x`, dim from `embedder_config`); raw-vector schema fields `vector`/`v` paired with `text`/`q` (exactly-one). Embedding collections stay permissive (text or raw vector); identity collections are vector-only. No new endpoints; FAISS backend unchanged. Serves pre-computed-embedding users and unblocks P1-63. | v1.0 |
 
@@ -223,7 +224,8 @@ Substantial features are specified under `docs/design/` before implementation.
 | [`docs/design/PLAN-SQLITE.md`](docs/design/PLAN-SQLITE.md) | P1-09 / P1-33 | Internal SQLite metadata and global catalog store |
 | [`docs/design/PLAN-STORE.md`](docs/design/PLAN-STORE.md) | P1-29/P1-29b/P1-29c/P1-31/P1-32 | Store split; P1-30 superseded by P1-29b |
 | [`docs/design/PLAN-OBSERVABILITY.md`](docs/design/PLAN-OBSERVABILITY.md) | P0-03, P1-11/14/17/23/40/41/42/43/44/45/48, P2-23/28/40/41 | Inspectability surface — request correlation, timing, query log, replay, chunk inspector |
-| [`docs/design/PLAN-DOCS.md`](docs/design/PLAN-DOCS.md) | P1-46 / P1-47 | Docs site plan (preview for v0.9, full for v1.0) |
+| [`docs/design/PLAN-DOCS.md`](docs/design/PLAN-DOCS.md) | P1-46 / P1-47 / P1-53 | Distribution documentation and site-input contract |
+| [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md) | P1-62 | SDK Python API reference and runnable book examples |
 | [`docs/design/PLAN-EMBEDDER-WORKERS.md`](docs/design/PLAN-EMBEDDER-WORKERS.md) | P1-61 | General embedder worker pools |
 
 ---
@@ -381,7 +383,19 @@ latency on every search/ingest/delete.~~
   `bench-stress.py`. Race-outcome reclassification keeps real
   5xx visible (P2-48).~~
 
-### PaveDB v1.0 — Stability
+### PaveDB v0.9.3 — Final contract preview
+
+- Freeze features after the current hardening batch. Run one final full review
+  against the merged candidate and accept only release-critical corrections:
+  data loss/corruption, security/auth, crash/recovery, installation/packaging,
+  licensing, or documented destructive behavior.
+- Keep the v1.1/v1.2 feature branches parked. P1-46, P1-47, and P1-62 start
+  after the v0.9.3 tag and do not expand this release.
+- Ship the current runtime as a final pre-1.0 preview. The supported contract
+  is declared only when the distribution docs, Python API reference, examples,
+  and rendered site land together at v1.0.
+
+### PaveDB v1.0 — Supported contract
 
 - ~~Define embedder/store separation contract (P3-26).~~
 - ~~Activate embedder factory cache (P1-30; superseded by P1-29b).~~
@@ -399,9 +413,7 @@ latency on every search/ingest/delete.~~
   the shared API and `HttpClient`; the `pavedb` package depends on
   it and registers the optional `LocalClient` provider so the same
   interface works locally when `pavedb` is installed (P1-24).~~
-- Reference-source plumbing pass — the docs site slips to v1.1,
-  but v1.0 lands the source-of-truth so reference content can be
-  rendered from code without re-writing it later:
+- Reference-source plumbing pass:
   - ~~OpenAPI completeness: every route gets summary/description/
     tags/responses; every Pydantic Field gets description + at
     least one example. Unblocks an auto-rendered API reference
@@ -415,11 +427,22 @@ latency on every search/ingest/delete.~~
     side effect (P1-53c).~~
   - ~~Module/class docstrings on public seams: `pave/stores`,
     `pave/backends`, `pave/embedders`, catalog, and
-    `pave/service.py` public functions. Powers `mkdocstrings`
-    when the docs site lands at v1.1 (P1-53d).~~
+    `pave/service.py` public functions document supported seams
+    at their source (P1-53d).~~
   - ~~API contract snapshot: commit `openapi.json` and add a dump +
     drift check that enforces the P1-43 frozen-at-1.0,
     additive-after contract — breaking changes fail CI (P1-53e).~~
+- Distribution documentation: package public guides, generated
+  CLI/config/protocol references, OpenAPI, release/legal material,
+  and a checked manifest in the PaveDB sdist. Wheels keep only
+  runtime resources (P1-46).
+- Python API and examples: `pavedb-sdk` generates committed
+  `PYTHON_API.md` from an explicit public-symbol list and ships
+  tested Python/book examples in its sdist, not its wheel. The
+  book cites tagged example paths (P1-62).
+- Docs site: `pavedb-site` consumes the selected PaveDB and SDK
+  source distributions and renders them with Hugo. It owns layout,
+  navigation, links, and deployment—not product facts (P1-47).
 - ~~Admin/tenant embedder inventory (P1-59 v1.0 slice): admin-only
   `GET /v1/admin/embedders` and tenant-scoped
   `GET /v1/embedders/{tenant}` list configured instance
@@ -482,17 +505,11 @@ release, see v1.1 and v1.2 sections): P1-22 per-collection hot
 caches, P1-27 admin key auto-gen, P1-35 filter pushdown parity
 harness, P1-50 product-signal metrics + P1-49 histogram polish,
 P1-52 concurrency chaos test.
-None block the SDK-contract promise that defines v1.0; each
-lands where it has more impact alongside docs, metrics polish,
-and post-contract hardening.
+None blocks the documented-contract promise that defines v1.0; each
+lands where it has more impact during post-contract hardening.
 
 ### PaveDB v1.1 — Adoption
 
-- Docs site — preview: MkDocs Material static site published via
-  GitLab Pages. Most reference content auto-rendered from the
-  source plumbing landed at v1.0 (P1-53a–d); hand-written content
-  is small (index, concepts, inspect walkthrough). Text-first, no
-  marketing chrome (P1-46).
 - Per-collection hot caches with isolation (P1-22).
 - ~~Batch ingest endpoint (list of documents in one call) (P1-16).~~
 - ~~Admin key auto-generate + persist on first boot; CLI rotate /
@@ -501,8 +518,8 @@ and post-contract hardening.
   with `# HELP`/`# TYPE` metadata (deferred P1-49 slice) plus
   zero-match search rate, filter usage, common-merge count, search
   timeout count, query-log rows + oldest-entry age, embedder
-  counters, sidecar drift gauges. Bundled with the docs site so
-  the new signals are discoverable, not buried (P1-49 / P1-50).
+  counters, sidecar drift gauges. Update the existing docs when
+  these signals land (P1-49 / P1-50).
 - Concurrency chaos test (Level 1) lands as a nightly GitLab job
   (not a release gate). N-thread random-interleave fuzz over
   create/delete/move/ingest/search/dump/restore with post-run
@@ -511,13 +528,6 @@ and post-contract hardening.
 
 ### PaveDB v1.2 — Control
 
-- Docs site — 1.0: expand the v1.1 preview to full release
-  coverage. User-facing: install, quickstart, core concepts,
-  auth, ingest, search, filters, inspect/debug, operations
-  (config, limits, metrics, health). Developer-facing:
-  architecture, service/store/embedder seams, plugin contract,
-  internals. Versioned via `mike`, custom domain, search,
-  dark/light theme. Seeds future language translations (P1-47).
 - Filter pushdown parity harness: synthetic corpus + filter
   corpus, soundness invariant always asserted (pushdown ⊆
   canonical), completeness invariant where pushdown claims the
