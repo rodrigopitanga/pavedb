@@ -1,6 +1,184 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
+## 0.9.3 — 2026-07-30
+
+### Bug Fixes
+- Return 413 for oversized ingest (R2-07)
+- [core] Fix CSV column loss on blank/dup headers; collapse meta keys
+- Reject invalid collection names on ingest (B2)
+- Reject overlong ingest docids (B6)
+- Reject non-object ingest metadata (B7)
+- Fail fast on macOS direct SBERT with FAISS (B3)
+- Keep catalog metrics off request path (B4)
+- Accept case-insensitive Bearer scheme in static auth (B10)
+- Fix dev loopback coercion in enforce_policy (B9)
+- Harden auth/config startup validation (R4-70, R4-71)
+- Break circular import via lazy LocalStore export (B11)
+- Map encode outages to 503 (B12)
+- Let filters import standalone (B11)
+- Defer negated metadata filters (B14)
+- Import embedder config from its owner (B11)
+- Preserve BYOV vectors across restart (B13)
+- Hold search slots through timeouts (B16)
+- Bootstrap admin key in workers (B17)
+- Preserve collection config on catalog recovery (B15)
+- Guard query cache identity (R3-77)
+- Keep cancelled search slots occupied (B16)
+- Backfill legacy collection config sidecars (B15)
+
+### Documentation
+- Document GitLab MR workflow
+- Fix README auth key (R1-01)
+- Refresh compose and env examples (R1-02, R2-08, R2-09, R2-10)
+- Fix embedder_label example to colon form (R4-38)
+- List all reference pages in README, prettify links
+- Document embedder.<type>.* global fallback keys (R4-44)
+- Mark release reproducibility complete (P3-40)
+- Clarify legacy env mapping was temporary (R4-37)
+- Regen OpenAPI snapshot: batch 413 response (B8)
+- Fix embedder and CSV docstring drift (R4-76)
+- Align embedder label examples (R4-38)
+- Mark rebrand plan historical
+- Remove stale bench-stress findings note
+- Clarify benchmark artifact storage (R6-59)
+- Explain Docker volume persistence (B20)
+- Correct CLI selector order (R2-79)
+- Forward Docker auth key (B20)
+
+### Core
+- Register local client provider
+- Share local client surface with client package
+- Point local client surface at Python SDK
+- Honor include_common search opt-in
+- Commit schema migration explicitly (R3-22)
+- Replace config in place so child views stay live (R3-15)
+- Order multi-collection write locks by key, not id (R3-17)
+- Close orphaned embedder worker on cache eviction (R3-16)
+- Re-encode search query if embedder swapped mid-flight (R3-23)
+- Validate native embedder device; fail fast on unavailable/invalid (B1)
+- Fix instance path defaults (B5)
+- Return not-found for vanished collection updates (R3-36)
+- Support string not-equal filters (R2-74)
+- Add identity (raw-vector/BYOV) embedder
+
+### Testing
+- Align CLI query listing tests (R2-06)
+- Drop unused fake embeddings helper (R4-48)
+- Prune redundant API coverage
+- Remove leftover test noise (R4-50)
+- Release timed-out search worker instead of sleeping 5s
+- Remove misnamed dead tests/__init.py__ (R4-51)
+- Cover close() reader-drain path (R4-52)
+- Reproduce close() racing an in-flight read (R4-46)
+- Drop duplicate CSV ingest API tests (R4-47)
+- Trim duplicate auth status tests (R4-45)
+- Cover batch metadata validation (B7)
+- Cover single-doc ingest encode lock scope (R3-18)
+- Assert canonical negation filtering (B14)
+- Close pytest resources deterministically (R3-80)
+
+### API
+- Share current_store dependency (R3-63)
+- Map update_collection not_found structurally, not by message (R3-36)
+- Validate name and report not_found on delete_collection (R3-28)
+- Reject metadata-only multipart ingest (R1-67)
+- Reject invalid POST search k values (R2-68)
+- Gate health metrics behind admin auth (R4-69)
+- Enforce batch ingest size limit (B8)
+- Add tenant-scoped collection move route (R3-30)
+- Classify invalid document ingest errors (R1-73)
+- Add raw-vector fields to ingest and search schemas (BYOV chunk 2)
+- Gate BYOV: identity vectors-only, embedding dim validation (BYOV chunk 3)
+- Validate BYOV dimensions (P1-64)
+- Validate raw-vector document metadata (P1-64)
+
+### Infrastructure
+- Prepare release mirror state
+- Add GitLab issue sync
+- Remove config import fallbacks (R1-61)
+- Source issue keys from commits only, not the MR description
+- Drop phantom PAVEDB_CONFIG from Docker image (R4-39)
+- Bench: cache HF model + 120s startup timeout on cold runners
+- Sync B/F/G issue keys, not just R/P
+- Auto-retry jobs on runner/system failures (max 2)
+- Retry source checkout fetches
+- Allow reserved review issue suffixes
+- Warn on reserved review issue suffix gaps (R4-66)
+
+### Build
+- Regenerate third-party licenses from runtime closure (P3-40)
+- Publish runtime pip-freeze snapshot on release tags (P3-40)
+- Build only the CPU image in CI; rename torch-wheel selector (P3-40)
+- Tighten requirement pins after dependency due-diligence
+- [cli] Drop source-tree shell wrappers (R4-65)
+- Copy pyproject metadata in Dockerfile (R4-42)
+- Remove invalid Torch floor (R6-58)
+- Copy project license into Docker image (R3-78)
+
+### Store
+- Drop dead bare-list handling from search output (R4-55)
+- Remove unreachable async _flush_caches close path (R3-12)
+- Snapshot embedder caches before orphan scan (R3-16)
+- Use concrete FAISS backend in LocalStore (R4-53)
+- Drop custom SearchOutput equality (R4-55)
+- Release catalog guard before bootstrap (R3-13)
+- Drain active readers before close (R4-52)
+- Keep filtered metadata on one snapshot (R6-56)
+
+### Config
+- Parse list-valued env overrides (R2-11)
+- Drop .gitignore un-ignore for nonexistent example (R4-40)
+- Package favicon.ico in pave.assets (R6-57)
+- Drop dead scripts/*.sh include from MANIFEST.in (R4-41)
+- Align pave.toml Python version with setup.py (R4-43)
+- Ignore local tenants file (R4-40)
+- Reject invalid text chunk overlap (R3-75)
+
+### Packaging
+- Remove archived patchvec shim (R3-64)
+- Remove qdrant stub (R1-60, R4-54)
+- Replace BaseStore ABC with protocol (R2-62)
+- Sanitize default docids (R2-05, R4-27)
+- Move ingest size limit into service (R2-07)
+- Drop unused imports stale from relocated archive logic (R4-34)
+- Rename pave.toml to pyproject.toml so its tables are discovered (R4-42)
+
+### Log
+- Harden metrics persistence (R1-03, R2-04)
+- Assign ops-log handle before dest in configure (R3-19)
+- Drain executors before flushing metrics on shutdown (R3-24)
+- Drop redundant lock around stdout dest assignment
+- Split query-log writer from document writes (R3-20)
+
+### SDK
+- Scope SDK get_query/replay to tenant+collection (R3-33)
+- Return the move envelope from SDK _rename (R3-32)
+- Map no_text_extracted to InvalidRequest in the SDK (R3-31)
+- Align local rename return contract (R3-32)
+- Reach BYOV search/add through the public client (B18)
+
+### CLI
+- Reject non-object --filters early (R3-26)
+- Include vector_space_key in CLI collection listing (R3-29)
+- Validate collection name on create, drop auto-slug (R3-35)
+- Return JSON errors for malformed options (B19)
+
+### Performance
+- Stabilize local vector stress tails
+- Walk catalog metrics outside the metrics lock (R3-21)
+- Remove historical benchmark dumps (R6-59)
+
+### Plan
+- Record v0.9.3 final review
+
+### Refactor
+- Unify tenant cap logic via tenant_limit_gate (R4-72)
+
+### UI
+- Refresh app icon artwork and regenerate favicon
+
+---
 ## 0.9.2 — 2026-06-20
 
 ### Core
