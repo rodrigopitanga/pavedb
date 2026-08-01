@@ -16,8 +16,8 @@ import urllib.request
 
 
 # Issue keys: R review, P PaveDB feature, B/F/G bug/Flymmatik/Patchgram.
-# Shared by PUBLIC_KEY_RE (commit text) and title_key (issue title) so they
-# can't drift — both must recognize a key for an issue to auto-close.
+# Shared by commit notes, exact close trailers, and issue titles so public key
+# recognition cannot drift between those paths.
 _KEY_BODY = r"R[1-6]-\d{2}|P\d+-[A-Za-z0-9]+|[BFG]\d+(?:-[A-Za-z0-9]+)?"
 PUBLIC_KEY_RE = re.compile(rf"\b(?:{_KEY_BODY})\b")
 REVIEW_KEY_RE = re.compile(r"^(R[1-6])-(\d{2}):")
@@ -86,6 +86,18 @@ def marker_value(text: str, name: str) -> str:
 
 def public_keys(text: str) -> set[str]:
     return set(PUBLIC_KEY_RE.findall(text or ""))
+
+
+def closing_keys(text: str) -> set[str]:
+    lines = (text or "").splitlines()[1:]
+    pattern = re.compile(rf"Closes: ({_KEY_BODY})")
+    while lines and not lines[-1]:
+        lines.pop()
+    keys: set[str] = set()
+    while lines and (match := pattern.fullmatch(lines[-1])):
+        keys.add(match.group(1))
+        lines.pop()
+    return keys
 
 
 def local_commit_texts() -> dict[str, str]:
@@ -296,22 +308,30 @@ def labels_with_type(labels: list[str], wanted: str) -> list[str]:
 
 def sync_roadmap_issues(gl: GitLab, issues: dict[str, dict[str, object]]) -> None:
     ensure_label(gl, "FEAT", "#33A02C")
+    milestones = {
+        str(milestone.get("title") or ""): str(milestone.get("id") or "")
+        for milestone in gl.paged(f"/projects/{gl.project_id}/milestones")
+    }
     created: list[str] = []
     updated: list[str] = []
     for row in roadmap_rows():
         issue_id = row["ID"]
         title = f"{issue_id}: {row.get('Task', issue_id)}"
         body = issue_body_for_roadmap(row)
+        milestone_id = milestones.get(row.get("Source", ""))
         existing = issues.get(issue_id)
         if existing is None:
+            fields = {
+                "title": title,
+                "description": body,
+                "labels": "FEAT",
+            }
+            if milestone_id:
+                fields["milestone_id"] = milestone_id
             gl.request(
                 "POST",
                 f"/projects/{gl.project_id}/issues",
-                {
-                    "title": title,
-                    "description": body,
-                    "labels": "FEAT",
-                },
+                fields,
             )
             created.append(issue_id)
             continue
@@ -319,8 +339,18 @@ def sync_roadmap_issues(gl: GitLab, issues: dict[str, dict[str, object]]) -> Non
         labels = [str(label) for label in existing.get("labels", [])]
         new_labels = labels_with_type(labels, "FEAT")
         fields: dict[str, str] = {}
+        if str(existing.get("title") or "") != title:
+            fields["title"] = title
+        if str(existing.get("description") or "") != body:
+            fields["description"] = body
         if sorted(labels) != new_labels:
             fields["labels"] = ",".join(new_labels)
+        milestone = existing.get("milestone")
+        existing_milestone_id = (
+            str(milestone.get("id") or "") if isinstance(milestone, dict) else ""
+        )
+        if milestone_id and existing_milestone_id != milestone_id:
+            fields["milestone_id"] = milestone_id
         if fields:
             gl.request(
                 "PUT",
@@ -332,7 +362,7 @@ def sync_roadmap_issues(gl: GitLab, issues: dict[str, dict[str, object]]) -> Non
     if created:
         print("Created roadmap issues: " + ", ".join(created))
     if updated:
-        print("Updated roadmap issue labels: " + ", ".join(updated))
+        print("Updated roadmap issues: " + ", ".join(updated))
 
 
 def sync() -> int:
@@ -350,6 +380,7 @@ def sync() -> int:
     matched: set[str] = set()
 
     for sha, text in commit_refs.items():
+        closes = closing_keys(text)
         for key in sorted(public_keys(text)):
             issue = issues.get(key)
             if not issue:
@@ -368,7 +399,7 @@ def sync() -> int:
                 body = f"Commit {short} references {key}.\n\n{commit_url(sha)}"
             add_note(gl, issue_iid, body, marker)
             matched.add(key)
-            if on_default and issue.get("state") != "closed":
+            if on_default and key in closes and issue.get("state") != "closed":
                 gl.request(
                     "PUT",
                     f"/projects/{gl.project_id}/issues/{issue_iid}",
