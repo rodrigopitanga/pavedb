@@ -31,7 +31,7 @@ explicitly, for example `CONFIG=./config.yml make serve` or
 `PYTHONPATH=. python -m pave.main --config ./config.yml --tenants ./tenants.yml`.
 
 The packaged entrypoints now also accept explicit instance paths:
-`pavesrv --home ~/pavedb-staging` and `pavecli list-tenants --home ~/pavedb-staging`.
+`pavesrv --home ~/pavedb-staging` and `pavecli --home ~/pavedb-staging list-tenants`.
 
 Run the test suite before pushing (`TORCH_WHEEL_CPU=1` if you installed CPU wheels):
 
