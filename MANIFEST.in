@@ -1,8 +1,14 @@
 include ABOUT.md
 include README.md
 include LICENSE
+include CHANGELOG.md
+include THIRD_PARTY_LICENSES.md
 include config.yml.example
+include openapi.json
 include requirements-cpu.txt
+include docs/reference/cli.md
+include docs/reference/config.md
+include docs/reference/protocols.md
 recursive-include pave *.py
 recursive-include pave *.json
 recursive-include pave/assets *

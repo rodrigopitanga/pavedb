@@ -122,6 +122,7 @@ publish-pypi:
   script:
     - python -m pip install --upgrade build twine
     - python -m build
+    - python scripts/check_dist_manifest.py dist/*
     - test -n "${PYPI_TOKEN:-}" || { echo "PYPI_TOKEN is missing"; exit 1; }
     - export TWINE_USERNAME="__token__"
     - export TWINE_PASSWORD="${PYPI_TOKEN}"
@@ -135,6 +136,7 @@ publish-gitlab-pypi:
   script:
     - python -m pip install --upgrade build twine
     - python -m build
+    - python scripts/check_dist_manifest.py dist/*
     - |
       test -n "${CI_DEPLOY_USER:-}" || { echo "CI_DEPLOY_USER is missing"; exit 1; }
       test -n "${CI_DEPLOY_PASSWORD:-}" || { echo "CI_DEPLOY_PASSWORD is missing"; exit 1; }
@@ -148,6 +150,7 @@ publish-testpypi:
   script:
     - python -m pip install --upgrade build twine
     - python -m build
+    - python scripts/check_dist_manifest.py dist/*
     - test -n "${TEST_PYPI_TOKEN:-}" || { echo "TEST_PYPI_TOKEN is missing"; exit 1; }
     - export TWINE_USERNAME="__token__"
     - export TWINE_PASSWORD="${TEST_PYPI_TOKEN}"

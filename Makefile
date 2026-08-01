@@ -337,6 +337,7 @@ build: install
 	$(PYTHON_BIN) -m pip install -q build twine
 	@echo "Building Python distributions for $(BUILD_VERSION)"
 	PAVEDB_BUILD_VERSION="$(BUILD_VERSION)" $(PYTHON_BIN) -m build
+	$(PYTHON_BIN) scripts/check_dist_manifest.py $(DIST_DIR)/*
 	$(PYTHON_BIN) -m twine check $(DIST_DIR)/*
 
 .PHONY: package
