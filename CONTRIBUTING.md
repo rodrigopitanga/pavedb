@@ -445,12 +445,17 @@ In practical terms, the Flowlexi GitLab pipeline does:
   Registry, and publish Docker CPU image only (`-cpu`, `latest-cpu`).
 - **`vX.Y.Z<other>` tags**: publish only to GitLab Package Registry.
 
-Every standard stable tag must include one human-reviewed source file at
-`docs/RELEASE-vX.Y.Z.md`. Its first H1 is the release title. Major and minor
+Every standard stable tag must include two human-reviewed source files:
+`docs/RELEASE-vX.Y.Z.md` has the first release H1 and only a non-empty
+`## English` section; `docs/RELEASE-vX.Y.Z_pt.md` has the identical first H1
+and only a non-empty `## Português (Brasil)` section. Major and minor
 releases (`Z == 0`) use `PaveDB X.Y.0 — <human-chosen name>`; patch releases
-use exactly `PaveDB X.Y.Z` without a name. The exact Markdown file ships in
-the sdist, stays out of the wheel, and becomes the description of both the
-GitLab and GitHub Release objects; CI never generates announcement prose.
+use exactly `PaveDB X.Y.Z` without a name. Historical PatchVec title exceptions
+are retained. Both files
+ship in the sdist and stay out of the wheel. CI validates the pair, then
+mechanically combines the full English file with the Portuguese file without
+its duplicate H1 into the exact Release body on both GitLab and GitHub. CI
+never translates or generates prose.
 
 The announcement jobs run only after publication. Retrying updates an existing
 release from the same reviewed title and Markdown. `GITHUB_MIRROR_TOKEN` must

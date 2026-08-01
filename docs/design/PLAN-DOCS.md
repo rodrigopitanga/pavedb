@@ -15,11 +15,15 @@ PaveDB 1.0 delivers one documentation set through three explicit owners:
 The source distributions are the handoff boundary. A release is documentable
 when its sdist contains the same public sources that the site renders.
 
-Standard stable releases also carry one reviewed `docs/RELEASE-vX.Y.Z.md` in
-the PaveDB sdist, but not its wheel. CI validates its H1 title and uses the
-exact file for both GitLab and GitHub Release descriptions. Major/minor titles
-are named; patch titles are not. Four-component correction tags publish the
-existing package and CPU image only, without announcement files or Release
+Standard stable releases also carry two reviewed source files in the PaveDB
+sdist, but not its wheel: `docs/RELEASE-vX.Y.Z.md` has the first release H1
+and only `## English`; `docs/RELEASE-vX.Y.Z_pt.md` has the same first H1 and
+only `## Português (Brasil)`. CI validates both files, then mechanically
+combines the full English file with the Portuguese file without its duplicate H1 into
+the single GitLab and GitHub Release body; it never translates or generates
+prose. Major/minor titles are named; patch titles are not, and historical
+PatchVec title exceptions remain exact. Four-component correction tags publish
+the existing package and CPU image only, without announcement files or Release
 objects.
 
 ## Release boundary
