@@ -1,10 +1,12 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-from pathlib import Path, PurePosixPath
+import os
+import re
 import sys
 import tarfile
 import zipfile
+from pathlib import Path, PurePosixPath
 
 
 SDIST_REQUIRED = {
@@ -65,7 +67,13 @@ def main(argv: list[str]) -> int:
     sdist, wheel = sdists[0], wheels[0]
     sdist_names = sdist_files(sdist)
     wheel_names = wheel_files(wheel)
-    missing = sorted(SDIST_REQUIRED - sdist_names)
+    required = set(SDIST_REQUIRED)
+    tag = os.environ.get("CI_COMMIT_TAG", "")
+    if re.fullmatch(r"v\d{1,4}\.\d{1,4}\.\d{1,4}", tag):
+        required.update(
+            f"docs/RELEASE-{tag}{suffix}.md" for suffix in ("", "_pt")
+        )
+    missing = sorted(required - sdist_names)
     if missing:
         fail(f"{sdist} is missing: {', '.join(missing)}")
 

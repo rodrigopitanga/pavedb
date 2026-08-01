@@ -425,11 +425,13 @@ failure:
 Pushing a tag to the GitLab repository triggers the release pipeline
 automatically (no manual steps). Tag format:
 `vX.Y.Z` where each component is 1–4 digits, with an optional suffix
-up to 16 non-whitespace characters (e.g. `rc1`, `a0`, `b2`).
+up to 16 non-whitespace characters (e.g. `rc1`, `a0`, `b2`). A
+four-component `vX.Y.Z.W` tag is a package/image correction release.
 
 | Tag pattern | PyPI | TestPyPI | GitLab Package Registry | Docker |
 |-------------|------|----------|-------------------------|--------|
-| `vX.Y.Z` | ✓ | — | ✓ | CPU + GPU |
+| `vX.Y.Z` | ✓ | — | ✓ | CPU only |
+| `vX.Y.Z.W` | ✓ | — | ✓ | CPU only |
 | `vX.Y.ZrcN` (N ≤ 999) | — | ✓ | ✓ | CPU only |
 | `vX.Y.Z<other>` | — | — | ✓ | — |
 
@@ -437,8 +439,22 @@ In practical terms, the Flowlexi GitLab pipeline does:
 
 - **Every pipeline** (branches and tags): run `pytest` (CPU deps) plus
   GitLab SAST and Secret Detection.
-- **`vX.Y.Z` tags**: publish package to PyPI and GitLab Package Registry,
-  and publish Docker `-gpu` and `-cpu` images (including `latest-*` tags).
+- **`vX.Y.Z` and `vX.Y.Z.W` tags**: publish packages to PyPI and the GitLab
+  Package Registry, and publish Docker `-cpu` and `latest-cpu` images.
 - **`vX.Y.ZrcN` tags**: publish package to TestPyPI and GitLab Package
   Registry, and publish Docker CPU image only (`-cpu`, `latest-cpu`).
 - **`vX.Y.Z<other>` tags**: publish only to GitLab Package Registry.
+
+Every standard stable tag must include one human-reviewed source file at
+`docs/RELEASE-vX.Y.Z.md`. Its first H1 is the release title. Major and minor
+releases (`Z == 0`) use `PaveDB X.Y.0 — <human-chosen name>`; patch releases
+use exactly `PaveDB X.Y.Z` without a name. The exact Markdown file ships in
+the sdist, stays out of the wheel, and becomes the description of both the
+GitLab and GitHub Release objects; CI never generates announcement prose.
+
+The announcement jobs run only after publication. Retrying updates an existing
+release from the same reviewed title and Markdown. `GITHUB_MIRROR_TOKEN` must
+have `Contents: write` permission on the GitHub repository, and the mirror job
+must have pushed the tag before GitHub announcement. Four-component correction
+tags keep their package and CPU-image publication behavior but deliberately
+have no announcement file and create no GitLab or GitHub Release object.
