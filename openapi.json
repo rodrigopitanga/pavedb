@@ -3173,7 +3173,7 @@
   "info": {
     "description": "Vector Search Microservice",
     "title": "PaveDB",
-    "version": "0.9.3"
+    "version": "0.9.3.1"
   },
   "openapi": "3.1.0",
   "paths": {

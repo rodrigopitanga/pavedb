@@ -1,6 +1,13 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
+## 0.9.3.1 — 2026-08-02
+
+### Packaging
+- Ship P1-46 distribution documentation
+
+---
+
 ## 0.9.3 — 2026-07-30
 
 ### Bug Fixes
