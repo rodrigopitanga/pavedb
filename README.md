@@ -276,6 +276,12 @@ barely changes along the way:
    docker restart pavedb
    ```
 
+   Archives carry each collection's vector-space identity, not credentials or
+   operational settings such as provider endpoints and batch sizes. Before
+   replacing live data, restore validates locally, without loading models or
+   making network requests, that the destination config has a compatible
+   instance for every non-modelless embedder type.
+
 ## 📚 Reference
 
 - [CLI](docs/reference/cli.md) — `pavecli` commands and flags
