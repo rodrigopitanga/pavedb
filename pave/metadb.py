@@ -48,6 +48,32 @@ class CollectionConfigRecoveryError(RuntimeError):
 _COLLECTION_SCHEMA_VERSION = 6
 _CATALOG_SCHEMA_VERSION = 5
 COLLECTION_CONFIG_FILENAME = "collection.json"
+COLLECTION_CONFIG_FIELDS = (
+    "backend_type",
+    "backend_config",
+    "embedder_type",
+    "embed_model",
+    "embedder_config",
+)
+
+
+def validate_collection_config(config: Any) -> dict[str, Any]:
+    """Return the complete persisted collection configuration."""
+    if not isinstance(config, dict) or any(
+        key not in config for key in COLLECTION_CONFIG_FIELDS
+    ):
+        raise ValueError("collection config is incomplete")
+    if not (
+        isinstance(config["backend_type"], str)
+        and config["backend_type"]
+        and isinstance(config["backend_config"], dict)
+        and isinstance(config["embedder_type"], str)
+        and config["embedder_type"]
+        and isinstance(config["embed_model"], str)
+        and isinstance(config["embedder_config"], dict)
+    ):
+        raise ValueError("collection config is invalid")
+    return {key: config[key] for key in COLLECTION_CONFIG_FIELDS}
 
 _COLLECTION_SCHEMA_SQL: list[str] = [
     """
@@ -1388,32 +1414,21 @@ class CatalogDB:
             raise CollectionConfigRecoveryError(
                 f"catalog recovery requires collection config: {path}"
             )
-        required = (
-            "backend_type",
-            "backend_config",
-            "embedder_type",
-            "embed_model",
-            "embedder_config",
-        )
-        if any(key not in config for key in required) or not (
-            isinstance(config["backend_type"], str)
-            and config["backend_type"]
-            and isinstance(config["backend_config"], dict)
-            and isinstance(config["embedder_type"], str)
-            and config["embedder_type"]
-            and isinstance(config["embed_model"], str)
-            and isinstance(config["embedder_config"], dict)
-        ):
+        try:
+            return validate_collection_config(config)
+        except ValueError as exc:
             raise CollectionConfigRecoveryError(
                 f"catalog recovery requires collection config: {path}"
-            )
-        return config
+            ) from exc
 
-    def bootstrap(self, data_dir: Path) -> tuple[int, int]:
-        data_dir = data_dir.resolve()
-        data_dir.mkdir(parents=True, exist_ok=True)
-
+    @staticmethod
+    def discover_collection_dirs(
+        data_dir: Path,
+    ) -> dict[tuple[str, str], Path]:
+        """Return collection directories with a metadata database."""
         discovered: dict[tuple[str, str], Path] = {}
+        if not data_dir.is_dir():
+            return discovered
         for tenant_dir in data_dir.iterdir():
             if not tenant_dir.is_dir() or not tenant_dir.name.startswith("t_"):
                 continue
@@ -1424,10 +1439,14 @@ class CatalogDB:
                 if not coll_dir.is_dir() or not coll_dir.name.startswith("c_"):
                     continue
                 name = coll_dir.name[2:]
-                if not name:
-                    continue
-                if (coll_dir / "meta.db").is_file():
+                if name and (coll_dir / "meta.db").is_file():
                     discovered[(tenant, name)] = coll_dir
+        return discovered
+
+    def bootstrap(self, data_dir: Path) -> tuple[int, int]:
+        data_dir = data_dir.resolve()
+        data_dir.mkdir(parents=True, exist_ok=True)
+        discovered = self.discover_collection_dirs(data_dir)
 
         seeded = 0
         removed = 0

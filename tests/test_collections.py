@@ -10,6 +10,7 @@ from pave import cli as pvcli
 from pave.config import get_cfg
 from pave.metadb import (
     CatalogDB,
+    COLLECTION_CONFIG_FIELDS,
     CollectionConfigRecoveryError,
     CollectionDB,
 )
@@ -434,6 +435,10 @@ def test_catalog_backfills_legacy_custom_embedder_config(tmp_path):
     )
     config = recovered.get_collection_config("acme", "legacy")
     assert config is not None
+    assert {
+        key: config[key]
+        for key in COLLECTION_CONFIG_FIELDS
+    } == json.loads(sidecar.read_text(encoding="utf-8"))
     assert config["embedder_type"] == "openai"
     assert config["embed_model"] == "bge-m3"
     assert config["embedder_config"] == {"dim": 4}

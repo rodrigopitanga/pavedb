@@ -48,6 +48,7 @@ from pave.metadb import (
     CollectionConfigRecoveryError,
     CollectionDB,
     UnsupportedSchemaVersionError,
+    validate_collection_config,
 )
 from pave.stores.base import (
     BaseStore,
@@ -80,6 +81,7 @@ _QUERY_VECTOR_CACHE_MAX = 256
 _COLLECTION_CACHE_DEFAULT_MAX = 64
 _EMBEDDER_CACHE_DEFAULT_MAX = 32
 _INDEX_DIRTY_FILE = ".pavedb-index-dirty"
+_RESTORE_BACKUP_PREFIX = ".pavedb-restore-backup-"
 
 
 class _StoreStateLock:
@@ -455,6 +457,15 @@ class LocalStore:
         replace: bool = True,
     ) -> None:
         path = self._collection_config_path(tenant, collection)
+        self._write_collection_config_at(path, config, replace=replace)
+
+    @staticmethod
+    def _write_collection_config_at(
+        path: Path,
+        config: CollectionConfig,
+        *,
+        replace: bool = True,
+    ) -> None:
         fd, temporary = tempfile.mkstemp(
             dir=path.parent,
             prefix=f".{path.name}.",
@@ -474,6 +485,227 @@ class LocalStore:
         finally:
             with suppress(FileNotFoundError):
                 Path(temporary).unlink()
+
+    @staticmethod
+    def _archive_json_dict(payload: object) -> dict[str, Any]:
+        if not isinstance(payload, str):
+            raise ValueError("archive config JSON is missing")
+        loaded = json.loads(payload)
+        if not isinstance(loaded, dict):
+            raise ValueError("archive config JSON is not an object")
+        return loaded
+
+    @staticmethod
+    def _validate_archive_collection_config(
+        config: object,
+        tenant: str,
+        collection: str,
+    ) -> CollectionConfig:
+        label = f"{tenant}/{collection}"
+        try:
+            persisted = validate_collection_config(config)
+            spec = embedder_factory_mod._spec_from_parts(
+                etype=persisted["embedder_type"],
+                model=persisted["embed_model"],
+                config=persisted["embedder_config"],
+            )
+            portable = embedder_factory_mod.persistable_embedder_spec(spec)
+        except Exception:
+            raise ValueError(
+                f"invalid archive collection config: {label}"
+            ) from None
+        if any(
+            persisted[key] != portable[key]
+            for key in (
+                "embedder_type",
+                "embed_model",
+                "embedder_config",
+            )
+        ):
+            raise ValueError(f"invalid archive collection config: {label}")
+        return persisted
+
+    def _archive_catalog_configs(
+        self,
+        catalog: CatalogDB,
+    ) -> dict[tuple[str, str], CollectionConfig]:
+        """Read raw catalog configs without the normal recovery fallback."""
+        try:
+            with catalog._reader() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT tenant, name, backend_type, backend_config_json,
+                           embedder_type, embed_model, embed_config_json
+                    FROM collections
+                    """
+                ).fetchall()
+        except Exception:
+            raise ValueError("invalid archive catalog") from None
+
+        configs: dict[tuple[str, str], CollectionConfig] = {}
+        for row in rows:
+            (
+                tenant,
+                collection,
+                backend_type,
+                backend_config,
+                embedder_type,
+                embed_model,
+                embedder_config,
+            ) = row
+            if not isinstance(tenant, str) or not isinstance(collection, str):
+                raise ValueError("invalid archive catalog")
+            if tenant == "_system":
+                continue
+            try:
+                configs[(tenant, collection)] = (
+                    self._validate_archive_collection_config(
+                        {
+                            "backend_type": backend_type,
+                            "backend_config": self._archive_json_dict(
+                                backend_config
+                            ),
+                            "embedder_type": embedder_type,
+                            "embed_model": embed_model,
+                            "embedder_config": self._archive_json_dict(
+                                embedder_config
+                            ),
+                        },
+                        tenant,
+                        collection,
+                    )
+                )
+            except ValueError:
+                raise ValueError(
+                    f"invalid archive collection config: {tenant}/{collection}"
+                ) from None
+        return configs
+
+    def _archive_sidecar_config(
+        self,
+        collection_dir: Path,
+        tenant: str,
+        collection: str,
+    ) -> CollectionConfig | None:
+        path = collection_dir / COLLECTION_CONFIG_FILENAME
+        try:
+            config = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return None
+        except (OSError, ValueError):
+            raise ValueError(
+                f"invalid archive collection config: {tenant}/{collection}"
+            ) from None
+        return self._validate_archive_collection_config(
+            config,
+            tenant,
+            collection,
+        )
+
+    @staticmethod
+    def _assert_no_restore_backup(data_dir: Path) -> None:
+        if not data_dir.is_dir():
+            return
+        marker = next(
+            (
+                entry.name
+                for entry in data_dir.iterdir()
+                if entry.name.startswith(_RESTORE_BACKUP_PREFIX)
+            ),
+            None,
+        )
+        if marker is not None:
+            raise RuntimeError(
+                "interrupted archive restore detected; recover or remove "
+                f"{marker} before starting"
+            )
+
+    def _preflight_archive(self, data_dir: Path) -> None:
+        """Validate and repair a staged instance before it becomes live."""
+        data_dir = data_dir.resolve()
+        catalog_path = data_dir / "catalog.db"
+        if not catalog_path.is_file():
+            raise ValueError("archive is missing catalog.db")
+        if any(
+            entry.name.startswith(_RESTORE_BACKUP_PREFIX)
+            for entry in data_dir.iterdir()
+        ):
+            raise ValueError("archive contains an interrupted restore backup")
+
+        catalog = CatalogDB()
+        try:
+            catalog.open(catalog_path)
+            catalog_configs = self._archive_catalog_configs(catalog)
+            collection_dirs = CatalogDB.discover_collection_dirs(data_dir)
+            for key in catalog_configs:
+                if key not in collection_dirs:
+                    raise ValueError(
+                        "archive catalog collection has no directory: "
+                        f"{key[0]}/{key[1]}"
+                    )
+
+            vector_spaces: dict[str, CollectionConfig] = {}
+            for (tenant, collection), collection_dir in collection_dirs.items():
+                sidecar = self._archive_sidecar_config(
+                    collection_dir,
+                    tenant,
+                    collection,
+                )
+                catalog_config = catalog_configs.get((tenant, collection))
+                if sidecar is None:
+                    if catalog_config is None:
+                        raise ValueError(
+                            "archive collection has no recoverable config: "
+                            f"{tenant}/{collection}"
+                        )
+                    self._write_collection_config_at(
+                        collection_dir / COLLECTION_CONFIG_FILENAME,
+                        catalog_config,
+                    )
+                    config = catalog_config
+                elif catalog_config is None:
+                    catalog.register_collection(
+                        tenant,
+                        collection,
+                        backend_type=sidecar["backend_type"],
+                        backend_config=sidecar["backend_config"],
+                        embedder_type=sidecar["embedder_type"],
+                        embed_model=sidecar["embed_model"],
+                        embed_config=sidecar["embedder_config"],
+                    )
+                    config = sidecar
+                elif catalog_config != sidecar:
+                    raise ValueError(
+                        "archive catalog and sidecar conflict: "
+                        f"{tenant}/{collection}"
+                    )
+                else:
+                    config = catalog_config
+                vector_spaces.setdefault(
+                    embedder_factory_mod.vector_space_key(config),
+                    config,
+                )
+
+            for vector_key, config in vector_spaces.items():
+                try:
+                    embedder_factory_mod.runtime_embedder_spec_for_vector(
+                        get_cfg(),
+                        config,
+                    )
+                except Exception:
+                    raise ValueError(
+                        "no compatible destination embedder for vector space "
+                        f"{vector_key}"
+                    ) from None
+        except ValueError:
+            raise
+        except Exception:
+            raise ValueError("invalid archive catalog") from None
+        finally:
+            catalog.close()
+            for suffix in ("-wal", "-shm"):
+                with suppress(FileNotFoundError):
+                    (data_dir / f"catalog.db{suffix}").unlink()
 
     def _resolve_collection_config(
         self,
@@ -557,6 +789,7 @@ class LocalStore:
 
     def _ensure_catalog(self) -> CatalogDB:
         catalog_path = self._catalog_db_path()
+        self._assert_no_restore_backup(catalog_path.parent)
         cat = self._catalog
         if (
             self._catalog_path == catalog_path
@@ -616,19 +849,13 @@ class LocalStore:
                         bool(config["embedder_config"]),
                     )):
                         continue
-                    if not (
-                        isinstance(config["backend_type"], str)
-                        and config["backend_type"]
-                        and isinstance(config["backend_config"], dict)
-                        and isinstance(config["embedder_type"], str)
-                        and config["embedder_type"]
-                        and isinstance(config["embed_model"], str)
-                        and isinstance(config["embedder_config"], dict)
-                    ):
+                    try:
+                        config = validate_collection_config(config)
+                    except ValueError as exc:
                         raise CollectionConfigRecoveryError(
                             "catalog contains invalid collection config: "
                             f"{tenant}/{collection}"
-                        )
+                        ) from exc
                     self._write_collection_config(
                         tenant,
                         collection,
@@ -2627,6 +2854,56 @@ class LocalStore:
                     continue
                 raise
 
+    def _replace_archive_tree(
+        self,
+        data_dir: Path,
+        staged_dir: Path,
+    ) -> None:
+        backup_dir = Path(
+            tempfile.mkdtemp(prefix=_RESTORE_BACKUP_PREFIX, dir=data_dir)
+        )
+        old_entries = [
+            entry for entry in data_dir.iterdir() if entry != backup_dir
+        ]
+        moved_old: list[str] = []
+        installed: list[str] = []
+        try:
+            for entry in old_entries:
+                shutil.move(str(entry), str(backup_dir / entry.name))
+                moved_old.append(entry.name)
+            for entry in staged_dir.iterdir():
+                installed.append(entry.name)
+                shutil.move(str(entry), str(data_dir / entry.name))
+            self._remove_path(backup_dir)
+        except Exception as exc:
+            rollback_errors: list[Exception] = []
+            for name in reversed(installed):
+                try:
+                    self._remove_path(data_dir / name)
+                except Exception as rollback_exc:
+                    rollback_errors.append(rollback_exc)
+            for name in moved_old:
+                backup_entry = backup_dir / name
+                try:
+                    if not (backup_entry.exists() or backup_entry.is_symlink()):
+                        raise FileNotFoundError(backup_entry)
+                    shutil.move(str(backup_entry), str(data_dir / name))
+                except Exception as rollback_exc:
+                    rollback_errors.append(rollback_exc)
+            if not rollback_errors:
+                try:
+                    self._remove_path(backup_dir)
+                except Exception as rollback_exc:
+                    rollback_errors.append(rollback_exc)
+            if rollback_errors:
+                if not backup_dir.exists():
+                    with suppress(OSError):
+                        backup_dir.mkdir()
+                raise RuntimeError(
+                    "archive restore failed and rollback is incomplete"
+                ) from exc
+            raise
+
     def dump_archive(
         self,
         output_path: str | os.PathLike[str] | None = None,
@@ -2638,6 +2915,7 @@ class LocalStore:
                     f"data directory not found: {data_dir_path}"
                 )
             self._flush_caches()
+            self._preflight_archive(data_dir_path)
 
             if output_path is not None:
                 archive_path = Path(output_path).resolve()
@@ -2653,7 +2931,6 @@ class LocalStore:
     def restore_archive(self, archive_bytes: bytes) -> None:
         with self._state_lock.write_lock():
             data_dir_path = Path(self._data_dir).resolve()
-            data_dir_path.mkdir(parents=True, exist_ok=True)
 
             with tempfile.TemporaryDirectory(prefix="pavedb_import_") as tmp_dir:
                 tmp_path = Path(tmp_dir)
@@ -2666,14 +2943,9 @@ class LocalStore:
                     self._validate_zip_members(zf)
                     zf.extractall(extract_dir)
 
+                self._preflight_archive(extract_dir)
+                self._assert_no_restore_backup(data_dir_path)
+                data_dir_path.mkdir(parents=True, exist_ok=True)
                 self._flush_caches()
-                for entry in data_dir_path.iterdir():
-                    self._remove_path(entry)
-
-                for entry in extract_dir.iterdir():
-                    target = data_dir_path / entry.name
-                    if target.exists() or target.is_symlink():
-                        self._remove_path(target)
-                    shutil.move(str(entry), str(target))
-
+                self._replace_archive_tree(data_dir_path, extract_dir)
                 self._ensure_catalog().rotate_metrics_generation()
