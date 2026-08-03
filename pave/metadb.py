@@ -1424,8 +1424,10 @@ class CatalogDB:
     @staticmethod
     def discover_collection_dirs(
         data_dir: Path,
+        *,
+        require_metadata: bool = True,
     ) -> dict[tuple[str, str], Path]:
-        """Return collection directories with a metadata database."""
+        """Return collection directories, optionally requiring a metadata DB."""
         discovered: dict[tuple[str, str], Path] = {}
         if not data_dir.is_dir():
             return discovered
@@ -1439,7 +1441,9 @@ class CatalogDB:
                 if not coll_dir.is_dir() or not coll_dir.name.startswith("c_"):
                     continue
                 name = coll_dir.name[2:]
-                if name and (coll_dir / "meta.db").is_file():
+                if name and (
+                    not require_metadata or (coll_dir / "meta.db").is_file()
+                ):
                     discovered[(tenant, name)] = coll_dir
         return discovered
 

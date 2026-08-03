@@ -636,7 +636,10 @@ class LocalStore:
         try:
             catalog.open(catalog_path)
             catalog_configs = self._archive_catalog_configs(catalog)
-            collection_dirs = CatalogDB.discover_collection_dirs(data_dir)
+            collection_dirs = CatalogDB.discover_collection_dirs(
+                data_dir,
+                require_metadata=False,
+            )
             for key in catalog_configs:
                 if key not in collection_dirs:
                     raise ValueError(
@@ -646,6 +649,11 @@ class LocalStore:
 
             vector_spaces: dict[str, CollectionConfig] = {}
             for (tenant, collection), collection_dir in collection_dirs.items():
+                if not (collection_dir / "meta.db").is_file():
+                    raise ValueError(
+                        "archive collection directory is missing metadata "
+                        f"database: {tenant}/{collection}"
+                    )
                 sidecar = self._archive_sidecar_config(
                     collection_dir,
                     tenant,
