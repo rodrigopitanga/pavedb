@@ -205,7 +205,9 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-51 | ~~`make docker-check`: alive test against prebuilt Docker image~~ | 🧩 | v0.5.9 |
 | P3-52 | ~~`make build-check`: install from local wheel in temp venv, alive test~~ | 🧩 | v0.5.9 |
 | P3-53 | Micro-batch concurrent query embeddings | 🧱 | v1.8 |
-| P3-54 | Optional FAISS HNSW/IVF indexes | 🧱 | Per-collection `backend_config` selects flat/HNSW/IVF; no search-time API change. VectorDBBench supplies the recall/QPS gate. | v1.8 |
+| P3-54 | Flat cosine/IP/L2 metrics | 🔧 | Exact metrics; VDB gate. | v1.1 |
+| P3-55 | Optional FAISS HNSW index | 🧱 | HNSW; recall/QPS gates. | v1.2 |
+| P3-56 | Optional FAISS IVF index | 🧱 | IVF plus explicit optimize. | v1.8 |
 
 P1-53e includes a checked-in `openapi.json` snapshot plus a
 `docs-ref-openapi` dump and drift check, mirroring P1-53b's CLI gate.
@@ -227,6 +229,7 @@ Substantial features are specified under `docs/design/` before implementation.
 | [`docs/design/PLAN-DOCS.md`](docs/design/PLAN-DOCS.md) | P1-46 / P1-47 / P1-53 | Distribution documentation and site-input contract |
 | [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md) | P1-62 | SDK Python API reference and runnable book examples |
 | [`docs/design/PLAN-EMBEDDER-WORKERS.md`](docs/design/PLAN-EMBEDDER-WORKERS.md) | P1-61 | General embedder worker pools |
+| [PLAN-ANN](docs/design/PLAN-ANN.md) | P3-54 / P3-55 / P3-56 | FAISS indexes |
 
 ---
 
@@ -510,6 +513,8 @@ lands where it has more impact during post-contract hardening.
 
 ### PaveDB v1.1 — Adoption
 
+- Exact flat cosine, inner-product, and L2 metrics selected per collection;
+  the VectorDBBench adapter expands beyond its v1.0 cosine cases (P3-54).
 - Per-collection hot caches with isolation (P1-22).
 - ~~Batch ingest endpoint (list of documents in one call) (P1-16).~~
 - ~~Admin key auto-generate + persist on first boot; CLI rotate /
@@ -528,6 +533,8 @@ lands where it has more impact during post-contract hardening.
 
 ### PaveDB v1.2 — Control
 
+- Optional FAISS HNSW index using the same metric-aware collection config;
+  recall and throughput are gated by VectorDBBench (P3-55).
 - Filter pushdown parity harness: synthetic corpus + filter
   corpus, soundness invariant always asserted (pushdown ⊆
   canonical), completeness invariant where pushdown claims the
@@ -632,6 +639,8 @@ lands where it has more impact during post-contract hardening.
 
 ### PaveDB v1.8 — Scale
 
+- Optional FAISS IVF index with explicit train/build state and a public
+  collection-optimize operation used by operators and VectorDBBench (P3-56).
 - Async ingest, parallel purge (P3-15).
 - Horizontal scalability, tenant groups, sub-index routing
   (P3-16).
