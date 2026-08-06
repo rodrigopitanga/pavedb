@@ -111,7 +111,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-47 | Docs site renderer | 🧱 | `pavedb-site` renders the released PaveDB and SDK documentation with Hugo; product sources and generators stay in their owning distributions. | v1.0 |
 | P1-48 | ~~Remove `SearchBody.request_id`~~ | 🧩 | `X-Request-ID` becomes the only request-correlation input | v0.9 |
 | P1-49 | ~~HTTP request metrics middleware~~ |  | v1.0 ships labeled `http_requests_total` middleware + handler-side `inc("requests_total")` cleanup; histogram + `# HELP`/`# TYPE` metadata ride P1-50 at v1.1 | v1.0 / v1.1 |
-| P1-50 | ~~Product-signal metrics + metrics polish~~ | 🧩 | Zero-match searches, filter usage, query-log readiness, embedder counters, sidecar drift — competitor gap. Bundled with P1-49's histogram + HELP/TYPE refactor and docs-site coverage so the new gauges are discoverable | v1.1 |
+| P1-50 | ~~Product-signal metrics + metrics polish~~ | 🧩 | Zero-match searches, filter usage, query-log readiness, embedder counters, sidecar drift — competitor gap. Bundled with P1-49's histogram + HELP/TYPE refactor and docs-site coverage so the new gauges are discoverable | v1.0 |
 | P1-51 | ~~Admin query-home resolver + shortcut routes + CLI rework~~ | 🧩 | Bare-`query_id` lookup/replay for admin via `query_home` table in `catalog.db` | v0.9 |
 | P1-52 | Concurrency chaos test (Level 1) | 🔧 | N-thread random-interleave fuzz over create/delete/move/ingest/search/dump/restore with post-run catalog↔disk invariants. Regression net for the lock lattice hardened during the v0.9 rc cycle; bench-stress finds races, this turns them into non-flaky CI checks. Ships as nightly job at v1.1 (not a v1.0 release gate). | v1.1 |
 | P1-53a | ~~Reference-source plumbing: OpenAPI completeness pass~~ | 🔧 | Every route gets `summary`/`description`/`tags`/`responses`; every Pydantic `Field` gets `description` + at least one example. Unblocks an auto-rendered API reference. | v1.0 |
@@ -510,8 +510,7 @@ latency on every search/ingest/delete.~~
 **Deferred from v1.0** (to lean the path; pulled in by next
 release, see v1.1 and v1.2 sections): P1-22 per-collection hot
 caches, P1-27 admin key auto-gen, P1-35 filter pushdown parity
-harness, P1-50 product-signal metrics + P1-49 histogram polish,
-P1-52 concurrency chaos test.
+harness, P1-49 histogram polish, P1-52 concurrency chaos test.
 None blocks the documented-contract promise that defines v1.0; each
 lands where it has more impact during post-contract hardening.
 
