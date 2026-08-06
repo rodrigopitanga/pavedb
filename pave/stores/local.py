@@ -620,8 +620,13 @@ class LocalStore:
                 f"{marker} before starting"
             )
 
-    def _preflight_archive(self, data_dir: Path) -> None:
-        """Validate and repair a staged instance before it becomes live."""
+    def _preflight_archive(
+        self,
+        data_dir: Path,
+        *,
+        validate_destination: bool = False,
+    ) -> None:
+        """Validate archive consistency and repair missing config surfaces."""
         data_dir = data_dir.resolve()
         catalog_path = data_dir / "catalog.db"
         if not catalog_path.is_file():
@@ -714,22 +719,24 @@ class LocalStore:
                     )
                 else:
                     config = catalog_config
-                vector_spaces.setdefault(
-                    embedder_factory_mod.vector_space_key(config),
-                    config,
-                )
-
-            for vector_key, config in vector_spaces.items():
-                try:
-                    embedder_factory_mod.runtime_embedder_spec_for_vector(
-                        get_cfg(),
+                if validate_destination:
+                    vector_spaces.setdefault(
+                        embedder_factory_mod.vector_space_key(config),
                         config,
                     )
-                except Exception:
-                    raise ValueError(
-                        "no compatible destination embedder for vector space "
-                        f"{vector_key}"
-                    ) from None
+
+            if validate_destination:
+                for vector_key, config in vector_spaces.items():
+                    try:
+                        embedder_factory_mod.runtime_embedder_spec_for_vector(
+                            get_cfg(),
+                            config,
+                        )
+                    except Exception:
+                        raise ValueError(
+                            "no compatible destination embedder for vector space "
+                            f"{vector_key}"
+                        ) from None
         except ValueError:
             raise
         except Exception:
@@ -2976,7 +2983,7 @@ class LocalStore:
                     self._validate_zip_members(zf)
                     zf.extractall(extract_dir)
 
-                self._preflight_archive(extract_dir)
+                self._preflight_archive(extract_dir, validate_destination=True)
                 self._assert_no_restore_backup(data_dir_path)
                 data_dir_path.mkdir(parents=True, exist_ok=True)
                 self._flush_caches()

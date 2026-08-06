@@ -112,6 +112,22 @@ def test_dump_archive_returns_zip(tmp_path):
         assert "t_acme/c_documents/collection.json" in names
 
 
+def test_dump_archive_allows_unroutable_vector_space(tmp_path):
+    _set_openai_instance("archive-text", dim=4)
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder(dim=8))
+    source.create_collection(
+        "acme",
+        "text",
+        embedder_type="openai",
+        embed_model="bge-m3",
+        embedder_config={"dim": 4},
+    )
+    get_cfg().set("embedder.instances", {"native": _native_instance()})
+
+    with zipfile.ZipFile(io.BytesIO(_archive_bytes(source))) as archive:
+        assert "catalog.db" in archive.namelist()
+
+
 def test_create_collection_uses_collection_lock(monkeypatch, temp_data_dir):
     store = LocalStore(str(temp_data_dir), FakeEmbedder())
     events: list[tuple[str, str, str]] = []
