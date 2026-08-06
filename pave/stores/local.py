@@ -626,6 +626,16 @@ class LocalStore:
         catalog_path = data_dir / "catalog.db"
         if not catalog_path.is_file():
             raise ValueError("archive is missing catalog.db")
+        try:
+            with sqlite3.connect(
+                f"file:{catalog_path.as_posix()}?mode=ro&immutable=1",
+                uri=True,
+            ) as conn:
+                schema_version = conn.execute("PRAGMA schema_version").fetchone()
+        except sqlite3.Error:
+            raise ValueError("invalid archive catalog") from None
+        if not schema_version or schema_version[0] == 0:
+            raise ValueError("invalid archive catalog")
         if any(
             entry.name.startswith(_RESTORE_BACKUP_PREFIX)
             for entry in data_dir.iterdir()
