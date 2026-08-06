@@ -10,6 +10,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -46,19 +47,39 @@ class GitLab:
         headers = {"PRIVATE-TOKEN": self.token}
         if data is not None:
             encoded = urllib.parse.urlencode(data).encode()
-        req = urllib.request.Request(
-            f"{self.api_url}{path}",
-            data=encoded,
-            headers=headers,
-            method=method,
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                body = resp.read().decode()
-        except urllib.error.HTTPError as exc:
-            detail = exc.read().decode(errors="replace")
-            raise RuntimeError(f"GitLab API {method} {path} failed: {detail}") from exc
-        return json.loads(body) if body else {}
+        # Retry transient failures so a single API hiccup does not orphan a
+        # push's issue keys (the root cause of un-closed, already-fixed issues:
+        # the old code raised on the first error with no retry, dropping the
+        # whole push's sync). Backoff only fires on failure, so the happy path
+        # keeps its original cost.
+        last: Exception | None = None
+        for attempt in range(3):
+            req = urllib.request.Request(
+                f"{self.api_url}{path}",
+                data=encoded,
+                headers=headers,
+                method=method,
+            )
+            try:
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    body = resp.read().decode()
+                return json.loads(body) if body else {}
+            except urllib.error.HTTPError as exc:
+                if exc.code in (429, 500, 502, 503, 504) and attempt < 2:
+                    last = exc
+                    time.sleep(2**attempt)
+                    continue
+                detail = exc.read().decode(errors="replace")
+                raise RuntimeError(
+                    f"GitLab API {method} {path} failed: {detail}"
+                ) from exc
+            except urllib.error.URLError as exc:
+                if attempt < 2:
+                    last = exc
+                    time.sleep(2**attempt)
+                    continue
+                raise RuntimeError(f"GitLab API {method} {path} failed: {exc}") from exc
+        raise RuntimeError(f"GitLab API {method} {path} failed after retries: {last}")
 
     def paged(self, path: str) -> list[dict[str, object]]:
         out: list[dict[str, object]] = []
@@ -98,6 +119,19 @@ def closing_keys(text: str) -> set[str]:
         keys.add(match.group(1))
         lines.pop()
     return keys
+
+
+def subject_key(text: str) -> str:
+    """The primary issue key of a commit: a trailing ``(KEY)`` in the SUBJECT
+    line. That is the repo convention (``[fix] ... (R3-77)``); a key merely
+    referenced mid-body does not count as "this commit fixes it", which avoids
+    the over-close the ``Closes:`` gate was added to prevent without requiring a
+    trailer nobody writes. (Leading ``KEY:`` is the issue-title format, not a
+    commit format, so it is intentionally not matched here.)
+    """
+    subject = (text or "").splitlines()[0] if text else ""
+    trail = re.search(rf"\(({_KEY_BODY})\)\s*$", subject)
+    return trail.group(1) if trail else ""
 
 
 def local_commit_texts() -> dict[str, str]:
@@ -365,6 +399,74 @@ def sync_roadmap_issues(gl: GitLab, issues: dict[str, dict[str, object]]) -> Non
         print("Updated roadmap issues: " + ", ".join(updated))
 
 
+def main_subject_fixes(default_branch: str) -> dict[str, tuple[str, str]]:
+    """key -> (sha, subject) for every subject-key fix on the default branch.
+
+    One local ``git log`` pass over the default branch (no network, no
+    per-issue work). Needs full history: shallow CI clones only see the tip,
+    so the reconcile job must fetch depth 0 (see gitlab-ci.yml issue-reconcile).
+    """
+    out = ""
+    for ref in (default_branch, f"origin/{default_branch}", f"gitlab/{default_branch}"):
+        try:
+            out = sh("git", "log", ref, "--format=%H%x00%s")
+            break
+        except (OSError, subprocess.CalledProcessError):
+            continue
+    fixes: dict[str, tuple[str, str]] = {}
+    for line in out.splitlines():
+        if "\x00" not in line:
+            continue
+        sha, subject = line.split("\x00", 1)
+        key = subject_key(subject)
+        if key:
+            fixes.setdefault(key, (sha, subject))  # newest wins
+    return fixes
+
+
+def reconcile(gl: GitLab, issues: dict[str, dict[str, object]], default_branch: str) -> int:
+    """Close any OPEN key-titled issue whose fix already landed on the default
+    branch but which an earlier push-scoped run missed. Idempotent: closed
+    issues are skipped, so a steady-state run closes nothing and makes no write
+    calls. Reuses the already-fetched ``issues`` map — the only added cost is
+    one local ``git log``.
+    """
+    fixes = main_subject_fixes(default_branch)
+    closed: list[str] = []
+    for key, issue in issues.items():
+        if issue.get("state") == "closed" or key not in fixes:
+            continue
+        sha, subject = fixes[key]
+        issue_iid = int(issue["iid"])
+        marker = f"<!-- flowlexi-issue-sync: {key}:reconcile:{sha} -->"
+        body = (
+            f"Fixed on `{default_branch}` by {sha[:12]} — {subject}.\n\n"
+            f"{commit_url(sha)}\n\nReconcile-close: an earlier push-scoped sync "
+            f"run did not process this commit."
+        )
+        add_note(gl, issue_iid, body, marker)
+        gl.request(
+            "PUT",
+            f"/projects/{gl.project_id}/issues/{issue_iid}",
+            {"state_event": "close"},
+        )
+        closed.append(key)
+    print("Reconcile closed: " + (", ".join(sorted(closed)) if closed else "nothing"))
+    return 0
+
+
+def selfcheck() -> int:
+    assert subject_key("[cli] Reject non-object --filters early (R3-26)") == "R3-26"
+    assert subject_key("mentions R2-68 midway, fixes (R3-77)") == "R3-77"
+    assert subject_key("R3-26: something") == ""  # leading form is issue-title, not commit
+    assert subject_key("[fix] no key here") == ""
+    assert subject_key("[fix] archive (B15)\n\nbody (R9-99)") == "B15"
+    assert closing_keys("subj\n\nbody\n\nCloses: B15") == {"B15"}
+    assert closing_keys("subj\n\nno trailer") == set()
+    print("selfcheck ok")
+    return 0
+
+
 def sync() -> int:
     gl = GitLab()
     validate_review_keys(gl)
@@ -374,6 +476,18 @@ def sync() -> int:
     on_default = bool(branch and branch == default_branch)
     mr_iid = os.environ.get("CI_MERGE_REQUEST_IID", "")
 
+    # Full reconcile (scan the default branch, close every open issue already
+    # fixed) is O(history) + touches many issues, so it must NOT run on the
+    # frequent commit jobs. Gate it to scheduled pipelines or an explicit
+    # local `--reconcile`; commit jobs keep their cheap push-range scope below.
+    reconcile_requested = (
+        "--reconcile" in sys.argv
+        or os.environ.get("CI_PIPELINE_SOURCE") == "schedule"
+        or os.environ.get("ISSUE_SYNC_RECONCILE") == "1"
+    )
+    if reconcile_requested:
+        return reconcile(gl, issues, default_branch)
+
     commit_refs = mr_texts(gl) if mr_iid else local_commit_texts()
     if on_default:
         sync_roadmap_issues(gl, issues)
@@ -381,6 +495,7 @@ def sync() -> int:
 
     for sha, text in commit_refs.items():
         closes = closing_keys(text)
+        subject = subject_key(text)
         for key in sorted(public_keys(text)):
             issue = issues.get(key)
             if not issue:
@@ -399,7 +514,12 @@ def sync() -> int:
                 body = f"Commit {short} references {key}.\n\n{commit_url(sha)}"
             add_note(gl, issue_iid, body, marker)
             matched.add(key)
-            if on_default and key in closes and issue.get("state") != "closed":
+            # Close when the commit's SUBJECT names this key (the repo
+            # convention) or an explicit `Closes:` trailer does. Restores the
+            # auto-close that the 2026-08-01 trailer-only gate silently broke,
+            # without closing on incidental body mentions.
+            close_it = key == subject or key in closes
+            if on_default and close_it and issue.get("state") != "closed":
                 gl.request(
                     "PUT",
                     f"/projects/{gl.project_id}/issues/{issue_iid}",
@@ -414,6 +534,8 @@ def sync() -> int:
 
 
 if __name__ == "__main__":
+    if "--selfcheck" in sys.argv:
+        raise SystemExit(selfcheck())
     try:
         raise SystemExit(sync())
     except RuntimeError as exc:

@@ -70,6 +70,19 @@ issue-key-sync:
     - if: '$GITLAB_ISSUE_TOKEN && $CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$GITLAB_ISSUE_TOKEN && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
+# Full reconcile: close every open issue already fixed on the default branch,
+# catching anything a push-scoped run missed (transient failure, no runner).
+# Schedule-only + GIT_DEPTH:0 so this heavier pass never loads the frequent
+# commit jobs. Add a scheduled pipeline (Build > Pipeline schedules) to run it.
+issue-reconcile:
+  stage: test
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - python scripts/issue_key_sync.py --reconcile
+  rules:
+    - if: '$GITLAB_ISSUE_TOKEN && $CI_PIPELINE_SOURCE == "schedule"'
+
 validate-release-announcement:
   stage: test
   script:
