@@ -2897,6 +2897,8 @@ class LocalStore:
                 raise ValueError(f"invalid archive member: {name}")
             if name.startswith(("/", "\\")):
                 raise ValueError(f"invalid archive member: {name}")
+            if rel_path.name.endswith(("-wal", "-shm")):
+                raise ValueError(f"archive contains SQLite sidecar: {name}")
 
     @staticmethod
     def _remove_path(path: Path, *, retries: int = 4) -> None:

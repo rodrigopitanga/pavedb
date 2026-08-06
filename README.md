@@ -279,8 +279,9 @@ barely changes along the way:
    Archives carry each collection's vector-space identity, not credentials or
    operational settings such as provider endpoints and batch sizes. Before
    replacing live data, restore validates locally, without loading models or
-   making network requests, that the destination config has a compatible
-   instance for every non-modelless embedder type.
+   making network requests, that every archived vector-space identity is
+   supported by the destination configuration. A failed replacement rolls back
+   the live tree; an incomplete rollback leaves a recovery marker for repair.
 
 ## 📚 Reference
 

@@ -256,6 +256,24 @@ def test_restore_archive_replaces_data_dir(tmp_path):
     assert store.metrics_generation() != metrics_generation
 
 
+@pytest.mark.parametrize(
+    "member",
+    ("catalog.db-wal", "t_acme/c_documents/meta.db-shm"),
+)
+def test_restore_archive_rejects_sqlite_sidecars_before_touch(tmp_path, member):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.create_collection("acme", "documents")
+    archive_buffer = io.BytesIO(_archive_bytes(source))
+    with zipfile.ZipFile(archive_buffer, "a") as archive:
+        archive.writestr(member, b"stale SQLite sidecar")
+    destination = _sentinel_store(tmp_path / "destination")
+
+    with pytest.raises(ValueError, match="SQLite sidecar"):
+        destination.restore_archive(archive_buffer.getvalue())
+
+    assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
+
+
 def test_archive_round_trip_preserves_mixed_vector_spaces(tmp_path, monkeypatch):
     _set_openai_instance("archive-text", dim=4)
     source = LocalStore(str(tmp_path / "source"), FakeEmbedder(dim=8))
@@ -353,6 +371,35 @@ def test_restore_archive_validates_destination_before_touch(tmp_path, routing):
     assert "openai:bge-m3:dim=4" in str(exc_info.value)
     assert "runtime-secret" not in str(exc_info.value)
     assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
+
+
+def test_restore_archive_uses_compatible_destination_instance(tmp_path):
+    archive_bytes = _openai_archive(tmp_path)
+    cfg = get_cfg()
+    cfg.set(
+        "embedder.instances",
+        {
+            "native": _native_instance(),
+            "destination-text": {
+                "type": "openai",
+                "model": "bge-m3",
+                "config": {
+                    "dim": 4,
+                    "base_url": "https://destination-runtime",
+                },
+                "api_key": "destination-secret",
+            },
+        },
+    )
+    destination = _sentinel_store(tmp_path / "destination")
+
+    destination.restore_archive(archive_bytes)
+
+    restored = destination.get_collection_config("acme", "text")
+    assert restored is not None
+    assert restored["embedder_type"] == "openai"
+    assert restored["embed_model"] == "bge-m3"
+    assert restored["embedder_config"] == {"dim": 4}
 
 
 def test_restore_archive_rejects_conflicting_sidecar_before_touch(tmp_path):
@@ -562,9 +609,12 @@ def test_restore_archive_rolls_back_staged_install_failure(tmp_path, monkeypatch
     with pytest.raises(OSError, match="staged install failed"):
         destination.restore_archive(archive_bytes)
 
-    assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
+    destination.close()
+    recovered = LocalStore(str(destination_path), FakeEmbedder(dim=8))
+    assert recovered.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
     assert not (destination_path / "t_acme" / "c_restored").exists()
     assert not list(destination_path.glob(".pavedb-restore-backup-*"))
+    recovered.close()
 
 
 def test_restore_archive_detects_incomplete_rollback(tmp_path, monkeypatch):
