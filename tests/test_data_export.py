@@ -567,6 +567,42 @@ def test_restore_archive_rolls_back_staged_install_failure(tmp_path, monkeypatch
     assert not list(destination_path.glob(".pavedb-restore-backup-*"))
 
 
+def test_restore_archive_detects_incomplete_rollback(tmp_path, monkeypatch):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.create_collection("acme", "restored")
+    archive_bytes = _archive_bytes(source)
+    destination_path = tmp_path / "destination"
+    destination = _sentinel_store(destination_path)
+    move = shutil.move
+    state = {"staged": False, "rollback": False}
+
+    def fail_restore_move(source_path, target_path, *args, **kwargs):
+        source = Path(source_path)
+        target = Path(target_path)
+        if source.parent.name == "extracted" and source.name == "t_acme":
+            state["staged"] = True
+            target.mkdir()
+            raise OSError("staged install failed")
+        if (
+            state["staged"]
+            and not state["rollback"]
+            and source.parent.name.startswith(".pavedb-restore-backup-")
+        ):
+            state["rollback"] = True
+            raise OSError("rollback failed")
+        return move(source_path, target_path, *args, **kwargs)
+
+    monkeypatch.setattr(shutil, "move", fail_restore_move)
+    with pytest.raises(RuntimeError, match="rollback is incomplete"):
+        destination.restore_archive(archive_bytes)
+
+    assert state == {"staged": True, "rollback": True}
+    assert list(destination_path.glob(".pavedb-restore-backup-*"))
+    destination.close()
+    with pytest.raises(RuntimeError, match="interrupted archive restore"):
+        LocalStore(str(destination_path), FakeEmbedder())
+
+
 def test_dump_archive_rejects_conflicting_collection_config(tmp_path):
     store = LocalStore(str(tmp_path), FakeEmbedder())
     store.create_collection("acme", "documents")
