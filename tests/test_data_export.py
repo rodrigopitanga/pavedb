@@ -380,6 +380,28 @@ def test_restore_archive_rejects_orphan_collection_dir_before_touch(tmp_path):
     assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
 
 
+def test_restore_archive_rejects_invalid_collection_database_before_touch(tmp_path):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.create_collection("acme", "documents")
+    archive_root = _archive_tree(
+        _archive_bytes(source),
+        tmp_path / "archive",
+    )
+    (archive_root / "t_acme" / "c_documents" / "meta.db").write_bytes(
+        b"not a database"
+    )
+    archive_bytes = _zip_tree(archive_root, tmp_path / "corrupt.zip")
+    destination = _sentinel_store(tmp_path / "destination")
+
+    with pytest.raises(
+        ValueError,
+        match="invalid archive collection metadata database: acme/documents",
+    ):
+        destination.restore_archive(archive_bytes)
+
+    assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
+
+
 @pytest.mark.parametrize("repair", ("sidecar", "catalog"))
 def test_restore_archive_repairs_one_missing_config_surface(tmp_path, repair):
     source = LocalStore(str(tmp_path / "source"), FakeEmbedder(dim=8))

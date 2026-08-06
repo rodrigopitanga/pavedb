@@ -258,11 +258,13 @@ class CollectionDB:
         path: Path,
         *,
         read_only: bool = False,
+        immutable: bool = False,
     ) -> sqlite3.Connection:
         """Open a single sqlite3 connection with standard pragmas."""
         if read_only:
+            uri_options = "mode=ro&immutable=1" if immutable else "mode=ro"
             conn = sqlite3.connect(
-                f"file:{path.as_posix()}?mode=ro",
+                f"file:{path.as_posix()}?{uri_options}",
                 uri=True,
                 check_same_thread=False,
             )
@@ -274,7 +276,13 @@ class CollectionDB:
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
-    def open(self, path: Path, *, read_only: bool = False) -> None:
+    def open(
+        self,
+        path: Path,
+        *,
+        read_only: bool = False,
+        immutable: bool = False,
+    ) -> None:
         """Open (or create) the meta.db at *path*.
 
         When *read_only* is True only the read connection is opened
@@ -301,6 +309,7 @@ class CollectionDB:
             self._rconn = self._open_conn(
                 path,
                 read_only=read_only,
+                immutable=immutable,
             )
             self._wconn = None
             self._log_conn = None

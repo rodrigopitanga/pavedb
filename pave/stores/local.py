@@ -649,11 +649,26 @@ class LocalStore:
 
             vector_spaces: dict[str, CollectionConfig] = {}
             for (tenant, collection), collection_dir in collection_dirs.items():
-                if not (collection_dir / "meta.db").is_file():
+                metadata_path = collection_dir / "meta.db"
+                if not metadata_path.is_file():
                     raise ValueError(
                         "archive collection directory is missing metadata "
                         f"database: {tenant}/{collection}"
                     )
+                metadata = CollectionDB()
+                try:
+                    metadata.open(
+                        metadata_path,
+                        read_only=True,
+                        immutable=True,
+                    )
+                except Exception:
+                    raise ValueError(
+                        "invalid archive collection metadata database: "
+                        f"{tenant}/{collection}"
+                    ) from None
+                finally:
+                    metadata.close()
                 sidecar = self._archive_sidecar_config(
                     collection_dir,
                     tenant,
