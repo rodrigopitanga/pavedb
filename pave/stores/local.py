@@ -677,6 +677,11 @@ class LocalStore:
                         read_only=True,
                         immutable=True,
                     )
+                    with metadata._reader() as conn:
+                        conn.execute(
+                            "SELECT 1 FROM documents, chunks, chunk_meta, "
+                            "document_meta, query_log LIMIT 0"
+                        )
                 except Exception:
                     raise ValueError(
                         "invalid archive collection metadata database: "

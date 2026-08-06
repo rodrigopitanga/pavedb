@@ -419,6 +419,38 @@ def test_restore_archive_rejects_invalid_collection_database_before_touch(tmp_pa
     assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
 
 
+def test_restore_archive_rejects_incomplete_collection_database_before_touch(
+    tmp_path,
+):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.create_collection("acme", "documents")
+    archive_root = _archive_tree(
+        _archive_bytes(source),
+        tmp_path / "archive",
+    )
+    metadata_path = archive_root / "t_acme" / "c_documents" / "meta.db"
+    metadata_path.unlink()
+    with sqlite3.connect(metadata_path) as metadata:
+        metadata.execute(
+            "CREATE TABLE schema_migrations "
+            "(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+        )
+        metadata.execute(
+            "INSERT INTO schema_migrations (version, applied_at) "
+            "VALUES (6, 'current')"
+        )
+    archive_bytes = _zip_tree(archive_root, tmp_path / "metadata.zip")
+    destination = _sentinel_store(tmp_path / "destination")
+
+    with pytest.raises(
+        ValueError,
+        match="invalid archive collection metadata database: acme/documents",
+    ):
+        destination.restore_archive(archive_bytes)
+
+    assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
+
+
 def test_restore_archive_rejects_uninitialized_catalog_before_touch(tmp_path):
     source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
     source.create_collection("acme", "documents")
