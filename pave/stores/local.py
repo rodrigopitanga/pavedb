@@ -678,10 +678,33 @@ class LocalStore:
                         immutable=True,
                     )
                     with metadata._reader() as conn:
-                        conn.execute(
-                            "SELECT 1 FROM documents, chunks, chunk_meta, "
-                            "document_meta, query_log LIMIT 0"
-                        )
+                        required_columns = {
+                            "documents": {
+                                "docid", "version", "ingested_at", "meta_json"
+                            },
+                            "chunks": {
+                                "docid", "rid", "chunk_path", "meta_json",
+                                "ingested_at",
+                            },
+                            "chunk_meta": {"rid", "key", "value"},
+                            "document_meta": {"docid", "key", "value"},
+                            "query_log": {
+                                "query_id", "tenant", "collection", "actor",
+                                "query_text", "k", "filters_json", "include_common",
+                                "common_tenant", "common_collection", "result_ids_json",
+                                "result_count", "latency_ms", "timing_json",
+                                "request_id", "replay_of", "executed_at",
+                            },
+                        }
+                        for table, columns in required_columns.items():
+                            found = {
+                                row[1]
+                                for row in conn.execute(
+                                    f"PRAGMA table_info({table})"
+                                )
+                            }
+                            if not columns <= found:
+                                raise ValueError("incomplete archive metadata schema")
                 except Exception:
                     raise ValueError(
                         "invalid archive collection metadata database: "
