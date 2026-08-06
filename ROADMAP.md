@@ -130,7 +130,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-62 | Python API reference | 🔧 | `pavedb-sdk` generates a drift-checked public API reference shipped in its sdist. Runnable examples split to P1-66. See `docs/design/PLAN-EXAMPLES.md`. | v1.0 |
 | P1-63 | VectorDBBench adapter | 🔧 | Standard benchmark adapter over BYOV HTTP raw-vector ingest/search, with flat FAISS recall baseline and no PaveDB runtime dependency on VectorDBBench. External adapter (separate repo/fork), not in-repo. Depends on P1-64 (BYOV raw-vector round trip). | v1.0 |
 | P1-64 | Bring-your-own-vector (BYOV) raw-vector mode | 🔧 | Additive raw-vector ingest/search mirroring Chroma. New `identity` embedder (`encode(x)→x`, dim from `embedder_config`); raw-vector schema fields `vector`/`v` paired with `text`/`q` (exactly-one). Embedding collections stay permissive (text or raw vector); identity collections are vector-only. No new endpoints; FAISS backend unchanged. Serves pre-computed-embedding users and unblocks P1-63. | v1.0 |
-| P1-65 | Instance archive/restore integrity | 🔧 | Preflight catalog, collection sidecars, and configured embedders before rollback-safe whole-instance replacement; verify mixed-embedder round trips. | v1.0 |
+| P1-65 | ~~Instance archive/restore integrity~~ | 🔧 | Preflight catalog, collection sidecars, and configured embedders before rollback-safe whole-instance replacement; verify mixed-embedder round trips. | v1.0 |
 | P1-66 | Runnable book examples | 🔧 | The Python SDK and Elixir client own tested, numbered top-level examples extracted from the book; CI verifies runnable programs and distribution boundaries. See `docs/design/PLAN-EXAMPLES.md`. | v1.1 |
 | P1-67 | ~~Elixir public API parity~~ | 🔧 | Cover the current user-facing `/v1` surface plus a basic `/health` connection check; defer `/admin`, `/metrics`, and `/embedders`. | v1.0 |
 | P1-68 | Task-oriented engine guides | 🔧 | Hand-written, low-boilerplate quickstart and usage guides shipped in the PaveDB source distribution, complementing the generated reference (P1-46) with narrative task-oriented docs rather than auto-generated dumps. | v1.1 |
@@ -462,6 +462,9 @@ latency on every search/ingest/delete.~~
   `Client.embedders()` so the library mode and the v1.0 HTTP
   client answer the same question through one handle method,
   plus `pavecli list-embedders`.~~
+- ~~Instance archive restore integrity: validate catalog/sidecar parity
+  and local embedder resolution before rollback-safe replacement;
+  cover mixed-embedder round trips (P1-65).~~
 - ~~Dev vs prod config defaults: code defaults are prod-safe, the dev
   convenience overlay lives in the Makefile/env, enforced by
   `enforce_policy` fail-fast (P1-25).~~
