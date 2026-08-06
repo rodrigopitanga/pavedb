@@ -7,6 +7,7 @@ import errno
 import io
 import json
 import shutil
+import sqlite3
 import threading
 import time
 import zipfile
@@ -402,15 +403,18 @@ def test_restore_archive_rejects_invalid_collection_database_before_touch(tmp_pa
     assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
 
 
-def test_restore_archive_rejects_empty_catalog_before_touch(tmp_path):
+def test_restore_archive_rejects_uninitialized_catalog_before_touch(tmp_path):
     source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
     source.create_collection("acme", "documents")
     archive_root = _archive_tree(
         _archive_bytes(source),
         tmp_path / "archive",
     )
-    (archive_root / "catalog.db").write_bytes(b"")
-    archive_bytes = _zip_tree(archive_root, tmp_path / "empty-catalog.zip")
+    catalog_path = archive_root / "catalog.db"
+    catalog_path.unlink()
+    with sqlite3.connect(catalog_path) as catalog:
+        catalog.execute("CREATE TABLE unrelated (value TEXT)")
+    archive_bytes = _zip_tree(archive_root, tmp_path / "catalog.zip")
     destination = _sentinel_store(tmp_path / "destination")
 
     with pytest.raises(ValueError, match="invalid archive catalog"):
