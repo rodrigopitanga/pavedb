@@ -291,7 +291,17 @@ def roadmap_rows() -> list[dict[str, str]]:
         if cells and cells[0] == "ID":
             headers = [clean_cell(cell) for cell in cells]
             continue
-        if not headers or len(cells) != len(headers):
+        if not headers:
+            continue
+        if len(cells) != len(headers):
+            issue_id = clean_cell(cells[0])
+            if issue_id.startswith(("P", "F", "G")) and PUBLIC_KEY_RE.fullmatch(
+                issue_id
+            ):
+                raise RuntimeError(
+                    f"ROADMAP row {issue_id} has {len(cells)} cells; "
+                    f"expected {len(headers)}"
+                )
             continue
         data = {headers[i]: clean_cell(cells[i]) for i in range(len(headers))}
         issue_id = data.get("ID", "")

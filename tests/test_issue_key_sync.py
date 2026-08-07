@@ -174,6 +174,20 @@ def test_roadmap_sync_does_not_guess_compound_milestone(monkeypatch):
     assert "milestone_id" not in gl.requests[0][2]
 
 
+def test_roadmap_rows_rejects_keyed_row_with_wrong_width(monkeypatch, tmp_path):
+    roadmap = tmp_path / "ROADMAP.md"
+    roadmap.write_text(
+        "| ID | Task | Why | Source |\n"
+        "| --- | --- | --- | --- |\n"
+        "| P3-54 | Flat metrics | Exact search | v1.0 | extra |\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(issue_key_sync, "ROADMAP", roadmap)
+
+    with pytest.raises(RuntimeError, match=r"P3-54 has 5 cells; expected 4"):
+        issue_key_sync.roadmap_rows()
+
+
 def test_plain_key_gets_note_but_only_exact_trailer_closes():
     plain = "[infra] Reconcile roadmap metadata (P1-46)"
     trailer = f"{plain}\n\nCloses: P1-46"
