@@ -3,12 +3,12 @@
 
 # Metric-aware and approximate FAISS indexes
 
-This plan splits the former P3-54 ANN scope into three independently
+This plan splits the former P2-51 ANN scope into three independently
 deliverable P-items:
 
-- P3-54: exact flat cosine, inner-product, and L2 metrics in v1.1.
-- P3-55: optional HNSW in v1.2.
-- P3-56: optional IVF with optimization lifecycle in v1.8.
+- P2-51: exact flat cosine, inner-product, and L2 metrics in v1.1.
+- P2-52: optional HNSW in v1.2.
+- P2-53: optional IVF with optimization lifecycle in v1.8.
 
 This public plan supersedes the private first-cut ANN draft dated 2026-07-14.
 
@@ -62,9 +62,9 @@ For unit-normalized vectors, cosine and squared L2 are algebraically
 convertible. PaveDB does not invent a cross-metric normalization for arbitrary
 vectors.
 
-## P3-54: exact flat metrics
+## P2-51: exact flat metrics
 
-P3-54 introduces the real public `backend_config` surface with useful behavior;
+P2-51 introduces the real public `backend_config` surface with useful behavior;
 there is no pre-1.0 no-op scaffolding step.
 
 `FaissBackend` accepts the resolved metric and builds:
@@ -94,9 +94,9 @@ Acceptance:
 - the OpenAPI snapshot and client creation surfaces remain aligned;
 - representative official cosine/L2 cases and the pinned custom IP case pass.
 
-P3-54 does not add an optimize endpoint or backend lifecycle hook.
+P2-51 does not add an optimize endpoint or backend lifecycle hook.
 
-## P3-55: HNSW
+## P2-52: HNSW
 
 HNSW extends the same collection configuration:
 
@@ -126,7 +126,7 @@ Acceptance:
 - VectorDBBench records recall and QPS against the matching flat baseline;
 - current flat collections and results remain unchanged.
 
-## P3-56: IVF and optimization
+## P2-53: IVF and optimization
 
 IVF adds training parameters through the same configuration:
 
@@ -180,7 +180,7 @@ Acceptance:
 
 ## Explicitly out of scope
 
-- no no-op public optimize endpoint before P3-56;
+- no no-op public optimize endpoint before P2-53;
 - no mutable metric or index type on an existing collection;
 - no cross-metric score normalization;
 - no GPU index in these three slices;

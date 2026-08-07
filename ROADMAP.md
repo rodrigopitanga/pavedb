@@ -174,6 +174,9 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-48 | ~~`bench-stress-full` profile~~ | 🔧 | Off-by-default stress run covering every public endpoint; landed early as `STR_SUITE=critical/full` with `@_covers` decorator + OpenAPI startup gap warning | v0.9 |
 | P2-49 | Embedder credential refs | 🔧 | Multi-key embedder runtimes without storing or echoing raw secrets in collection config; credentials resolve from server config/secret store and affect runtime cache identity, not vector-space compatibility | v1.6 |
 | P2-50 | ~~Ollama embedder~~ | 🧩 | Thin OpenAI-compatible wrapper for the local Ollama daemon — default base_url `http://localhost:11434/v1`, daemon-up probe → `embedder_unavailable`, sane embedding-model defaults. Lowers adoption bar for devs already running Ollama for LLM workflows | v1.0 |
+| P2-51 | Flat cosine/IP/L2 metrics | 🔧 | Exact metrics; VectorDBBench gate. | v1.1 |
+| P2-52 | Optional FAISS HNSW index | 🧱 | HNSW; recall/QPS gates. | v1.2 |
+| P2-53 | Optional FAISS IVF index | 🧱 | IVF plus explicit optimize. | v1.8 |
 
 ### P3 — Scale and long-term
 
@@ -209,9 +212,6 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-51 | ~~`make docker-check`: alive test against prebuilt Docker image~~ | 🧩 | v0.5.9 |
 | P3-52 | ~~`make build-check`: install from local wheel in temp venv, alive test~~ | 🧩 | v0.5.9 |
 | P3-53 | Micro-batch concurrent query embeddings | 🧱 | v1.8 |
-| P3-54 | Flat cosine/IP/L2 metrics | 🔧 | Exact metrics; VDB gate. | v1.1 |
-| P3-55 | Optional FAISS HNSW index | 🧱 | HNSW; recall/QPS gates. | v1.2 |
-| P3-56 | Optional FAISS IVF index | 🧱 | IVF plus explicit optimize. | v1.8 |
 
 P1-53e includes a checked-in `openapi.json` snapshot plus a
 `docs-ref-openapi` dump and drift check, mirroring P1-53b's CLI gate.
@@ -233,7 +233,7 @@ Substantial features are specified under `docs/design/` before implementation.
 | [`docs/design/PLAN-DOCS.md`](docs/design/PLAN-DOCS.md) | P1-46 / P1-47 / P1-53 | Distribution documentation and site-input contract |
 | [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md) | P1-62 | SDK Python API reference and runnable book examples |
 | [`docs/design/PLAN-EMBEDDER-WORKERS.md`](docs/design/PLAN-EMBEDDER-WORKERS.md) | P1-61 | General embedder worker pools |
-| [PLAN-ANN](docs/design/PLAN-ANN.md) | P3-54 / P3-55 / P3-56 | FAISS indexes |
+| [PLAN-ANN](docs/design/PLAN-ANN.md) | P2-51 / P2-52 / P2-53 | FAISS indexes |
 
 ---
 
@@ -517,7 +517,7 @@ lands where it has more impact during post-contract hardening.
 ### PaveDB v1.1 — Adoption
 
 - Exact flat cosine, inner-product, and L2 metrics selected per collection;
-  the VectorDBBench adapter expands beyond its v1.0 cosine cases (P3-54).
+  the VectorDBBench adapter expands beyond its v1.0 cosine cases (P2-51).
 - Per-collection hot caches with isolation (P1-22).
 - ~~Batch ingest endpoint (list of documents in one call) (P1-16).~~
 - ~~Admin key auto-generate + persist on first boot; CLI rotate /
@@ -537,7 +537,7 @@ lands where it has more impact during post-contract hardening.
 ### PaveDB v1.2 — Control
 
 - Optional FAISS HNSW index using the same metric-aware collection config;
-  recall and throughput are gated by VectorDBBench (P3-55).
+  recall and throughput are gated by VectorDBBench (P2-52).
 - Filter pushdown parity harness: synthetic corpus + filter
   corpus, soundness invariant always asserted (pushdown ⊆
   canonical), completeness invariant where pushdown claims the
@@ -643,7 +643,7 @@ lands where it has more impact during post-contract hardening.
 ### PaveDB v1.8 — Scale
 
 - Optional FAISS IVF index with explicit train/build state and a public
-  collection-optimize operation used by operators and VectorDBBench (P3-56).
+  collection-optimize operation used by operators and VectorDBBench (P2-53).
 - Async ingest, parallel purge (P3-15).
 - Horizontal scalability, tenant groups, sub-index routing
   (P3-16).
