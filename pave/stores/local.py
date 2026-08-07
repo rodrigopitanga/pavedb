@@ -807,9 +807,10 @@ class LocalStore:
                     )
                 else:
                     config = catalog_config
-                # Only identity collections declare `dim` explicitly (BYOV);
-                # other types need a loaded embedder to know their dimension,
-                # which preflight avoids, so they skip this check.
+                # Only embedder types that pin `dim` into their vector-space
+                # config (identity, openai, ollama) are checkable here;
+                # others (e.g. sbert) only know their dimension once the
+                # model loads, which preflight avoids.
                 self._validate_archive_index(
                     collection_dir,
                     tenant,
@@ -817,7 +818,7 @@ class LocalStore:
                     rids,
                     expected_dim=(
                         int(config["embedder_config"]["dim"])
-                        if config["embedder_type"] == "identity"
+                        if "dim" in config["embedder_config"]
                         else None
                     ),
                 )
