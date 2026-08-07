@@ -609,6 +609,8 @@ class LocalStore:
         tenant: str,
         collection: str,
         rids: set[str],
+        *,
+        expected_dim: int | None = None,
     ) -> None:
         index_dir = collection_dir / "index"
         try:
@@ -627,6 +629,7 @@ class LocalStore:
             }
             if (
                 index.metric_type != faiss.METRIC_INNER_PRODUCT
+                or (expected_dim is not None and int(index.d) != expected_dim)
                 or len(rid_to_id) != int(index.ntotal)
                 or len(id_to_rid) != int(index.ntotal)
                 or {index_id: rid for rid, index_id in rid_to_id.items()}
@@ -769,12 +772,6 @@ class LocalStore:
                     ) from None
                 finally:
                     metadata.close()
-                self._validate_archive_index(
-                    collection_dir,
-                    tenant,
-                    collection,
-                    rids,
-                )
                 sidecar = self._archive_sidecar_config(
                     collection_dir,
                     tenant,
@@ -810,6 +807,20 @@ class LocalStore:
                     )
                 else:
                     config = catalog_config
+                # Only identity collections declare `dim` explicitly (BYOV);
+                # other types need a loaded embedder to know their dimension,
+                # which preflight avoids, so they skip this check.
+                self._validate_archive_index(
+                    collection_dir,
+                    tenant,
+                    collection,
+                    rids,
+                    expected_dim=(
+                        int(config["embedder_config"]["dim"])
+                        if config["embedder_type"] == "identity"
+                        else None
+                    ),
+                )
                 if validate_destination:
                     vector_spaces.setdefault(
                         embedder_factory_mod.vector_space_key(config),

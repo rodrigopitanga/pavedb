@@ -538,6 +538,48 @@ def test_restore_archive_rejects_invalid_collection_index_before_touch(
     assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
 
 
+def test_restore_archive_rejects_wrong_dimension_identity_index_before_touch(
+    tmp_path,
+):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder(dim=8))
+    source.create_collection(
+        "acme",
+        "raw",
+        embedder_type="identity",
+        embedder_config={"dim": 4},
+    )
+    source.index_records(
+        "acme",
+        "raw",
+        "raw",
+        [("0", "", {})],
+        vectors=[[1.0, 0.0, 0.0, 0.0]],
+    )
+    archive_root = _archive_tree(
+        _archive_bytes(source),
+        tmp_path / "archive",
+    )
+    index_dir = archive_root / "t_acme" / "c_raw" / "index"
+    faiss_index_path = index_dir / "faiss.index"
+    original = faiss.read_index(str(faiss_index_path))
+    ids = faiss.vector_to_array(original.id_map)
+    tampered = faiss.IndexIDMap2(faiss.IndexFlatIP(original.d * 2))
+    tampered.add_with_ids(
+        np.zeros((len(ids), original.d * 2), dtype="float32"), ids
+    )
+    faiss.write_index(tampered, str(faiss_index_path))
+    archive_bytes = _zip_tree(archive_root, tmp_path / "wrong-dim.zip")
+    destination = _sentinel_store(tmp_path / "destination")
+
+    with pytest.raises(
+        ValueError,
+        match="invalid archive collection index: acme/raw",
+    ):
+        destination.restore_archive(archive_bytes)
+
+    assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
+
+
 def test_restore_archive_rejects_incomplete_collection_database_before_touch(
     tmp_path,
 ):
