@@ -31,6 +31,7 @@ from threading import Condition, Lock, get_ident
 from typing import Any
 import time as _time
 
+import faiss
 import numpy as np
 
 # Python 3.12 deprecated the default sqlite3 datetime adapters.
@@ -603,6 +604,48 @@ class LocalStore:
         )
 
     @staticmethod
+    def _validate_archive_index(
+        collection_dir: Path,
+        tenant: str,
+        collection: str,
+        rids: set[str],
+    ) -> None:
+        index_dir = collection_dir / "index"
+        try:
+            index = faiss.read_index(str(index_dir / "faiss.index"))
+            id_map = json.loads(
+                (index_dir / "id_map.json").read_text(encoding="utf-8")
+            )
+            next_id = int(id_map["next_id"])
+            rid_to_id = {
+                str(rid): int(index_id)
+                for rid, index_id in id_map["rid_to_id"].items()
+            }
+            id_to_rid = {
+                int(index_id): str(rid)
+                for index_id, rid in id_map["id_to_rid"].items()
+            }
+            if (
+                len(rid_to_id) != int(index.ntotal)
+                or len(id_to_rid) != int(index.ntotal)
+                or {index_id: rid for rid, index_id in rid_to_id.items()}
+                != id_to_rid
+                or set(rid_to_id) != rids
+                or {
+                    int(index_id)
+                    for index_id in faiss.vector_to_array(index.id_map)
+                }
+                != set(id_to_rid)
+                or next_id < 0
+                or next_id <= max(id_to_rid, default=-1)
+            ):
+                raise ValueError("invalid id map")
+        except Exception:
+            raise ValueError(
+                f"invalid archive collection index: {tenant}/{collection}"
+            ) from None
+
+    @staticmethod
     def _assert_no_restore_backup(data_dir: Path) -> None:
         if not data_dir.is_dir():
             return
@@ -705,6 +748,10 @@ class LocalStore:
                             }
                             if not columns <= found:
                                 raise ValueError("incomplete archive metadata schema")
+                        rids = {
+                            str(row[0])
+                            for row in conn.execute("SELECT rid FROM chunks")
+                        }
                 except Exception:
                     raise ValueError(
                         "invalid archive collection metadata database: "
@@ -712,6 +759,12 @@ class LocalStore:
                     ) from None
                 finally:
                     metadata.close()
+                self._validate_archive_index(
+                    collection_dir,
+                    tenant,
+                    collection,
+                    rids,
+                )
                 sidecar = self._archive_sidecar_config(
                     collection_dir,
                     tenant,

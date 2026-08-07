@@ -475,6 +475,52 @@ def test_restore_archive_rejects_invalid_collection_database_before_touch(tmp_pa
     assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
 
 
+@pytest.mark.parametrize(
+    "name",
+    ("faiss.index", "id_map.json", "mismatched-id-map", "wrong-rid"),
+)
+def test_restore_archive_rejects_invalid_collection_index_before_touch(
+    tmp_path,
+    name,
+):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.create_collection("acme", "documents")
+    source.index_records(
+        "acme",
+        "documents",
+        "doc",
+        [("0", "archive index", {})],
+    )
+    archive_root = _archive_tree(
+        _archive_bytes(source),
+        tmp_path / "archive",
+    )
+    index_dir = archive_root / "t_acme" / "c_documents" / "index"
+    if name == "mismatched-id-map":
+        id_map_path = index_dir / "id_map.json"
+        id_map = json.loads(id_map_path.read_text(encoding="utf-8"))
+        id_map["id_to_rid"]["0"] = "wrong"
+        id_map_path.write_text(json.dumps(id_map), encoding="utf-8")
+    elif name == "wrong-rid":
+        id_map_path = index_dir / "id_map.json"
+        id_map = json.loads(id_map_path.read_text(encoding="utf-8"))
+        id_map["rid_to_id"] = {"wrong": 0}
+        id_map["id_to_rid"] = {"0": "wrong"}
+        id_map_path.write_text(json.dumps(id_map), encoding="utf-8")
+    else:
+        (index_dir / name).write_bytes(b"not a valid index")
+    archive_bytes = _zip_tree(archive_root, tmp_path / "corrupt.zip")
+    destination = _sentinel_store(tmp_path / "destination")
+
+    with pytest.raises(
+        ValueError,
+        match="invalid archive collection index: acme/documents",
+    ):
+        destination.restore_archive(archive_bytes)
+
+    assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
+
+
 def test_restore_archive_rejects_incomplete_collection_database_before_touch(
     tmp_path,
 ):
