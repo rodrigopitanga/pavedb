@@ -681,9 +681,18 @@ class LocalStore:
                 uri=True,
             ) as conn:
                 schema_version = CatalogDB._schema_version(conn)
+                query_home_columns = {
+                    row[1]
+                    for row in conn.execute("PRAGMA table_info(query_home)")
+                }
         except sqlite3.Error:
             raise ValueError("invalid archive catalog") from None
         if schema_version == 0:
+            raise ValueError("invalid archive catalog")
+        if not (
+            {"query_id", "tenant", "collection", "created_at"}
+            <= query_home_columns
+        ):
             raise ValueError("invalid archive catalog")
         if any(
             entry.name.startswith(_RESTORE_BACKUP_PREFIX)
