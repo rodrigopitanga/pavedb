@@ -151,6 +151,8 @@ bench:
 
 chaos-nightly:
   stage: benchmark
+  tags:
+    - xeon
   variables:
     BENCH_FORCE_EPHEMERAL: "1"
     BENCH_STARTUP_TIMEOUT_S: "120"
