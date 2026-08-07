@@ -13,6 +13,8 @@ import time
 import zipfile
 from pathlib import Path
 
+import faiss
+import numpy as np
 import pytest
 
 from pave.config import get_cfg
@@ -477,7 +479,13 @@ def test_restore_archive_rejects_invalid_collection_database_before_touch(tmp_pa
 
 @pytest.mark.parametrize(
     "name",
-    ("faiss.index", "id_map.json", "mismatched-id-map", "wrong-rid"),
+    (
+        "faiss.index",
+        "id_map.json",
+        "mismatched-id-map",
+        "wrong-rid",
+        "wrong-metric",
+    ),
 )
 def test_restore_archive_rejects_invalid_collection_index_before_touch(
     tmp_path,
@@ -507,6 +515,15 @@ def test_restore_archive_rejects_invalid_collection_index_before_touch(
         id_map["rid_to_id"] = {"wrong": 0}
         id_map["id_to_rid"] = {"0": "wrong"}
         id_map_path.write_text(json.dumps(id_map), encoding="utf-8")
+    elif name == "wrong-metric":
+        faiss_index_path = index_dir / "faiss.index"
+        original = faiss.read_index(str(faiss_index_path))
+        ids = faiss.vector_to_array(original.id_map)
+        tampered = faiss.IndexIDMap2(faiss.IndexFlatL2(original.d))
+        tampered.add_with_ids(
+            np.zeros((len(ids), original.d), dtype="float32"), ids
+        )
+        faiss.write_index(tampered, str(faiss_index_path))
     else:
         (index_dir / name).write_bytes(b"not a valid index")
     archive_bytes = _zip_tree(archive_root, tmp_path / "corrupt.zip")

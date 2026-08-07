@@ -626,7 +626,8 @@ class LocalStore:
                 for index_id, rid in id_map["id_to_rid"].items()
             }
             if (
-                len(rid_to_id) != int(index.ntotal)
+                index.metric_type != faiss.METRIC_INNER_PRODUCT
+                or len(rid_to_id) != int(index.ntotal)
                 or len(id_to_rid) != int(index.ntotal)
                 or {index_id: rid for rid, index_id in rid_to_id.items()}
                 != id_to_rid
