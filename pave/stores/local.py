@@ -3009,9 +3009,12 @@ class LocalStore:
                 archive_path.write_bytes(archive_bytes)
                 extract_dir.mkdir()
 
-                with zipfile.ZipFile(archive_path, "r") as zf:
-                    self._validate_zip_members(zf)
-                    zf.extractall(extract_dir)
+                try:
+                    with zipfile.ZipFile(archive_path, "r") as zf:
+                        self._validate_zip_members(zf)
+                        zf.extractall(extract_dir)
+                except zipfile.BadZipFile as exc:
+                    raise ValueError("invalid archive") from exc
 
                 self._preflight_archive(extract_dir, validate_destination=True)
                 self._assert_no_restore_backup(data_dir_path)

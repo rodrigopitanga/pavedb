@@ -274,6 +274,15 @@ def test_restore_archive_rejects_sqlite_sidecars_before_touch(tmp_path, member):
     assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
 
 
+def test_restore_archive_rejects_malformed_zip_before_touch(tmp_path):
+    destination = _sentinel_store(tmp_path / "destination")
+
+    with pytest.raises(ValueError, match="invalid archive"):
+        destination.restore_archive(b"not a zip")
+
+    assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
+
+
 def test_archive_round_trip_preserves_mixed_vector_spaces(tmp_path, monkeypatch):
     _set_openai_instance("archive-text", dim=4)
     source = LocalStore(str(tmp_path / "source"), FakeEmbedder(dim=8))
