@@ -185,7 +185,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-15 | Async ingest + parallel purge |  | v1.8 |
 | P3-16 | Horizontal scalability + routing | 🧱 | v1.8 |
 | P3-17 | OIDC/JWT auth (additive; API keys remain) | 🧱 | v1.6 |
-| P3-18 | Final API freeze + SDK clients | 🧱 | Lock the additive-only contract enforced by P1-53e's OpenAPI snapshot/drift gate; publish final OpenAPI spec and SDK clients | v2.0 |
+| P3-18 | Final API freeze + SDK clients | 🧱 | v2.0 |
 | P3-23 | ~~Docs website (superseded by P1-46/P1-47)~~ | 🧩 | v1.1–v1.2 |
 | P3-24 | Revamp UI | 🧱 | v1.4 |
 | P3-25 | Multilingual UI/errors/docs | 🧱 | v1.4 |
