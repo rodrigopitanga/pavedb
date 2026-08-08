@@ -71,7 +71,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | ID | Task | Effort | Why it matters | Source |
 |---|---|---|---|---|
 | P1-06 | ~~Delete doc by ID~~ | 🧩 | No partial data fixes | v0.5.7 |
-| P1-07 | Hybrid reranking | 🧱 | Exact token boost | v1.2 |
+| P1-07 | Hybrid reranking | 🧱 | Exact token boost inside the vector candidate window | v1.2 |
 | P1-08 | ~~Per-tenant rate limiting~~ |  | Abuse protection | v0.5.8 |
 | P1-09 | ~~Metadata store (SQLite)~~ | 🧱 | ACID + concurrency | v0.5.8 |
 | P1-11 | ~~Global `request_id` echo~~ | 🧩 | Traceability | v0.9 |
@@ -100,7 +100,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-32 | ~~Per-collection embeddings~~ | 🧱 | Model per collection | v1.0 |
 | P1-33 | ~~CatalogDB + catalog separation~~ | 🧱 | Catalog + collection backend/embedder config source | v0.9 |
 | P1-34 | ~~Server config bootstrap~~ | 🧩 | Explicit `pavecli init` + `--home` / explicit runtime paths for pip installs | v1.0 |
-| P1-35 | Filter pushdown parity harness | 🔧 | Speedups without semantic drift; lands when a new pushdown capability ships | v1.2 |
+| P1-35 | Metadata-filter SQL parity | 🔧 | CI-only differential harness: SQL never drops canonical matches and equals canonical results for supported operators | v1.2 |
 | P1-36 | ~~Reject empty/colliding sanitized metadata keys~~ | 🧩 | Avoid silent key drops/coalescing under current sanitization rules | v0.5.9 |
 | P1-37 | ~~Pre-orchestrator cleanup~~ | 🔧 | Drop txtai dep, rename store/embedder, dead code removal, filter path simplification | v0.5.9 |
 | P1-40 | ~~Search timing breakdown in response~~ | 🔧 | Latency debugging: embed/search/filter/hydrate split | v0.9 |
@@ -134,6 +134,9 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-66 | Runnable book examples | 🔧 | The Python SDK and Elixir client own tested, numbered top-level examples extracted from the book; CI verifies runnable programs and distribution boundaries. See `docs/design/PLAN-EXAMPLES.md`. | v1.1 |
 | P1-67 | Elixir public API parity | 🔧 | Cover the current user-facing `/v1` surface plus a basic `/health` connection check; defer `/admin`, `/metrics`, and `/embedders`. | v1.0 |
 | P1-68 | Task-oriented engine guides | 🔧 | Hand-written, low-boilerplate quickstart and usage guides shipped in the PaveDB source distribution, complementing the generated reference (P1-46) with narrative task-oriented docs rather than auto-generated dumps. | v1.1 |
+| P1-70 | SQLite chunk-text index and content filters | 🧱 | Make chunk text queryable through native FTS5 for contains/phrase/prefix filters and lexical candidates; prerequisite for P1-72 | v1.2 |
+| P1-71 | Backend-aware filtered vector search | 🧱 | Let SQLite-selected record IDs constrain vector search instead of relying on repeated vector-first overfetch; depends on P1-35 | v1.3 |
+| P1-72 | Hybrid lexical/vector retrieval | 🧱 | Fuse independent FAISS and SQLite FTS5 candidate lists; depends on P1-70 | v1.2 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -233,6 +236,7 @@ Substantial features are specified under `docs/design/` before implementation.
 | [`docs/design/PLAN-DOCS.md`](docs/design/PLAN-DOCS.md) | P1-46 / P1-47 / P1-53 | Distribution documentation and site-input contract |
 | [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md) | P1-62 | SDK Python API reference and runnable book examples |
 | [`docs/design/PLAN-EMBEDDER-WORKERS.md`](docs/design/PLAN-EMBEDDER-WORKERS.md) | P1-61 | General embedder worker pools |
+| [`docs/design/PLAN-HYBRID-SEARCH.md`](docs/design/PLAN-HYBRID-SEARCH.md) | P1-35 / P1-70 / P1-71 / P1-72 | Metadata parity, SQLite text search, hybrid retrieval, and true vector prefiltering |
 | [PLAN-ANN](docs/design/PLAN-ANN.md) | P2-51 / P2-52 / P2-53 | FAISS indexes |
 
 ---
@@ -536,15 +540,17 @@ lands where it has more impact during post-contract hardening.
 
 - Optional FAISS HNSW index using the same metric-aware collection config;
   recall and throughput are gated by VectorDBBench (P2-52).
-- Filter pushdown parity harness: synthetic corpus + filter
-  corpus, soundness invariant always asserted (pushdown ⊆
-  canonical), completeness invariant where pushdown claims the
-  capability. Lands alongside the first new pushdown family
-  (wildcard or range) so the harness has something to guard
+- Metadata-filter SQL parity: a CI-only differential corpus proves
+  canonical matches are a subset of SQL survivors, with equality
+  where SQL claims full support. No request-time double execution
   (P1-35).
+- SQLite chunk-text index and additive content filters: migrate
+  sidecar text into the collection database, index it with native
+  FTS5, and expose contains/phrase/prefix matching (P1-70).
 - Honor `meta.priority` boosts during scoring (P2-11).
-- Add hybrid reranking (vector similarity + BM25/token
-  matching) (P1-07).
+- Add exact token boost inside the vector candidate window (P1-07).
+- Add hybrid retrieval by fusing independent FAISS and FTS5
+  candidate lists; depends on P1-70 (P1-72).
 - Result diff API: compare two search runs — added/removed/reordered
   hits (P2-42).
 - Eval assertion API: define expected results per query, batch run,
@@ -678,7 +684,9 @@ lands where it has more impact during post-contract hardening.
 - Soft-delete + TTL policies.
 - Snapshot/backup automation.
 - Index rebuild / compaction tooling.
-- Filter indexes / prefilter cache.
+- Backend-aware filtered vector search: resolve eligible record IDs
+  in SQLite before vector search and pass them through a backend
+  selector/mask instead of repeated vector-first overfetch (P1-71).
 - Drift/quality monitoring.
 - Resource limits (RAM/index caps).
 - Cold-start mitigation (warming hooks).
@@ -775,18 +783,20 @@ embeddings), design model hot-swap via a `/admin/reload` endpoint.
 The equivalent of spatial indexing for geo queries: pushing filters into
 the SQLite pre-filter instead of post-filtering in Python.
 
-**Current state (v0.5.9):** `CollectionDB.filter_by_meta()` handles
-exact-match and negation pushdown. Wildcards and comparisons remain in
-the canonical Python post-filter (`matches_filters()`). The legacy
-`_split_filters()` was removed in P1-37.
+**Current state:** `CollectionDB.filter_by_meta()` handles exact-match
+candidate reduction after FAISS search. Wildcards, comparisons, and
+negation remain in the canonical Python post-filter
+(`matches_filters()`). The legacy `_split_filters()` was removed in
+P1-37.
 
-**Why it matters:** If consumers fire multiple parallel searches and
-most use post-filtering, tail latency multiplies. At scale, this
-becomes the bottleneck.
+**Why it matters:** SQL filtering can avoid hydrating metadata for
+rejected vector candidates, but it does not reduce FAISS work while
+the pipeline remains vector-first. Narrow filters still trigger
+repeated overfetch.
 
-**Action:** Negation (`!value`) already goes to SQL (`<>`) — done
-v0.5.7. Next step (P1-35) is capability-based pushdown with parity
-checks against canonical post-filter semantics.
+**Action:** P1-35 proves capability-based SQL filtering against
+canonical semantics in CI. P1-71 later lets SQLite-selected IDs
+constrain vector search itself. See PLAN-HYBRID-SEARCH.
 
 ### 5. Graceful degradation under overload
 
