@@ -434,6 +434,19 @@ class CollectionDB:
             return ts.replace("+00:00", "Z")
         return ts
 
+    @staticmethod
+    def _meta_kv_rows(
+        owner: str,
+        meta: dict[str, Any],
+    ) -> list[tuple[str, str, str]]:
+        return [
+            (owner, str(key), str(item))
+            for key, value in meta.items()
+            for item in (
+                value if isinstance(value, (list, tuple, set)) else (value,)
+            )
+        ]
+
     # ------------------------------------------------------------------
     # Write operations — serialised by _write_lock, use _wconn
     # ------------------------------------------------------------------
@@ -479,10 +492,7 @@ class CollectionDB:
                 "DELETE FROM document_meta WHERE docid=?",
                 (docid,),
             )
-            doc_kv_rows = [
-                (docid, str(mk), str(mv))
-                for mk, mv in doc_meta_dict.items()
-            ]
+            doc_kv_rows = self._meta_kv_rows(docid, doc_meta_dict)
             if doc_kv_rows:
                 conn.executemany(
                     "INSERT INTO document_meta "
@@ -509,8 +519,7 @@ class CollectionDB:
                     )
             kv_rows: list[tuple[str, str, str]] = []
             for rid, _chunk_path, meta in chunks:
-                for mk, mv in meta.items():
-                    kv_rows.append((rid, str(mk), str(mv)))
+                kv_rows.extend(self._meta_kv_rows(rid, meta))
             if kv_rows:
                 conn.executemany(
                     "INSERT OR REPLACE INTO chunk_meta "

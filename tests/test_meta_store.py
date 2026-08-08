@@ -686,6 +686,30 @@ def test_filter_by_meta_matches_document_level_fields(tmp_path):
     db.close()
 
 
+def test_filter_by_meta_matches_list_valued_document_and_chunk_fields(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    db.upsert_chunks(
+        "doc1",
+        [
+            (
+                "doc1::chunk_0",
+                "chunks/doc1__chunk_0.txt",
+                {"chunk_tags": ["gold", "chunk-group"]},
+            ),
+        ],
+        doc_meta={"document_tags": ["gold", "doc-group"]},
+    )
+
+    matched = db.filter_by_meta(
+        ["doc1::chunk_0"],
+        {"document_tags": ["gold"], "chunk_tags": ["gold"]},
+    )
+
+    assert matched == {"doc1::chunk_0"}
+    db.close()
+
+
 def test_filter_by_meta_defers_negated_fields_to_canonical_postfilter(tmp_path):
     db = CollectionDB()
     db.open(_meta_db(tmp_path))
