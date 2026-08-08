@@ -113,7 +113,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-49 | ~~HTTP request metrics middleware~~ |  | v1.0 ships labeled `http_requests_total` middleware + handler-side `inc("requests_total")` cleanup; histogram + `# HELP`/`# TYPE` metadata ride P1-50 at v1.1 | v1.0 / v1.1 |
 | P1-50 | ~~Product-signal metrics + metrics polish~~ | 🧩 | Zero-match searches, filter usage, query-log readiness, embedder counters, sidecar drift — competitor gap. Bundled with P1-49's histogram + HELP/TYPE refactor and docs-site coverage so the new gauges are discoverable | v1.0 |
 | P1-51 | ~~Admin query-home resolver + shortcut routes + CLI rework~~ | 🧩 | Bare-`query_id` lookup/replay for admin via `query_home` table in `catalog.db` | v0.9 |
-| P1-52 | Concurrency chaos test (Level 1) | 🔧 | N-thread random-interleave fuzz over create/delete/move/ingest/search/dump/restore with post-run catalog↔disk invariants. Regression net for the lock lattice hardened during the v0.9 rc cycle; bench-stress finds races, this turns them into non-flaky CI checks. Ships as nightly job at v1.1 (not a v1.0 release gate). | v1.1 |
+| P1-52 | ~~Concurrency chaos test (Level 1)~~ | 🔧 | N-thread random-interleave fuzz over create/delete/move/ingest/search/dump/restore with post-run catalog↔disk invariants. Regression net for the lock lattice hardened during the v0.9 rc cycle; bench-stress finds races, this turns them into non-flaky CI checks. Runs as a nightly job (not a v1.0 release gate). | v1.0 |
 | P1-53a | ~~Reference-source plumbing: OpenAPI completeness pass~~ | 🔧 | Every route gets `summary`/`description`/`tags`/`responses`; every Pydantic `Field` gets `description` + at least one example. Unblocks an auto-rendered API reference. | v1.0 |
 | P1-53b | ~~Reference-source plumbing: CLI completeness + dumper~~ | 🔧 | Every subcommand gets `help`/`epilog`-example; `scripts/cli_to_markdown.py` renders `docs/reference/cli.md` committed in-repo. | v1.0 |
 | P1-53c | ~~Reference-source plumbing: config schema refactor~~ | 🔧 | Single (key, default, description, env_var) source for `_DEFAULTS`, `config.yml.example`, and `docs/reference/config.md`. Closes P1-26 (drift check) as a side effect. | v1.0 |
@@ -509,8 +509,7 @@ latency on every search/ingest/delete.~~
 
 **Deferred from v1.0** (to lean the path; pulled in by next
 release, see v1.1 and v1.2 sections): P1-27 admin key auto-gen,
-P1-35 filter pushdown parity harness, P1-49 histogram polish,
-P1-52 concurrency chaos test.
+P1-35 filter pushdown parity harness, P1-49 histogram polish.
 None blocks the documented-contract promise that defines v1.0; each
 lands where it has more impact during post-contract hardening.
 
@@ -527,11 +526,11 @@ lands where it has more impact during post-contract hardening.
   timeout count, query-log rows + oldest-entry age, embedder
   counters, sidecar drift gauges. Update the existing docs when
   these signals land (P1-49 / P1-50).~~
-- Concurrency chaos test (Level 1) lands as a nightly GitLab job
+- ~~Concurrency chaos test (Level 1) lands as a nightly GitLab job
   (not a release gate). N-thread random-interleave fuzz over
   create/delete/move/ingest/search/dump/restore with post-run
   catalog↔disk invariants. Regression net for the lock lattice
-  hardened during the v0.9 rc cycle (P1-52).
+  hardened during the v0.9 rc cycle (P1-52).~~
 
 ### PaveDB v1.2 — Control
 
