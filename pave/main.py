@@ -3,22 +3,33 @@
 
 from __future__ import annotations
 
-import argparse, asyncio, copy, os, logging, signal, sys, threading, time, uuid
+import argparse
+import asyncio
+import copy
+import logging
+import os
+import platform
+import signal
+import subprocess
+import sys
+import threading
+import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager, contextmanager, suppress
+
 import uvicorn
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from uvicorn.config import Config
 from uvicorn.main import STARTUP_FAILURE
 from uvicorn.server import HANDLED_SIGNALS, Server
 from uvicorn.supervisors import ChangeReload, Multiprocess
 
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-
-from pave.config import get_cfg, get_logger, reload_cfg, should_warm_default_embedder
 from pave.auth import bootstrap_admin_key, enforce_policy, resolve_bind
+from pave.config import get_cfg, get_logger, reload_cfg, should_warm_default_embedder
 from pave.embedders import LazyEmbedder, get_embedder
 from pave.metrics import (
     flush as metrics_flush,
@@ -28,9 +39,6 @@ from pave.metrics import (
     refresh_product_gauges as metrics_refresh_product_gauges,
     set_error as metrics_set_error,
 )
-from pave.stores.local import LocalStore
-from pave.service import ServiceError
-from pave.schemas import ErrorResponse
 from pave.routes import (
     build_admin_router,
     build_collections_router,
@@ -38,13 +46,16 @@ from pave.routes import (
     build_health_router,
     build_search_router,
 )
-from pave.ui import attach_ui
 from pave.runtime_paths import (
     DEFAULT_HOME,
     HOME_ENV,
     apply_runtime_env,
     resolve_runtime_paths,
 )
+from pave.schemas import ErrorResponse
+from pave.service import ServiceError
+from pave.stores.local import LocalStore
+from pave.ui import attach_ui
 from pave.version import (
     COPYRIGHT,
     VERSION,
@@ -68,21 +79,22 @@ FORCE_SHUTDOWN_MESSAGE = (
 
 def _hw_info() -> dict:
     """Collect server hardware info once at startup (stdlib-only, multiplatform)."""
-    import platform, sys
     info: dict = {
-        "hw_cpu":   platform.processor() or platform.machine(),
+        "hw_cpu": platform.processor() or platform.machine(),
         "hw_cores": os.cpu_count(),
-        "hw_os":    f"{platform.system()} {platform.release()}",
+        "hw_os": f"{platform.system()} {platform.release()}",
     }
     try:
         if sys.platform == "linux":
             with open("/proc/meminfo", encoding="ascii") as f:
                 for line in f:
                     if line.startswith("MemTotal:"):
-                        info["hw_ram_gb"] = round(int(line.split()[1]) / 1_000_000, 1)
+                        info["hw_ram_gb"] = round(
+                            int(line.split()[1]) / 1_000_000,
+                            1,
+                        )
                         break
         elif sys.platform == "darwin":
-            import subprocess
             out = subprocess.check_output(
                 ["sysctl", "-n", "hw.memsize"], text=True, timeout=2
             )
@@ -203,7 +215,6 @@ def _run_pave_server(app: str, **kwargs) -> None:
         sys.exit(STARTUP_FAILURE)
 
 
-# Dependency injection builder
 def build_app(cfg=get_cfg()) -> FastAPI:
     bootstrap_admin_key(cfg, resolve_runtime_paths().home)
     log = get_logger()
@@ -225,13 +236,12 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             try:
                 app.state.store.warm()
                 elapsed_ms = (time.perf_counter() - started) * 1000
-                log.info("Default store warm-up complete in %.1f ms", elapsed_ms)
+                log.info(f"Default store warm-up complete in {elapsed_ms:.1f} ms")
             except Exception as exc:
                 elapsed_ms = (time.perf_counter() - started) * 1000
                 log.warning(
-                    "Default store warm-up failed after %.1f ms: %s",
-                    elapsed_ms,
-                    exc,
+                    f"Default store warm-up failed after {elapsed_ms:.1f} ms: "
+                    f"{exc}"
                 )
         try:
             yield
@@ -299,7 +309,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     _tenants_cfg = cfg.get("tenants") or {}
     _raw_def = (
         _tenants_cfg.get("default_max_concurrent")
-        if isinstance(_tenants_cfg, dict) else None
+        if isinstance(_tenants_cfg, dict)
+        else None
     )
     app.state.tenant_default_limit = int(_raw_def) if _raw_def is not None else 0
     app.state.tenant_limits = {}
@@ -379,15 +390,13 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 if app.state.active_searches >= max_s:
                     active = app.state.active_searches
                     log.warning(
-                        "search capped by instance-scoped search cap active=%s "
-                        "limit=%s path=%s request_id=%s",
-                        active,
-                        max_s,
-                        request.url.path,
-                        request_id,
+                        "search capped by instance-scoped search cap "
+                        f"active={active} limit={max_s} path={request.url.path} "
+                        f"request_id={request_id}"
                     )
                     return _error(
-                        503, "search_overloaded",
+                        503,
+                        "search_overloaded",
                         "search capped by instance-scoped search cap "
                         f"(active={active}, limit={max_s})",
                         request=request,
@@ -431,8 +440,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                     )
                 if isinstance(result, dict) and result.get("ok") is False:
                     status_code = (
-                        404 if result.get("error_type") == "not_found"
-                        else 500
+                        404 if result.get("error_type") == "not_found" else 500
                     )
                     return _error(
                         status_code,
@@ -448,7 +456,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 completion_future.add_done_callback(finish_background_search)
                 metrics_inc("searches_timeout_total", 1.0)
                 return _error(
-                    503, "search_timeout",
+                    503,
+                    "search_timeout",
                     f"search timed out after {int(timeout_s * 1000)}ms",
                     request=request,
                     request_id=request_id,
@@ -530,7 +539,11 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             record_http_request(request.method, path, status_code)
 
     app.include_router(
-        build_health_router(cfg, VERSION, _trace_body),
+        build_health_router(
+            cfg,
+            VERSION,
+            _trace_body,
+        ),
         prefix="",
     )
     app.include_router(
@@ -544,12 +557,22 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         prefix="/v1",
     )
     app.include_router(
-        build_collections_router(_error, _resp, _get_request_id, _trace_body),
+        build_collections_router(
+            _error,
+            _resp,
+            _get_request_id,
+            _trace_body,
+        ),
         prefix="/v1",
     )
     app.include_router(
         build_documents_router(
-            cfg, _error, _resp, _get_request_id, _trace_body),
+            cfg,
+            _error,
+            _resp,
+            _get_request_id,
+            _trace_body,
+        ),
         prefix="/v1",
     )
     app.include_router(
@@ -563,7 +586,6 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         ),
         prefix="/v1",
     )
-
     return app
 
 
@@ -642,16 +664,18 @@ def main_srv(argv=None):
     args = p.parse_args(argv)
     default_home = os.path.expanduser(DEFAULT_HOME)
     default_config = os.path.join(default_home, "config.yml")
-    has_explicit_instance = any((
-        args.home,
-        args.config,
-        args.tenants,
-        args.data_dir,
-        os.environ.get(HOME_ENV),
-        os.environ.get("PAVEDB_CONFIG"),
-        os.environ.get("PAVEDB_AUTH__TENANTS_FILE"),
-        os.environ.get("PAVEDB_DATA_DIR"),
-    ))
+    has_explicit_instance = any(
+        (
+            args.home,
+            args.config,
+            args.tenants,
+            args.data_dir,
+            os.environ.get(HOME_ENV),
+            os.environ.get("PAVEDB_CONFIG"),
+            os.environ.get("PAVEDB_AUTH__TENANTS_FILE"),
+            os.environ.get("PAVEDB_DATA_DIR"),
+        )
+    )
 
     paths = apply_runtime_env(
         home=args.home,
@@ -662,6 +686,7 @@ def main_srv(argv=None):
     global _app
     _app = None
     cfg = reload_cfg()
+
     # Parent bootstrap lets policy validate first boot; workers repeat it in
     # build_app so their fresh config sees the generated key file.
     bootstrap_admin_key(cfg, paths.home)
@@ -669,22 +694,21 @@ def main_srv(argv=None):
     if not has_explicit_instance and not os.path.isfile(default_config):
         log.warning(
             "Running from defaults/env only. Run `pavecli init` to create "
-            "%s and %s",
-            default_config,
-            os.path.join(default_home, "tenants.yml"),
+            f"{default_config} and {os.path.join(default_home, 'tenants.yml')}"
         )
+
     # Policy:
     # - fail fast without auth in prod;
     # - auth=none only in dev with loopback;
     # - raises on invalid config.
     enforce_policy(cfg)
 
-    # resolve bind host/port
+    # Resolve bind host/port.
     host, port = resolve_bind(cfg)
     cfg.set("server.host", host)
     cfg.set("server.port", port)
 
-    # flags from active config
+    # Read flags from the active config.
     reload = bool(cfg.get("server.reload"))
     workers = int(cfg.get("server.workers"))
     log_level = str(cfg.get("log.level")).lower()
@@ -700,7 +724,8 @@ def main_srv(argv=None):
     _tc = cfg.get("tenants") or {}
     _tcap = (
         int(_tc.get("default_max_concurrent") or 0)
-        if isinstance(_tc, dict) else 0
+        if isinstance(_tc, dict)
+        else 0
     )
     _ops_dest = cfg.get("log.ops_log") or "null"
     _acc_dest = cfg.get("log.access_log")
@@ -749,11 +774,11 @@ def main_srv(argv=None):
                 _access_log_config = _uvicorn_access_log_config(access_path)
             except OSError as exc:
                 log.warning(
-                    "access log disabled: cannot open %s (%s)", _acc_dest, exc
+                    f"access log disabled: cannot open {_acc_dest} ({exc})"
                 )
     _access_log = _acc_val not in ("", "null", "none")
 
-    # run server
+    # Run the server.
     _run_kwargs = {
         "host": host,
         "port": port,
@@ -767,9 +792,10 @@ def main_srv(argv=None):
         _run_kwargs["log_config"] = _access_log_config
     _run_pave_server("pave.main:app", **_run_kwargs)
 
-# Lazy module-level `app` — only built when first accessed (e.g. by uvicorn).
-# Importing `build_app` or `VERSION` from this module is now side-effect-free.
+# Lazy module-level `app` — only built when first accessed (e.g. by Uvicorn).
+# Importing `build_app` or `VERSION` from this module is side-effect-free.
 _app = None
+
 
 def __getattr__(name: str):
     if name == "app":
@@ -782,6 +808,7 @@ def __getattr__(name: str):
                 pass
         return _app
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
 
 if __name__ == "__main__":
     main_srv()
