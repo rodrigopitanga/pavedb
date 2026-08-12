@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, asdict, field
 import os
-from typing import TYPE_CHECKING, Any, Callable, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from pave.embedders.base import EmbedderConfig
@@ -278,12 +278,20 @@ class BaseStore(Protocol):
             "chunk_count": 0,
         }
 
-    def read_metrics_snapshot(self) -> dict[str, Any]: ...
+    def metrics_generation(self) -> str: ...
 
-    def update_metrics_snapshot(
+    def read_metrics(self) -> dict[str, Any]: ...
+
+    def flush_metrics_delta(
         self,
-        update: Callable[[dict[str, Any]], dict[str, Any]],
-    ) -> dict[str, Any]: ...
+        generation: str,
+        counters: list[tuple[str, str, float]],
+        latencies: dict[str, list[float]],
+        last_error: tuple[str, float] | None,
+        sample_limit: int,
+    ) -> tuple[str, bool]: ...
+
+    def reset_metrics(self) -> str: ...
 
     def refresh_catalog_metrics(self) -> dict[str, int]:
         """Refresh store-level catalog counters.

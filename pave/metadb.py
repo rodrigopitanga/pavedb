@@ -28,7 +28,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timezone as tz
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Iterator
 
 from pave.filters import sanit_sql
 
@@ -46,7 +46,7 @@ class CollectionConfigRecoveryError(RuntimeError):
 
 
 _COLLECTION_SCHEMA_VERSION = 6
-_CATALOG_SCHEMA_VERSION = 4
+_CATALOG_SCHEMA_VERSION = 5
 COLLECTION_CONFIG_FILENAME = "collection.json"
 
 _COLLECTION_SCHEMA_SQL: list[str] = [
@@ -172,10 +172,35 @@ _CATALOG_SCHEMA_SQL: list[str] = [
         ON query_home (created_at DESC)
     """,
     """
-    CREATE TABLE IF NOT EXISTS metrics_snapshot (
-        singleton    INTEGER PRIMARY KEY CHECK (singleton = 1),
-        payload_json TEXT NOT NULL
+    CREATE TABLE IF NOT EXISTS metrics_state (
+        singleton     INTEGER PRIMARY KEY CHECK (singleton = 1),
+        generation    TEXT NOT NULL,
+        last_error    TEXT,
+        last_error_at REAL
     )
+    """,
+    """
+    INSERT OR IGNORE INTO metrics_state (singleton, generation)
+    VALUES (1, lower(hex(randomblob(16))))
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS metrics_counters (
+        name        TEXT NOT NULL,
+        labels_json TEXT NOT NULL,
+        value       REAL NOT NULL,
+        PRIMARY KEY (name, labels_json)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS metrics_latency_samples (
+        id        INTEGER PRIMARY KEY AUTOINCREMENT,
+        operation TEXT NOT NULL,
+        value     REAL NOT NULL
+    )
+    """,
+    """
+    CREATE INDEX IF NOT EXISTS idx_metrics_latency_operation
+        ON metrics_latency_samples (operation, id DESC)
     """,
 ]
 
@@ -1204,41 +1229,149 @@ class CatalogDB:
             return {}
         return loaded if isinstance(loaded, dict) else {}
 
-    def read_metrics_snapshot(self) -> dict[str, Any]:
+    def metrics_generation(self) -> str:
         with self._reader() as conn:
             row = conn.execute(
-                "SELECT payload_json FROM metrics_snapshot WHERE singleton=1"
+                "SELECT generation FROM metrics_state WHERE singleton=1"
             ).fetchone()
-        return self._load_json(row[0]) if row is not None else {}
+        if row is None:
+            raise RuntimeError("metrics state is missing")
+        return str(row[0])
 
-    def update_metrics_snapshot(
+    def read_metrics(self) -> dict[str, Any]:
+        with self._reader() as conn:
+            conn.execute("BEGIN")
+            try:
+                state = conn.execute(
+                    "SELECT generation, last_error, last_error_at "
+                    "FROM metrics_state WHERE singleton=1"
+                ).fetchone()
+                counters = conn.execute(
+                    "SELECT name, labels_json, value "
+                    "FROM metrics_counters ORDER BY name, labels_json"
+                ).fetchall()
+                samples = conn.execute(
+                    "SELECT operation, value FROM metrics_latency_samples "
+                    "ORDER BY id"
+                ).fetchall()
+            finally:
+                conn.execute("ROLLBACK")
+
+        if state is None:
+            raise RuntimeError("metrics state is missing")
+        metrics: dict[str, list[dict[str, Any]]] = {}
+        for name, labels_json, value in counters:
+            labels = self._load_json(str(labels_json))
+            metrics.setdefault(str(name), []).append(
+                {"labels": labels, "value": float(value)}
+            )
+        latencies: dict[str, list[float]] = {}
+        for operation, value in samples:
+            latencies.setdefault(str(operation), []).append(float(value))
+        return {
+            "generation": str(state[0]),
+            "metrics": metrics,
+            "last_error": state[1],
+            "last_error_at": state[2],
+            "latencies": latencies,
+        }
+
+    def flush_metrics_delta(
         self,
-        update: Callable[[dict[str, Any]], dict[str, Any]],
-    ) -> dict[str, Any]:
-        """Update the shared metrics snapshot under one SQLite write lock."""
+        generation: str,
+        counters: list[tuple[str, str, float]],
+        latencies: dict[str, list[float]],
+        last_error: tuple[str, float] | None,
+        sample_limit: int,
+    ) -> tuple[str, bool]:
+        """Add one worker's deltas if its generation is still current."""
         with self._writer() as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
                 row = conn.execute(
-                    "SELECT payload_json FROM metrics_snapshot "
+                    "SELECT generation FROM metrics_state "
                     "WHERE singleton=1"
                 ).fetchone()
-                current = self._load_json(row[0]) if row is not None else {}
-                updated = update(current)
-                conn.execute(
+                if row is None:
+                    raise RuntimeError("metrics state is missing")
+                current = str(row[0])
+                if current != generation:
+                    conn.rollback()
+                    return current, False
+
+                conn.executemany(
                     """
-                    INSERT INTO metrics_snapshot (singleton, payload_json)
-                    VALUES (1, ?)
-                    ON CONFLICT(singleton) DO UPDATE
-                    SET payload_json=excluded.payload_json
+                    INSERT INTO metrics_counters (name, labels_json, value)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(name, labels_json) DO UPDATE
+                    SET value=metrics_counters.value + excluded.value
                     """,
-                    (self._dump_json(updated),),
+                    counters,
                 )
+                for operation, values in latencies.items():
+                    conn.executemany(
+                        "INSERT INTO metrics_latency_samples "
+                        "(operation, value) VALUES (?, ?)",
+                        ((operation, value) for value in values),
+                    )
+                    conn.execute(
+                        """
+                        DELETE FROM metrics_latency_samples
+                        WHERE operation=? AND id NOT IN (
+                            SELECT id FROM metrics_latency_samples
+                            WHERE operation=? ORDER BY id DESC LIMIT ?
+                        )
+                        """,
+                        (operation, operation, sample_limit),
+                    )
+                if last_error is not None:
+                    message, changed_at = last_error
+                    conn.execute(
+                        """
+                        UPDATE metrics_state
+                        SET last_error=?, last_error_at=?
+                        WHERE singleton=1 AND (
+                            last_error_at IS NULL OR last_error_at <= ?
+                        )
+                        """,
+                        (message, changed_at, changed_at),
+                    )
                 conn.commit()
-                return updated
+                return current, True
             except BaseException:
                 conn.rollback()
                 raise
+
+    def rotate_metrics_generation(self) -> str:
+        with self._writer() as conn, conn:
+            conn.execute(
+                "UPDATE metrics_state "
+                "SET generation=lower(hex(randomblob(16))) "
+                "WHERE singleton=1"
+            )
+            row = conn.execute(
+                "SELECT generation FROM metrics_state WHERE singleton=1"
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("metrics state is missing")
+        return str(row[0])
+
+    def reset_metrics(self) -> str:
+        with self._writer() as conn, conn:
+            conn.execute(
+                "UPDATE metrics_state SET "
+                "generation=lower(hex(randomblob(16))), "
+                "last_error=NULL, last_error_at=NULL "
+                "WHERE singleton=1"
+            )
+            conn.execute("DELETE FROM metrics_counters")
+            conn.execute("DELETE FROM metrics_latency_samples")
+            row = conn.execute(
+                "SELECT generation FROM metrics_state WHERE singleton=1"
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("metrics state is missing")
+        return str(row[0])
 
     @staticmethod
     def _recovery_config(collection_dir: Path) -> dict[str, Any] | None:

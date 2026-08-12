@@ -1644,19 +1644,41 @@ class LocalStore:
                 }
             return dict(cached[1])
 
-    def read_metrics_snapshot(self) -> dict[str, Any]:
+    def metrics_generation(self) -> str:
         return self._with_catalog_retry(
-            "read_metrics_snapshot",
-            lambda catalog: catalog.read_metrics_snapshot(),
+            "metrics_generation",
+            lambda catalog: catalog.metrics_generation(),
         )
 
-    def update_metrics_snapshot(
-        self,
-        update: Callable[[dict[str, Any]], dict[str, Any]],
-    ) -> dict[str, Any]:
+    def read_metrics(self) -> dict[str, Any]:
         return self._with_catalog_retry(
-            "update_metrics_snapshot",
-            lambda catalog: catalog.update_metrics_snapshot(update),
+            "read_metrics",
+            lambda catalog: catalog.read_metrics(),
+        )
+
+    def flush_metrics_delta(
+        self,
+        generation: str,
+        counters: list[tuple[str, str, float]],
+        latencies: dict[str, list[float]],
+        last_error: tuple[str, float] | None,
+        sample_limit: int,
+    ) -> tuple[str, bool]:
+        return self._with_catalog_retry(
+            "flush_metrics_delta",
+            lambda catalog: catalog.flush_metrics_delta(
+                generation,
+                counters,
+                latencies,
+                last_error,
+                sample_limit,
+            ),
+        )
+
+    def reset_metrics(self) -> str:
+        return self._with_catalog_retry(
+            "reset_metrics",
+            lambda catalog: catalog.reset_metrics(),
         )
 
     def refresh_catalog_metrics(self) -> dict[str, int]:
@@ -2653,3 +2675,5 @@ class LocalStore:
                     if target.exists() or target.is_symlink():
                         self._remove_path(target)
                     shutil.move(str(entry), str(target))
+
+                self._ensure_catalog().rotate_metrics_generation()

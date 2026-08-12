@@ -22,8 +22,8 @@ from pave.auth import bootstrap_admin_key, enforce_policy, resolve_bind
 from pave.embedders import LazyEmbedder, get_embedder
 from pave.metrics import (
     flush as metrics_flush,
-    flush_if_idle as metrics_flush_if_idle,
     inc as metrics_inc,
+    initialize as metrics_initialize,
     record_http_request,
     refresh_product_gauges as metrics_refresh_product_gauges,
     set_error as metrics_set_error,
@@ -56,7 +56,6 @@ from pave.version import (
 import pave.log as ops_log
 
 METRICS_FLUSH_INTERVAL_SECONDS = 10.5
-METRICS_SNAPSHOT_IDLE_SECONDS = 0.5
 CATALOG_METRICS_REFRESH_INTERVAL_SECONDS = 10.0
 GRACEFUL_SHUTDOWN_MESSAGE = (
     "Finishing current work, shutting down soon. Press Ctrl+C again to "
@@ -96,7 +95,7 @@ def _hw_info() -> dict:
 async def _flush_metrics_periodically(store) -> None:
     while True:
         await asyncio.sleep(METRICS_FLUSH_INTERVAL_SECONDS)
-        metrics_flush_if_idle(METRICS_SNAPSHOT_IDLE_SECONDS, store)
+        metrics_flush(store)
 
 
 async def _refresh_catalog_metrics_periodically(store) -> None:
@@ -214,6 +213,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        metrics_initialize(app.state.store)
         metrics_flush_task = asyncio.create_task(
             _flush_metrics_periodically(app.state.store)
         )

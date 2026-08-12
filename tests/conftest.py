@@ -105,6 +105,7 @@ def app(temp_data_dir):
     except Exception:
         pass
     app.state.store = SpyStore(app.state.store)
+    main_mod.metrics_initialize(app.state.store)
     return app
 
 @pytest.fixture()

@@ -132,8 +132,8 @@ def test_metrics_periodic_flush_task(monkeypatch):
         monkeypatch.setattr(m, "METRICS_FLUSH_INTERVAL_SECONDS", 0.01)
         monkeypatch.setattr(
             m,
-            "metrics_flush_if_idle",
-            lambda seconds, got_store: calls.append((seconds, got_store)),
+            "metrics_flush",
+            lambda got_store: calls.append(got_store),
         )
         task = asyncio.create_task(m._flush_metrics_periodically(store))
         try:
@@ -146,10 +146,7 @@ def test_metrics_periodic_flush_task(monkeypatch):
     asyncio.run(run_probe())
 
     assert calls
-    assert all(
-        call == (m.METRICS_SNAPSHOT_IDLE_SECONDS, store)
-        for call in calls
-    )
+    assert all(call is store for call in calls)
 
 
 def test_catalog_metrics_periodic_refresh_task(monkeypatch):

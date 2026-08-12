@@ -567,7 +567,7 @@ pavecli restore-archive pavedb-data.zip
 
 ## `reset-metrics`
 
-Clear the shared metrics snapshot in the configured catalog database.
+Clear the shared runtime metrics in the configured catalog database.
 
 ### Usage
 

@@ -150,6 +150,7 @@ def test_restore_archive_replaces_data_dir(temp_data_dir):
     sample.write_text("restore me", encoding="utf-8")
 
     store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    metrics_generation = store.metrics_generation()
     archive_path, tmp_dir = dump_archive(store)
     try:
         archive_bytes = Path(archive_path).read_bytes()
@@ -167,6 +168,7 @@ def test_restore_archive_replaces_data_dir(temp_data_dir):
     assert sample.exists()
     assert sample.read_text(encoding="utf-8") == "restore me"
     assert not other.exists()
+    assert store.metrics_generation() != metrics_generation
 
 
 def test_restore_archive_waits_for_active_collection_operation(temp_data_dir):

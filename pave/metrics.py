@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from collections import deque
@@ -101,10 +102,12 @@ _latencies: dict[str, deque[float]] = {
     "ingest": deque(maxlen=_LATENCY_WINDOW),
 }
 _last_error: str | None = None
+_last_error_at: float | None = None
+_generation: str | None = None
 _started = time.time()
 _lock = threading.Lock()
+_flush_lock = threading.Lock()
 _dirty = False
-_last_changed = time.monotonic()
 
 
 def _label_key(labels: dict[str, str]) -> LabelKey:
@@ -124,9 +127,8 @@ def _metric_locked(
 
 
 def _mark_dirty_locked() -> None:
-    global _dirty, _last_changed
+    global _dirty
     _dirty = True
-    _last_changed = time.monotonic()
 
 
 def _inc_locked(name: str, value: float, labels: LabelKey = ()) -> None:
@@ -174,9 +176,10 @@ def record_http_request(method: str, path: str, status_code: int) -> None:
 
 
 def set_error(msg: str) -> None:
-    global _last_error
+    global _last_error, _last_error_at
     with _lock:
         _last_error = msg
+        _last_error_at = time.time()
         _inc_locked("errors_total", 1.0)
         _mark_dirty_locked()
 
@@ -201,17 +204,22 @@ def _series_snapshot(metric: _Metric) -> list[dict[str, Any]]:
     return [
         {"labels": dict(labels), "value": value}
         for labels, value in sorted(metric.values.items())
+        if value
     ]
 
 
 def _pending_snapshot_locked() -> dict[str, Any]:
+    metrics = {}
+    for name, metric in sorted(_METRICS.items()):
+        if metric.kind != "counter":
+            continue
+        series = _series_snapshot(metric)
+        if series:
+            metrics[name] = series
     return {
-        "metrics": {
-            name: _series_snapshot(metric)
-            for name, metric in sorted(_METRICS.items())
-            if metric.kind == "counter" and metric.values
-        },
+        "metrics": metrics,
         "last_error": _last_error,
+        "last_error_at": _last_error_at,
         "latencies": {
             op: list(samples)
             for op, samples in sorted(_latencies.items())
@@ -268,7 +276,11 @@ def _merge_snapshots(
         for op in sorted(set(stored_latencies) | set(pending_latencies))
     }
 
+    stored_error_at = float(stored.get("last_error_at") or 0.0)
+    pending_error_at = float(pending.get("last_error_at") or 0.0)
+    latest_error = pending if pending_error_at >= stored_error_at else stored
     return {
+        "generation": stored.get("generation"),
         "metrics": {
             name: [
                 {"labels": dict(labels), "value": value}
@@ -276,64 +288,137 @@ def _merge_snapshots(
             ]
             for name, values in sorted(series.items())
         },
-        "last_error": (
-            pending.get("last_error")
-            if pending.get("last_error") is not None
-            else stored.get("last_error")
-        ),
+        "last_error": latest_error.get("last_error"),
+        "last_error_at": latest_error.get("last_error_at"),
         "latencies": latencies,
     }
 
 
 def _clear_pending_locked() -> None:
-    global _dirty, _last_error
+    global _dirty, _last_error, _last_error_at
     for metric in _METRICS.values():
         if metric.kind == "counter":
             metric.reset()
     for samples in _latencies.values():
         samples.clear()
     _last_error = None
+    _last_error_at = None
     _dirty = False
 
 
+def _counter_rows(payload: dict[str, Any]) -> list[tuple[str, str, float]]:
+    return [
+        (
+            name,
+            json.dumps(
+                dict(labels),
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+            value,
+        )
+        for name, values in sorted(_series_map(payload).items())
+        for labels, value in sorted(values.items())
+    ]
+
+
+def _take_pending_locked() -> dict[str, Any]:
+    pending = _pending_snapshot_locked()
+    _clear_pending_locked()
+    return pending
+
+
+def _restore_pending_locked(pending: dict[str, Any]) -> None:
+    global _dirty, _last_error, _last_error_at
+    for name, values in _series_map(pending).items():
+        for labels, value in values.items():
+            _inc_locked(name, value, labels)
+
+    for operation, values in pending.get("latencies", {}).items():
+        current = list(_latencies.get(operation, ()))
+        _latencies[operation] = deque(
+            [*values, *current][-_LATENCY_WINDOW:],
+            maxlen=_LATENCY_WINDOW,
+        )
+
+    pending_error_at = float(pending.get("last_error_at") or 0.0)
+    if pending_error_at > float(_last_error_at or 0.0):
+        _last_error = pending.get("last_error")
+        _last_error_at = pending_error_at
+    _dirty = True
+
+
+def initialize(store: Any) -> None:
+    """Bind this worker's pending buffer to the catalog generation."""
+    global _generation
+    with _flush_lock:
+        generation = store.metrics_generation()
+        with _lock:
+            _clear_pending_locked()
+            _generation = generation
+
+
 def flush(store: Any | None = None) -> bool:
-    """Atomically merge this process's pending metrics into the catalog."""
+    """Flush this worker's pending deltas without blocking request updates."""
+    global _generation
     if store is None:
         return False
-    try:
+
+    with _flush_lock:
         with _lock:
             if not _dirty:
                 return False
-            pending = _pending_snapshot_locked()
-            store.update_metrics_snapshot(
-                lambda stored: _merge_snapshots(stored, pending)
+            generation = _generation
+
+        if generation is None:
+            try:
+                generation = store.metrics_generation()
+            except Exception:
+                return False
+            with _lock:
+                _generation = generation
+
+        with _lock:
+            pending = _take_pending_locked()
+
+        try:
+            current_generation, applied = store.flush_metrics_delta(
+                generation,
+                _counter_rows(pending),
+                pending["latencies"],
+                (
+                    (pending["last_error"], pending["last_error_at"])
+                    if pending["last_error"] is not None
+                    else None
+                ),
+                _LATENCY_WINDOW,
             )
-            _clear_pending_locked()
-        return True
-    except Exception:
-        return False
+        except Exception:
+            with _lock:
+                if _generation == generation:
+                    _restore_pending_locked(pending)
+            return False
 
-
-def flush_if_idle(min_idle_seconds: float, store: Any | None = None) -> bool:
-    with _lock:
-        should_flush = (
-            _dirty
-            and time.monotonic() - _last_changed >= min_idle_seconds
-        )
-    return flush(store) if should_flush else False
+        with _lock:
+            if not applied:
+                _clear_pending_locked()
+            _generation = current_generation
+        return applied
 
 
 def reset(store: Any | None = None) -> dict[str, Any]:
     """Reset local and persisted metrics."""
-    global _started
-    with _lock:
-        _clear_pending_locked()
-        for metric in _METRICS.values():
-            if metric.kind == "gauge":
-                metric.reset()
-        _started = time.time()
-        if store is not None:
-            store.update_metrics_snapshot(lambda _stored: {})
+    global _generation, _started
+    with _flush_lock:
+        with _lock:
+            generation = store.reset_metrics() if store is not None else None
+            _clear_pending_locked()
+            for metric in _METRICS.values():
+                if metric.kind == "gauge":
+                    metric.reset()
+            _generation = generation
+            _started = time.time()
     return {"ok": True, "reset_at": time.time()}
 
 
@@ -392,19 +477,27 @@ def snapshot(
     *,
     store: Any | None = None,
 ) -> dict[str, Any]:
-    with _lock:
+    global _generation
+    with _flush_lock:
         try:
-            stored = store.read_metrics_snapshot() if store is not None else {}
+            stored = store.read_metrics() if store is not None else {}
         except Exception:
             stored = {}
-        merged = _merge_snapshots(stored, _pending_snapshot_locked())
-        series = _series_map(merged)
-        gauges = {
-            name: metric.values[()]
-            for name, metric in _METRICS.items()
-            if metric.kind == "gauge" and () in metric.values
-        }
-        uptime = time.time() - _started
+        with _lock:
+            stored_generation = stored.get("generation")
+            if stored_generation and _generation != stored_generation:
+                _clear_pending_locked()
+                _generation = str(stored_generation)
+            pending = _pending_snapshot_locked()
+            gauges = {
+                name: metric.values[()]
+                for name, metric in _METRICS.items()
+                if metric.kind == "gauge" and () in metric.values
+            }
+            uptime = time.time() - _started
+
+    merged = _merge_snapshots(stored, pending)
+    series = _series_map(merged)
 
     data: dict[str, Any] = {}
     for name, metric in _METRICS.items():

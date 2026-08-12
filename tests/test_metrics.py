@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import threading
+import time
 
 from pave import metrics
 from pave.main import VERSION
@@ -207,11 +208,11 @@ def test_metrics_coalesce_and_flush(tmp_path):
     metrics.reset(db)
     metrics.inc("search_total", 1)
     metrics.record_latency("search", 7.5)
-    assert db.read_metrics_snapshot() == {}
+    assert db.read_metrics()["metrics"] == {}
 
     assert metrics.flush(db) is True
 
-    data = db.read_metrics_snapshot()
+    data = db.read_metrics()
     assert data["metrics"]["search_total"] == [
         {"labels": {}, "value": 1.0}
     ]
@@ -219,17 +220,11 @@ def test_metrics_coalesce_and_flush(tmp_path):
     db.close()
 
 
-def test_metrics_flush_if_idle_requires_dirty_idle_cache(tmp_path):
+def test_metrics_flush_skips_clean_buffer(tmp_path):
     db = _metrics_db(tmp_path)
     metrics.reset(db)
 
     assert metrics.flush(db) is False
-    assert metrics.flush_if_idle(0, db) is False
-
-    metrics.record_http_request("GET", "/health/live", 200)
-    assert metrics.flush_if_idle(3600, db) is False
-    assert metrics.flush_if_idle(0, db) is True
-    assert metrics.flush_if_idle(0, db) is False
     db.close()
 
 
@@ -262,68 +257,75 @@ def test_metrics_catalog_persistence(tmp_path):
     db.close()
 
 
-def test_metrics_flush_holds_lock_until_write_finishes():
-    writes: list[dict] = []
+def test_metrics_flush_does_not_block_request_updates():
+    writes: list[list[tuple[str, str, float]]] = []
     first_write_started = threading.Event()
     allow_first_write = threading.Event()
 
     class Store:
-        snapshot: dict = {}
+        generation = "test-generation"
 
-        def update_metrics_snapshot(self, update):
-            self.snapshot = update(self.snapshot)
-            writes.append(self.snapshot)
-            if len(writes) == 1:
-                first_write_started.set()
-                allow_first_write.wait(timeout=5)
-            return self.snapshot
+        def metrics_generation(self):
+            return self.generation
+
+        def flush_metrics_delta(
+            self,
+            generation,
+            counters,
+            latencies,
+            last_error,
+            sample_limit,
+        ):
+            writes.append(counters)
+            first_write_started.set()
+            allow_first_write.wait(timeout=5)
+            return generation, True
 
     store = Store()
-    metrics.reset()
+    metrics.initialize(store)
     metrics.inc("search_total", 1)
 
     flush_thread = threading.Thread(target=metrics.flush, args=(store,))
     flush_thread.start()
     assert first_write_started.wait(timeout=5)
 
-    reset_thread = threading.Thread(target=metrics.reset, args=(store,))
-    reset_thread.start()
-    reset_thread.join(timeout=0.1)
-    assert reset_thread.is_alive()
+    increment_done = threading.Event()
+
+    def increment():
+        metrics.inc("search_total", 2)
+        increment_done.set()
+
+    increment_thread = threading.Thread(target=increment)
+    increment_thread.start()
+    assert increment_done.wait(timeout=1)
 
     allow_first_write.set()
     flush_thread.join(timeout=5)
-    reset_thread.join(timeout=5)
+    increment_thread.join(timeout=5)
 
     assert not flush_thread.is_alive()
-    assert not reset_thread.is_alive()
-    assert writes[0]["metrics"]["search_total"] == [
-        {"labels": {}, "value": 1.0}
-    ]
-    assert writes[-1] == {}
+    assert writes == [[("search_total", "{}", 1.0)]]
+    assert metrics.snapshot()["search_total"] == 2.0
 
 
 def test_metrics_snapshot_reads_catalog_state(tmp_path):
     db = _metrics_db(tmp_path)
-    db.update_metrics_snapshot(
-        lambda _stored: {
-            "metrics": {
-                "search_total": [{"labels": {}, "value": 100.0}],
-                "errors_total": [{"labels": {}, "value": 5.0}],
-                "http_requests_total": [
-                    {
-                        "labels": {
-                            "method": "GET",
-                            "path": "/health/live",
-                            "status_class": "2xx",
-                        },
-                        "value": 4.0,
-                    }
-                ],
-            },
-            "last_error": "test error",
-            "latencies": {"search": [10.0, 20.0, 30.0]},
-        }
+    generation = db.metrics_generation()
+    db.flush_metrics_delta(
+        generation,
+        [
+            ("search_total", "{}", 100.0),
+            ("errors_total", "{}", 5.0),
+            (
+                "http_requests_total",
+                '{"method":"GET","path":"/health/live",'
+                '"status_class":"2xx"}',
+                4.0,
+            ),
+        ],
+        {"search": [10.0, 20.0, 30.0]},
+        ("test error", time.time()),
+        1000,
     )
     metrics.reset()
 
@@ -344,6 +346,49 @@ def test_metrics_snapshot_reads_catalog_state(tmp_path):
         }
     ]
     db.close()
+
+
+def test_metrics_discards_stale_worker_delta_after_reset(tmp_path):
+    db = _metrics_db(tmp_path)
+    metrics.reset(db)
+    metrics.inc("search_total", 1)
+
+    db.reset_metrics()
+
+    assert metrics.flush(db) is False
+    assert metrics.snapshot(store=db)["search_total"] == 0.0
+    db.close()
+
+
+def test_metrics_reset_keeps_updates_that_finish_after_reset():
+    reset_started = threading.Event()
+    allow_reset = threading.Event()
+    increment_done = threading.Event()
+
+    class Store:
+        def reset_metrics(self):
+            reset_started.set()
+            allow_reset.wait(timeout=5)
+            return "new-generation"
+
+    metrics.reset()
+    reset_thread = threading.Thread(target=metrics.reset, args=(Store(),))
+    reset_thread.start()
+    assert reset_started.wait(timeout=5)
+
+    def increment():
+        metrics.inc("search_total")
+        increment_done.set()
+
+    increment_thread = threading.Thread(target=increment)
+    increment_thread.start()
+    assert increment_done.wait(timeout=0.1) is False
+
+    allow_reset.set()
+    reset_thread.join(timeout=5)
+    increment_thread.join(timeout=5)
+
+    assert metrics.snapshot()["search_total"] == 1.0
 
 
 def test_build_app_supports_catalog_metrics_with_multiple_workers(tmp_path):

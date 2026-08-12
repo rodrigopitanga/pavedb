@@ -6,7 +6,7 @@ import json
 import os
 import re
 import shutil
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from typing import Any
 
 import numpy as np
@@ -797,16 +797,34 @@ class SpyStore:
         self.calls.append(("catalog_metrics",))
         return self.impl.catalog_metrics()
 
-    def read_metrics_snapshot(self) -> dict[str, Any]:
-        self.calls.append(("read_metrics_snapshot",))
-        return self.impl.read_metrics_snapshot()
+    def metrics_generation(self) -> str:
+        self.calls.append(("metrics_generation",))
+        return self.impl.metrics_generation()
 
-    def update_metrics_snapshot(
+    def read_metrics(self) -> dict[str, Any]:
+        self.calls.append(("read_metrics",))
+        return self.impl.read_metrics()
+
+    def flush_metrics_delta(
         self,
-        update: Callable[[dict[str, Any]], dict[str, Any]],
-    ) -> dict[str, Any]:
-        self.calls.append(("update_metrics_snapshot",))
-        return self.impl.update_metrics_snapshot(update)
+        generation: str,
+        counters: list[tuple[str, str, float]],
+        latencies: dict[str, list[float]],
+        last_error: tuple[str, float] | None,
+        sample_limit: int,
+    ) -> tuple[str, bool]:
+        self.calls.append(("flush_metrics_delta",))
+        return self.impl.flush_metrics_delta(
+            generation,
+            counters,
+            latencies,
+            last_error,
+            sample_limit,
+        )
+
+    def reset_metrics(self) -> str:
+        self.calls.append(("reset_metrics",))
+        return self.impl.reset_metrics()
 
     def refresh_catalog_metrics(self) -> dict[str, int]:
         self.calls.append(("refresh_catalog_metrics",))

@@ -62,7 +62,8 @@ def test_catalog_db_open_creates_schema(tmp_path):
     cur = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' "
         "AND name IN ("
-        "'schema_migrations', 'collections', 'query_home', 'metrics_snapshot'"
+        "'schema_migrations', 'collections', 'query_home', "
+        "'metrics_state', 'metrics_counters', 'metrics_latency_samples'"
         ")"
     )
     names = {row[0] for row in cur.fetchall()}
@@ -70,10 +71,12 @@ def test_catalog_db_open_creates_schema(tmp_path):
         "schema_migrations",
         "collections",
         "query_home",
-        "metrics_snapshot",
+        "metrics_state",
+        "metrics_counters",
+        "metrics_latency_samples",
     } <= names
     version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
-    assert version == (4,)
+    assert version == (5,)
     db.close()
 
 
@@ -83,40 +86,79 @@ def test_catalog_metrics_updates_are_atomic_across_connections(tmp_path):
     second = CatalogDB()
     first.open(path)
     second.open(path)
-    update_started = threading.Event()
-    release_update = threading.Event()
+    generation = first.metrics_generation()
+    start = threading.Barrier(2)
+    errors: list[Exception] = []
 
-    def increment(payload):
-        payload["count"] = payload.get("count", 0) + 1
-        return payload
+    def increment(db):
+        try:
+            start.wait(timeout=1)
+            db.flush_metrics_delta(
+                generation,
+                [("search_total", "{}", 1.0)],
+                {},
+                None,
+                1000,
+            )
+        except Exception as exc:
+            errors.append(exc)
 
-    def slow_increment(payload):
-        update_started.set()
-        assert release_update.wait(timeout=1)
-        return increment(payload)
+    threads = [
+        threading.Thread(target=increment, args=(db,))
+        for db in (first, second)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=1)
 
-    first_thread = threading.Thread(
-        target=first.update_metrics_snapshot,
-        args=(slow_increment,),
-    )
-    first_thread.start()
-    assert update_started.wait(timeout=1)
-
-    second_thread = threading.Thread(
-        target=second.update_metrics_snapshot,
-        args=(increment,),
-    )
-    second_thread.start()
-    time.sleep(0.05)
-    release_update.set()
-    first_thread.join(timeout=1)
-    second_thread.join(timeout=1)
-
-    assert not first_thread.is_alive()
-    assert not second_thread.is_alive()
-    assert first.read_metrics_snapshot() == {"count": 2}
+    assert not errors
+    assert all(not thread.is_alive() for thread in threads)
+    assert first.read_metrics()["metrics"]["search_total"] == [
+        {"labels": {}, "value": 2.0}
+    ]
     first.close()
     second.close()
+
+
+def test_catalog_metrics_rejects_stale_generation_after_reset(tmp_path):
+    db = CatalogDB()
+    db.open(_catalog_db(tmp_path))
+    stale_generation = db.metrics_generation()
+
+    current_generation = db.reset_metrics()
+    seen_generation, applied = db.flush_metrics_delta(
+        stale_generation,
+        [("search_total", "{}", 1.0)],
+        {},
+        None,
+        1000,
+    )
+
+    assert current_generation != stale_generation
+    assert seen_generation == current_generation
+    assert applied is False
+    assert db.read_metrics()["metrics"] == {}
+    db.close()
+
+
+def test_catalog_metrics_bounds_latency_samples(tmp_path):
+    db = CatalogDB()
+    db.open(_catalog_db(tmp_path))
+    generation = db.metrics_generation()
+
+    db.flush_metrics_delta(
+        generation,
+        [],
+        {"search": [float(value) for value in range(1005)]},
+        None,
+        1000,
+    )
+
+    samples = db.read_metrics()["latencies"]["search"]
+    assert len(samples) == 1000
+    assert samples[0] == 5.0
+    db.close()
 
 
 @pytest.mark.parametrize(
@@ -342,7 +384,7 @@ def test_catalog_db_open_rejects_older_schema_version(tmp_path):
         "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
     )
     conn.execute(
-        "INSERT INTO schema_migrations (version, applied_at) VALUES (2, 'old')"
+        "INSERT INTO schema_migrations (version, applied_at) VALUES (4, 'old')"
     )
     conn.commit()
     conn.close()
