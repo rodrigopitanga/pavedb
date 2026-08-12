@@ -412,8 +412,7 @@ latency on every search/ingest/delete.~~
 - ~~Define embedder/store separation contract (P3-26).~~
 - ~~Activate embedder factory cache (P1-30; superseded by P1-29b).~~
 - ~~Per-collection embeddings + `display_name` + admin move/update
-  APIs; `vector_space_key` surfaced on detail/listing; `pave.slugify`
-  client-side helper (P1-32).~~
+  APIs; `vector_space_key` surfaced on detail/listing (P1-32).~~
 - ~~Embedded/library mode: `import pave; db = pave.connect("./data")`
   — handle-based `Client`/`Collection` over the service layer, no
   server required. Lowers the install friction bar (a few lines to

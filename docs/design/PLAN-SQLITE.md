@@ -417,8 +417,7 @@ Column notes:
 **`name` (slug) assignment rules:**
 - API `name` is the slug. The server validates it and stores it
   unchanged.
-- No API body uses a separate `slug` field. Client helpers may
-  slugify a human label before sending `name`.
+- No API body uses a separate `slug` field.
 - If `display_name` is omitted at create time, the server stores
   `display_name = name`.
 
