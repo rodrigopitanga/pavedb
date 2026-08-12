@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, asdict, field
 import os
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Callable, Protocol
 
 if TYPE_CHECKING:
     from pave.embedders.base import EmbedderConfig
@@ -277,6 +277,13 @@ class BaseStore(Protocol):
             "doc_count": 0,
             "chunk_count": 0,
         }
+
+    def read_metrics_snapshot(self) -> dict[str, Any]: ...
+
+    def update_metrics_snapshot(
+        self,
+        update: Callable[[dict[str, Any]], dict[str, Any]],
+    ) -> dict[str, Any]: ...
 
     def refresh_catalog_metrics(self) -> dict[str, int]:
         """Refresh store-level catalog counters.

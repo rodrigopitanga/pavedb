@@ -318,8 +318,8 @@ practice §5).~~
 - ~~Per-tenant and per-operation API rate limits (market practice §8 — quota governance).~~
 - ~~Ship internal metadata/content store (SQLite) with migrations.~~
 - ~~Serve `/collections` and store-backed catalog counts in `/health/metrics` + `/metrics`
-  from the internal store (runtime op counters still come from `metrics.json` until
-  Phase 3).~~
+  from the internal store; runtime op counter deltas are periodically merged into
+  the catalog database.~~
 - ~~Emit structured logs (JSON lines) with `request_id`, tenant, collection, and
 latency on every search/ingest/delete.~~
 - ~~Support renaming collections through the API and CLI.~~

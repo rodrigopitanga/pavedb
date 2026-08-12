@@ -1644,6 +1644,21 @@ class LocalStore:
                 }
             return dict(cached[1])
 
+    def read_metrics_snapshot(self) -> dict[str, Any]:
+        return self._with_catalog_retry(
+            "read_metrics_snapshot",
+            lambda catalog: catalog.read_metrics_snapshot(),
+        )
+
+    def update_metrics_snapshot(
+        self,
+        update: Callable[[dict[str, Any]], dict[str, Any]],
+    ) -> dict[str, Any]:
+        return self._with_catalog_retry(
+            "update_metrics_snapshot",
+            lambda catalog: catalog.update_metrics_snapshot(update),
+        )
+
     def refresh_catalog_metrics(self) -> dict[str, int]:
         """Refresh cached catalog counters with the expensive collection walk."""
         metrics = self._compute_catalog_metrics()

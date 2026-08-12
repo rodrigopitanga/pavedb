@@ -27,7 +27,6 @@ from pave.metrics import (
     record_http_request,
     refresh_product_gauges as metrics_refresh_product_gauges,
     set_error as metrics_set_error,
-    set_data_dir as metrics_set_data_dir,
 )
 from pave.stores.local import LocalStore
 from pave.service import ServiceError
@@ -94,10 +93,10 @@ def _hw_info() -> dict:
     return info
 
 
-async def _flush_metrics_periodically() -> None:
+async def _flush_metrics_periodically(store) -> None:
     while True:
         await asyncio.sleep(METRICS_FLUSH_INTERVAL_SECONDS)
-        metrics_flush_if_idle(METRICS_SNAPSHOT_IDLE_SECONDS)
+        metrics_flush_if_idle(METRICS_SNAPSHOT_IDLE_SECONDS, store)
 
 
 async def _refresh_catalog_metrics_periodically(store) -> None:
@@ -215,7 +214,9 @@ def build_app(cfg=get_cfg()) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        metrics_flush_task = asyncio.create_task(_flush_metrics_periodically())
+        metrics_flush_task = asyncio.create_task(
+            _flush_metrics_periodically(app.state.store)
+        )
         catalog_metrics_task = asyncio.create_task(
             _refresh_catalog_metrics_periodically(app.state.store)
         )
@@ -246,8 +247,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             for _exec in (app.state.search_executor, app.state.ingest_executor):
                 if _exec is not None:
                     _exec.shutdown(wait=True)
+            metrics_flush(app.state.store)
             app.state.store.close()
-            metrics_flush()
             ops_log.close()
 
     app = FastAPI(
@@ -512,18 +513,6 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 latency_ms=_get_latency_ms(request),
             ),
             status_code=422,
-        )
-
-    # Initialize metrics persistence.
-    workers = int(cfg.get("server.workers") or 1)
-    data_dir = cfg.get("data_dir")
-    if data_dir and workers == 1:
-        metrics_set_data_dir(data_dir)
-    elif data_dir and workers > 1:
-        log.warning(
-            "metrics persistence disabled with server.workers=%s; "
-            "metrics.json is process-local",
-            workers,
         )
 
     @app.middleware("http")

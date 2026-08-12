@@ -28,7 +28,7 @@ import time
 from contextlib import contextmanager
 from datetime import datetime, timezone as tz
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 from pave.filters import sanit_sql
 
@@ -46,7 +46,7 @@ class CollectionConfigRecoveryError(RuntimeError):
 
 
 _COLLECTION_SCHEMA_VERSION = 6
-_CATALOG_SCHEMA_VERSION = 3
+_CATALOG_SCHEMA_VERSION = 4
 COLLECTION_CONFIG_FILENAME = "collection.json"
 
 _COLLECTION_SCHEMA_SQL: list[str] = [
@@ -170,6 +170,12 @@ _CATALOG_SCHEMA_SQL: list[str] = [
     """
     CREATE INDEX IF NOT EXISTS idx_query_home_created_at
         ON query_home (created_at DESC)
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS metrics_snapshot (
+        singleton    INTEGER PRIMARY KEY CHECK (singleton = 1),
+        payload_json TEXT NOT NULL
+    )
     """,
 ]
 
@@ -1197,6 +1203,42 @@ class CatalogDB:
         except Exception:
             return {}
         return loaded if isinstance(loaded, dict) else {}
+
+    def read_metrics_snapshot(self) -> dict[str, Any]:
+        with self._reader() as conn:
+            row = conn.execute(
+                "SELECT payload_json FROM metrics_snapshot WHERE singleton=1"
+            ).fetchone()
+        return self._load_json(row[0]) if row is not None else {}
+
+    def update_metrics_snapshot(
+        self,
+        update: Callable[[dict[str, Any]], dict[str, Any]],
+    ) -> dict[str, Any]:
+        """Update the shared metrics snapshot under one SQLite write lock."""
+        with self._writer() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = conn.execute(
+                    "SELECT payload_json FROM metrics_snapshot "
+                    "WHERE singleton=1"
+                ).fetchone()
+                current = self._load_json(row[0]) if row is not None else {}
+                updated = update(current)
+                conn.execute(
+                    """
+                    INSERT INTO metrics_snapshot (singleton, payload_json)
+                    VALUES (1, ?)
+                    ON CONFLICT(singleton) DO UPDATE
+                    SET payload_json=excluded.payload_json
+                    """,
+                    (self._dump_json(updated),),
+                )
+                conn.commit()
+                return updated
+            except BaseException:
+                conn.rollback()
+                raise
 
     @staticmethod
     def _recovery_config(collection_dir: Path) -> dict[str, Any] | None:

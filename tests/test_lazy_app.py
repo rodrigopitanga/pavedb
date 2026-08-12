@@ -126,15 +126,16 @@ def test_metrics_periodic_flush_task(monkeypatch):
     import pave.main as m
 
     calls = []
+    store = object()
 
     async def run_probe():
         monkeypatch.setattr(m, "METRICS_FLUSH_INTERVAL_SECONDS", 0.01)
         monkeypatch.setattr(
             m,
             "metrics_flush_if_idle",
-            lambda seconds: calls.append(seconds),
+            lambda seconds, got_store: calls.append((seconds, got_store)),
         )
-        task = asyncio.create_task(m._flush_metrics_periodically())
+        task = asyncio.create_task(m._flush_metrics_periodically(store))
         try:
             await asyncio.sleep(0.025)
         finally:
@@ -145,7 +146,10 @@ def test_metrics_periodic_flush_task(monkeypatch):
     asyncio.run(run_probe())
 
     assert calls
-    assert all(call == m.METRICS_SNAPSHOT_IDLE_SECONDS for call in calls)
+    assert all(
+        call == (m.METRICS_SNAPSHOT_IDLE_SECONDS, store)
+        for call in calls
+    )
 
 
 def test_catalog_metrics_periodic_refresh_task(monkeypatch):
@@ -190,11 +194,15 @@ def test_lifespan_flushes_metrics_on_shutdown(monkeypatch, tmp_path):
 
     calls = []
     monkeypatch.setattr(m, "METRICS_FLUSH_INTERVAL_SECONDS", 3600.0)
-    monkeypatch.setattr(m, "metrics_flush", lambda: calls.append("flush"))
+    monkeypatch.setattr(
+        m,
+        "metrics_flush",
+        lambda store: calls.append("flush"),
+    )
 
     app = m.build_app(cfg)
     app.state.store.close = lambda: calls.append("close")
     with TestClient(app):
         assert calls == []
 
-    assert calls == ["close", "flush"]
+    assert calls == ["flush", "close"]

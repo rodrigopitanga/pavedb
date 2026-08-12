@@ -389,11 +389,7 @@ def cmd_restore_archive(args):
     return svc_restore_archive(_get_store(), content)
 
 def cmd_reset_metrics(args):
-    cfg = get_cfg()
-    data_dir = cfg.get("data_dir")
-    if data_dir:
-        metrics.set_data_dir(data_dir)
-    return metrics.reset()
+    return metrics.reset(_get_store())
 
 def cmd_list_tenants(args):
     return svc_list_tenants(_get_store())

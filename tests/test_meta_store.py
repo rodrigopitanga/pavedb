@@ -61,13 +61,62 @@ def test_catalog_db_open_creates_schema(tmp_path):
     assert conn is not None
     cur = conn.execute(
         "SELECT name FROM sqlite_master WHERE type='table' "
-        "AND name IN ('schema_migrations', 'collections', 'query_home')"
+        "AND name IN ("
+        "'schema_migrations', 'collections', 'query_home', 'metrics_snapshot'"
+        ")"
     )
     names = {row[0] for row in cur.fetchall()}
-    assert {"schema_migrations", "collections", "query_home"} <= names
+    assert {
+        "schema_migrations",
+        "collections",
+        "query_home",
+        "metrics_snapshot",
+    } <= names
     version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
-    assert version == (3,)
+    assert version == (4,)
     db.close()
+
+
+def test_catalog_metrics_updates_are_atomic_across_connections(tmp_path):
+    path = _catalog_db(tmp_path)
+    first = CatalogDB()
+    second = CatalogDB()
+    first.open(path)
+    second.open(path)
+    update_started = threading.Event()
+    release_update = threading.Event()
+
+    def increment(payload):
+        payload["count"] = payload.get("count", 0) + 1
+        return payload
+
+    def slow_increment(payload):
+        update_started.set()
+        assert release_update.wait(timeout=1)
+        return increment(payload)
+
+    first_thread = threading.Thread(
+        target=first.update_metrics_snapshot,
+        args=(slow_increment,),
+    )
+    first_thread.start()
+    assert update_started.wait(timeout=1)
+
+    second_thread = threading.Thread(
+        target=second.update_metrics_snapshot,
+        args=(increment,),
+    )
+    second_thread.start()
+    time.sleep(0.05)
+    release_update.set()
+    first_thread.join(timeout=1)
+    second_thread.join(timeout=1)
+
+    assert not first_thread.is_alive()
+    assert not second_thread.is_alive()
+    assert first.read_metrics_snapshot() == {"count": 2}
+    first.close()
+    second.close()
 
 
 @pytest.mark.parametrize(

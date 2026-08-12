@@ -6,7 +6,7 @@ import json
 import os
 import re
 import shutil
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 import numpy as np
@@ -796,6 +796,17 @@ class SpyStore:
     def catalog_metrics(self) -> dict[str, int]:
         self.calls.append(("catalog_metrics",))
         return self.impl.catalog_metrics()
+
+    def read_metrics_snapshot(self) -> dict[str, Any]:
+        self.calls.append(("read_metrics_snapshot",))
+        return self.impl.read_metrics_snapshot()
+
+    def update_metrics_snapshot(
+        self,
+        update: Callable[[dict[str, Any]], dict[str, Any]],
+    ) -> dict[str, Any]:
+        self.calls.append(("update_metrics_snapshot",))
+        return self.impl.update_metrics_snapshot(update)
 
     def refresh_catalog_metrics(self) -> dict[str, int]:
         self.calls.append(("refresh_catalog_metrics",))

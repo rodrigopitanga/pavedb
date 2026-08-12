@@ -166,6 +166,7 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         request: Request,
         rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
     ):
         if not ctx.is_admin:
             return error(
@@ -175,7 +176,7 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
                 request=request,
                 request_id=rid,
             )
-        return trace(metrics_reset(), request, request_id=rid)
+        return trace(metrics_reset(store), request, request_id=rid)
 
     @router.get(
         "/admin/tenants",

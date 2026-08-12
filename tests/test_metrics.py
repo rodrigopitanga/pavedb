@@ -1,12 +1,19 @@
 # (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-import json, os
 import threading
-from pave.main import VERSION
-from pave import metrics
 
-def test_metrics_json(client):
+from pave import metrics
+from pave.main import VERSION
+from pave.metadb import CatalogDB
+
+
+def _metrics_db(tmp_path):
+    db = CatalogDB()
+    db.open(tmp_path / "catalog.db")
+    return db
+
+def test_metrics_snapshot(client):
     r = client.get("/health/metrics")
     assert r.status_code == 200
     assert "uptime_seconds" in r.json()
@@ -196,69 +203,52 @@ def test_percentile_calculation():
     assert pcts["p99"] >= 95.0
 
 def test_metrics_coalesce_and_flush(tmp_path):
-    """inc/record_latency mark dirty; flush writes once; no .tmp debris."""
-    metrics.set_data_dir(str(tmp_path))
-    metrics.reset()
-    path = tmp_path / "metrics.json"
-    if path.exists():
-        path.unlink()
-    # mutations should NOT write immediately
+    db = _metrics_db(tmp_path)
+    metrics.reset(db)
     metrics.inc("search_total", 1)
     metrics.record_latency("search", 7.5)
-    assert not path.exists(), "save should be deferred, not immediate"
-    # flush writes
-    metrics.flush()
-    assert path.exists()
-    data = json.loads(path.read_text())
-    assert data["counters"]["search_total"] == 1.0
+    assert db.read_metrics_snapshot() == {}
+
+    assert metrics.flush(db) is True
+
+    data = db.read_metrics_snapshot()
+    assert data["metrics"]["search_total"] == [
+        {"labels": {}, "value": 1.0}
+    ]
     assert 7.5 in data["latencies"]["search"]
-    # no leftover .tmp files
-    assert not any(f.endswith(".tmp") for f in os.listdir(tmp_path))
+    db.close()
+
 
 def test_metrics_flush_if_idle_requires_dirty_idle_cache(tmp_path):
-    metrics.set_data_dir(str(tmp_path))
-    metrics.reset()
-    path = tmp_path / "metrics.json"
-    path.unlink()
+    db = _metrics_db(tmp_path)
+    metrics.reset(db)
 
-    metrics.save()
-    assert not path.exists()
-
-    assert metrics.flush_if_idle(0) is False
-    assert not path.exists()
+    assert metrics.flush(db) is False
+    assert metrics.flush_if_idle(0, db) is False
 
     metrics.record_http_request("GET", "/health/live", 200)
-    assert metrics.flush_if_idle(3600) is False
-    assert not path.exists()
+    assert metrics.flush_if_idle(3600, db) is False
+    assert metrics.flush_if_idle(0, db) is True
+    assert metrics.flush_if_idle(0, db) is False
+    db.close()
 
-    assert metrics.flush_if_idle(0) is True
-    assert path.exists()
-    path.unlink()
 
-    assert metrics.flush_if_idle(0) is False
-    assert not path.exists()
-
-def test_metrics_persistence(tmp_path):
-    """Metrics should persist to disk and reload."""
-    # Set up a temp data dir
-    metrics.set_data_dir(str(tmp_path))
-    # Reset to clean state
-    metrics.reset()
-    # Increment some counters
+def test_metrics_catalog_persistence(tmp_path):
+    db = _metrics_db(tmp_path)
+    metrics.reset(db)
     metrics.inc("search_total", 5)
     metrics.inc("documents_indexed_total", 3)
     metrics.record_http_request("GET", "/health/live", 200)
     metrics.record_latency("search", 42.5)
-    metrics.flush()
-    # Verify file exists
-    path = tmp_path / "metrics.json"
-    assert path.exists()
-    # Read and verify content
-    data = json.loads(path.read_text())
-    assert data["counters"]["search_total"] == 5.0
-    assert data["counters"]["documents_indexed_total"] == 3.0
-    http_series = data["labeled_counters"]["http_requests_total"]
-    assert http_series == [
+    metrics.flush(db)
+    metrics.inc("search_total", 2)
+    metrics.flush(db)
+
+    snap = metrics.snapshot(store=db)
+
+    assert snap["search_total"] == 7.0
+    assert snap["documents_indexed_total"] == 3.0
+    assert snap["http_requests_total"] == [
         {
             "labels": {
                 "method": "GET",
@@ -268,71 +258,77 @@ def test_metrics_persistence(tmp_path):
             "value": 1.0,
         }
     ]
-    assert 42.5 in data["latencies"]["search"]
+    assert snap["search_latency_count"] == 1
+    db.close()
 
 
-def test_metrics_save_holds_lock_until_write_finishes(tmp_path, monkeypatch):
-    metrics.set_data_dir(str(tmp_path))
-    metrics.reset()
-    metrics.inc("search_total", 1)
-
+def test_metrics_flush_holds_lock_until_write_finishes():
     writes: list[dict] = []
     first_write_started = threading.Event()
     allow_first_write = threading.Event()
 
-    def fake_write(directory, path, data):
-        writes.append(data)
-        if len(writes) == 1:
-            first_write_started.set()
-            allow_first_write.wait(timeout=5)
+    class Store:
+        snapshot: dict = {}
 
-    monkeypatch.setattr(metrics, "_write_metrics_file", fake_write)
+        def update_metrics_snapshot(self, update):
+            self.snapshot = update(self.snapshot)
+            writes.append(self.snapshot)
+            if len(writes) == 1:
+                first_write_started.set()
+                allow_first_write.wait(timeout=5)
+            return self.snapshot
 
-    save_thread = threading.Thread(target=metrics.save)
-    save_thread.start()
+    store = Store()
+    metrics.reset()
+    metrics.inc("search_total", 1)
+
+    flush_thread = threading.Thread(target=metrics.flush, args=(store,))
+    flush_thread.start()
     assert first_write_started.wait(timeout=5)
 
-    reset_thread = threading.Thread(target=metrics.reset)
+    reset_thread = threading.Thread(target=metrics.reset, args=(store,))
     reset_thread.start()
     reset_thread.join(timeout=0.1)
     assert reset_thread.is_alive()
 
     allow_first_write.set()
-    save_thread.join(timeout=5)
+    flush_thread.join(timeout=5)
     reset_thread.join(timeout=5)
 
-    assert not save_thread.is_alive()
+    assert not flush_thread.is_alive()
     assert not reset_thread.is_alive()
-    assert writes[0]["counters"]["search_total"] == 1.0
-    assert writes[-1]["counters"]["search_total"] == 0.0
-    data = json.loads((tmp_path / "metrics.json").read_text())
-    assert data["counters"]["search_total"] == 0.0
+    assert writes[0]["metrics"]["search_total"] == [
+        {"labels": {}, "value": 1.0}
+    ]
+    assert writes[-1] == {}
 
-def test_metrics_load_on_restart(tmp_path):
-    """Metrics should be restored from disk on restart."""
-    # Write a metrics file
-    path = tmp_path / "metrics.json"
-    path.write_text(json.dumps({
-        "counters": {"search_total": 100.0, "errors_total": 5.0},
-        "labeled_counters": {
-            "http_requests_total": [
-                {
-                    "labels": {
-                        "method": "GET",
-                        "path": "/health/live",
-                        "status_class": "2xx",
-                    },
-                    "value": 4.0,
-                }
-            ]
-        },
-        "last_error": "test error",
-        "latencies": {"search": [10.0, 20.0, 30.0]}
-    }))
-    # Load metrics from that dir
-    metrics.set_data_dir(str(tmp_path))
-    # Verify counters were loaded
-    snap = metrics.snapshot()
+
+def test_metrics_snapshot_reads_catalog_state(tmp_path):
+    db = _metrics_db(tmp_path)
+    db.update_metrics_snapshot(
+        lambda _stored: {
+            "metrics": {
+                "search_total": [{"labels": {}, "value": 100.0}],
+                "errors_total": [{"labels": {}, "value": 5.0}],
+                "http_requests_total": [
+                    {
+                        "labels": {
+                            "method": "GET",
+                            "path": "/health/live",
+                            "status_class": "2xx",
+                        },
+                        "value": 4.0,
+                    }
+                ],
+            },
+            "last_error": "test error",
+            "latencies": {"search": [10.0, 20.0, 30.0]},
+        }
+    )
+    metrics.reset()
+
+    snap = metrics.snapshot(store=db)
+
     assert snap["search_total"] == 100.0
     assert snap["errors_total"] == 5.0
     assert snap["last_error"] == "test error"
@@ -347,12 +343,10 @@ def test_metrics_load_on_restart(tmp_path):
             "value": 4.0,
         }
     ]
+    db.close()
 
 
-def test_build_app_disables_metrics_persistence_for_multiple_workers(
-    monkeypatch,
-    tmp_path,
-):
+def test_build_app_supports_catalog_metrics_with_multiple_workers(tmp_path):
     from pave.config import Config
     import pave.main as main_mod
 
@@ -363,16 +357,8 @@ def test_build_app_disables_metrics_persistence_for_multiple_workers(
     cfg.set("server.workers", 2)
     cfg.set("embedder.warmup_default", False)
 
-    calls: list[str] = []
-    monkeypatch.setattr(
-        main_mod,
-        "metrics_set_data_dir",
-        lambda path: calls.append(path),
-    )
-
     app = main_mod.build_app(cfg)
 
-    assert calls == []
     assert app.state.cfg.get("server.workers") == 2
 
 def test_metrics_reset_api(client):
