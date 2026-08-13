@@ -37,7 +37,18 @@ PKG_INTERNAL   	:= pave
 REGISTRY_HOST	?= registry.gitlab.com
 REGISTRY_GROUP	?= flowlexi
 
-PYTHON          ?= python3
+# Newest python3.N on PATH inside the range declared in packaging metadata.
+# PYTHON=... overrides. Same block in pavedb, pavedb-sdk, pavedb-extra-benchmarks.
+_PY_REQ := $(shell sed -n 's/^requires-python *= *"\([^"]*\)".*/\1/p' pyproject.toml 2>/dev/null | head -1)
+ifeq ($(_PY_REQ),)
+_PY_REQ := $(shell sed -n 's/.*python_requires *= *"\([^"]*\)".*/\1/p' setup.py 2>/dev/null | head -1)
+endif
+_PY_MIN := $(shell printf '%s' '$(_PY_REQ)' | sed -n 's/.*>=3\.\([0-9]\{1,\}\).*/\1/p')
+_PY_TOP := $(shell printf '%s' '$(_PY_REQ)' | sed -n 's/.*<3\.\([0-9]\{1,\}\).*/\1/p')
+_PY_MAX := $(shell echo $$(( $(if $(_PY_TOP),$(_PY_TOP),100) - 1 )))
+PYTHON ?= $(shell for n in $$(seq $(_PY_MAX) -1 $(if $(_PY_MIN),$(_PY_MIN),0)); do \
+	python3.$$n -m ensurepip --version >/dev/null 2>&1 && command -v "python3.$$n" && exit 0; \
+	done; command -v python3)
 PIP             ?= $(PYTHON) -m pip
 UVICORN         ?= uvicorn
 
@@ -208,6 +219,7 @@ venv:
 	@if [ ! -f "$(VENV)/.created" ] \
 	  || ! "$(PYTHON_BIN)" -c 'import sys; print(sys.executable)' \
 	      >/dev/null 2>&1 \
+	  || ! "$(PYTHON_BIN)" -c 'import sys; raise SystemExit(not ($(_PY_MIN) <= sys.version_info[1] <= $(_PY_MAX)))' >/dev/null 2>&1 \
 	  || ! "$(PIP_BIN)" --version >/dev/null 2>&1; then \
 	  $(MAKE) _venv-create; \
 	fi
