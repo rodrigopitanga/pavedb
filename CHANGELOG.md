@@ -1,6 +1,84 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
+## 0.9.4 — 2026-08-13
+
+### Store
+- Bound hot collection caches (P1-22)
+- Preflight instance archive restores (P1-65)
+- Reject incomplete archive collections (P1-65)
+- Validate archive metadata databases (P1-65)
+- Reject empty archive catalogs (P1-65)
+- Reject uninitialized archive catalogs (P1-65)
+- Keep archive export independent of current routing (P1-65)
+- Validate archive metadata schema (P1-65)
+- Validate archive metadata columns (P1-65)
+- Preserve list metadata filter parity (P1-35)
+
+### Documentation
+- Repair P3-18 roadmap row (B21)
+- Reconcile P1-52 roadmap status (P1-52)
+- Split hybrid search roadmap work
+- Close Elixir public API parity (P1-67)
+- Document archive runtime requirements (P1-65)
+- Record archive restore integrity (P1-65)
+- Add Elixir client quick start
+- Clarify SDK and client repository roles
+- Add v0.9.4 release announcement
+
+### Bug Fixes
+- Preserve list-valued metadata filtering (B22)
+- Reject SQLite archive sidecars (P1-65)
+- Reject malformed archive restores (P1-65)
+- Reject inconsistent archive indexes (P1-65)
+- Reject wrong-metric archive indexes (P1-65)
+- Reject archives with incomplete catalog schema (P1-65)
+- Reject wrong-dimension archive indexes (P1-65)
+- Reject wrong-dimension archive indexes for openai/ollama (P1-65)
+
+### Log
+- Add product-signal metrics (P1-50)
+- Cache product gauge refresh (P1-50)
+- Bound search metric cardinality (P1-50)
+- Restore bounded search metric labels (P1-50)
+- Cache query-log gauge scans (P1-50)
+- Persist worker metrics snapshots (P1-50)
+- Normalize worker metrics persistence (P1-50)
+
+### Infrastructure
+- Backfill and harden issue-key sync
+- Add chaos failure issue triage (P1-52)
+- [fix] Fail on malformed roadmap rows (B21)
+- Pick the interpreter from the declared Python range
+- Accept reconcile CLI mode (B23)
+
+### Performance
+- Add chaos correctness harness (P1-52)
+- Finish chaos nightly invariants (P1-52)
+- Accept controlled ingest shedding in chaos
+- Exercise both collection move routes
+- Show concurrency in stress results
+
+### Testing
+- Guard metrics endpoints from gauge refreshes (P1-50)
+- Cover remaining product metric signals (P1-50)
+- [infra] Chaos recipe var regression + xeon runner tag (P1-52)
+- Cover incomplete archive rollback (P1-65)
+
+### API
+- Remove unused slugify helper (P1-32)
+- Forward shared raw-vector queries (B24)
+
+### Build
+- Add HTTPX2 test client dependency
+
+### CLI
+- Describe shared metrics reset (P1-50)
+
+### Plan
+- Split ANN roadmap into flat/HNSW/IVF metrics (P3-54/55/56)
+
+---
 ## 0.9.3.1 — 2026-08-02
 
 ### Packaging

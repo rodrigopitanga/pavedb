@@ -32,7 +32,7 @@ Pass them before the command, e.g. pavecli --home ./instance list-tenants.
 
 ## Legal Notice
 
-PaveDB 0.9.3.1 (pavecli)
+PaveDB 0.9.4 (pavecli)
 Copyright (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 There is NO WARRANTY, to the extent permitted by law.
 
