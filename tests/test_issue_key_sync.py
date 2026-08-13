@@ -105,6 +105,20 @@ def test_mr_texts_empty_without_mr_context(monkeypatch):
     assert mr_texts(_FakeGL()) == {}
 
 
+def test_cli_accepts_reconcile_and_rejects_unknown_args(monkeypatch):
+    reconcile = []
+    monkeypatch.setattr(
+        issue_key_sync,
+        "sync",
+        lambda *, reconcile_requested=False: reconcile.append(reconcile_requested) or 0,
+    )
+
+    assert issue_key_sync.main(["--reconcile"]) == 0
+    assert reconcile == [True]
+    with pytest.raises(SystemExit, match="usage"):
+        issue_key_sync.main(["--unknown"])
+
+
 def test_bfg_keys_recognized_alongside_rp():
     # Commit text and issue titles must agree, else B/F/G never auto-close.
     text = "[fix] x (B1) also B0, F2-10, G3; plus (R3-23) and P3-40"

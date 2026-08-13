@@ -600,7 +600,7 @@ def selfcheck() -> int:
     return 0
 
 
-def sync() -> int:
+def sync(*, reconcile_requested: bool = False) -> int:
     gl = GitLab()
     validate_review_keys(gl)
     issues = issue_map(gl)
@@ -613,9 +613,8 @@ def sync() -> int:
     # fixed) is O(history) + touches many issues, so it must NOT run on the
     # frequent commit jobs. Gate it to scheduled pipelines or an explicit
     # local `--reconcile`; commit jobs keep their cheap push-range scope below.
-    reconcile_requested = (
-        "--reconcile" in sys.argv
-        or os.environ.get("CI_PIPELINE_SOURCE") == "schedule"
+    reconcile_requested = reconcile_requested or (
+        os.environ.get("CI_PIPELINE_SOURCE") == "schedule"
         or os.environ.get("ISSUE_SYNC_RECONCILE") == "1"
     )
     if reconcile_requested:
@@ -666,15 +665,19 @@ def sync() -> int:
     return 0
 
 
+def main(args: list[str]) -> int:
+    if "--selfcheck" in args:
+        return selfcheck()
+    if args == ["chaos-failure"]:
+        return sync_chaos_failure()
+    if args in ([], ["--reconcile"]):
+        return sync(reconcile_requested=bool(args))
+    raise SystemExit("usage: issue_key_sync.py [--reconcile|chaos-failure]")
+
+
 if __name__ == "__main__":
-    if "--selfcheck" in sys.argv:
-        raise SystemExit(selfcheck())
     try:
-        if sys.argv[1:] == ["chaos-failure"]:
-            raise SystemExit(sync_chaos_failure())
-        if sys.argv[1:]:
-            raise SystemExit("usage: issue_key_sync.py [chaos-failure]")
-        raise SystemExit(sync())
+        raise SystemExit(main(sys.argv[1:]))
     except RuntimeError as exc:
         print(str(exc), file=sys.stderr)
         raise SystemExit(1)
