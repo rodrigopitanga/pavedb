@@ -866,8 +866,8 @@ def build_parser() -> argparse.ArgumentParser:
         "reset-metrics",
         help="Reset persisted metrics.",
         description=(
-            "Clear the local metrics counters for the configured data "
-            "directory."
+            "Clear the shared runtime metrics in the configured catalog "
+            "database."
         ),
         example="pavecli reset-metrics",
     )
