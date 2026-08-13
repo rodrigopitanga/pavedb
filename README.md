@@ -75,11 +75,12 @@ open wire protocol you can call directly or wrap in your own client, in any
 language. The Python examples below use Python 3.10–3.14; see
 [Install options](#-install-options) for CPU-only wheels, Docker, and source.
 
-The standalone Python SDK package is `pavedb-sdk`, with source on
-[GitHub](https://github.com/rodrigopitanga/pavedb-sdk-python) and
-[GitLab](https://gitlab.com/flowlexi/pavedb-sdk-python). Install it by itself for
-HTTP mode, or install it alongside `pavedb` when you want the same handle API backed by
-the local embedded engine.
+The standalone Python SDK is published on
+[PyPI](https://pypi.org/project/pavedb-sdk/), with a public mirror on
+[GitHub](https://github.com/rodrigopitanga/pavedb-sdk-python) and active development
+on [GitLab](https://gitlab.com/flowlexi/pavedb-sdk-python). Install it by itself for
+HTTP mode, or install it alongside `pavedb` when you want the same handle API backed
+by the local embedded engine.
 
 ### 🐍 From Python
 
@@ -117,9 +118,9 @@ client = PaveDBClient.connect("http://localhost:8086")
 Enum.each(hits, &IO.inspect/1)
 ```
 
-The client is published on [Hex](https://hex.pm/packages/pavedb_client), with source
-on [GitHub](https://github.com/rodrigopitanga/pavedb-client-elixir) and
-[GitLab](https://gitlab.com/flowlexi/pavedb-client-elixir).
+The client is published on [Hex](https://hex.pm/packages/pavedb_client), with a public
+mirror on [GitHub](https://github.com/rodrigopitanga/pavedb-client-elixir) and active
+development on [GitLab](https://gitlab.com/flowlexi/pavedb-client-elixir).
 
 ### ⌨️ From the CLI (local, no server)
 
