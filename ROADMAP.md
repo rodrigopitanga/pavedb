@@ -239,6 +239,7 @@ Substantial features are specified under `docs/design/` before implementation.
 | [`docs/design/PLAN-EMBEDDER-WORKERS.md`](docs/design/PLAN-EMBEDDER-WORKERS.md) | P1-61 | General embedder worker pools |
 | [`docs/design/PLAN-HYBRID-SEARCH.md`](docs/design/PLAN-HYBRID-SEARCH.md) | P1-35 / P1-70 / P1-71 / P1-72 | Metadata parity, SQLite text search, hybrid retrieval, and true vector prefiltering |
 | [PLAN-ANN](docs/design/PLAN-ANN.md) | P2-51 / P2-52 / P2-53 | FAISS indexes |
+| [`docs/design/PLAN-EXTRA-BENCHMARKS.md`](docs/design/PLAN-EXTRA-BENCHMARKS.md) | P1-63 | VectorDBBench adapter shipped outside core |
 
 ---
 
