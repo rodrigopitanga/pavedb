@@ -1483,8 +1483,9 @@ async def run_stress(
     print("=" * 94)
     print(f"  Total operations : {total_ops}")
     print(f"  Throughput       : {total_ops / elapsed:.1f} ops/s")
+    print(f"  Concurrency      : {concurrency}")
     err_rate = 100 * total_errs / max(total_ops, 1)
-    print(f"  Total errors     : {total_errs}  ({err_rate:.1f}%)")
+    print(f"  Errors           : {total_errs}  ({err_rate:.1f}%)")
     print()
 
     header = (
