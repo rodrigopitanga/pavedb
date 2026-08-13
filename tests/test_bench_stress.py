@@ -16,6 +16,13 @@ sys.path.insert(
 import stress  # type: ignore[import-not-found]
 
 
+def test_move_operation_covers_admin_and_tenant_routes():
+    assert set(stress.op_move_collection.__bench_covers__) == {
+        ("POST", "/v1/admin/collections/{tenant}/{name}/move"),
+        ("POST", "/v1/collections/{tenant}/{name}/move"),
+    }
+
+
 def test_error_rate_violation_returns_message():
     violation = stress._error_rate_violation(
         100,

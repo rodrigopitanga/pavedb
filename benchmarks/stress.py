@@ -602,17 +602,21 @@ async def op_update_collection(client: httpx.AsyncClient, world: World, stats: S
         stats.record(OpResult("update_collection", lat, False, str(e)))
 
 
-@_covers(("POST", "/v1/admin/collections/{tenant}/{name}/move"))
+@_covers(
+    ("POST", "/v1/admin/collections/{tenant}/{name}/move"),
+    ("POST", "/v1/collections/{tenant}/{name}/move"),
+)
 async def op_move_collection(client: httpx.AsyncClient, world: World, stats: Stats):
-    """POST admin collection move — variadic write lock path."""
+    """POST collection move — variadic write lock path."""
     old = await world.pick_collection()
     if old is None:
         return
     new = f"r-{_rand_name()}"
+    route = random.choice(("admin/collections", "collections"))
     t0 = time.perf_counter()
     try:
         r = await client.post(
-            f"{API_PREFIX}/admin/collections/{TENANT}/{old}/move",
+            f"{API_PREFIX}/{route}/{TENANT}/{old}/move",
             json={"new_name": new},
         )
         lat = (time.perf_counter() - t0) * 1000
