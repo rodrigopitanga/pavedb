@@ -44,6 +44,14 @@ def test_move_collection_uses_admin_route():
     ]
 
 
+def test_chaos_accepts_only_the_ingest_overload_503():
+    expected = chaos.httpx.Response(503, json={"code": "ingest_overloaded"})
+    other = chaos.httpx.Response(503, json={"code": "internal_error"})
+
+    assert chaos._is_ingest_overload(expected)
+    assert not chaos._is_ingest_overload(other)
+
+
 def test_catalog_disk_violations_report_missing_and_orphaned_collections(tmp_path):
     with sqlite3.connect(tmp_path / "catalog.db") as conn:
         conn.execute("CREATE TABLE collections (tenant TEXT, name TEXT)")

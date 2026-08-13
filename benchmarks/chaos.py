@@ -121,6 +121,16 @@ def _search(c: httpx.Client, coll: str, q: str, k: int = 8):
     return r.status_code, docids
 
 
+def _is_ingest_overload(resp: httpx.Response) -> bool:
+    try:
+        return (
+            resp.status_code == 503
+            and resp.json().get("code") == "ingest_overloaded"
+        )
+    except ValueError:
+        return False
+
+
 def catalog_disk_violations(data_dir: str | os.PathLike[str]) -> list[str]:
     root = Path(data_dir)
     catalog = root / "catalog.db"
@@ -406,7 +416,7 @@ def phase3_chaos(url, api_key, rng, duration, concurrency, viol: list[str]) -> N
             lst.append(msg)
 
     def check_resp(label: str, resp: httpx.Response) -> None:
-        if resp.status_code >= 500:
+        if resp.status_code >= 500 and not _is_ingest_overload(resp):
             record(
                 viol,
                 f"[chaos] {label} -> HTTP {resp.status_code}: {resp.text[:120]}",
