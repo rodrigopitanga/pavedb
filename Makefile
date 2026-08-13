@@ -720,7 +720,7 @@ _build-check-run: venv
 	PAVEDB_EMBEDDER__INSTANCES__OPENAI__API_KEY=$(BUILD_CHECK_OPENAI_KEY) \
 	PAVEDB_EMBEDDER__INSTANCES__OPENAI__CONFIG__DIM=$(BUILD_CHECK_OPENAI_DIM) \
 	PAVEDB_AUTH__MODE=none \
-	"$$venv_dir/bin/pavecli" --compact list-tenants --home "$$instance_dir" >/dev/null; \
+	"$$venv_dir/bin/pavecli" --compact --home "$$instance_dir" list-tenants >/dev/null; \
 	echo "==> Starting installed pavesrv on $(BUILD_CHECK_URL)"; \
 	PYTHONPATH="$$check_pythonpath" \
 	PAVEDB_DEV=1 \
