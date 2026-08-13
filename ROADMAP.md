@@ -107,7 +107,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-41 | ~~Persistent query log~~ | 🔧 | Queryable search history (query, filters, config, result IDs) in SQLite | v0.9 |
 | P1-42 | ~~Query replay endpoint~~ | 🧩 | Re-execute stored query; depends on P1-41 | v0.9 |
 | P1-43 | ~~`/v1/` route prefix~~ | 🔧 | Versioned API base path; frozen at v1.0, additive after | v0.9 |
-| P1-46 | Distribution documentation | 🔧 | Ship public guides, generated references, OpenAPI, release/legal material, and a CI-verified documentation manifest in the PaveDB source distribution. | v1.0 |
+| P1-46 | ~~Distribution documentation~~ | 🔧 | Ship public guides, generated references, OpenAPI, release/legal material, and a CI-verified documentation manifest in the PaveDB source distribution. | v1.0 |
 | P1-47 | Docs site renderer | 🧱 | `pavedb-site` renders the released PaveDB and SDK documentation with Hugo; product sources and generators stay in their owning distributions. | v1.0 |
 | P1-48 | ~~Remove `SearchBody.request_id`~~ | 🧩 | `X-Request-ID` becomes the only request-correlation input | v0.9 |
 | P1-49 | ~~HTTP request metrics middleware~~ |  | v1.0 ships labeled `http_requests_total` middleware + handler-side `inc("requests_total")` cleanup; histogram + `# HELP`/`# TYPE` metadata ride P1-50 at v1.1 | v1.0 / v1.1 |
@@ -127,9 +127,9 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-59 | ~~Admin embedder inventory endpoint~~ | 🧩 | v1.0 slice: admin-only `GET /v1/admin/embedders` and tenant-scoped `GET /v1/embedders/{tenant}` surface configured instance keys, vector-space keys, types, models, and default resolution. No credentials, no readiness probe. Mirrored by `Client.embedders()` and `pavecli list-embedders`. v1.6 expansion: readiness probe + credential-ref identity per P2-49. Per-tenant embedder assignment stays a post-1.0 direction once tenant profiles (P2-26) land. Builds on P1-58. | v1.0 / v1.6 |
 | P1-60 | Embedder selection shorthand + routing policy | 🧱 | Collection create accepts an `embedder` selector shorthand; compatible instance routing grows from deterministic first configured to explicit policy (`first`, `round_robin`, weighted/failover). Any pinning is operational config, not catalog state. | v1.7 |
 | P1-61 | General embedder worker pools | 🧱 | Extend the SBERT worker-pool idea across all embedders with bounded concurrency as the default behavior where safe. Worker counts stay operational config and never enter vector-space identity. See `docs/design/PLAN-EMBEDDER-WORKERS.md`. | v1.2 |
-| P1-62 | Python API reference | 🔧 | `pavedb-sdk` generates a drift-checked public API reference shipped in its sdist. Runnable examples split to P1-66. See `docs/design/PLAN-EXAMPLES.md`. | v1.0 |
-| P1-63 | VectorDBBench adapter | 🔧 | Standard benchmark adapter over BYOV HTTP raw-vector ingest/search, with flat FAISS recall baseline and no PaveDB runtime dependency on VectorDBBench. External adapter (separate repo/fork), not in-repo. Depends on P1-64 (BYOV raw-vector round trip). | v1.0 |
-| P1-64 | Bring-your-own-vector (BYOV) raw-vector mode | 🔧 | Additive raw-vector ingest/search mirroring Chroma. New `identity` embedder (`encode(x)→x`, dim from `embedder_config`); raw-vector schema fields `vector`/`v` paired with `text`/`q` (exactly-one). Embedding collections stay permissive (text or raw vector); identity collections are vector-only. No new endpoints; FAISS backend unchanged. Serves pre-computed-embedding users and unblocks P1-63. | v1.0 |
+| P1-62 | ~~Python API reference~~ | 🔧 | `pavedb-sdk` generates a drift-checked public API reference shipped in its sdist. Runnable examples split to P1-66. See `docs/design/PLAN-EXAMPLES.md`. | v1.0 |
+| P1-63 | ~~VectorDBBench adapter~~ | 🔧 | Standard benchmark adapter over BYOV HTTP raw-vector ingest/search, with flat FAISS recall baseline and no PaveDB runtime dependency on VectorDBBench. External adapter (separate repo/fork), not in-repo. Depends on P1-64 (BYOV raw-vector round trip). | v1.0 |
+| P1-64 | ~~Bring-your-own-vector (BYOV) raw-vector mode~~ | 🔧 | Additive raw-vector ingest/search mirroring Chroma. New `identity` embedder (`encode(x)→x`, dim from `embedder_config`); raw-vector schema fields `vector`/`v` paired with `text`/`q` (exactly-one). Embedding collections stay permissive (text or raw vector); identity collections are vector-only. No new endpoints; FAISS backend unchanged. Serves pre-computed-embedding users and unblocks P1-63. | v1.0 |
 | P1-65 | ~~Instance archive/restore integrity~~ | 🔧 | Preflight catalog, collection sidecars, and configured embedders before rollback-safe whole-instance replacement; verify mixed-embedder round trips. | v1.0 |
 | P1-66 | Runnable book examples | 🔧 | The Python SDK and Elixir client own tested, numbered top-level examples extracted from the book; CI verifies runnable programs and distribution boundaries. See `docs/design/PLAN-EXAMPLES.md`. | v1.1 |
 | P1-67 | ~~Elixir public API parity~~ | 🔧 | Cover the current user-facing `/v1` surface plus a basic `/health` connection check; defer `/admin`, `/metrics`, and `/embedders`. | v1.0 |
@@ -444,14 +444,13 @@ latency on every search/ingest/delete.~~
   - ~~API contract snapshot: commit `openapi.json` and add a dump +
     drift check that enforces the P1-43 frozen-at-1.0,
     additive-after contract — breaking changes fail CI (P1-53e).~~
-- Distribution documentation: package public guides, generated
+- ~~Distribution documentation: package public guides, generated
   CLI/config/protocol references, OpenAPI, release/legal material,
   and a checked manifest in the PaveDB sdist. Wheels keep only
-  runtime resources (P1-46).
-- Python API and examples: `pavedb-sdk` generates committed
-  `PYTHON_API.md` from an explicit public-symbol list and ships
-  tested Python/book examples in its sdist, not its wheel. The
-  book cites tagged example paths (P1-62).
+  runtime resources (P1-46).~~
+- ~~Python API reference: `pavedb-sdk` generates a committed,
+  drift-checked public-symbol reference and ships it in its sdist,
+  not its wheel (P1-62).~~
 - Docs site: `pavedb-site` consumes the selected PaveDB and SDK
   source distributions and renders them with Hugo. It owns layout,
   navigation, links, and deployment—not product facts (P1-47).
