@@ -60,7 +60,7 @@ debugging — and available the same way from the CLI, the REST API, or any clie
   matched. Observability is the product, not an add-on.
 - **Multi-tenant by default** — tenant/collection namespacing is built in, not bolted
   on (and transparent when you just don't need it).
-- **Embed it, script it, or serve it** — use the Python SDK (more clients soon),
+- **Embed it, script it, or serve it** — use the Python SDK or Elixir client,
   drive the CLI, or call the HTTP server from any environment. Same ops, same
   provenance.
 - **Pluggable embeddings** — swap models per collection; wire in local or hosted
@@ -68,14 +68,12 @@ debugging — and available the same way from the CLI, the REST API, or any clie
 
 ## 🧭 How to
 
-PaveDB exposes the same operations two ways: through a **client interface** and a plain
-**REST API**. The client interface is identical across languages and transports — the
-Python SDK support ships today (Elixir and JavaScript next) and supports local
-embedded and remote HTTP transports. There's also a **CLI**. Beneath every
-networked client sits the REST API: an open wire protocol you can call directly
-or wrap in your own client, in any language. The examples below use Python
-3.10–3.14; see [Install options](#-install-options) for CPU-only wheels,
-Docker, and source.
+PaveDB exposes the same operations through client libraries, a **CLI**, and a plain
+**REST API**. The Python SDK supports local embedded and remote HTTP transports;
+the Elixir client uses HTTP. Beneath every networked client sits the REST API: an
+open wire protocol you can call directly or wrap in your own client, in any
+language. The Python examples below use Python 3.10–3.14; see
+[Install options](#-install-options) for CPU-only wheels, Docker, and source.
 
 The standalone Python SDK package is `pavedb-sdk`, with source on
 [GitHub](https://github.com/rodrigopitanga/pavedb-sdk-python) and
@@ -105,6 +103,23 @@ for hit in books.search("captain nemo", k=3):
 Use the same SDK handle API against a remote server with
 `connect("http://your-host:8086")`. Whichever transport you use, every hit
 carries the same provenance: document id, offset, and the matched snippet.
+
+### ⚗️ From Elixir
+
+Add `{:pavedb_client, "~> 0.1.0"}` to your Mix dependencies and run
+`mix deps.get`. The client connects to a running PaveDB server:
+
+```elixir
+client = PaveDBClient.connect("http://localhost:8086")
+{:ok, books} = PaveDBClient.create_collection(client, "books")
+{:ok, _} = PaveDBClient.Collection.add(books, "Captain Nemo commands the Nautilus.")
+{:ok, %{"matches" => hits}} = PaveDBClient.Collection.search(books, "captain nemo", k: 3)
+Enum.each(hits, &IO.inspect/1)
+```
+
+The client is published on [Hex](https://hex.pm/packages/pavedb_client), with source
+on [GitHub](https://github.com/rodrigopitanga/pavedb-client-elixir) and
+[GitLab](https://gitlab.com/flowlexi/pavedb-client-elixir).
 
 ### ⌨️ From the CLI (local, no server)
 
