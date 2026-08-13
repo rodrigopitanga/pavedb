@@ -314,6 +314,7 @@ def build_search_router(
                 body.q,
                 body.k,
                 filters=body.filters,
+                v=body.v,
                 request_id=rid,
                 actor=actor_of(ctx),
             ),

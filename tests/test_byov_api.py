@@ -17,7 +17,7 @@ def _mk_identity(client, tenant="acme", name="vecs", dim=4):
     return tenant, name
 
 
-def test_identity_vector_round_trip(client):
+def test_identity_vector_round_trip(client, cfg):
     tenant, name = _mk_identity(client)
     for vec, docid in ([1.0, 0.0, 0.0, 0.0], "A"), ([0.0, 1.0, 0.0, 0.0], "B"):
         r = client.post(
@@ -33,6 +33,13 @@ def test_identity_vector_round_trip(client):
     assert r.status_code == 200, r.text
     matches = r.json()["matches"]
     assert matches[0]["meta"]["docid"] == "A"
+
+    cfg.set("common_enabled", True)
+    cfg.set("common_tenant", tenant)
+    cfg.set("common_collection", name)
+    r = client.post("/v1/search", json={"v": [1.0, 0.0, 0.0, 0.0], "k": 1})
+    assert r.status_code == 200, r.text
+    assert r.json()["matches"][0]["meta"]["docid"] == "A"
 
 
 def test_embedding_collection_accepts_both_text_and_vector(client):
