@@ -108,7 +108,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-42 | ~~Query replay endpoint~~ | 🧩 | Re-execute stored query; depends on P1-41 | v0.9 |
 | P1-43 | ~~`/v1/` route prefix~~ | 🔧 | Versioned API base path; frozen at v1.0, additive after | v0.9 |
 | P1-46 | ~~Distribution documentation~~ | 🔧 | Ship public guides, generated references, OpenAPI, release/legal material, and a CI-verified documentation manifest in the PaveDB source distribution. | v1.0 |
-| P1-47 | Docs site renderer | 🧱 | `pavedb-site` renders the released PaveDB and SDK documentation with Hugo; product sources and generators stay in their owning distributions. | v1.0 |
+| P1-47 | ~~Docs site renderer~~ | 🧱 | `pavedb-site` renders the released PaveDB and SDK documentation with Hugo; product sources and generators stay in their owning distributions. | v1.0 |
 | P1-48 | ~~Remove `SearchBody.request_id`~~ | 🧩 | `X-Request-ID` becomes the only request-correlation input | v0.9 |
 | P1-49 | ~~HTTP request metrics middleware~~ |  | v1.0 ships labeled `http_requests_total` middleware + handler-side `inc("requests_total")` cleanup; histogram + `# HELP`/`# TYPE` metadata ride P1-50 at v1.1 | v1.0 / v1.1 |
 | P1-50 | ~~Product-signal metrics + metrics polish~~ | 🧩 | Zero-match searches, filter usage, query-log readiness, embedder counters, sidecar drift — competitor gap. Bundled with P1-49's histogram + HELP/TYPE refactor and docs-site coverage so the new gauges are discoverable | v1.0 |
@@ -235,7 +235,7 @@ Substantial features are specified under `docs/design/` before implementation.
 | [`docs/design/PLAN-STORE.md`](docs/design/PLAN-STORE.md) | P1-29/P1-29b/P1-29c/P1-31/P1-32 | Store split; P1-30 superseded by P1-29b |
 | [`docs/design/PLAN-OBSERVABILITY.md`](docs/design/PLAN-OBSERVABILITY.md) | P0-03, P1-11/14/17/23/40/41/42/43/44/45/48, P2-23/28/40/41 | Inspectability surface — request correlation, timing, query log, replay, chunk inspector |
 | [`docs/design/PLAN-DOCS.md`](docs/design/PLAN-DOCS.md) | P1-46 / P1-47 / P1-53 | Distribution documentation and site-input contract |
-| [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md) | P1-62 | SDK Python API reference and runnable book examples |
+| [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md) | P1-62 / P1-66 | SDK Python API reference and runnable book examples |
 | [`docs/design/PLAN-EMBEDDER-WORKERS.md`](docs/design/PLAN-EMBEDDER-WORKERS.md) | P1-61 | General embedder worker pools |
 | [`docs/design/PLAN-HYBRID-SEARCH.md`](docs/design/PLAN-HYBRID-SEARCH.md) | P1-35 / P1-70 / P1-71 / P1-72 | Metadata parity, SQLite text search, hybrid retrieval, and true vector prefiltering |
 | [PLAN-ANN](docs/design/PLAN-ANN.md) | P2-51 / P2-52 / P2-53 | FAISS indexes |
@@ -451,9 +451,9 @@ latency on every search/ingest/delete.~~
 - ~~Python API reference: `pavedb-sdk` generates a committed,
   drift-checked public-symbol reference and ships it in its sdist,
   not its wheel (P1-62).~~
-- Docs site: `pavedb-site` consumes the selected PaveDB and SDK
+- ~~Docs site: `pavedb-site` consumes the selected PaveDB and SDK
   source distributions and renders them with Hugo. It owns layout,
-  navigation, links, and deployment—not product facts (P1-47).
+  navigation, links, and deployment—not product facts (P1-47).~~
 - ~~Admin/tenant embedder inventory (P1-59 v1.0 slice): admin-only
   `GET /v1/admin/embedders` and tenant-scoped
   `GET /v1/embedders/{tenant}` list configured instance
@@ -524,6 +524,10 @@ lands where it has more impact during post-contract hardening.
 
 - Exact flat cosine, inner-product, and L2 metrics selected per collection;
   the VectorDBBench adapter expands beyond its v1.0 cosine cases (P2-51).
+- Runnable book examples owned by the Python SDK and Elixir client
+  distributions (P1-66).
+- Task-oriented quickstart and usage guides in the PaveDB source
+  distribution (P1-68).
 - ~~Batch ingest endpoint (list of documents in one call) (P1-16).~~
 - ~~Admin key auto-generate + persist on first boot; CLI rotate /
   show; mode-`0600` enforced (P1-27).~~
@@ -543,6 +547,8 @@ lands where it has more impact during post-contract hardening.
 
 - Optional FAISS HNSW index using the same metric-aware collection config;
   recall and throughput are gated by VectorDBBench (P2-52).
+- General embedder worker pools with bounded concurrency across providers
+  (P1-61).
 - Metadata-filter SQL parity: a CI-only differential corpus proves
   canonical matches are a subset of SQL survivors, with equality
   where SQL claims full support. No request-time double execution
@@ -570,6 +576,8 @@ lands where it has more impact during post-contract hardening.
 - `pavecli --host`: route CLI commands through the HTTP client
   instead of the service layer directly; depends on Python client.
   CLI becomes a thin wrapper (P2-32).
+- Backend-aware filtered vector search using SQLite-selected record IDs;
+  depends on P1-35 (P1-71).
 - JavaScript/TypeScript client: typed, bootstrapped from OpenAPI
   spec, published to npm. Covers web frontends and Node.js backends
   (P2-33).
@@ -635,6 +643,7 @@ lands where it has more impact during post-contract hardening.
 
 ### PaveDB v1.7 — Maturity
 
+- Embedder selector shorthand and routing policies (P1-60).
 - Document versioning, rebuild tooling (P2-14).
 - Collection migration tooling: detect version mismatches,
   provide upgrade path across PaveDB/FAISS version changes
@@ -687,9 +696,6 @@ lands where it has more impact during post-contract hardening.
 - Soft-delete + TTL policies.
 - Snapshot/backup automation.
 - Index rebuild / compaction tooling.
-- Backend-aware filtered vector search: resolve eligible record IDs
-  in SQLite before vector search and pass them through a backend
-  selector/mask instead of repeated vector-first overfetch (P1-71).
 - Drift/quality monitoring.
 - Resource limits (RAM/index caps).
 - Cold-start mitigation (warming hooks).
