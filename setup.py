@@ -60,6 +60,7 @@ setup(
         "test": [
             "pytest",
             "httpx",
+            "httpx2>=2,<3",
             "datasets>=3.5.0",
         ],
     },
