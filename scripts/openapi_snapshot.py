@@ -39,6 +39,7 @@ def _quiet_schema_build():
 
 def render_openapi() -> JsonObject:
     cfg = Config(data={})
+    cfg.set("auth.global_key", "openapi-snapshot")
     cfg.set("log.ops_log", None)
     cfg.set("log.access_log", None)
     with tempfile.TemporaryDirectory(prefix="pavedb-openapi-") as data_dir:
