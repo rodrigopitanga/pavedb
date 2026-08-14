@@ -41,12 +41,20 @@ class UnsupportedSchemaVersionError(RuntimeError):
     pass
 
 
+class SchemaMigrationError(RuntimeError):
+    pass
+
+
 class CollectionConfigRecoveryError(RuntimeError):
     pass
 
 
+_COLLECTION_BASELINE_SCHEMA_VERSION = 6
+_CATALOG_BASELINE_SCHEMA_VERSION = 5
 _COLLECTION_SCHEMA_VERSION = 6
 _CATALOG_SCHEMA_VERSION = 5
+_COLLECTION_MIGRATIONS: dict[int, list[str]] = {}
+_CATALOG_MIGRATIONS: dict[int, list[str]] = {}
 COLLECTION_CONFIG_FILENAME = "collection.json"
 COLLECTION_CONFIG_FIELDS = (
     "backend_type",
@@ -75,7 +83,7 @@ def validate_collection_config(config: Any) -> dict[str, Any]:
         raise ValueError("collection config is invalid")
     return {key: config[key] for key in COLLECTION_CONFIG_FIELDS}
 
-_COLLECTION_SCHEMA_SQL: list[str] = [
+_COLLECTION_BASELINE_SQL: list[str] = [
     """
     CREATE TABLE IF NOT EXISTS documents (
         docid       TEXT PRIMARY KEY,
@@ -161,7 +169,7 @@ _COLLECTION_SCHEMA_SQL: list[str] = [
     """,
 ]
 
-_CATALOG_SCHEMA_SQL: list[str] = [
+_CATALOG_BASELINE_SQL: list[str] = [
     """
     CREATE TABLE IF NOT EXISTS collections (
         tenant              TEXT NOT NULL,
@@ -229,6 +237,90 @@ _CATALOG_SCHEMA_SQL: list[str] = [
         ON metrics_latency_samples (operation, id DESC)
     """,
 ]
+
+
+def _schema_version(conn: sqlite3.Connection) -> int:
+    row = conn.execute(
+        "SELECT name FROM sqlite_master "
+        "WHERE type='table' AND name='schema_migrations'"
+    ).fetchone()
+    if row is None:
+        return 0
+    version_row = conn.execute(
+        "SELECT MAX(version) FROM schema_migrations"
+    ).fetchone()
+    return int(version_row[0] or 0)
+
+
+def _schema_version_error(
+    kind: str,
+    current: int,
+    baseline: int,
+    target: int,
+) -> UnsupportedSchemaVersionError:
+    if current > target:
+        return UnsupportedSchemaVersionError(
+            f"{kind} schema version {current} is newer than supported "
+            f"version {target}; upgrade PaveDB"
+        )
+    if current < baseline:
+        return UnsupportedSchemaVersionError(
+            f"unsupported pre-v0.9.5 {kind} schema version {current}; "
+            "recreate the data dir"
+        )
+    return UnsupportedSchemaVersionError(
+        f"{kind} schema version {current} requires migration to {target}; "
+        "open it read-write first"
+    )
+
+
+def _apply_schema_migrations(
+    conn: sqlite3.Connection,
+    *,
+    kind: str,
+    baseline: int,
+    target: int,
+    baseline_sql: list[str],
+    migrations: dict[int, list[str]],
+) -> None:
+    if target < baseline:
+        raise RuntimeError(f"{kind} schema target precedes its baseline")
+    current = _schema_version(conn)
+    if current == target:
+        return
+    conn.execute("BEGIN IMMEDIATE")
+    current = _schema_version(conn)
+    if current == target:
+        return
+    if current > target or (current != 0 and current < baseline):
+        raise _schema_version_error(kind, current, baseline, target)
+
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS schema_migrations ("
+        "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+    )
+    if current == 0:
+        for stmt in baseline_sql:
+            conn.execute(stmt)
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+            (baseline, datetime.now(tz.utc).isoformat(timespec="seconds")),
+        )
+        current = baseline
+
+    for version in range(current + 1, target + 1):
+        try:
+            statements = migrations[version]
+        except KeyError:
+            raise RuntimeError(
+                f"missing {kind} schema migration {version}"
+            ) from None
+        for stmt in statements:
+            conn.execute(stmt)
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)",
+            (version, datetime.now(tz.utc).isoformat(timespec="seconds")),
+        )
 
 
 class CollectionDB:
@@ -321,11 +413,13 @@ class CollectionDB:
             self._closing = False
         try:
             if read_only:
-                current = self._schema_version(self._require_rconn())
+                current = _schema_version(self._require_rconn())
                 if current != _COLLECTION_SCHEMA_VERSION:
-                    raise UnsupportedSchemaVersionError(
-                        "unsupported pre-1.0 collection schema version "
-                        f"{current}; recreate the data dir"
+                    raise _schema_version_error(
+                        "collection",
+                        current,
+                        _COLLECTION_BASELINE_SCHEMA_VERSION,
+                        _COLLECTION_SCHEMA_VERSION,
                     )
             else:
                 self._apply_migrations()
@@ -443,40 +537,25 @@ class CollectionDB:
 
     def _apply_migrations(self) -> None:
         with self._writer() as conn, conn:
-            current = self._schema_version(conn)
-            if current == _COLLECTION_SCHEMA_VERSION:
-                return
-            if current != 0:
-                raise UnsupportedSchemaVersionError(
-                    "unsupported pre-1.0 collection schema version "
-                    f"{current}; recreate the data dir"
+            try:
+                _apply_schema_migrations(
+                    conn,
+                    kind="collection",
+                    baseline=_COLLECTION_BASELINE_SCHEMA_VERSION,
+                    target=_COLLECTION_SCHEMA_VERSION,
+                    baseline_sql=_COLLECTION_BASELINE_SQL,
+                    migrations=_COLLECTION_MIGRATIONS,
                 )
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS schema_migrations ("
-                "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-            )
-            for stmt in _COLLECTION_SCHEMA_SQL:
-                conn.execute(stmt)
-            now = datetime.now(tz.utc).isoformat(timespec="seconds")
-            conn.execute(
-                "INSERT INTO schema_migrations (version, applied_at) "
-                "VALUES (?, ?)",
-                (_COLLECTION_SCHEMA_VERSION, now),
-            )
+            except sqlite3.Error as exc:
+                raise SchemaMigrationError(
+                    "collection schema migration failed; "
+                    f"database unchanged: {exc}"
+                ) from exc
             conn.commit()
 
     @staticmethod
     def _schema_version(conn: sqlite3.Connection) -> int:
-        row = conn.execute(
-            "SELECT name FROM sqlite_master "
-            "WHERE type='table' AND name='schema_migrations'"
-        ).fetchone()
-        if row is None:
-            return 0
-        version_row = conn.execute(
-            "SELECT MAX(version) FROM schema_migrations"
-        ).fetchone()
-        return int(version_row[0] or 0)
+        return _schema_version(conn)
 
     @staticmethod
     def _dump_json(payload: dict[str, Any] | None) -> str | None:
@@ -1213,40 +1292,25 @@ class CatalogDB:
 
     def _apply_migrations(self) -> None:
         with self._writer() as conn, conn:
-            current = self._schema_version(conn)
-            if current == _CATALOG_SCHEMA_VERSION:
-                return
-            if current != 0:
-                raise UnsupportedSchemaVersionError(
-                    "unsupported pre-1.0 catalog schema version "
-                    f"{current}; recreate the data dir"
+            try:
+                _apply_schema_migrations(
+                    conn,
+                    kind="catalog",
+                    baseline=_CATALOG_BASELINE_SCHEMA_VERSION,
+                    target=_CATALOG_SCHEMA_VERSION,
+                    baseline_sql=_CATALOG_BASELINE_SQL,
+                    migrations=_CATALOG_MIGRATIONS,
                 )
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS schema_migrations ("
-                "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
-            )
-            for stmt in _CATALOG_SCHEMA_SQL:
-                conn.execute(stmt)
-            now = datetime.now(tz.utc).isoformat(timespec="seconds")
-            conn.execute(
-                "INSERT INTO schema_migrations (version, applied_at) "
-                "VALUES (?, ?)",
-                (_CATALOG_SCHEMA_VERSION, now),
-            )
+            except sqlite3.Error as exc:
+                raise SchemaMigrationError(
+                    "catalog schema migration failed; "
+                    f"database unchanged: {exc}"
+                ) from exc
             conn.commit()
 
     @staticmethod
     def _schema_version(conn: sqlite3.Connection) -> int:
-        row = conn.execute(
-            "SELECT name FROM sqlite_master "
-            "WHERE type='table' AND name='schema_migrations'"
-        ).fetchone()
-        if row is None:
-            return 0
-        version_row = conn.execute(
-            "SELECT MAX(version) FROM schema_migrations"
-        ).fetchone()
-        return int(version_row[0] or 0)
+        return _schema_version(conn)
 
     @staticmethod
     def _dump_json(payload: dict[str, Any] | None) -> str | None:

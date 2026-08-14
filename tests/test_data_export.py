@@ -17,6 +17,7 @@ import faiss
 import numpy as np
 import pytest
 
+import pave.metadb as metadb
 from pave.config import get_cfg
 from pave.metadb import CatalogDB, COLLECTION_CONFIG_FIELDS
 from pave.service import (
@@ -256,6 +257,44 @@ def test_restore_archive_replaces_data_dir(tmp_path):
     assert store.search("acme", "restored", "restore", k=1)[0].id == "doc::0"
     assert not other.exists()
     assert store.metrics_generation() != metrics_generation
+
+
+def test_restore_archive_migrates_preview_baseline(monkeypatch, tmp_path):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.create_collection("acme", "restored")
+    source.index_records(
+        "acme",
+        "restored",
+        "doc",
+        [("0", "restore me", {})],
+    )
+    archive_bytes = _archive_bytes(source)
+    source.close()
+
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 6)
+    monkeypatch.setattr(
+        metadb,
+        "_CATALOG_MIGRATIONS",
+        {6: ["CREATE TABLE catalog_preview_probe (value TEXT)"]},
+    )
+    monkeypatch.setattr(metadb, "_COLLECTION_SCHEMA_VERSION", 7)
+    monkeypatch.setattr(
+        metadb,
+        "_COLLECTION_MIGRATIONS",
+        {7: ["CREATE TABLE collection_preview_probe (value TEXT)"]},
+    )
+
+    target = tmp_path / "target"
+    store = LocalStore(str(target), FakeEmbedder())
+    store.restore_archive(archive_bytes)
+
+    assert store.search("acme", "restored", "restore", k=1)[0].id == "doc::0"
+    with sqlite3.connect(target / "catalog.db") as catalog:
+        assert CatalogDB._schema_version(catalog) == 6
+    with sqlite3.connect(
+        target / "t_acme" / "c_restored" / "meta.db"
+    ) as metadata:
+        assert metadb.CollectionDB._schema_version(metadata) == 7
 
 
 @pytest.mark.parametrize(

@@ -31,6 +31,7 @@ from uvicorn.supervisors import ChangeReload, Multiprocess
 from pave.auth import bootstrap_admin_key, enforce_policy, resolve_bind
 from pave.config import get_cfg, get_logger, reload_cfg, should_warm_default_embedder
 from pave.embedders import LazyEmbedder, get_embedder
+from pave.metadb import SchemaMigrationError, UnsupportedSchemaVersionError
 from pave.metrics import (
     flush as metrics_flush,
     inc as metrics_inc,
@@ -790,7 +791,10 @@ def main_srv(argv=None):
     }
     if _access_log_config:
         _run_kwargs["log_config"] = _access_log_config
-    _run_pave_server("pave.main:app", **_run_kwargs)
+    try:
+        _run_pave_server("pave.main:app", **_run_kwargs)
+    except (SchemaMigrationError, UnsupportedSchemaVersionError) as exc:
+        raise SystemExit(f"ERROR: {exc}") from None
 
 # Lazy module-level `app` — only built when first accessed (e.g. by Uvicorn).
 # Importing `build_app` or `VERSION` from this module is side-effect-free.

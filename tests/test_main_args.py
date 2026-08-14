@@ -1,8 +1,11 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-from pave.config import get_cfg
+import pytest
+
 import pave.main as main_mod
+from pave.config import get_cfg
+from pave.metadb import SchemaMigrationError, UnsupportedSchemaVersionError
 
 
 def _capture_server_run(monkeypatch):
@@ -117,3 +120,28 @@ def test_main_srv_leaves_stdout_access_log_on_uvicorn_default(
 
     assert calls["kwargs"]["access_log"] is True
     assert "log_config" not in calls["kwargs"]
+
+
+@pytest.mark.parametrize(
+    "error_type",
+    (SchemaMigrationError, UnsupportedSchemaVersionError),
+)
+def test_main_srv_formats_schema_error(monkeypatch, tmp_path, error_type):
+    home = tmp_path / "instance"
+
+    def fail_with_schema_error(*_args, **_kwargs):
+        raise error_type("unsupported catalog schema")
+
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
+    monkeypatch.setattr(main_mod, "enforce_policy", lambda _cfg: None)
+    monkeypatch.setattr(
+        main_mod, "resolve_bind", lambda _cfg: ("127.0.0.1", 8086)
+    )
+    monkeypatch.setattr(
+        main_mod,
+        "_run_pave_server",
+        fail_with_schema_error,
+    )
+
+    with pytest.raises(SystemExit, match="^ERROR: unsupported catalog schema$"):
+        main_mod.main_srv(["--home", str(home)])

@@ -130,13 +130,37 @@ backends may implement pushdown differently.
 
 ### Migration system
 
-Integer-versioned DDL applied on first `open()`. Version state in
-`schema_migrations`. Clean start only: no legacy JSON import (acceptable for current
-user base).
+Integer-versioned DDL applied on first `open()`. Version state lives in
+`schema_migrations`. Legacy JSON import remains unsupported.
 
 **Legacy JSON detection:** if `catalog.json` or `meta.json` exist in the collection
 directory, raise `LegacyMetadataError` with a clear message. Prevents silent data
 loss on upgrade.
+
+#### Preview compatibility baseline (P1-73)
+
+v0.9.5 starts the durable SQLite compatibility contract. Catalog schema v5 and
+collection schema v6 are the floor. Databases below that floor remain unsupported;
+v0.9.5 does not revive experimental pre-preview layouts.
+
+Every later schema version has an append-only migration from the previous released
+version. Migrations run inside one SQLite transaction before the database is exposed,
+preserve stored user data, and record each applied version in `schema_migrations`.
+A failed step rolls back the whole database migration. Missing steps are fatal rather
+than guessed, and a database newer than the running PaveDB version is rejected because
+downgrades are not supported.
+
+Fresh databases are created from the consolidated baseline and then run the same
+forward steps. The baseline SQL is frozen; later schema changes belong only in the
+append-only migration map. Instance archive restore migrates the extracted staging
+databases before current-schema validation, so a supported older archive can be restored
+without weakening the rollback-safe destination replacement.
+
+Each schema-changing release must retain its migration, add a fixture or focused test
+from the previous released schema, verify data preservation and rollback on failure,
+and document any operator action in its release notes. A transformation that cannot be
+made losslessly and transactionally requires explicit offline migration tooling; it
+must not silently discard persisted data during startup.
 
 ### New module: `pave/metadb.py`
 

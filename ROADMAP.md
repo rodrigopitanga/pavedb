@@ -43,9 +43,9 @@ These are non-negotiable constraints that apply across all versions.
   media type (images, audio, video, and beyond) is added through a stable ingest plugin
   interface without touching the core. The plugin contract must be stable before any
   specific media type ships.
-- **Collections are version-safe.** Every collection records the PaveDB version and schema
-  version it was written with. Incompatible reads must fail loudly with actionable
-  guidance, not silently corrupt. Migration tooling ships alongside breaking changes.
+- **Collections are version-safe.** From v0.9.5 onward, supported SQLite schemas migrate
+  forward without data loss. Newer schemas reject downgrades; incompatible reads fail
+  loudly with actionable guidance rather than silently corrupting data.
 - **PaveDB enforces limits; it does not govern business logic.** Resource limits,
   quotas, and tier profiles are read from a manifest and applied at runtime. Billing,
   onboarding, and payment are outside PaveDB's scope — it just reads a file.
@@ -137,6 +137,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-70 | SQLite chunk-text index and content filters | 🧱 | Make chunk text queryable through native FTS5 for contains/phrase/prefix filters and lexical candidates; prerequisite for P1-72 | v1.2 |
 | P1-71 | Backend-aware filtered vector search | 🧱 | Let SQLite-selected record IDs constrain vector search instead of relying on repeated vector-first overfetch; depends on P1-35 | v1.3 |
 | P1-72 | Hybrid lexical/vector retrieval | 🧱 | Fuse independent FAISS and SQLite FTS5 candidate lists; depends on P1-70 | v1.2 |
+| P1-73 | ~~Preview SQLite compatibility baseline~~ | 🔧 | Transactional forward migrations from v0.9.5; reject downgrades and pre-baseline schemas | v0.9.5 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -230,7 +231,7 @@ Substantial features are specified under `docs/design/` before implementation.
 | File | Plan ID | Feature |
 |---|---|---|
 | [`docs/design/PLAN-OPS-LOG.md`](docs/design/PLAN-OPS-LOG.md) | P2-28 | Structured log emission — ops JSON stream |
-| [`docs/design/PLAN-SQLITE.md`](docs/design/PLAN-SQLITE.md) | P1-09 / P1-33 | Internal SQLite metadata and global catalog store |
+| [`docs/design/PLAN-SQLITE.md`](docs/design/PLAN-SQLITE.md) | P1-09 / P1-33 / P1-73 | Internal SQLite metadata, global catalog, and preview migrations |
 | [`docs/design/PLAN-METRICS-PERSISTENCE.md`](docs/design/PLAN-METRICS-PERSISTENCE.md) | P1-50 | Worker-safe metrics |
 | [`docs/design/PLAN-STORE.md`](docs/design/PLAN-STORE.md) | P1-29/P1-29b/P1-29c/P1-31/P1-32 | Store split; P1-30 superseded by P1-29b |
 | [`docs/design/PLAN-OBSERVABILITY.md`](docs/design/PLAN-OBSERVABILITY.md) | P0-03, P1-11/14/17/23/40/41/42/43/44/45/48, P2-23/28/40/41 | Inspectability surface — request correlation, timing, query log, replay, chunk inspector |

@@ -728,11 +728,7 @@ class LocalStore:
                     )
                 metadata = CollectionDB()
                 try:
-                    metadata.open(
-                        metadata_path,
-                        read_only=True,
-                        immutable=True,
-                    )
+                    metadata.open(metadata_path)
                     with metadata._reader() as conn:
                         required_columns = {
                             "documents": {

@@ -11,11 +11,13 @@ from pathlib import Path
 
 import pytest
 
+import pave.metadb as metadb
 from pave.metadb import (
     COLLECTION_CONFIG_FILENAME,
     CatalogDB,
     CollectionDB,
     LegacyMetadataError,
+    SchemaMigrationError,
     UnsupportedSchemaVersionError,
 )
 
@@ -376,6 +378,34 @@ def test_open_rejects_older_collection_schema_version(tmp_path):
         db.open(db_path)
 
 
+def test_collection_db_migrates_from_preview_baseline(monkeypatch, tmp_path):
+    db_path = _meta_db(tmp_path)
+    db = CollectionDB()
+    db.open(db_path)
+    db.upsert_chunks("doc", [("doc::0", None, {})])
+    db.close()
+
+    monkeypatch.setattr(metadb, "_COLLECTION_SCHEMA_VERSION", 7)
+    monkeypatch.setattr(
+        metadb,
+        "_COLLECTION_MIGRATIONS",
+        {7: ["ALTER TABLE documents ADD COLUMN preview_note TEXT"]},
+    )
+
+    with pytest.raises(UnsupportedSchemaVersionError, match="requires migration"):
+        db.open(db_path, read_only=True)
+
+    db.open(db_path)
+
+    assert db.has_doc("doc") is True
+    assert db._schema_version(db._require_rconn()) == 7
+    assert "preview_note" in {
+        row[1]
+        for row in db._require_rconn().execute("PRAGMA table_info(documents)")
+    }
+    db.close()
+
+
 def test_catalog_db_open_rejects_older_schema_version(tmp_path):
     db_path = _catalog_db(tmp_path)
     conn = sqlite3.connect(db_path)
@@ -391,6 +421,112 @@ def test_catalog_db_open_rejects_older_schema_version(tmp_path):
 
     db = CatalogDB()
     with pytest.raises(UnsupportedSchemaVersionError):
+        db.open(db_path)
+
+
+def test_catalog_db_applies_forward_migration(monkeypatch, tmp_path):
+    db_path = _catalog_db(tmp_path)
+    db = CatalogDB()
+    db.open(db_path)
+    db.register_collection("acme", "documents")
+    db.close()
+
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 6)
+    monkeypatch.setattr(
+        metadb,
+        "_CATALOG_MIGRATIONS",
+        {6: ["CREATE TABLE preview_migration_probe (value TEXT)"]},
+    )
+
+    db.open(db_path)
+
+    assert db.list_collections("acme") == ["documents"]
+    assert db._schema_version(db._require_rconn()) == 6
+    assert db._require_rconn().execute(
+        "SELECT name FROM sqlite_master "
+        "WHERE type='table' AND name='preview_migration_probe'"
+    ).fetchone() == ("preview_migration_probe",)
+    db.close()
+
+
+def test_catalog_migration_serializes_across_connections(monkeypatch, tmp_path):
+    db_path = _catalog_db(tmp_path)
+    db = CatalogDB()
+    db.open(db_path)
+    db.close()
+
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 6)
+    monkeypatch.setattr(
+        metadb,
+        "_CATALOG_MIGRATIONS",
+        {6: ["CREATE TABLE preview_migration_probe (value TEXT)"]},
+    )
+    start = threading.Barrier(2)
+    errors: list[Exception] = []
+
+    def migrate():
+        migration_db = CatalogDB()
+        try:
+            start.wait(timeout=1)
+            migration_db.open(db_path)
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            migration_db.close()
+
+    threads = [threading.Thread(target=migrate) for _ in range(2)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=2)
+
+    assert not errors
+    assert all(not thread.is_alive() for thread in threads)
+    with sqlite3.connect(db_path) as conn:
+        assert CatalogDB._schema_version(conn) == 6
+
+
+def test_catalog_db_rolls_back_failed_migration(monkeypatch, tmp_path):
+    db_path = _catalog_db(tmp_path)
+    db = CatalogDB()
+    db.open(db_path)
+    db.close()
+
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 6)
+    monkeypatch.setattr(
+        metadb,
+        "_CATALOG_MIGRATIONS",
+        {
+            6: [
+                "CREATE TABLE preview_migration_probe (value TEXT)",
+                "INVALID SQL",
+            ]
+        },
+    )
+
+    with pytest.raises(SchemaMigrationError, match="database unchanged"):
+        db.open(db_path)
+
+    with sqlite3.connect(db_path) as conn:
+        assert CatalogDB._schema_version(conn) == 5
+        assert conn.execute(
+            "SELECT name FROM sqlite_master "
+            "WHERE type='table' AND name='preview_migration_probe'"
+        ).fetchone() is None
+
+
+def test_catalog_db_rejects_newer_schema_version(tmp_path):
+    db_path = _catalog_db(tmp_path)
+    db = CatalogDB()
+    db.open(db_path)
+    with db._writer() as conn, conn:
+        conn.execute(
+            "INSERT INTO schema_migrations (version, applied_at) "
+            "VALUES (6, 'future')"
+        )
+    db.close()
+
+    with pytest.raises(UnsupportedSchemaVersionError, match="newer"):
         db.open(db_path)
 
 
