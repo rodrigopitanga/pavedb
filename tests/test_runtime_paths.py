@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
-from pathlib import Path
 
 from pave.runtime_paths import (
     apply_runtime_env,
@@ -88,7 +87,8 @@ def test_apply_runtime_env_sets_pavedb_vars(monkeypatch, tmp_path):
     assert paths.config == str(home / "config.yml")
 
 
-def test_packaged_templates_match_repo_examples():
-    assert load_asset_text("tenants.yml.example") == Path("tenants.yml.example").read_text(
-        encoding="utf-8"
-    )
+def test_packaged_tenants_template_ships():
+    # `pavecli init` copies this packaged asset; it is the single source now
+    # (no repo-root duplicate). Just assert it ships and is non-empty.
+    text = load_asset_text("tenants.yml.example")
+    assert "tenants:" in text
