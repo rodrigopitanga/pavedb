@@ -91,7 +91,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-25 | ~~Dev vs prod config defaults~~ | 🔧 | Safe defaults — code defaults are prod-safe (`auth.mode=none` refuses to boot outside dev); dev overlay lives in the `make serve` env | v1.0 |
 | P1-26 | ~~Config reference + CI doc check~~ | 🧩 | Config clarity | v1.0 |
 | P1-27 | ~~Admin key auto-generate + persist~~ | 🧩 | Secure bootstrap | v1.1 |
-| P1-28 | Moving-window rate limiting per tenant | 🔧 | req/min, req/hour — needs `rate_limit_buckets` table (Phase 3) | post-SQLite |
+| P1-28 | Moving-window rate limiting per tenant | 🔧 | req/min, req/hour — needs `rate_limit_buckets` table (Phase 3); rides SQLite Phase 3 with P2-39 | v1.2 |
 | P1-29 | ~~VectorBackend protocol~~ | 🔧 | Initial backend seam for store split | v0.5.9 |
 | P1-29b | ~~Clean protocol + Faiss path~~ | 🔧 | Finish FAISS cutover | v0.5.9 |
 | P1-29c | ~~CollectionDB k/v pre-filter~~ | 🔧 | First pushdown stage | v0.5.9 |
@@ -164,8 +164,8 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-34 | LangChain adapter | 🧱 | Framework coverage | v1.3 |
 | P2-35 | MCP server | 🧱 | AI agent integration | v1.3 |
 | P2-36 | LlamaIndex adapter | 🧱 | Framework coverage | v1.3 |
-| P2-37 | Audit logs for admin actions | 🧩 | Governance trail | v2.0 |
-| P2-38 | Tenant key management API | 🔧 | Generate/revoke keys, YAML seed → SQL | v1.6 |
+| P2-37 | Audit logs for admin actions | 🧩 | Governance trail | v1.6 |
+| P2-38 | Tenant key management API | 🔧 | Generate/revoke keys, YAML seed → SQL | v1.5 |
 | P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v1.2 |
 | P2-40 | ~~Error logging at service layer~~ | 🧩 | `log.warning` on every `ok: false` return site; audit codes and choose level per error class | v0.5.9 |
 | P2-41 | ~~TXT preprocessor: character offset in chunk metadata~~ | 🧩 | Provenance contract (replace `chunk` key with `offset`) | v0.5.9 |
@@ -571,6 +571,9 @@ lands where it has more impact during post-contract hardening.
   search params at ingest time (P2-45).
 - Structured log retention: rolling window + purge via
   `operation_log` table (SQLite Phase 3); powers P2-13 (P2-39).
+- Moving-window per-tenant rate limiting (req/min, req/hour) via
+  `rate_limit_buckets` table; rides SQLite Phase 3 with P2-39
+  (P1-28).
 
 ### PaveDB v1.3 — Reach
 
@@ -611,13 +614,14 @@ lands where it has more impact during post-contract hardening.
   disk. Cross-version restore waits on P3-37 migration tooling
   (P1-54).
 - Formalize collection independence from tenant (P2-31).
-
-### PaveDB v1.6 — Governance
-
 - Tenant key management API: `POST /admin/tenants/{tenant}/keys`,
   `DELETE /admin/tenants/{tenant}/keys/{id}`. Seed `tenants.yml`
   into SQL on first boot; SQL becomes source of truth for keys
-  and limits thereafter (P2-38).
+  and limits thereafter. Lands with tenant admin infra (P2-19)
+  as the foundation the v1.6 governance items build on (P2-38).
+
+### PaveDB v1.6 — Governance
+
 - OIDC/JWT as opt-in alternative auth (`auth.oidc.issuer` config);
   API keys remain permanently supported. PaveDB accepts either on
   any request (P3-17).
@@ -641,6 +645,8 @@ lands where it has more impact during post-contract hardening.
 - Commit to independence principle: auth, tenant profiles,
   collections, and server config are orthogonal — no coupling
   between layers (P3-45).
+- Audit logs for admin actions: governance trail pairing with
+  key management and OIDC (P2-37).
 
 ### PaveDB v1.7 — Maturity
 
@@ -683,7 +689,6 @@ lands where it has more impact during post-contract hardening.
 
 - Lock routes, publish final OpenAPI spec, ship SDK clients
   (P3-18).
-- Audit logs for admin actions (P2-37).
 
 ### PaveDB post-2.0 backlog (no IDs yet)
 - Additional media types (image, audio/video, graphic/geom,
@@ -1098,4 +1103,42 @@ Status: done.
 **v1.3** gains:
 - LangChain VectorStore adapter.
 - MCP server.
+
+## Cloud Offering (hosted PaveDB) — infra decisions (2026-08-15)
+
+PaveDB stays "no cluster, no cloud" as *software*. The hosted offering wraps
+that single-process model per tenant rather than replacing it with a shared
+cluster — same deployment shape, someone else runs it.
+
+### Control/data plane: Fly.io
+
+One Fly Machine per tenant/collection, booted from the existing
+`registry.gitlab.com/flowlexi/pavedb` image (CPU and GPU variants already
+built). No Kubernetes to operate, per-machine volumes for the store, deploys
+straight off the current container pipeline. No AWS/GCP footprint exists
+anywhere in Flowlexi's infra today, so there's no ops muscle to leverage
+there, and standing up IAM/VPC/ASG plumbing for a solo-maintained product
+would be pure overhead against a "no cluster" pitch. Hetzner bare-metal is
+cheaper per-vCPU but reintroduces the cluster-ops burden the product exists
+to avoid.
+
+### Embedder hosting, per backend
+
+| Embedder | Where it runs | Cost model |
+|---|---|---|
+| `sbert` | Co-located sidecar process on the tenant's own Fly Machine, **CPU-only** | Included in base price |
+| `identity` | N/A — customer supplies precomputed vectors | Free |
+| `openai` | OpenAI's infra; PaveDB proxies the call | BYO key or metered pass-through |
+| `ollama` | **Customer's own server** — self-hosted or a GPU host of their choice, PaveDB just points at their endpoint | Zero hosting cost to us; customer picks their own GPU pricing |
+
+`ollama` is not a candidate for Flowlexi-run compute — its whole value here
+is that the customer already has (or wants) a remote Ollama endpoint on
+hardware they control. Net effect: Flowlexi never operates GPU infrastructure
+for embedding. GPU compute is either OpenAI's problem or the customer's.
+
+Matches the existing sidecar/thread-pool split in
+`docs/design/PLAN-EMBEDDER-WORKERS.md` (P1-61): `sbert` as a co-located
+process pool, `openai`/`ollama` as remote clients over HTTP — the cloud
+offering doesn't need a new execution model, just a place to run the
+sidecar.
 - LlamaIndex adapter.
