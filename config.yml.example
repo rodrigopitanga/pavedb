@@ -286,6 +286,14 @@ server:
   # Env: PAVEDB_SERVER__TIMEOUT_KEEP_ALIVE
   timeout_keep_alive: 75
 
+ui:
+
+  # Serve the interactive OpenAPI/Swagger UI (the /ui bundle and FastAPI /docs, /redoc,
+  # /openapi.json). Null uses the startup policy: enabled in dev, disabled in
+  # production.
+  # Env: PAVEDB_UI__ENABLED
+  # enabled: null
+
 
 # ---------------------------------------------------------------------------
 # Logging

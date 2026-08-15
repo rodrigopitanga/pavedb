@@ -10,6 +10,7 @@ from .config import (
     cfg_bool,
     get_cfg,
     reload_cfg,
+    should_enable_ui,
     should_warm_default_embedder,
     _DEFAULTS,
     _config_defaults,
@@ -30,5 +31,6 @@ __all__ = [
     "get_cfg",
     "get_logger",
     "reload_cfg",
+    "should_enable_ui",
     "should_warm_default_embedder",
 ]

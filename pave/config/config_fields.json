@@ -176,6 +176,11 @@
       "description": "Uvicorn keep-alive timeout in seconds."
     },
     {
+      "key": "ui.enabled",
+      "default": null,
+      "description": "Serve the interactive OpenAPI/Swagger UI (the /ui bundle and FastAPI /docs, /redoc, /openapi.json). Null uses the startup policy: enabled in dev, disabled in production."
+    },
+    {
       "key": "log.level",
       "default": "INFO",
       "description": "Base stderr log level."

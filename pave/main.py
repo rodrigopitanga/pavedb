@@ -29,7 +29,13 @@ from uvicorn.server import HANDLED_SIGNALS, Server
 from uvicorn.supervisors import ChangeReload, Multiprocess
 
 from pave.auth import bootstrap_admin_key, enforce_policy, resolve_bind
-from pave.config import get_cfg, get_logger, reload_cfg, should_warm_default_embedder
+from pave.config import (
+    get_cfg,
+    get_logger,
+    reload_cfg,
+    should_enable_ui,
+    should_warm_default_embedder,
+)
 from pave.embedders import LazyEmbedder, get_embedder
 from pave.metadb import SchemaMigrationError, UnsupportedSchemaVersionError
 from pave.metrics import (
@@ -262,12 +268,19 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             app.state.store.close()
             ops_log.close()
 
+    # UI switch also gates FastAPI's built-in /docs, /redoc, /openapi.json so
+    # "off" leaves no interactive OpenAPI explorer, not just no /ui bundle.
+    _ui_on = should_enable_ui(cfg)
     app = FastAPI(
         title=product_display_name(cfg.get("instance.name")),
         description=cfg.get("instance.desc"),
         version=VERSION,
         lifespan=lifespan,
+        docs_url="/docs" if _ui_on else None,
+        redoc_url="/redoc" if _ui_on else None,
+        openapi_url="/openapi.json" if _ui_on else None,
     )
+    app.state.ui_enabled = _ui_on
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):
@@ -806,10 +819,11 @@ def __getattr__(name: str):
         global _app
         if _app is None:
             _app = build_app()
-            try:
-                attach_ui(_app)
-            except Exception:
-                pass
+            if getattr(_app.state, "ui_enabled", True):
+                try:
+                    attach_ui(_app)
+                except Exception:
+                    pass
         return _app
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

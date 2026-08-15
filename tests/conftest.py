@@ -99,6 +99,9 @@ def _close_stores_between_tests(monkeypatch):
 @pytest.fixture()
 def app(temp_data_dir):
     cfg = get_cfg()
+    # The fixture exercises the full UI surface, so build in the UI-on state
+    # regardless of the prod-default policy (off unless dev/explicit).
+    cfg.set("ui.enabled", True)
     app = main_mod.build_app(cfg)
     try:
         attach_ui(app)

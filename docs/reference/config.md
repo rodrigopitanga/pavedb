@@ -260,6 +260,14 @@ field from its own `config`; the per-instance value always wins.
 - Env var: `PAVEDB_SERVER__TIMEOUT_KEEP_ALIVE`
 - Description: Uvicorn keep-alive timeout in seconds.
 
+### `ui.enabled`
+
+- Default: `null`
+- Env var: `PAVEDB_UI__ENABLED`
+- Description: Serve the interactive OpenAPI/Swagger UI (the /ui bundle and FastAPI
+  /docs, /redoc, /openapi.json). Null uses the startup policy: enabled in dev, disabled
+  in production.
+
 ## Logging
 
 ### `log.level`

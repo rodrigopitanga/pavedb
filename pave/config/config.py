@@ -148,6 +148,13 @@ def should_warm_default_embedder(cfg: "Config") -> bool:
     return cfg_bool(raw)
 
 
+def should_enable_ui(cfg: "Config") -> bool:
+    raw = cfg.get("ui.enabled")
+    if raw is None:
+        return cfg_bool(cfg.get("dev"))
+    return cfg_bool(raw)
+
+
 def _default_config_path() -> str | None:
     configured = os.environ.get(CONFIG_ENV)
     if configured:

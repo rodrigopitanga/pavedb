@@ -28,7 +28,7 @@ def _section_for(key: str) -> str:
         return "Text Preprocessing"
     if key.startswith("tenants."):
         return "Tenants"
-    if key.startswith("server."):
+    if key.startswith("server.") or key.startswith("ui."):
         return "Server"
     if key.startswith("log."):
         return "Logging"
