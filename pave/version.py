@@ -8,6 +8,7 @@ PRODUCT_EMOJI = "🛣️"
 PRODUCT_ICON_PNG = "/assets/pavedb_icon_192.png"
 PRODUCT_FAVICON = "/favicon.ico"
 REPOSITORY_URL = "https://gitlab.com/flowlexi/pavedb"
+WEBSITE_URL = "https://pavedb.org"
 CONTACT_EMAIL = "pavedb@flowlexi.com"
 COPYRIGHT = (
     "Copyright (C) 2025, 2026 Rodrigo Rodrigues da Silva "

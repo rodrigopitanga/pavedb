@@ -20,6 +20,7 @@ from pave.version import (
     PRODUCT_FAVICON,
     PRODUCT_ICON_PNG,
     REPOSITORY_URL,
+    WEBSITE_URL,
     product_display_name,
 )
 
@@ -85,6 +86,7 @@ _FALLBACK_TMPL = """<!doctype html>
   <iframe id="admin" class="frame" src="/ui/admin" title="Admin"></iframe>
   <div class="footer">
     <span>__PRODUCT_EMOJI__ __PRODUCT__ v__VERSION__</span>
+    · <a href="__DOCS_URL__" target="_blank" rel="noopener">Docs</a>
     · <a href="__REPO_URL__" target="_blank" rel="noopener">Source</a>
     · <a href="__LICENSE_URL__" target="_blank" rel="noopener">__LICENSE__</a>
     · <a href="__CONTACT_URL__">Contact</a>
@@ -364,6 +366,7 @@ def attach_ui(app: FastAPI):
                 .replace("__PRODUCT_FAVICON__", PRODUCT_FAVICON)
                 .replace("__INST_DESC__", inst_desc)
                 .replace("__VERSION__", str(version))
+                .replace("__DOCS_URL__", WEBSITE_URL)
                 .replace("__REPO_URL__", REPOSITORY_URL)
                 .replace("__LICENSE__", LICENSE)
                 .replace("__LICENSE_URL__", LICENSE_URL)
