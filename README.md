@@ -59,12 +59,18 @@ debugging — and available the same way from the CLI, the REST API, or any clie
   results; pull it back up, replay it byte-for-byte, and drill into the exact chunk that
   matched. Observability is the product, not an add-on.
 - **Multi-tenant by default** — tenant/collection namespacing is built in, not bolted
-  on (and transparent when you just don't need it).
+  on (and transparent when you just don't need it). Tenants carry their own API keys,
+  concurrency caps, and hard collection and row quotas, so a single instance can
+  safely serve a shared plan.
 - **Embed it, script it, or serve it** — use the Python SDK or Elixir client,
   drive the CLI, or call the HTTP server from any environment. Same ops, same
   provenance.
 - **Pluggable embeddings** — swap models per collection; wire in local or hosted
-  embedding backends.
+  embedding backends. Each collection's embedder identity is pinned server-side, so
+  vectors from mismatched models are rejected instead of silently poisoning an index.
+- **Production-safe by default** — durable storage out of the box, transactional
+  forward-only schema migrations, a server that refuses to boot unauthenticated in
+  production, and zero telemetry.
 
 ## 🧭 How to
 
@@ -249,7 +255,9 @@ resolve in order of precedence: the `PAVEDB_*` environment scheme (`PAVEDB_SERVE
 point at an explicit file. For alternate instances, `pavecli init /path/to/instance` and
 target it with `pavesrv --home=/path/to/instance` (or
 `pavecli --home /path/to/instance <command> ...`). See `config.yml.example` for every
-setting.
+setting. Per-tenant secrets and limits — API keys, concurrency caps, and hard
+collection/chunk quotas — live in a `tenants.yml` sidecar, so one instance can run a
+shared multi-tenant plan with no extra infrastructure.
 
 ### Logging
 
@@ -270,7 +278,9 @@ barely changes along the way:
 1. **Prototype with zero setup.** `connect()` opens an ephemeral store in a temp
    directory, discarded on close. No config, nothing left behind.
 2. **Persist locally.** Point at a directory — `connect("./data")` — and your data
-   survives restarts. Same code, now durable.
+   survives restarts. Same code, now durable — and it survives upgrades too: newer
+   PaveDB versions migrate the on-disk schema forward transactionally and refuse
+   downgrades loudly instead of corrupting data.
 3. **Validate it as a service.** Serve that *exact* directory over HTTP, no copying:
    ```bash
    pavesrv --data-dir ./data
@@ -279,7 +289,9 @@ barely changes along the way:
    speak. Your app switches transports with one line:
    `connect("http://localhost:8086")`.
 4. **Deploy remotely.** Run the prebuilt Docker image on your server (see
-   [Install options](#-install-options)).
+   [Install options](#-install-options)). A misconfigured deploy fails loudly:
+   outside dev mode the server refuses to start without authentication rather than
+   quietly exposing your data.
 5. **Migrate your data.** Snapshot the local instance and restore it into the remote one —
    a point-in-time copy of every tenant and collection:
    ```bash
