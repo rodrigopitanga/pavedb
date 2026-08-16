@@ -259,6 +259,11 @@ tenants:
   # Env: PAVEDB_TENANTS__DEFAULT_MAX_CONCURRENT
   default_max_concurrent: 42
 
+  # Default per-tenant collection-count limit enforced at creation; 0 disables the cap.
+  # Per-tenant max_collections in tenants.yml overrides it.
+  # Env: PAVEDB_TENANTS__DEFAULT_MAX_COLLECTIONS
+  default_max_collections: 0
+
 
 # ---------------------------------------------------------------------------
 # Server

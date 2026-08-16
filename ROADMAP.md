@@ -148,7 +148,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-13 | Collection log export | 🧱 | Search analytics | v1.4 |
 | P2-14 | Document versioning | 🧱 | Audit trails | v1.7 |
 | P2-19 | Tenant admin infra | 🧱 | Admin ops | v1.5 |
-| P2-20 | Collection limit / tenant | 🧩 | Billing-hard growth cap | v0.9.5 |
+| P2-20 | ~~Collection limit / tenant~~ | 🧩 | Billing-hard growth cap | v0.9.5 |
 | P2-21 | Storage limit / tenant | 🧩 | Cap storage | v1.5 |
 | P2-22 | Usage stats to mothership |  | Capacity planning | v1.4 |
 | P2-23 | ~~Chunk inspector + collection browser~~ | 🔧 | List chunks, get chunk by ID, browse doc→chunk tree | v0.9 |

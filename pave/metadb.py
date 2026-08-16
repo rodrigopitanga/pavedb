@@ -49,6 +49,10 @@ class CollectionConfigRecoveryError(RuntimeError):
     pass
 
 
+class CollectionLimitError(RuntimeError):
+    pass
+
+
 _COLLECTION_BASELINE_SCHEMA_VERSION = 6
 _CATALOG_BASELINE_SCHEMA_VERSION = 5
 _COLLECTION_SCHEMA_VERSION = 6
@@ -1591,8 +1595,26 @@ class CatalogDB:
         embedder_type: str | None = None,
         embed_model: str | None = None,
         embed_config: dict[str, Any] | None = None,
+        max_collections: int = 0,
     ) -> None:
         with self._writer() as conn, conn:
+            # Count and insert share the writer lock and transaction, so the
+            # limit cannot be raced past by concurrent creates.
+            if max_collections > 0:
+                exists = conn.execute(
+                    "SELECT 1 FROM collections WHERE tenant=? AND name=?",
+                    (tenant, name),
+                ).fetchone()
+                if exists is None:
+                    (count,) = conn.execute(
+                        "SELECT COUNT(*) FROM collections WHERE tenant=?",
+                        (tenant,),
+                    ).fetchone()
+                    if count >= max_collections:
+                        raise CollectionLimitError(
+                            f"tenant '{tenant}' is at its collection limit "
+                            f"({max_collections})"
+                        )
             conn.execute(
                 """
                 INSERT OR IGNORE INTO collections (

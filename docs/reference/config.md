@@ -228,6 +228,13 @@ field from its own `config`; the per-instance value always wins.
 - Env var: `PAVEDB_TENANTS__DEFAULT_MAX_CONCURRENT`
 - Description: Default per-tenant concurrent request cap; 0 disables the cap.
 
+### `tenants.default_max_collections`
+
+- Default: `0`
+- Env var: `PAVEDB_TENANTS__DEFAULT_MAX_COLLECTIONS`
+- Description: Default per-tenant collection-count limit enforced at creation; 0
+  disables the cap. Per-tenant max_collections in tenants.yml overrides it.
+
 ## Server
 
 ### `server.host`

@@ -30,6 +30,7 @@ from typing import Any
 import time as _time
 from pave.config import get_cfg, get_logger
 from pave.embedders import EmbedderUnavailableError
+from pave.metadb import CollectionLimitError
 from pave.embedders.base import EmbedderConfig
 from pave.embedders.factory import (
     embedder_instances,
@@ -243,6 +244,17 @@ def create_collection(
             "code": "embedder_unavailable",
             "error": str(e),
             "error_type": "unavailable",
+        }
+    except CollectionLimitError as e:
+        log.warning(
+            "create_collection limit tenant=%s coll=%s: %s",
+            tenant, name, e,
+        )
+        return {
+            "ok": False,
+            "code": "collection_limit_reached",
+            "error": str(e),
+            "error_type": "limit",
         }
     except Exception as e:
         log.warning(

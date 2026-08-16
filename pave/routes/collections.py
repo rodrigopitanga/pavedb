@@ -135,6 +135,7 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
             status_map = {
                 "invalid": 400,
                 "unavailable": 503,
+                "limit": 429,
                 "failed": 500,
             }
             return error(

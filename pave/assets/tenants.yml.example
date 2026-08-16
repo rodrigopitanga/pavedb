@@ -15,5 +15,7 @@
 # tenants:
 #   acme:
 #     max_concurrent: 5   # overrides global default for acme; 0 = unlimited
+#     max_collections: 10 # collection-count cap; overrides
+#                         # tenants.default_max_collections; 0 = unlimited
 #   umbrella:
 #     max_concurrent: 20

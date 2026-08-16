@@ -1025,6 +1025,7 @@ class LocalStore:
         name: str,
         cfg: CollectionConfig | None = None,
         display_name: str | None = None,
+        max_collections: int = 0,
     ) -> None:
         resolved = cfg or self._default_collection_config()
         self._with_catalog_retry(
@@ -1038,8 +1039,24 @@ class LocalStore:
                 embedder_type=resolved["embedder_type"],
                 embed_model=resolved["embed_model"],
                 embed_config=resolved["embedder_config"],
+                max_collections=max_collections,
             ),
         )
+
+    @staticmethod
+    def _tenant_max_collections(tenant: str) -> int:
+        """Per-tenant collection cap; tenants.yml override, else global
+        default, 0 = unlimited. Enforced only on explicit create, never on
+        catalog bootstrap, rename, or archive restore."""
+        tenants_cfg = get_cfg().get("tenants") or {}
+        if isinstance(tenants_cfg, dict):
+            tenant_cfg = tenants_cfg.get(tenant)
+            if isinstance(tenant_cfg, dict):
+                override = tenant_cfg.get("max_collections")
+                if override is not None:
+                    return int(override)
+        raw = get_cfg().get("tenants.default_max_collections")
+        return int(raw) if raw is not None else 0
 
     def _collection_config_for_load(
         self,
@@ -1484,6 +1501,7 @@ class LocalStore:
                     name,
                     requested,
                     display_name=display_name,
+                    max_collections=self._tenant_max_collections(tenant),
                 )
             except Exception:
                 if is_new:

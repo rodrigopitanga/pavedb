@@ -151,6 +151,11 @@
       "description": "Default per-tenant concurrent request cap; 0 disables the cap."
     },
     {
+      "key": "tenants.default_max_collections",
+      "default": 0,
+      "description": "Default per-tenant collection-count limit enforced at creation; 0 disables the cap. Per-tenant max_collections in tenants.yml overrides it."
+    },
+    {
       "key": "server.host",
       "default": "127.0.0.1",
       "description": "Default server bind host after startup policy enforcement."
