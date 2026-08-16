@@ -1173,6 +1173,22 @@ class LocalStore:
             ) from exc
 
     @staticmethod
+    def _encode_query_embedder(embedder: Embedder, texts: list[str]) -> Any:
+        """Query-side encode: uses the optional `encode_queries`
+        capability (task-prefixed models) when the embedder offers it."""
+        encode = getattr(embedder, "encode_queries", None)
+        if encode is None:
+            return LocalStore._encode_embedder(embedder, texts)
+        try:
+            return encode(texts)
+        except EmbedderUnavailableError:
+            raise
+        except Exception as exc:
+            raise EmbedderUnavailableError(
+                f"embedder encode failed: {exc}"
+            ) from exc
+
+    @staticmethod
     def _encode_embedder(embedder: Embedder, texts: list[str]) -> Any:
         try:
             return embedder.encode(texts)
@@ -1439,7 +1455,7 @@ class LocalStore:
                 self._query_vector_cache.move_to_end(cache_key)
                 return cached[1], True
 
-        vector = self._encode_embedder(embedder, [query])[0]
+        vector = self._encode_query_embedder(embedder, [query])[0]
         with self._query_vector_cache_lock:
             self._query_vector_cache[cache_key] = (embedder, vector)
             self._query_vector_cache.move_to_end(cache_key)

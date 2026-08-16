@@ -41,13 +41,20 @@ class _WorkerSlot:
     conn: Any = None
 
 
-def _worker_main(conn, model_name: str, raw_device: str, batch_size: int) -> None:
+def _worker_main(
+    conn,
+    model_name: str,
+    raw_device: str,
+    batch_size: int,
+    trust_remote_code: bool = False,
+) -> None:
     try:
         import torch
         from sentence_transformers import SentenceTransformer
 
         device = resolve_device(raw_device, torch)
-        model = SentenceTransformer(model_name, device=device)
+        extra = {"trust_remote_code": True} if trust_remote_code else {}
+        model = SentenceTransformer(model_name, device=device, **extra)
         try:
             get_dim = getattr(
                 model,
@@ -129,6 +136,9 @@ class ProcessSbertEmbedder:
         device: str | None = None,
         batch_size: int | None = None,
         workers: int | None = None,
+        trust_remote_code: bool = False,
+        query_prefix: str | None = None,
+        passage_prefix: str | None = None,
     ) -> None:
         cfg = get_cfg()
         self.model_name = str(
@@ -144,6 +154,9 @@ class ProcessSbertEmbedder:
         if batch_size is None:
             batch_size = cfg.get("embedder.sbert.batch_size")
         self.batch_size = int(batch_size if batch_size is not None else 64)
+        self.trust_remote_code = bool(trust_remote_code)
+        self.query_prefix = query_prefix
+        self.passage_prefix = passage_prefix
         if workers is None:
             workers = cfg.get("embedder.sbert.workers")
         self.workers = _resolve_worker_count(workers)
@@ -167,7 +180,13 @@ class ProcessSbertEmbedder:
         parent_conn, child_conn = ctx.Pipe()
         proc = ctx.Process(
             target=_worker_main,
-            args=(child_conn, self.model_name, self.device, self.batch_size),
+            args=(
+                child_conn,
+                self.model_name,
+                self.device,
+                self.batch_size,
+                self.trust_remote_code,
+            ),
             daemon=True,
         )
         proc.start()
@@ -335,13 +354,41 @@ class ProcessSbertEmbedder:
             for future in futures:
                 future.result()
 
+    @staticmethod
+    def _prefixed(texts: list[str], prefix: str | None) -> list[str]:
+        if not prefix:
+            return texts
+        return [f"{prefix}{text}" for text in texts]
+
     def encode(self, texts: list[str]) -> NDArray[np.float32]:
         if not texts:
             return np.zeros((0, self.dim), dtype=np.float32)
 
         slot = self._choose_slot()
         with slot.lock:
-            vectors = self._encode_slot_locked(slot, texts)
+            vectors = self._encode_slot_locked(
+                slot, self._prefixed(texts, self.passage_prefix)
+            )
+        inc_labeled("embedder_embeddings_total", {"model": self.model_name})
+        inc_labeled(
+            "embedder_embeddings_samples_total",
+            {"model": self.model_name},
+            float(len(texts)),
+        )
+        return vectors
+
+    def encode_queries(self, texts: list[str]) -> NDArray[np.float32]:
+        """Query-side encode with `query_prefix` (optional capability;
+        the frozen `Embedder` protocol is untouched)."""
+        if not self.query_prefix:
+            return self.encode(texts)
+        if not texts:
+            return np.zeros((0, self.dim), dtype=np.float32)
+        slot = self._choose_slot()
+        with slot.lock:
+            vectors = self._encode_slot_locked(
+                slot, self._prefixed(texts, self.query_prefix)
+            )
         inc_labeled("embedder_embeddings_total", {"model": self.model_name})
         inc_labeled(
             "embedder_embeddings_samples_total",

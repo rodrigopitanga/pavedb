@@ -236,6 +236,9 @@ def test_factory_passes_explicit_sbert_spec(monkeypatch):
         "model_name": "sentence-transformers/custom",
         "device": "cpu",
         "batch_size": 7,
+        "trust_remote_code": False,
+        "query_prefix": None,
+        "passage_prefix": None,
     }
 
 
