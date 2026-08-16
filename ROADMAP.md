@@ -181,6 +181,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-51 | Flat cosine/IP/L2 metrics | 🔧 | Exact metrics; VectorDBBench gate. | v1.1 |
 | P2-52 | Optional FAISS HNSW index | 🧱 | HNSW; recall/QPS gates. | v1.2 |
 | P2-53 | Optional FAISS IVF index | 🧱 | IVF plus explicit optimize. | v1.8 |
+| P2-54 | Chunk limit / collection | 🧩 | Billing-hard row cap for shared plans; with P2-20 bounds tenant growth | v0.9.5 |
 
 ### P3 — Scale and long-term
 
