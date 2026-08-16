@@ -228,6 +228,8 @@ publish-testpypi:
 # Docker: release candidates (CPU only)
 publish-docker-rc:
   stage: release
+  tags:
+    - xeon
   image: docker:24.0.9
   services:
     - docker:24.0.9-dind
@@ -253,6 +255,8 @@ publish-docker-rc:
 # THIRD_PARTY_LICENSES.md for why the published image stays CPU-only.
 publish-docker:
   stage: release
+  tags:
+    - xeon
   image: docker:24.0.9
   services:
     - docker:24.0.9-dind
