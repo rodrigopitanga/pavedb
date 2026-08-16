@@ -264,6 +264,11 @@ tenants:
   # Env: PAVEDB_TENANTS__DEFAULT_MAX_COLLECTIONS
   default_max_collections: 0
 
+  # Default cap on indexed chunks per collection enforced at ingest; 0 disables the cap.
+  # Per-tenant max_chunks_per_collection in tenants.yml overrides it.
+  # Env: PAVEDB_TENANTS__DEFAULT_MAX_CHUNKS_PER_COLLECTION
+  default_max_chunks_per_collection: 0
+
 
 # ---------------------------------------------------------------------------
 # Server

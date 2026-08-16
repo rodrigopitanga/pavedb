@@ -46,6 +46,7 @@ from pave.filters import lookup_meta, matches_filters, sanit_field, sanit_meta_d
 from pave.metadb import (
     COLLECTION_CONFIG_FILENAME,
     CatalogDB,
+    ChunkLimitError,
     CollectionConfigRecoveryError,
     CollectionDB,
     UnsupportedSchemaVersionError,
@@ -1044,19 +1045,23 @@ class LocalStore:
         )
 
     @staticmethod
-    def _tenant_max_collections(tenant: str) -> int:
-        """Per-tenant collection cap; tenants.yml override, else global
-        default, 0 = unlimited. Enforced only on explicit create, never on
-        catalog bootstrap, rename, or archive restore."""
+    def _tenant_limit(tenant: str, field: str) -> int:
+        """Per-tenant cap named *field*; tenants.yml override, else the
+        tenants.default_<field> global, 0 = unlimited."""
         tenants_cfg = get_cfg().get("tenants") or {}
         if isinstance(tenants_cfg, dict):
             tenant_cfg = tenants_cfg.get(tenant)
             if isinstance(tenant_cfg, dict):
-                override = tenant_cfg.get("max_collections")
+                override = tenant_cfg.get(field)
                 if override is not None:
                     return int(override)
-        raw = get_cfg().get("tenants.default_max_collections")
+        raw = get_cfg().get(f"tenants.default_{field}")
         return int(raw) if raw is not None else 0
+
+    def _tenant_max_collections(self, tenant: str) -> int:
+        """Collection-count cap. Enforced only on explicit create, never on
+        catalog bootstrap, rename, or archive restore."""
+        return self._tenant_limit(tenant, "max_collections")
 
     def _collection_config_for_load(
         self,
@@ -2454,6 +2459,18 @@ class LocalStore:
             col_db = self._dbs[key]
             backend = self._emb[key]
             current_embedder = self._collection_embedders[key]
+            # Checked before the purge so a rejected re-ingest cannot drop
+            # the already-indexed document version. The collection write
+            # lock serializes all chunk writers, so the count cannot be
+            # raced past a billing-hard limit.
+            max_chunks = self._tenant_limit(tenant, "max_chunks_per_collection")
+            if max_chunks > 0 and rids_to_add:
+                total, replacing = col_db.chunk_counts(docid)
+                if total - replacing + len(rids_to_add) > max_chunks:
+                    raise ChunkLimitError(
+                        f"collection '{tenant}/{collection}' would exceed "
+                        f"its chunk limit ({max_chunks})"
+                    )
             purged = self._purge_doc_locked(tenant, collection, docid)
             if purged:
                 log.debug(

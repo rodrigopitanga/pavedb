@@ -235,6 +235,13 @@ field from its own `config`; the per-instance value always wins.
 - Description: Default per-tenant collection-count limit enforced at creation; 0
   disables the cap. Per-tenant max_collections in tenants.yml overrides it.
 
+### `tenants.default_max_chunks_per_collection`
+
+- Default: `0`
+- Env var: `PAVEDB_TENANTS__DEFAULT_MAX_CHUNKS_PER_COLLECTION`
+- Description: Default cap on indexed chunks per collection enforced at ingest; 0
+  disables the cap. Per-tenant max_chunks_per_collection in tenants.yml overrides it.
+
 ## Server
 
 ### `server.host`

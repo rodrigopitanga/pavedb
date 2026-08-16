@@ -249,6 +249,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     "unsupported_or_invalid_document": 400,
                     "vectors_only": 400,
                     "dim_mismatch": 400,
+                    "chunk_limit_reached": 429,
                     "ingest_failed": 500,
                 }
                 return error(
@@ -358,6 +359,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     "invalid_metadata_keys": 400,
                     "invalid_collection_name": 400,
                     "invalid_docid": 400,
+                    "chunk_limit_reached": 429,
                     "ingest_failed": 500,
                 }
                 return error(

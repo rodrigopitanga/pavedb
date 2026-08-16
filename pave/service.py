@@ -30,7 +30,7 @@ from typing import Any
 import time as _time
 from pave.config import get_cfg, get_logger
 from pave.embedders import EmbedderUnavailableError
-from pave.metadb import CollectionLimitError
+from pave.metadb import ChunkLimitError, CollectionLimitError
 from pave.embedders.base import EmbedderConfig
 from pave.embedders.factory import (
     embedder_instances,
@@ -815,6 +815,8 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             raise
         except MetadataValidationError as exc:
             raise ServiceError("invalid_metadata_keys", str(exc)) from exc
+        except ChunkLimitError as exc:
+            raise ServiceError("chunk_limit_reached", str(exc)) from exc
         except PreprocessError as exc:
             raise ServiceError("unsupported_or_invalid_document", str(exc)) from exc
         except ValueError as exc:
@@ -940,6 +942,8 @@ def ingest_text(
             raise
         except MetadataValidationError as exc:
             raise ServiceError("invalid_metadata_keys", str(exc)) from exc
+        except ChunkLimitError as exc:
+            raise ServiceError("chunk_limit_reached", str(exc)) from exc
         except EmbedderUnavailableError as exc:
             log.warning(
                 "ingest_text embedder_unavailable tenant=%s coll=%s "

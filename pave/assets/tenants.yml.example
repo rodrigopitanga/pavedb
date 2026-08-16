@@ -17,5 +17,7 @@
 #     max_concurrent: 5   # overrides global default for acme; 0 = unlimited
 #     max_collections: 10 # collection-count cap; overrides
 #                         # tenants.default_max_collections; 0 = unlimited
+#     max_chunks_per_collection: 100000 # indexed-chunk cap per collection;
+#                         # overrides tenants.default_max_chunks_per_collection
 #   umbrella:
 #     max_concurrent: 20

@@ -156,6 +156,11 @@
       "description": "Default per-tenant collection-count limit enforced at creation; 0 disables the cap. Per-tenant max_collections in tenants.yml overrides it."
     },
     {
+      "key": "tenants.default_max_chunks_per_collection",
+      "default": 0,
+      "description": "Default cap on indexed chunks per collection enforced at ingest; 0 disables the cap. Per-tenant max_chunks_per_collection in tenants.yml overrides it."
+    },
+    {
       "key": "server.host",
       "default": "127.0.0.1",
       "description": "Default server bind host after startup policy enforcement."

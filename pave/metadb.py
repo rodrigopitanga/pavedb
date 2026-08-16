@@ -53,6 +53,10 @@ class CollectionLimitError(RuntimeError):
     pass
 
 
+class ChunkLimitError(RuntimeError):
+    pass
+
+
 _COLLECTION_BASELINE_SCHEMA_VERSION = 6
 _CATALOG_BASELINE_SCHEMA_VERSION = 5
 _COLLECTION_SCHEMA_VERSION = 6
@@ -954,6 +958,18 @@ class CollectionDB:
                     }
                 )
             return docs
+
+    def chunk_counts(self, docid: str) -> tuple[int, int]:
+        """Return (total chunks, chunks of *docid*) for this collection."""
+        with self._reader() as conn:
+            cur = conn.execute(
+                "SELECT COUNT(*), COALESCE(SUM(docid=?), 0) FROM chunks",
+                (docid,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return (0, 0)
+            return (int(row[0] or 0), int(row[1] or 0))
 
     def get_doc_chunk_counts(self) -> tuple[int, int]:
         """Return (doc_count, chunk_count) for this collection."""
