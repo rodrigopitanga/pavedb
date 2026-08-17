@@ -419,6 +419,17 @@ def resolve_default_embedder(
     )
 
 
+def _deny_execution_grant(config: dict[str, Any]) -> None:
+    """Withhold the operator's execution grant from a model they never named.
+
+    Sets False rather than deleting the key: `resolve_setting` reads an absent
+    key as "fall back to embedder.<type>.<key>", so a pop would let a
+    type-level grant re-apply to the foreign model -- and where the instance
+    sets an explicit False, popping would *grant* what the operator denied.
+    """
+    config["trust_remote_code"] = False
+
+
 def runtime_embedder_spec_for_vector(
     cfg: Config,
     spec: Mapping[str, Any],
@@ -445,6 +456,11 @@ def runtime_embedder_spec_for_vector(
     if len(same_type) == 1:
         runtime_config = dict(same_type[0].spec.get("embedder_config") or {})
         runtime_config.update(dict(spec.get("embedder_config") or {}))
+        # This is the spec the store actually builds the embedder from, so the
+        # grant has to be withheld here, not only where the spec is persisted.
+        instance_model = str(same_type[0].spec.get("embed_model") or "").strip()
+        if instance_model != str(spec.get("embed_model") or "").strip():
+            _deny_execution_grant(runtime_config)
         return {
             "embedder_type": etype,
             "embed_model": str(spec.get("embed_model") or ""),
@@ -518,6 +534,15 @@ def resolve_embedder_spec(
     resolved_model = str(resolved_model or "").strip()
     if not resolved_model and not _is_modelless(etype):
         raise ValueError(f"no model configured for embedder type {etype!r}")
+    # Per-collection models are a supported feature, but the operator granted
+    # trust_remote_code to the model they configured -- not to an arbitrary
+    # repository a tenant names on create, which would execute its code here.
+    instance_model = (
+        str(matched_instance.spec.get("embed_model") or "").strip()
+        if matched_instance is not None
+        else ""
+    )
+    foreign_model = matched_instance is not None and instance_model != resolved_model
 
     resolved_config: EmbedderConfig = {}
     if matched_instance is not None:
@@ -528,6 +553,9 @@ def resolve_embedder_spec(
             raise ValueError(f"unknown embedder config key for {etype}: {key}")
         if val is not None and val != "":
             resolved_config[key] = val
+    # After the caller's own config, so neither source can re-grant it.
+    if foreign_model:
+        _deny_execution_grant(resolved_config)
 
     spec = _spec_from_parts(
         etype=etype,

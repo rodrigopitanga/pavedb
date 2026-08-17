@@ -720,3 +720,48 @@ def test_non_string_instance_api_key_is_rejected():
         factory.embedder_instances(cfg)
 
     assert "api_key must be a string" in str(exc.value)
+
+
+def _effective_trust(factory, cfg, model):
+    """What build_embedder really sees: persisted -> runtime -> resolved.
+
+    Asserting on resolve_embedder_spec alone proves nothing -- the store
+    builds from runtime_embedder_spec_for_vector, and the persisted config is
+    discarded by persistable_embedder_spec on the way.
+    """
+    persisted = factory.resolve_embedder_spec(cfg, model=model)
+    runtime = factory.runtime_embedder_spec_for_vector(cfg, persisted)
+    return factory.resolve_setting(
+        cfg,
+        "sbert",
+        "trust_remote_code",
+        runtime.get("embedder_config", {}),
+        False,
+    )
+
+
+def test_foreign_model_does_not_inherit_trust_remote_code():
+    """A tenant-named model must not execute under the operator's grant."""
+    factory = _reload_factory()
+    cfg = _registry_cfg(config={"trust_remote_code": True})
+
+    assert _effective_trust(factory, cfg, "attacker/evil-hf-repo") is False
+
+
+def test_configured_model_still_inherits_trust_remote_code():
+    """The operator's own model keeps the grant they configured for it."""
+    factory = _reload_factory()
+    cfg = _registry_cfg(config={"trust_remote_code": True})
+
+    assert _effective_trust(factory, cfg, _DEFAULT_SBERT_MODEL) is True
+
+
+def test_foreign_model_denies_grant_explicitly_not_by_absence():
+    """Deleting the key would let embedder.<type>.<key> re-grant it."""
+    factory = _reload_factory()
+    cfg = _registry_cfg(config={"trust_remote_code": True})
+
+    persisted = factory.resolve_embedder_spec(cfg, model="attacker/evil")
+    runtime = factory.runtime_embedder_spec_for_vector(cfg, persisted)
+
+    assert runtime["embedder_config"]["trust_remote_code"] is False
