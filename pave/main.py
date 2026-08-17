@@ -553,8 +553,13 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             return response
         finally:
             route = request.scope.get("route")
-            path = getattr(route, "path", request.url.path)
-            if request.url.path.startswith("/v1/") and not path.startswith("/v1/"):
+            path = getattr(route, "path", None)
+            if path is None:
+                # No route matched, so the URL path is pure caller input:
+                # labelling with it would mint unbounded, permanently
+                # persisted series in the shared metrics catalog.
+                path = "<unmatched>"
+            elif request.url.path.startswith("/v1/") and not path.startswith("/v1/"):
                 path = f"/v1{path}"
             record_http_request(request.method, path, status_code)
 

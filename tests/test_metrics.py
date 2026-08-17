@@ -63,6 +63,16 @@ def test_http_request_metrics_are_labeled_by_route_template(client):
         )
     ] >= 1
 
+def test_unmatched_routes_share_one_metrics_series(client):
+    client.get("/nope/aaa")
+    client.get("/nope/bbb")
+
+    snap = client.get("/health/metrics").json()
+    paths = {item["labels"]["path"] for item in snap["http_requests_total"]}
+
+    assert "<unmatched>" in paths
+    assert not any(p.startswith("/nope") for p in paths)
+
 def test_metrics_exposes_build_labels(client):
     r = client.get("/metrics")
     assert r.status_code == 200
