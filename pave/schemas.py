@@ -135,6 +135,7 @@ class SearchBody(BaseModel):
     k: int = Field(
         default=5,
         ge=1,
+        le=1000,
         description="Maximum number of hits.",
         examples=[5],
     )

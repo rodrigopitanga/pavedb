@@ -237,3 +237,23 @@ def test_search_result_error_maps_to_500(client, monkeypatch):
     data = r.json()
     assert data["ok"] is False
     assert data["code"] == "search_failed"
+
+
+def test_search_k_above_cap_rejected(client):
+    """An unbounded k lets one request pull a whole collection."""
+    client.post("/v1/collections/acme/kcapcol")
+
+    r = client.post(
+        "/v1/collections/acme/kcapcol/search",
+        json={"q": "x", "k": 1001},
+    )
+    assert r.status_code == 422
+
+    r = client.get("/v1/collections/acme/kcapcol/search?q=x&k=1001")
+    assert r.status_code == 422
+
+    r = client.post(
+        "/v1/collections/acme/kcapcol/search",
+        json={"q": "x", "k": 1000},
+    )
+    assert r.status_code == 200

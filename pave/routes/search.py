@@ -232,7 +232,7 @@ def build_search_router(
         tenant: str,
         name: str,
         q: str = Query(...),
-        k: int = Query(5, ge=1),
+        k: int = Query(5, ge=1, le=1000),
         include_common: bool = Query(
             False,
             description=(
@@ -344,7 +344,7 @@ def build_search_router(
     async def search_common_get(
         request: Request,
         q: str = Query(...),
-        k: int = Query(5, ge=1),
+        k: int = Query(5, ge=1, le=1000),
         rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),

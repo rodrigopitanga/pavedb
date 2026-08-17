@@ -2770,6 +2770,7 @@
             "examples": [
               5
             ],
+            "maximum": 1000.0,
             "minimum": 1.0,
             "title": "K",
             "type": "integer"
@@ -5990,6 +5991,7 @@
             "required": false,
             "schema": {
               "default": 5,
+              "maximum": 1000,
               "minimum": 1,
               "title": "K",
               "type": "integer"
@@ -6314,6 +6316,7 @@
             "required": false,
             "schema": {
               "default": 5,
+              "maximum": 1000,
               "minimum": 1,
               "title": "K",
               "type": "integer"
