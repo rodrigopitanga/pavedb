@@ -1339,10 +1339,9 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
         log.info(
             f"search tenant={tenant} coll={collection} k={k} "
             f"hits={len(top)} ms={latency_ms:.2f}"
-            + (f" top=[{_t.id} {_t.score:.3f}] "
-               f"\"{(_t.text or '')[:60]}"
-               f"{'...' if len(_t.text or '') > 60 else ''}\""
-               if _t else "")
+            # No chunk text here: on a hosted deployment it would copy tenant
+            # document content into the operator's log pipeline by default.
+            + (f" top=[{_t.id} {_t.score:.3f}]" if _t else "")
             + (f" req={request_id}" if request_id else ""))
         query_id: str | None = None
         if _log and _query_log_enabled():

@@ -1,6 +1,8 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import logging
+
 from pave.service import search as svc_search
 from pave.stores.base import SearchOutput, SearchResult
 
@@ -106,3 +108,37 @@ def test_common_search_merge_sums_phase_timing():
         "filter_ms": 33.0,
         "hydrate_ms": 44.0,
     }
+
+
+def test_search_log_omits_chunk_text(caplog):
+    class TextStore:
+        def search(self, tenant, collection, q, k=5, filters=None):
+            return SearchOutput(
+                matches=[
+                    SearchResult(
+                        id="D1::chunk_0",
+                        score=0.9,
+                        text="patient bloodwork report for jane doe",
+                        tenant=tenant,
+                        collection=collection,
+                        meta={},
+                        match_reason="semantic similarity 90%",
+                    )
+                ],
+            )
+
+    with caplog.at_level(logging.INFO, logger="pave"):
+        svc_search(
+            TextStore(),
+            "acme",
+            "docs",
+            "hello",
+            k=1,
+            request_id="req-1",
+            actor="admin",
+            _log=False,
+        )
+
+    assert "D1::chunk_0" in caplog.text
+    assert "hits=1" in caplog.text
+    assert "patient bloodwork" not in caplog.text
