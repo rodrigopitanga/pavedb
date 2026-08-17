@@ -193,7 +193,9 @@ def auth_ctx(
         # per-tenant keys
         api_keys: dict[str, str] = cfg.get("auth.api_keys") or {}
         for t, expected in api_keys.items():
-            if token == str(expected):
+            # No str() here: coercing a non-string would turn a mistyped
+            # config value into a guessable literal token ("True", "12345").
+            if isinstance(expected, str) and token == expected:
                 return AuthContext(tenant=t, is_admin=False)
         _raise_403()
 
@@ -338,14 +340,27 @@ def _check_tenant_name(name: str, source: str) -> None:
     )
 
 
+def _check_api_key(tenant: str, key) -> None:
+    # An unquoted YAML scalar parses as bool/int/date, so `acme: yes` used to
+    # become the bearer token "True" once auth_ctx coerced it with str().
+    if isinstance(key, str) and key.strip():
+        return
+    raise RuntimeError(
+        f"invalid bearer token for tenant {tenant!r} in auth.api_keys: "
+        "tokens must be non-empty strings. Quote the value so YAML does "
+        "not parse it as a boolean, number or date."
+    )
+
+
 def _enforce_tenant_names(cfg) -> None:
     api_keys = cfg.get("auth.api_keys") or {}
     if not isinstance(api_keys, dict):
         raise RuntimeError(
             "auth.api_keys must be a map of tenant name to bearer token"
         )
-    for name in api_keys:
+    for name, key in api_keys.items():
         _check_tenant_name(str(name), "auth.api_keys")
+        _check_api_key(str(name), key)
     # Not just the configured keys: in auth.mode=none this value becomes a
     # real tenant namespace on disk (auth_ctx, above).
     _check_tenant_name(
