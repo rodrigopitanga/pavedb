@@ -224,6 +224,12 @@ def _run_pave_server(app: str, **kwargs) -> None:
 
 def build_app(cfg=get_cfg()) -> FastAPI:
     bootstrap_admin_key(cfg, resolve_runtime_paths().home)
+    # Every ASGI entry point goes through here, including
+    # `uvicorn pave.main:app`, which never reaches main_srv(). Without this
+    # call that launch path serves auth.mode=none unauthenticated in prod.
+    # Ordered after bootstrap, as in main_srv: bootstrap is what sets
+    # auth.admin_key_file, which the static-mode check looks for.
+    enforce_policy(cfg)
     log = get_logger()
 
     def _resp(*codes: int) -> dict[int, dict[str, type[ErrorResponse]]]:

@@ -109,7 +109,10 @@ def test_warmup_default_auto_warms_prod_embedder(monkeypatch, tmp_path):
 
     cfg = get_cfg()
     cfg.set("data_dir", str(tmp_path))
-    cfg.set("auth.mode", "none")
+    # A real non-dev config: auth.mode=none is refused outside dev, so using
+    # it here would assert warmup against a configuration that cannot boot.
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", "warmup-test-key")
     cfg.set("dev", False)
     cfg.set("embedder.warmup_default", None)
 
@@ -203,3 +206,19 @@ def test_lifespan_flushes_metrics_on_shutdown(monkeypatch, tmp_path):
         assert calls == []
 
     assert calls == ["flush", "close"]
+
+
+def test_build_app_enforces_auth_policy(tmp_path):
+    """The uvicorn entry point must not bypass the production auth policy."""
+    import pytest
+
+    import pave.main as m
+    from pave.config import get_cfg
+
+    cfg = get_cfg()
+    cfg.set("data_dir", str(tmp_path))
+    cfg.set("auth.mode", "none")
+    cfg.set("dev", False)
+
+    with pytest.raises(RuntimeError, match="not allowed in production"):
+        m.build_app(cfg)

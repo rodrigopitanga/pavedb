@@ -33,6 +33,9 @@ def _reset_cfg_between_tests(monkeypatch, temp_data_dir, request):
     cfg = get_cfg()
     cfg.set("data_dir", str(temp_data_dir))
     cfg.set("auth.mode", "none")
+    # auth.mode=none is a dev-only configuration; enforce_policy refuses it
+    # otherwise, and build_app now enforces that on every entry point.
+    cfg.set("dev", True)
     cfg.set("log.ops_log", None)
     cfg.set("log.access_log", None)
     cfg.set("embedder.default", "native")

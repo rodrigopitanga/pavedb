@@ -40,7 +40,8 @@ pavesrv
 uvicorn pave.main:app --host 0.0.0.0 --port 8086
 ```
 
-Auth defaults to `none` only for dev. For production, set static auth:
+Auth defaults to `static`. `none` is refused outside dev mode. For production,
+set a key:
 ```bash
 export PAVEDB_AUTH__MODE=static
 export PAVEDB_AUTH__GLOBAL_KEY="your-secret"
