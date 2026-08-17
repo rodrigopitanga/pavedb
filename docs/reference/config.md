@@ -174,34 +174,33 @@ field from its own `config`; the per-instance value always wins.
 
 - Default: `false`
 - Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__TRUST_REMOTE_CODE`
-- Description: Pass `trust_remote_code=True` to Sentence-Transformers when
-  loading the model. Required by models with custom architectures (for
-  example `nomic-ai/nomic-embed-text-v1.5`). Execution detail; not part
-  of the vector-space identity.
+- Description: Pass `trust_remote_code=True` to Sentence-Transformers when loading the
+  model. Required by models with custom architectures (for example `nomic-ai/nomic-
+  embed-text-v1.5`). Execution detail; not part of the vector-space identity, and not
+  inherited by a collection that names a different model.
 
 ### `embedder.instances.native.config.endpoint`
 
 - Default: `null`
 - Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__ENDPOINT`
-- Description: TEI-compatible `/embed` server used when
-  `runtime` is `remote`. The remote server must run the identical model
-  in float32; the endpoint is not part of the vector-space identity, so
-  numerical equivalence with local runtimes is the operator's contract.
+- Description: TEI-compatible `/embed` server used when `runtime` is `remote`. The
+  remote server must run the identical model in float32; the endpoint is not part of the
+  vector-space identity, so numerical equivalence with local runtimes is the operator's
+  contract.
 
 ### `embedder.instances.native.config.query_prefix`
 
 - Default: `null`
 - Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__QUERY_PREFIX`
-- Description: Prefix prepended to query texts before encoding (e5-style
-  `query: `). Changes produced vectors and therefore participates in the
-  vector-space identity.
+- Description: Prefix prepended to query texts before encoding (e5-style `query: `).
+  Changes produced vectors and therefore participates in the vector-space identity.
 
 ### `embedder.instances.native.config.passage_prefix`
 
 - Default: `null`
 - Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__PASSAGE_PREFIX`
-- Description: Prefix prepended to ingested texts before encoding
-  (e5-style `passage: `). Participates in the vector-space identity.
+- Description: Prefix prepended to passage texts before encoding (e5-style `passage: `).
+  Changes produced vectors and therefore participates in the vector-space identity.
 
 ### `embedder.instances.native.config.workers`
 
