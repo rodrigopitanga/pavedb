@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import os
+import tempfile
+from contextlib import suppress
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -36,10 +38,18 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
         }
         try:
             os.makedirs(cfg.data_dir, exist_ok=True)
-            testfile = os.path.join(cfg.data_dir, ".writetest")
-            with open(testfile, "w", encoding="utf-8") as f:
-                f.write("ok")
-            os.remove(testfile)
+            # One probe file per request: on a fixed path, concurrent
+            # unauthenticated probes delete each other's file and report a
+            # perfectly writable data dir as unwritable.
+            fd, testfile = tempfile.mkstemp(
+                prefix=".writetest-", dir=cfg.data_dir
+            )
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write("ok")
+            finally:
+                with suppress(FileNotFoundError):
+                    os.remove(testfile)
             details["writable"] = True
         except Exception as e:
             details["writable"] = False
