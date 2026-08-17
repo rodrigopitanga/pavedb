@@ -36,6 +36,10 @@ mirror-github:
   image: alpine:3.20
   variables:
     GITHUB_MIRROR_REPO: rodrigopitanga/pavedb
+    # Full history: the push has to prove it fast-forwards the GitHub tip,
+    # which the default shallow fetch cannot once the default branch has
+    # advanced at least GIT_DEPTH commits since the last mirrored release.
+    GIT_DEPTH: "0"
   before_script:
     - apk add --no-cache git
   script:
