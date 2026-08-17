@@ -358,9 +358,20 @@ def _enforce_tenant_names(cfg) -> None:
         raise RuntimeError(
             "auth.api_keys must be a map of tenant name to bearer token"
         )
+    # auth_ctx returns the first tenant whose token matches, so a token shared
+    # by two tenants binds every holder to whichever comes first in map order:
+    # one customer would read and write the other's data.
+    seen: dict[str, str] = {}
     for name, key in api_keys.items():
         _check_tenant_name(str(name), "auth.api_keys")
         _check_api_key(str(name), key)
+        first = seen.setdefault(str(key), str(name))
+        if first != str(name):
+            raise RuntimeError(
+                "duplicate bearer token in auth.api_keys: tenants "
+                f"{first!r} and {str(name)!r} share one key. Give each "
+                "tenant its own key before restarting."
+            )
     # Not just the configured keys: in auth.mode=none this value becomes a
     # real tenant namespace on disk (auth_ctx, above).
     _check_tenant_name(

@@ -165,6 +165,7 @@ def test_tenant_name_error_names_the_data_directory_move():
 def test_non_string_api_key_is_rejected(monkeypatch):
     """`acme: yes` in YAML is a bool; str() made "True" a working token."""
     import pave.auth as auth_mod
+
     from pave.auth import enforce_policy
     from pave.config.config import Config
 
@@ -180,6 +181,19 @@ def test_non_string_api_key_is_rejected(monkeypatch):
         "/collections/acme/x", headers={"Authorization": "Bearer True"}
     )
     assert r.status_code == 403
+
+
+def test_enforce_policy_rejects_duplicate_api_keys():
+    """One token for two tenants binds its holder to whoever comes first."""
+    from pave.auth import enforce_policy
+    from pave.config.config import Config
+
+    cfg = Config(data={
+        "auth": {"mode": "static", "api_keys": {"acme": "k1", "beta": "k1"}},
+    })
+    with pytest.raises(RuntimeError, match="duplicate bearer token") as exc:
+        enforce_policy(cfg)
+    assert "acme" in str(exc.value) and "beta" in str(exc.value)
 
 
 def test_enforce_policy_rejects_invalid_common_tenant():
