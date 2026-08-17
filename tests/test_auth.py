@@ -104,3 +104,73 @@ def test_auth_env_key_not_coerced(monkeypatch):
     from pave.config.config import Config
     cfg = Config()
     assert cfg.get("auth.global_key") == "0123456789", "digit-like key must not be int-coerced"
+
+def test_enforce_policy_rejects_non_canonical_tenant_names():
+    """Case variants would be two principals sharing one data directory."""
+    from pave.auth import enforce_policy
+    from pave.config.config import Config
+
+    cfg = Config(data={
+        "auth": {"mode": "static", "api_keys": {"Acme": "k1", "acme": "k2"}},
+    })
+    with pytest.raises(RuntimeError, match="invalid tenant name"):
+        enforce_policy(cfg)
+
+
+def test_enforce_policy_accepts_canonical_tenant_names():
+    from pave.auth import enforce_policy
+    from pave.config.config import Config
+
+    cfg = Config(data={
+        "auth": {"mode": "static", "api_keys": {"acme": "k1", "beta-2": "k2"}},
+    })
+    enforce_policy(cfg)
+
+
+def test_tenant_and_collection_name_rules_are_the_same():
+    """One identifier rule. If these drift, tenants and collections disagree."""
+    from pave.auth import _TENANT_NAME_RE
+    from pave.service import _COLLECTION_NAME_RE
+
+    assert _TENANT_NAME_RE.pattern == _COLLECTION_NAME_RE.pattern
+
+
+def test_enforce_policy_rejects_invalid_default_access_tenant():
+    """In auth.mode=none this value becomes a real namespace on disk."""
+    from pave.auth import enforce_policy
+    from pave.config.config import Config
+
+    cfg = Config(data={
+        "auth": {"mode": "none", "default_access_tenant": "Public"},
+        "dev": True,
+    })
+    with pytest.raises(RuntimeError, match="default_access_tenant"):
+        enforce_policy(cfg)
+
+
+def test_tenant_name_error_names_the_data_directory_move():
+    """A rename without moving t_<name> silently orphans that tenant's data."""
+    from pave.auth import enforce_policy
+    from pave.config.config import Config
+
+    cfg = Config(data={
+        "auth": {"mode": "static", "api_keys": {"Acme": "k1"}},
+    })
+    with pytest.raises(RuntimeError) as exc:
+        enforce_policy(cfg)
+    assert "t_Acme" in str(exc.value)
+    assert "orphans" in str(exc.value)
+
+
+def test_enforce_policy_rejects_invalid_common_tenant():
+    """common_tenant reaches store.search() as a raw t_<x> path segment."""
+    from pave.auth import enforce_policy
+    from pave.config.config import Config
+
+    cfg = Config(data={
+        "auth": {"mode": "static", "api_keys": {"acme": "k1"}},
+        "common_enabled": True,
+        "common_tenant": "Global",
+    })
+    with pytest.raises(RuntimeError, match="common_tenant"):
+        enforce_policy(cfg)

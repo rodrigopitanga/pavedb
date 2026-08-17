@@ -82,6 +82,10 @@ replace dots with double underscores, so `auth.mode` becomes
 - Default: `"public"`
 - Env var: `PAVEDB_AUTH__DEFAULT_ACCESS_TENANT`
 - Description: Tenant label assigned to unauthenticated requests when auth.mode is none.
+  Tenant names must match ^[a-z0-9][a-z0-9-]{0,62}$ (lowercase ASCII, digits and hyphen)
+  -- the same rule as collection names. Lowercase-only keeps a name from colliding with
+  another under case folding or Unicode normalization on case-insensitive filesystems
+  (APFS, NTFS, SMB), where two such tenants would otherwise share one data directory.
 
 ### `auth.global_key`
 
@@ -93,7 +97,11 @@ replace dots with double underscores, so `auth.mode` becomes
 
 - Default: `{}`
 - Env var: `PAVEDB_AUTH__API_KEYS`
-- Description: Map of tenant name to bearer token when auth.mode is static.
+- Description: Map of tenant name to bearer token when auth.mode is static. Tenant names
+  must match ^[a-z0-9][a-z0-9-]{0,62}$ (lowercase ASCII, digits and hyphen) -- the same
+  rule as collection names. Lowercase-only keeps a name from colliding with another
+  under case folding or Unicode normalization on case-insensitive filesystems (APFS,
+  NTFS, SMB), where two such tenants would otherwise share one data directory.
 
 ### `auth.tenants_file`
 

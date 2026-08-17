@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import re
 import secrets
 import stat
 import sys
@@ -314,6 +315,48 @@ def _is_dev(cfg) -> bool:
     # check dev flag from config/env overlay
     return bool(cfg.get("dev"))
 
+
+# Deliberately the same rule as _COLLECTION_NAME_RE in pave/service.py: one
+# identifier rule for both, asserted by a test so the two cannot drift.
+# Tenant names become a directory component while authorization compares them
+# byte-exactly, so the rule has to hold on every filesystem: lowercase ASCII
+# means no pair can collide under case folding (APFS, NTFS, SMB) or Unicode
+# normalization, and excluding '.' '/' '\' and control characters keeps the
+# name a single, traversal-free path segment everywhere.
+_TENANT_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
+
+
+def _check_tenant_name(name: str, source: str) -> None:
+    if _TENANT_NAME_RE.fullmatch(name):
+        return
+    raise RuntimeError(
+        f"invalid tenant name {name!r} in {source}: tenant names must match "
+        "^[a-z0-9][a-z0-9-]{0,62}$ (lowercase ASCII, digits and hyphen). "
+        "Rename the tenant and move its data directory "
+        f"(<data_dir>/t_{name} -> <data_dir>/t_<new-name>) before restarting; "
+        "renaming without moving the directory orphans that tenant's data."
+    )
+
+
+def _enforce_tenant_names(cfg) -> None:
+    api_keys = cfg.get("auth.api_keys") or {}
+    if not isinstance(api_keys, dict):
+        raise RuntimeError(
+            "auth.api_keys must be a map of tenant name to bearer token"
+        )
+    for name in api_keys:
+        _check_tenant_name(str(name), "auth.api_keys")
+    # Not just the configured keys: in auth.mode=none this value becomes a
+    # real tenant namespace on disk (auth_ctx, above).
+    _check_tenant_name(
+        str(cfg.get("auth.default_access_tenant") or ""),
+        "auth.default_access_tenant",
+    )
+    # The shared-corpus tenant reaches store.search() unvalidated from
+    # routes/search.py, so it is a raw t_<x> path segment too.
+    if cfg.get("common_enabled"):
+        _check_tenant_name(str(cfg.get("common_tenant") or ""), "common_tenant")
+
 def enforce_policy(cfg) -> None:
     """
     Fail fast if auth is not configured in prod.
@@ -321,6 +364,8 @@ def enforce_policy(cfg) -> None:
     """
     mode = str(cfg.get("auth.mode")).strip().lower()
     dev = _is_dev(cfg)
+
+    _enforce_tenant_names(cfg)
 
     if mode == "none":
         if not dev:
