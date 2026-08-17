@@ -356,3 +356,52 @@ def test_admin_replay_honours_owner_tenant_rate_limit(app, cfg, monkeypatch):
     assert r.status_code == 429
     assert r.json()["code"] == "tenant_rate_limited"
     assert r.headers.get("Retry-After") == "1"
+
+
+def test_replay_drops_common_scope_after_revocation(client, app, cfg):
+    """A stored common target must not outlive the common_enabled switch."""
+    local_collection = "replaystalelocal"
+    common_collection = "replaystalecommon"
+
+    cfg.set("common_enabled", True)
+    cfg.set("common_tenant", "global")
+    cfg.set("common_collection", common_collection)
+
+    client.post(f"/v1/collections/acme/{local_collection}")
+    client.post(f"/v1/collections/global/{common_collection}")
+    client.post(
+        f"/v1/collections/acme/{local_collection}/documents",
+        files={"file": ("a.txt", b"captain nemo local", "text/plain")},
+        data={"docid": "DOC-L"},
+    )
+    client.post(
+        f"/v1/collections/global/{common_collection}/documents",
+        files={"file": ("b.txt", b"captain nemo common", "text/plain")},
+        data={"docid": "DOC-C"},
+    )
+
+    client.post(
+        f"/v1/collections/acme/{local_collection}/search",
+        json={"q": "captain", "k": 5, "include_common": True},
+    )
+    logs = client.get(f"/v1/collections/acme/{local_collection}/queries")
+    query_id = logs.json()["queries"][0]["query_id"]
+
+    # The operator revokes the shared scope after the query was logged.
+    cfg.set("common_enabled", False)
+
+    store = app.state.store
+    store.calls.clear()
+    replay = client.post(
+        f"/v1/collections/acme/{local_collection}/queries/{query_id}/replay"
+    )
+
+    assert replay.status_code == 200
+    search_calls = [call for call in store.calls if call[0] == "search"]
+    assert search_calls, "replay must still run the local search"
+    assert all(call[1] != "global" for call in search_calls)
+
+    log_calls = [call for call in store.calls if call[0] == "log_query"]
+    assert log_calls[0][1]["include_common"] is False
+    assert log_calls[0][1]["common_tenant"] is None
+    assert log_calls[0][1]["common_collection"] is None

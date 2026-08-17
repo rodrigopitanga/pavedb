@@ -1623,6 +1623,13 @@ def execute_replay(
     actor: str,
 ) -> ServiceResult:
     query_id = str(entry["query_id"])
+    # Re-derive the shared scope from live config instead of replaying the
+    # persisted target. A stored row would otherwise keep reading a common
+    # collection after common_enabled was turned off or re-pointed.
+    cfg = get_cfg()
+    replay_common = bool(entry.get("include_common") and cfg.common_enabled)
+    replay_common_tenant = cfg.common_tenant if replay_common else None
+    replay_common_collection = cfg.common_collection if replay_common else None
     try:
         result = search(
             store,
@@ -1631,9 +1638,9 @@ def execute_replay(
             entry["query_text"],
             entry["k"],
             filters=entry.get("filters"),
-            include_common=entry.get("include_common", False),
-            common_tenant=entry.get("common_tenant"),
-            common_collection=entry.get("common_collection"),
+            include_common=replay_common,
+            common_tenant=replay_common_tenant,
+            common_collection=replay_common_collection,
             request_id=request_id,
             actor=actor,
             _log=False,
@@ -1653,9 +1660,9 @@ def execute_replay(
                     query_text=entry["query_text"],
                     k=entry["k"],
                     filters=entry.get("filters"),
-                    include_common=entry.get("include_common", False),
-                    common_tenant=entry.get("common_tenant"),
-                    common_collection=entry.get("common_collection"),
+                    include_common=replay_common,
+                    common_tenant=replay_common_tenant,
+                    common_collection=replay_common_collection,
                     result_ids=[match["id"] for match in result["matches"]],
                     result_count=len(result["matches"]),
                     latency_ms=result.get("latency_ms"),
