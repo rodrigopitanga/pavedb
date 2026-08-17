@@ -89,3 +89,44 @@ def test_batch_document_ingest_rejects_empty_payload(client):
     )
 
     assert response.status_code == 422
+
+
+def test_batch_rejects_bad_chunk_id_before_committing_earlier_docs(tmp_path):
+    """A mid-loop failure used to leave metadata rows with no vectors."""
+    import pytest
+
+    from pave.stores.local import LocalStore
+    from utils import FakeEmbedder
+
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    with pytest.raises(ValueError, match="invalid chunk id"):
+        store.index_documents(
+            "acme",
+            "batch",
+            [
+                ("good1", [("good1::0", "one", {})], {}),
+                ("bad", [("bad\x00::0", "two", {})], {}),
+            ],
+        )
+
+    # Assert on the metadata side, not on search: search returns nothing
+    # either way, because the vectors are added after the commit loop. The
+    # durable rows are what diverged from the index.
+    assert store.list_documents("acme", "batch") == []
+
+
+def test_reingest_with_bad_chunk_id_keeps_the_previous_version(tmp_path):
+    """index_records purges before it writes, so it must reject even earlier."""
+    import pytest
+
+    from pave.stores.local import LocalStore
+    from utils import FakeEmbedder
+
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.index_records("acme", "docs", "d1", [("d1::0", "original", {})])
+
+    with pytest.raises(ValueError, match="invalid chunk id"):
+        store.index_records("acme", "docs", "d1", [("d1::\x00", "replaced", {})])
+
+    hits = list(store.search("acme", "docs", "original", k=5).matches)
+    assert [h.id for h in hits] == ["d1::0"]

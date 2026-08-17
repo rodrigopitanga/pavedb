@@ -86,6 +86,19 @@ _INDEX_DIRTY_FILE = ".pavedb-index-dirty"
 _RESTORE_BACKUP_PREFIX = ".pavedb-restore-backup-"
 
 
+def _assert_writable_rid(rid: str) -> None:
+    """Reject a chunk id that cannot become a sidecar filename.
+
+    Control characters truncate the name at the OS boundary (NUL) and lone
+    surrogates cannot be UTF-8 encoded, so `_save_chunk_text` would raise
+    partway through a write the caller has already begun committing.
+    """
+    for ch in rid:
+        code = ord(ch)
+        if code < 0x20 or code == 0x7F or 0xD800 <= code <= 0xDFFF:
+            raise ValueError(f"invalid chunk id: {rid!r}")
+
+
 class _StoreStateLock:
     """Reentrant reader/writer lock for whole-data-dir replacement.
 
@@ -2407,6 +2420,12 @@ class LocalStore:
             txt = str(txt)
             if not rid.startswith(f"{docid}::"):
                 rid = f"{docid}::{rid}"
+            # Both callers prepare before they purge or commit, so rejecting an
+            # unwritable sidecar name here fails the whole request cleanly.
+            # Checked mid-loop it would destroy the previous version of the
+            # document (index_records) or leave earlier documents committed
+            # without vectors (index_documents).
+            _assert_writable_rid(rid)
 
             chunk_path = os.path.join("chunks", self._urid_to_fname(rid))
             chunk_rows.append((rid, chunk_path, safe_meta))
