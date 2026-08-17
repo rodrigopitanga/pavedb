@@ -2611,6 +2611,24 @@ class LocalStore:
             col_db = self._dbs[key]
             backend = self._emb[key]
             current_embedder = self._collection_embedders[key]
+            # Checked before the purge so a rejected batch cannot drop the
+            # already-indexed document versions. The whole batch is one
+            # projection: partially admitting it would leave callers with
+            # a half-applied result they never asked for.
+            max_chunks = self._tenant_limit(
+                tenant, "max_chunks_per_collection"
+            )
+            if max_chunks > 0 and all_rids:
+                _docs, total = col_db.get_doc_chunk_counts()
+                replacing = sum(
+                    col_db.chunk_counts(docid)[1]
+                    for docid in {doc[0] for doc in docs_to_commit}
+                )
+                if total - replacing + len(all_rids) > max_chunks:
+                    raise ChunkLimitError(
+                        f"collection '{tenant}/{collection}' would exceed "
+                        f"its chunk limit ({max_chunks})"
+                    )
 
             for docid, rids, texts, chunk_rows, safe_doc_meta in docs_to_commit:
                 purged = self._purge_doc_locked(

@@ -63,6 +63,29 @@ def test_rejected_reingest_keeps_existing_document(tmp_path):
     assert any(hit.id == "d1::0" for hit in hits)
 
 
+def test_batch_ingest_cannot_bypass_limit(tmp_path):
+    get_cfg().set("tenants.default_max_chunks_per_collection", 2)
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.index_records("acme", "capped", "d1", [("d1::0", "one", {})])
+
+    try:
+        store.index_documents(
+            "acme",
+            "capped",
+            [
+                ("d2", [("d2::0", "two", {})], None),
+                ("d3", [("d3::0", "three", {})], None),
+            ],
+        )
+        raise AssertionError("expected ChunkLimitError")
+    except ChunkLimitError:
+        pass
+
+    # Nothing from the rejected batch may have landed.
+    hits = store.search("acme", "capped", "two", k=5)
+    assert not any(hit.id.startswith(("d2::", "d3::")) for hit in hits)
+
+
 def test_concurrent_ingests_cannot_exceed_limit(tmp_path):
     get_cfg().set("tenants.default_max_chunks_per_collection", 3)
     store = LocalStore(str(tmp_path), FakeEmbedder())

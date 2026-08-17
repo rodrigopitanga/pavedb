@@ -1178,6 +1178,18 @@ def ingest_documents_batch(
                     "code": "invalid_metadata_keys",
                     "error": str(exc),
                 }
+        except ChunkLimitError as exc:
+            # The store rejects the batch as a whole, so every prepared
+            # document reports the quota rather than a generic failure.
+            indexed = []
+            for result_index in prepared_indexes:
+                results[result_index] = {
+                    "ok": False,
+                    "index": result_index,
+                    "docid": items[result_index].get("docid"),
+                    "code": "chunk_limit_reached",
+                    "error": str(exc),
+                }
         except Exception as exc:
             indexed = []
             log.warning(
