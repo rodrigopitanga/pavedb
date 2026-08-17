@@ -31,14 +31,44 @@ anterior deve atualizar.
 - **A ingestão rejeita identificadores de chunk inválidos antes de gravar.** Um
   caractere de controle no `docid` podia falhar no meio de um lote, deixando
   linhas de metadados sem vetores e travando os arquivos da instância.
+- **Tokens de tenant precisam ser strings.** Um valor YAML sem aspas virava um
+  token literal adivinhável: `acme: yes` autenticava como `True`, e valores só
+  com dígitos ou em formato de data se comportavam do mesmo jeito.
+- **Tokens duplicados são recusados na inicialização.** Um token configurado
+  para dois tenants prendia quem o possuísse ao primeiro da lista, então o
+  segundo tenant lia e escrevia os dados do primeiro.
+- **A ingestão em lote aplica a cota de chunks por coleção.** O limite valia
+  apenas para a ingestão de documento único, então o endpoint de lote passava
+  por fora.
+- **O `k` da busca tem teto.** Antes, uma única requisição podia pedir uma
+  coleção inteira.
+- **Rotas não encontradas não criam mais séries de métricas sem limite.**
+  Qualquer chamador podia inflar o catálogo compartilhado variando o caminho.
+- **A busca não registra mais o texto do chunk encontrado.** O conteúdo dos
+  documentos era copiado para os logs do operador em INFO por padrão.
+- **As sondas de readiness não competem mais entre si.** Sondas concorrentes
+  compartilhavam um mesmo arquivo de teste de escrita e marcavam como indisponível
+  uma instância saudável.
 
 ### Nota de atualização
 
-A validação de nomes de tenant é uma mudança incompatível. Uma instância cujos
-nomes configurados fiquem fora de `^[a-z0-9][a-z0-9-]{0,62}$` não inicia e
-informa qual tenant está irregular. Renomear um tenant exige também mover o
-diretório de dados de `<data_dir>/t_<antigo>` para `<data_dir>/t_<novo>`;
-renomear sem mover deixa os dados daquele tenant órfãos.
+Três verificações de inicialização são mudanças incompatíveis. Todas falham de
+forma explícita e apontam a entrada irregular, em vez de degradar em silêncio.
+
+- **Nomes de tenant** precisam casar com `^[a-z0-9][a-z0-9-]{0,62}$` — a mesma
+  regra já usada para coleções. Renomear um tenant exige também mover o
+  diretório de dados de `<data_dir>/t_<antigo>` para `<data_dir>/t_<novo>`;
+  renomear sem mover deixa os dados daquele tenant órfãos.
+- **Tokens de tenant** precisam ser strings não vazias. Coloque aspas em
+  qualquer valor que o YAML leria como booleano, número ou data.
+- **Tokens de tenant precisam ser únicos.** Dois tenants com o mesmo token é
+  recusado.
+
+Dois limites de execução também apertam: a busca recusa `k` acima do novo teto
+com 422, e a ingestão em lote que ultrapassaria `max_chunks_per_collection`
+passa a retornar 429 em vez de ser aceita. O rótulo `path` das métricas para
+requisições sem rota vira um único valor `<unmatched>`, não mais o caminho
+recebido.
 
 ### Destaques
 

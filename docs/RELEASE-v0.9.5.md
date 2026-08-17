@@ -29,14 +29,40 @@ running 0.9.4 or earlier should upgrade.
 - **Ingest rejects unusable chunk identifiers before it commits.** A control
   character in a `docid` could fail partway through a batch, leaving metadata
   rows without vectors and blocking instance archives.
+- **Tenant bearer tokens must be strings.** An unquoted YAML value became a
+  guessable literal token: `acme: yes` authenticated as `True`, and all-digit
+  or date-shaped values behaved the same way.
+- **Duplicate bearer tokens are refused at startup.** One token configured for
+  two tenants bound its holder to whichever appeared first, so the second
+  tenant read and wrote the first tenant's data.
+- **Batch ingest enforces the per-collection chunk quota.** The cap was applied
+  to single-document ingest only, so the batch endpoint stepped around it.
+- **Search `k` is bounded.** A single request could previously ask for an
+  entire collection.
+- **Unmatched routes no longer mint unbounded metrics series.** Any caller
+  could grow the shared catalog permanently by varying the request path.
+- **Search no longer logs matched chunk text.** Document content was copied
+  into the operator's logs at INFO by default.
+- **Readiness probes no longer race each other.** Concurrent probes shared one
+  write-test filename and reported a healthy instance unready.
 
 ### Upgrade note
 
-Tenant-name validation is a breaking change. An instance whose configured
-tenant names fall outside `^[a-z0-9][a-z0-9-]{0,62}$` refuses to start and
-names the offending tenant. Renaming a tenant also requires moving its data
-directory from `<data_dir>/t_<old>` to `<data_dir>/t_<new>`; renaming without
-moving it orphans that tenant's data.
+Three startup checks are breaking changes. Each fails loudly and names the
+offending entry rather than degrading silently.
+
+- **Tenant names** must match `^[a-z0-9][a-z0-9-]{0,62}$` — the same rule
+  collection names already use. Renaming a tenant also requires moving its data
+  directory from `<data_dir>/t_<old>` to `<data_dir>/t_<new>`; renaming without
+  moving it orphans that tenant's data.
+- **Tenant tokens** must be non-empty strings. Quote any value that YAML would
+  otherwise read as a boolean, number or date.
+- **Tenant tokens must be unique.** Two tenants sharing one token is refused.
+
+Two runtime limits also tighten: search rejects `k` above the new bound with
+422, and batch ingest that would exceed `max_chunks_per_collection` now returns
+429 instead of being admitted. The metrics `path` label for unmatched requests
+is now a single `<unmatched>` value rather than the raw request path.
 
 ### Highlights
 
