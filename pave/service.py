@@ -132,6 +132,14 @@ def _validate_collection_name(value: str | None) -> str:
 
 
 def _validate_docid(value: str) -> str:
+    # The docid becomes part of a chunk sidecar filename, so a control
+    # character (NUL in particular) would fail mid-write and leave metadata
+    # rows without vectors.
+    if _has_control_chars(value):
+        raise ServiceError(
+            "invalid_docid",
+            "docid must not contain control characters",
+        )
     if len(value) > _MAX_DOCID_LEN:
         raise ServiceError(
             "invalid_docid",

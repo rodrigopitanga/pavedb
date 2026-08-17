@@ -204,3 +204,14 @@ def test_ingest_encode_failure_returns_503(client, app, monkeypatch):
 
     assert response.status_code == 503
     assert response.json()["code"] == "embedder_unavailable"
+
+
+def test_json_text_ingest_rejects_control_char_docid(client):
+    """A NUL in the docid used to fail mid-write, after earlier commits."""
+    client.post("/v1/collections/acme/ctrldocs")
+    r = client.post(
+        "/v1/collections/acme/ctrldocs/documents",
+        json={"text": "hello", "docid": "bad\x00id", "metadata": None},
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["code"] == "invalid_docid"
