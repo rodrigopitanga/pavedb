@@ -173,7 +173,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-42 | Result diff API | 🔧 | Compare two search runs: added/removed/reordered | v1.2 |
 | P2-43 | Eval assertion API | 🧱 | Define expected results, batch run, track pass/fail | v1.2 |
 | P2-44 | Regression detection | 🔧 | Compare eval runs across versions, flag drift; depends on P2-43 | v1.2 |
-| P2-45 | Config snapshot per collection | 🧩 | Record embedder model + version + search params at ingest | v1.2 |
+| P2-45 | Per-query execution-context stamp | 🔧 | Stamp corpus/space/config drift axes per query; powers exact-vs-drifted replay & diff; prerequisite for P2-42/P2-44 | v1.2 |
 | P2-46 | ~~query_log + ops_log enrichment~~ | 🧩 | Historical `tenant` / `collection` / `actor` columns; `actor` field in ops_log | v0.9 |
 | P2-47 | Per-collection storage accounting | 🔧 | Separate document/chunk/index/meta bytes; expose `document_bytes` for quotas, keep `chunk_bytes` admin-only | v1.5 |
 | P2-48 | ~~`bench-stress-full` profile~~ | 🔧 | Off-by-default stress run covering every public endpoint; landed early as `STR_SUITE=critical/full` with `@_covers` decorator + OpenAPI startup gap warning | v0.9 |
@@ -236,7 +236,7 @@ Substantial features are specified under `docs/design/` before implementation.
 | [`docs/design/PLAN-SQLITE.md`](docs/design/PLAN-SQLITE.md) | P1-09 / P1-33 / P1-73 | Internal SQLite metadata, global catalog, and preview migrations |
 | [`docs/design/PLAN-METRICS-PERSISTENCE.md`](docs/design/PLAN-METRICS-PERSISTENCE.md) | P1-50 | Worker-safe metrics |
 | [`docs/design/PLAN-STORE.md`](docs/design/PLAN-STORE.md) | P1-29/P1-29b/P1-29c/P1-31/P1-32 | Store split; P1-30 superseded by P1-29b |
-| [`docs/design/PLAN-OBSERVABILITY.md`](docs/design/PLAN-OBSERVABILITY.md) | P0-03, P1-11/14/17/23/40/41/42/43/44/45/48, P2-23/28/40/41 | Inspectability surface — request correlation, timing, query log, replay, chunk inspector |
+| [`docs/design/PLAN-OBSERVABILITY.md`](docs/design/PLAN-OBSERVABILITY.md) | P0-03, P1-11/14/17/23/40/41/42/43/44/45/48, P2-23/28/40/41/45 | Inspectability surface — request correlation, timing, query log, replay, chunk inspector, execution-context stamp |
 | [`docs/design/PLAN-DOCS.md`](docs/design/PLAN-DOCS.md) | P1-46 / P1-47 / P1-53 | Distribution documentation and site-input contract |
 | [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md) | P1-62 / P1-66 | SDK Python API reference and runnable book examples |
 | [`docs/design/PLAN-EMBEDDER-WORKERS.md`](docs/design/PLAN-EMBEDDER-WORKERS.md) | P1-61 | General embedder worker pools |
@@ -569,8 +569,9 @@ lands where it has more impact during post-contract hardening.
   track pass/fail over time (P2-43).
 - Regression detection: compare eval runs across versions, flag
   drift (P2-44).
-- Config snapshot per collection: record embedder model + version +
-  search params at ingest time (P2-45).
+- Per-query execution-context stamp: corpus/space/config drift axes
+  on each query; extends P1-42 replay with an exact/drifted/unknown
+  verdict (P2-45).
 - Structured log retention: rolling window + purge via
   `operation_log` table (SQLite Phase 3); powers P2-13 (P2-39).
 - Moving-window per-tenant rate limiting (req/min, req/hour) via

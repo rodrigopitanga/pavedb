@@ -495,15 +495,88 @@ releases. Each has its own ROADMAP entry.
 |---|---|---|---|
 | P2-39 | Log retention (rolling window, purge) | v1.2 | SQLite Phase 3 |
 | P2-13 | Collection log export | v1.4 | P2-39 |
-| P2-42 | Result diff API (compare two search runs) | v1.2 | P1-41 |
+| P2-42 | Result diff API (compare two search runs) | v1.2 | P1-41, P2-45 |
 | P2-43 | Eval assertion API (define expected results) | v1.2 | P1-41 |
-| P2-44 | Regression detection across versions | v1.2 | P2-43 |
-| P2-45 | Config snapshot per collection at ingest | v1.2 | P1-33 |
+| P2-44 | Regression detection across versions | v1.2 | P2-43, P2-45 |
+| P2-45 | Per-query execution-context stamp (corpus gen + space key + config hash/ledger) | v1.2 | P1-41 |
 | P2-37 | Audit logs for admin actions | v2.0 | P2-28 |
 
 Post-1.0 observability items (multimodal chunk inspection,
 streaming replay, alerting integrations) are not on the
 current roadmap.
+
+---
+
+## Per-query execution-context stamp (P2-45 — v1.2)
+
+A v0.9 `query_log` row records *what was asked and what came back*
+(query, `k`, filters, common-merge flags, `result_ids`, timing) but
+nothing about the *execution context* that produced it. So replay
+(P1-42) re-runs against current state with no way to tell a genuine
+relevance change from environmental drift, and the v1.2 eval cluster
+(P2-42 diff, P2-44 regression) cannot attribute drift across runs.
+
+P2-45 stamps three disjoint drift axes on every `query_log` row:
+
+- **corpus** — a per-collection index write-generation: a monotonic
+  counter bumped under the write lock on every ingest/delete/reindex.
+  Not derivable: `MAX(ingested_at)` misses deletes, and row counts are
+  not monotonic (delete + add collides).
+- **space** — the `vector_space_key` (already computed at search
+  time). Derivable today via the catalog (a collection has one
+  embedder), but logged as a historical failsafe because reindex
+  (P1-55) makes the catalog's live copy mutable.
+- **config** — a hash over the *result-affecting* retrieval config
+  (embedder non-space config + scoring/boost/rerank knobs). It
+  excludes per-query params already stored as columns
+  (`k`/filters/common-merge) and operational-only knobs
+  (device/workers/batch), which do not change rankings — hashing them
+  would flag false drift. Omitting per-query params keeps the hash
+  stable across queries so it moves only when an operator changes
+  config, which is what makes it a usable ledger key.
+
+### Config ledger
+
+The config hash is backed by an append-on-change ledger mapping
+`config_hash → full config snapshot + changed_at`. The full config is
+written only when the hash changes, never per query. Hash *inequality*
+between two rows survives ledger purge (P2-39) — you still learn the
+config changed; only resolving *what* changed needs the retained
+snapshot.
+
+### Replay verdict (extends shipped P1-42)
+
+Replay keeps re-running against current state; P2-45 adds an additive
+response field comparing the original row's stamped axes to current:
+
+- **exact** — all three axes match. Search is deterministic given
+  fixed (corpus, space, config), so an exact verdict should reproduce
+  the stored `result_ids`; it is falsifiable against them and doubles
+  as a determinism check.
+- **drifted** — names the axes that moved; the config ledger resolves
+  what config changed.
+- **unknown** — queries logged before P2-45 carry null axes; no
+  backfill is possible.
+
+The same comparison powers P2-42 (diff) and P2-44 (regression).
+
+### Out of scope
+
+True time-travel replay — reconstructing the historical corpus/space
+to reproduce the original result — is not in scope: PaveDB keeps no
+per-query snapshot, and reindex/deletes are destructive. The verdict
+reports whether today's replay is equivalent, not how to resurrect the
+original. The config ledger does leave **config-axis** exact replay
+open as a later add (it retains the old snapshot); corpus/space exact
+replay would need index snapshots — a much larger item.
+
+### Schema
+
+`query_log` gains `write_gen INTEGER`, `vector_space_key TEXT`, and
+`config_hash TEXT`, all nullable for pre-P2-45 rows. The config ledger
+and the per-collection write-generation counter are new SQLite-backed
+state; exact table shapes are settled at implementation time alongside
+the SQLite Phase 3 work.
 
 ---
 
