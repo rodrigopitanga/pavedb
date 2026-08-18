@@ -59,10 +59,15 @@ offending entry rather than degrading silently.
   otherwise read as a boolean, number or date.
 - **Tenant tokens must be unique.** Two tenants sharing one token is refused.
 
-Two runtime limits also tighten: search rejects `k` above the new bound with
-422, and batch ingest that would exceed `max_chunks_per_collection` now returns
-429 instead of being admitted. The metrics `path` label for unmatched requests
-is now a single `<unmatched>` value rather than the raw request path.
+Two runtime limits also tighten. Search rejects `k` above 1000 with 422, and a
+query logged before that bound existed is clamped to it on replay. Batch ingest
+that would exceed `max_chunks_per_collection` is now refused as a whole: the
+request still answers 201, with every item reporting `chunk_limit_reached` and
+nothing indexed, matching how that endpoint already reports per-item failures.
+Single-document ingest keeps returning 429.
+
+The metrics `path` label for unmatched requests is now a single `<unmatched>`
+value rather than the raw request path.
 
 ### Highlights
 

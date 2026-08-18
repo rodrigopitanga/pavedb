@@ -64,11 +64,16 @@ forma explícita e apontam a entrada irregular, em vez de degradar em silêncio.
 - **Tokens de tenant precisam ser únicos.** Dois tenants com o mesmo token é
   recusado.
 
-Dois limites de execução também apertam: a busca recusa `k` acima do novo teto
-com 422, e a ingestão em lote que ultrapassaria `max_chunks_per_collection`
-passa a retornar 429 em vez de ser aceita. O rótulo `path` das métricas para
-requisições sem rota vira um único valor `<unmatched>`, não mais o caminho
-recebido.
+Dois limites de execução também apertam. A busca recusa `k` acima de 1000 com
+422, e uma consulta registrada antes desse teto é limitada a ele no replay. A
+ingestão em lote que ultrapassaria `max_chunks_per_collection` passa a ser
+recusada por inteiro: a requisição ainda responde 201, com todos os itens
+relatando `chunk_limit_reached` e nada indexado, no mesmo formato de falha por
+item que esse endpoint já usa. A ingestão de documento único segue retornando
+429.
+
+O rótulo `path` das métricas para requisições sem rota vira um único valor
+`<unmatched>`, não mais o caminho recebido.
 
 ### Destaques
 
