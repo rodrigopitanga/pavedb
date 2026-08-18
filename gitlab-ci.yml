@@ -122,54 +122,19 @@ pytest:
       - .pytest_cache
     expire_in: 1 week
 
-# Release gate for the macOS port. pave/embedders/sbert.py forces the
-# SBERT subprocess runtime when sys.platform == "darwin" and the backend is
-# FAISS (torch in-process crashes alongside FAISS there) — a branch no
-# Linux job can reach, so before this the port was documented in
-# RELEASE-v0.9.0 and never exercised by CI.
+# Release gate for the published architecture. The images have been arm64
+# since the runner moved (ROADMAP C7) and nothing tested that: pytest runs
+# on the shared amd64 image, so the artifact people actually pull was the
+# one architecture with no test run against it.
 #
-# saas-macos-medium-m1 is a real macOS host on Apple Silicon. The colima
-# runner cannot stand in for it: colima is a Linux VM, so its runner
-# reports platform=linux and takes the else branch above.
+# Final tags only, on our own runner. rc and artifact refreshes are not
+# worth the wall time here, and no SaaS minutes are spent.
 #
-# Tag builds only (rc, final, and artifact refreshes — the same set
-# publish-pypi ships): SaaS macOS minutes bill at a premium,
-# and this guards releases, not every commit.
-.tag-release-rules: &tag-release-rules
-  rules:
-    - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}(\.\d{1,4}|rc\d{1,3})?$/'
-
-pytest-macos:
-  stage: test
-  tags:
-    - saas-macos-medium-m1
-  image: macos-14-xcode-15
-  variables:
-    # Prove the darwin branch is the one under test; a Linux runner
-    # picking this job up would fail here instead of passing silently.
-    PAVEDB_EXPECT_PLATFORM: darwin
-  before_script:
-    - sw_vers
-    - python3 -m venv .venv && . .venv/bin/activate
-    - python -c "import sys; assert sys.platform == 'darwin', sys.platform"
-  script:
-    - python -m pip install --upgrade pip -q
-    - pip install -r requirements-cpu.txt -q
-    - pip install ".[test]" -q
-    # The macOS-only guard: runtime=direct must refuse to run with FAISS.
-    - python -c "import pave.embedders.sbert as s, sys; print('darwin guard present:', 'darwin' in open(s.__file__).read())"
-    - pytest -q
-  artifacts:
-    when: always
-    reports:
-      junit: junit.xml
-    paths:
-      - junit.xml
-    expire_in: 1 week
-  <<: *tag-release-rules
-
-# The published images are arm64 since the runner moved (ROADMAP C7), so
-# the same tags also get tested on arm64 Linux — the colima box.
+# Note this does NOT cover macOS. pave/embedders/sbert.py branches on
+# sys.platform == "darwin" (torch in-process crashes alongside FAISS there,
+# so the SBERT runtime is forced into a subprocess), and colima is a Linux
+# VM — its runner reports platform=linux, so that branch stays unexercised.
+# Testing it needs a shell-executor runner on a real macOS host.
 pytest-arm64:
   stage: test
   tags:
@@ -179,7 +144,7 @@ pytest-arm64:
     - python -m pip install --upgrade pip -q
     - pip install -r requirements-cpu.txt -q
     - pip install ".[test]" -q
-    - python -c "import platform; print('arch:', platform.machine())"
+    - python -c "import platform, sys; print('arch:', platform.machine(), '| platform:', sys.platform)"
     - pytest -q
   artifacts:
     when: always
@@ -188,7 +153,8 @@ pytest-arm64:
     paths:
       - junit.xml
     expire_in: 1 week
-  <<: *tag-release-rules
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}$/'
 
 bench:
   stage: benchmark
