@@ -1,7 +1,7 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-## 0.9.5 — 2026-08-17
+## 0.9.5 — 2026-08-18
 
 ### Bug Fixes
 - [core] Enforce startup auth policy in build_app (B25)
@@ -11,11 +11,22 @@
 - [conf] Validate tenant names at startup (B28)
 - [core] Do not inherit trust_remote_code for a foreign model (B29)
 - [store] Validate batch chunk ids before committing (B30)
+- [log] Label unmatched routes with a sentinel (B36)
+- [api] Give each readiness probe its own write-test file (B39)
+- [api] Bound the search k parameter (B57)
+- [log] Stop logging matched chunk text (B44)
+- [store] Enforce the chunk quota on batch ingest (B32)
+- [conf] Require tenant bearer tokens to be strings (B65)
+- [conf] Reject duplicate tenant bearer tokens (B71)
+- [conf] Apply the token rules to the admin credential too (B65/B71)
+- [core] Clamp k on replay and share one bound (B57)
 
 ### Documentation
 - Reschedule security roadmap items
 - Weave production-safety strengths through README
 - Add v0.9.5 release announcement
+- Cover the added 0.9.5 security fixes in the announcement
+- Correct the 0.9.5 quota and k upgrade notes
 
 ### Store
 - Add preview schema migrations (P1-73)
@@ -26,14 +37,15 @@
 - Drop duplicate root tenants.yml.example
 - [ui] Add ui.enabled switch to gate the OpenAPI UI
 
+### Infrastructure
+- Publish Docker images from the xeon runner
+- Mirror GitHub from full history (B86)
+
 ### Build
 - Start 0.9.5 development (P1-73)
 
 ### Embed
 - Sbert trust_remote_code, task prefixes, remote runtime (P1-74)
-
-### Infrastructure
-- Publish Docker images from the xeon runner
 
 ### UI
 - Link pavedb.org docs from the web UI footer
