@@ -208,3 +208,51 @@ def test_enforce_policy_rejects_invalid_common_tenant():
     })
     with pytest.raises(RuntimeError, match="common_tenant"):
         enforce_policy(cfg)
+
+
+def test_non_string_global_key_is_rejected(monkeypatch):
+    """The admin credential goes through the same coercion as tenant keys."""
+    import pave.auth as auth_mod
+
+    from pave.auth import enforce_policy
+    from pave.config.config import Config
+
+    cfg = Config(data={"auth": {"mode": "static", "global_key": True}})
+    with pytest.raises(RuntimeError, match="invalid bearer token"):
+        enforce_policy(cfg)
+
+    monkeypatch.setattr(auth_mod, "get_cfg", lambda: cfg, raising=True)
+    client = TestClient(build_app())
+    r = client.post(
+        "/collections/acme/x", headers={"Authorization": "Bearer True"}
+    )
+    assert r.status_code == 403
+
+
+def test_tenant_key_equal_to_global_key_is_rejected():
+    """Its holder would authenticate as admin, not as that tenant."""
+    from pave.auth import enforce_policy
+    from pave.config.config import Config
+
+    cfg = Config(data={
+        "auth": {
+            "mode": "static",
+            "global_key": "shared",
+            "api_keys": {"acme": "shared"},
+        },
+    })
+    with pytest.raises(RuntimeError, match="duplicate bearer token") as exc:
+        enforce_policy(cfg)
+    assert "auth.global_key" in str(exc.value)
+
+
+def test_padded_api_key_is_rejected():
+    """auth_ctx strips the presented token, so a padded value never matches."""
+    from pave.auth import enforce_policy
+    from pave.config.config import Config
+
+    cfg = Config(data={
+        "auth": {"mode": "static", "api_keys": {"acme": " k1 "}},
+    })
+    with pytest.raises(RuntimeError, match="whitespace"):
+        enforce_policy(cfg)

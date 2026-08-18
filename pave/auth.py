@@ -187,7 +187,9 @@ def auth_ctx(
 
         # global key
         global_key = cfg.get("auth.global_key") or _file_admin_key(cfg)
-        if global_key and token == str(global_key):
+        # No str() here either: this credential grants cross-tenant admin, so
+        # a mistyped config value must not become a guessable literal token.
+        if isinstance(global_key, str) and global_key and token == global_key:
             return AuthContext(tenant=None, is_admin=True)
 
         # per-tenant keys
@@ -340,15 +342,17 @@ def _check_tenant_name(name: str, source: str) -> None:
     )
 
 
-def _check_api_key(tenant: str, key) -> None:
+def _check_api_key(source: str, key) -> None:
     # An unquoted YAML scalar parses as bool/int/date, so `acme: yes` used to
     # become the bearer token "True" once auth_ctx coerced it with str().
-    if isinstance(key, str) and key.strip():
+    # Surrounding whitespace is rejected too: auth_ctx strips the presented
+    # token, so a padded value could never match and would fail obscurely.
+    if isinstance(key, str) and key.strip() and key == key.strip():
         return
     raise RuntimeError(
-        f"invalid bearer token for tenant {tenant!r} in auth.api_keys: "
-        "tokens must be non-empty strings. Quote the value so YAML does "
-        "not parse it as a boolean, number or date."
+        f"invalid bearer token for {source}: tokens must be non-empty "
+        "strings without surrounding whitespace. Quote the value so YAML "
+        "does not parse it as a boolean, number or date."
     )
 
 
@@ -362,15 +366,22 @@ def _enforce_tenant_names(cfg) -> None:
     # by two tenants binds every holder to whichever comes first in map order:
     # one customer would read and write the other's data.
     seen: dict[str, str] = {}
+    # The admin credential is the first token auth_ctx tries, so it belongs in
+    # the same type check and the same collision map: a tenant token equal to
+    # it would authenticate as admin, not as that tenant.
+    global_key = cfg.get("auth.global_key")
+    if global_key is not None:
+        _check_api_key("auth.global_key", global_key)
+        seen[global_key] = "auth.global_key"
     for name, key in api_keys.items():
         _check_tenant_name(str(name), "auth.api_keys")
-        _check_api_key(str(name), key)
-        first = seen.setdefault(str(key), str(name))
+        _check_api_key(f"tenant {str(name)!r} in auth.api_keys", key)
+        first = seen.setdefault(key, str(name))
         if first != str(name):
             raise RuntimeError(
-                "duplicate bearer token in auth.api_keys: tenants "
-                f"{first!r} and {str(name)!r} share one key. Give each "
-                "tenant its own key before restarting."
+                f"duplicate bearer token: {first!r} and {str(name)!r} share "
+                "one key, so its holder authenticates as the first of them. "
+                "Give each its own key before restarting."
             )
     # Not just the configured keys: in auth.mode=none this value becomes a
     # real tenant namespace on disk (auth_ctx, above).
