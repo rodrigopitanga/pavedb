@@ -1,6 +1,44 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
+## 0.9.5 — 2026-08-17
+
+### Bug Fixes
+- [core] Enforce startup auth policy in build_app (B25)
+- [core] Re-derive shared scope from config on replay (B26)
+- [core] Reject control characters in docid (B27)
+- [conf] Restore embedder field docs to the reference source (B31)
+- [conf] Validate tenant names at startup (B28)
+- [core] Do not inherit trust_remote_code for a foreign model (B29)
+- [store] Validate batch chunk ids before committing (B30)
+
+### Documentation
+- Reschedule security roadmap items
+- Weave production-safety strengths through README
+- Add v0.9.5 release announcement
+
+### Store
+- Add preview schema migrations (P1-73)
+- Enforce per-tenant collection limit (P2-20)
+- Enforce per-collection chunk limit (P2-54)
+
+### Config
+- Drop duplicate root tenants.yml.example
+- [ui] Add ui.enabled switch to gate the OpenAPI UI
+
+### Build
+- Start 0.9.5 development (P1-73)
+
+### Embed
+- Sbert trust_remote_code, task prefixes, remote runtime (P1-74)
+
+### Infrastructure
+- Publish Docker images from the xeon runner
+
+### UI
+- Link pavedb.org docs from the web UI footer
+
+---
 ## 0.9.4 — 2026-08-13
 
 ### Store
