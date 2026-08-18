@@ -252,8 +252,49 @@ def test_search_k_above_cap_rejected(client):
     r = client.get("/v1/collections/acme/kcapcol/search?q=x&k=1001")
     assert r.status_code == 422
 
+    # The shared-scope route is the one every tenant on a shared instance
+    # reaches, so it needs the bound pinned too.
+    r = client.get("/v1/search?q=x&k=1001")
+    assert r.status_code == 422
+
     r = client.post(
         "/v1/collections/acme/kcapcol/search",
         json={"q": "x", "k": 1000},
     )
     assert r.status_code == 200
+
+
+def test_replay_clamps_a_k_logged_before_the_bound(client, app, cfg):
+    """A row logged pre-upgrade must not stay replayable at its old size."""
+    import uuid
+
+    from pave.schemas import MAX_SEARCH_K
+
+    client.post("/v1/collections/acme/kreplay")
+    client.post(
+        "/v1/collections/acme/kreplay/documents",
+        json={"text": "hello world", "docid": "d1"},
+    )
+
+    # Forge the pre-bound row the upgrade inherits.
+    qid = str(uuid.uuid4())
+    app.state.store.log_query(
+        query_id=qid,
+        tenant="acme",
+        collection="kreplay",
+        actor="tenant:acme",
+        query_text="hello",
+        k=99999,
+        filters=None,
+        result_ids=[],
+        result_count=0,
+        latency_ms=1.0,
+    )
+
+    store = app.state.store
+    store.calls.clear()
+    r = client.post(f"/v1/collections/acme/kreplay/queries/{qid}/replay")
+    assert r.status_code == 200
+    searches = [c for c in store.calls if c[0] == "search"]
+    assert searches, "replay must still run a search"
+    assert all(c[4] <= MAX_SEARCH_K for c in searches), searches

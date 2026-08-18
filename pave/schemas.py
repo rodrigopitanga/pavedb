@@ -6,6 +6,10 @@
 from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
+# Upper bound on requested hits. Every caller-facing path that accepts k must
+# use this, including replay of a query logged before the bound existed.
+MAX_SEARCH_K = 1000
+
 
 class TraceResponse(BaseModel):
     """Shared tracing metadata for JSON responses."""
@@ -135,7 +139,7 @@ class SearchBody(BaseModel):
     k: int = Field(
         default=5,
         ge=1,
-        le=1000,
+        le=MAX_SEARCH_K,
         description="Maximum number of hits.",
         examples=[5],
     )

@@ -50,6 +50,7 @@ from pave.preprocess import (
     preprocess,
     preprocess_text,
 )
+from pave.schemas import MAX_SEARCH_K
 from pave.stores.base import (
     BaseStore,
     FilterSpec,
@@ -1649,13 +1650,16 @@ def execute_replay(
     replay_common = bool(entry.get("include_common") and cfg.common_enabled)
     replay_common_tenant = cfg.common_tenant if replay_common else None
     replay_common_collection = cfg.common_collection if replay_common else None
+    # Rows logged before k was bounded would otherwise stay replayable forever
+    # at their original size, one request pulling a whole collection.
+    replay_k = min(int(entry["k"]), MAX_SEARCH_K)
     try:
         result = search(
             store,
             tenant,
             collection,
             entry["query_text"],
-            entry["k"],
+            replay_k,
             filters=entry.get("filters"),
             include_common=replay_common,
             common_tenant=replay_common_tenant,
@@ -1677,7 +1681,7 @@ def execute_replay(
                     collection=collection,
                     actor=actor,
                     query_text=entry["query_text"],
-                    k=entry["k"],
+                    k=replay_k,
                     filters=entry.get("filters"),
                     include_common=replay_common,
                     common_tenant=replay_common_tenant,

@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from pave.auth import AuthContext, actor_of, auth_ctx, tenant_rate_limit
 from pave.log import ops_event
 from pave.schemas import (
+    MAX_SEARCH_K,
     GetQueryLogResponse,
     ListQueryLogsResponse,
     QueryReplayResponse,
@@ -232,7 +233,7 @@ def build_search_router(
         tenant: str,
         name: str,
         q: str = Query(...),
-        k: int = Query(5, ge=1, le=1000),
+        k: int = Query(5, ge=1, le=MAX_SEARCH_K),
         include_common: bool = Query(
             False,
             description=(
@@ -344,7 +345,7 @@ def build_search_router(
     async def search_common_get(
         request: Request,
         q: str = Query(...),
-        k: int = Query(5, ge=1, le=1000),
+        k: int = Query(5, ge=1, le=MAX_SEARCH_K),
         rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
