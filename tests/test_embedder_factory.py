@@ -877,3 +877,29 @@ def test_configured_openai_model_still_uses_environment_key(monkeypatch):
     )
 
     assert embedder.client.api_key == "operator-env-key"
+
+
+def test_openai_client_bounds_the_total_call_budget(monkeypatch):
+    """A per-attempt timeout is not a budget: the SDK retries timeouts."""
+    import types
+
+    import pave.embedders.openai as openai_mod
+
+    captured = {}
+
+    class _FakeOpenAI:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    fake = types.ModuleType("openai")
+    fake.OpenAI = _FakeOpenAI
+    monkeypatch.setitem(sys.modules, "openai", fake)
+
+    emb = openai_mod.OpenAIEmbedder(
+        model="text-embedding-3-small", dim=8, api_key="sk-x", timeout_s=30.0
+    )
+    emb._client_or_raise() if hasattr(emb, "_client_or_raise") else emb.client
+
+    attempts = openai_mod._MAX_RETRIES + 1
+    assert captured["max_retries"] == openai_mod._MAX_RETRIES
+    assert captured["timeout"] * attempts == 30.0, captured
