@@ -231,11 +231,26 @@ unresponsive provider can hold a worker slot.
 - Description: Reject document uploads larger than this many megabytes; 0 disables the
   limit.
 
+### `ingest.max_batch_size_mb`
+
+- Default: `null`
+- Env var: `PAVEDB_INGEST__MAX_BATCH_SIZE_MB`
+- Description: Reject a batch ingest request whose documents add up to more than this
+  many megabytes of text; null uses ingest.max_file_size_mb, 0 disables the limit.
+
 ### `ingest.max_concurrent`
 
 - Default: `7`
 - Env var: `PAVEDB_INGEST__MAX_CONCURRENT`
 - Description: Maximum number of concurrent ingest operations; 0 disables the cap.
+
+### `ingest.max_concurrent_per_tenant`
+
+- Default: `null`
+- Env var: `PAVEDB_INGEST__MAX_CONCURRENT_PER_TENANT`
+- Description: Maximum share of ingest.max_concurrent one tenant may hold, so a single
+  tenant cannot take every slot; null uses half of ingest.max_concurrent rounded up, 0
+  disables the per-tenant share.
 
 ## Search
 
@@ -312,6 +327,16 @@ unresponsive provider can hold a worker slot.
 - Default: `1`
 - Env var: `PAVEDB_SERVER__WORKERS`
 - Description: Number of uvicorn worker processes.
+
+### `server.max_request_body_mb`
+
+- Default: `16`
+- Env var: `PAVEDB_SERVER__MAX_REQUEST_BODY_MB`
+- Description: Reject in-memory request bodies (JSON and form payloads) larger than this
+  many megabytes with 413, before routing and authentication; 0 disables the check.
+  Multipart file uploads spool to disk instead, so they are bounded by
+  ingest.max_file_size_mb plus multipart framing. Raise this only for unusually large
+  JSON text or batch ingest payloads.
 
 ### `server.timeout_keep_alive`
 

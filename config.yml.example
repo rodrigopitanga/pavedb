@@ -253,9 +253,20 @@ ingest:
   # Env: PAVEDB_INGEST__MAX_FILE_SIZE_MB
   max_file_size_mb: 500
 
+  # Reject a batch ingest request whose documents add up to more than this many
+  # megabytes of text; null uses ingest.max_file_size_mb, 0 disables the limit.
+  # Env: PAVEDB_INGEST__MAX_BATCH_SIZE_MB
+  # max_batch_size_mb: null
+
   # Maximum number of concurrent ingest operations; 0 disables the cap.
   # Env: PAVEDB_INGEST__MAX_CONCURRENT
   max_concurrent: 7
+
+  # Maximum share of ingest.max_concurrent one tenant may hold, so a single tenant
+  # cannot take every slot; null uses half of ingest.max_concurrent rounded up, 0
+  # disables the per-tenant share.
+  # Env: PAVEDB_INGEST__MAX_CONCURRENT_PER_TENANT
+  # max_concurrent_per_tenant: null
 
 
 # ---------------------------------------------------------------------------
@@ -330,6 +341,14 @@ server:
   # Number of uvicorn worker processes.
   # Env: PAVEDB_SERVER__WORKERS
   workers: 1
+
+  # Reject in-memory request bodies (JSON and form payloads) larger than this many
+  # megabytes with 413, before routing and authentication; 0 disables the check.
+  # Multipart file uploads spool to disk instead, so they are bounded by
+  # ingest.max_file_size_mb plus multipart framing. Raise this only for unusually large
+  # JSON text or batch ingest payloads.
+  # Env: PAVEDB_SERVER__MAX_REQUEST_BODY_MB
+  max_request_body_mb: 16
 
   # Uvicorn keep-alive timeout in seconds.
   # Env: PAVEDB_SERVER__TIMEOUT_KEEP_ALIVE

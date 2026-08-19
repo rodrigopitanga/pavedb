@@ -60,7 +60,7 @@ from pave.runtime_paths import (
     resolve_runtime_paths,
 )
 from pave.schemas import ErrorResponse
-from pave.service import ServiceError
+from pave.service import ServiceError, ingest_upload_limit_bytes
 from pave.stores.local import LocalStore
 from pave.ui import attach_ui
 from pave.version import (
@@ -82,6 +82,134 @@ GRACEFUL_SHUTDOWN_MESSAGE = (
 FORCE_SHUTDOWN_MESSAGE = (
     "Immediate shutdown requested; exiting now (potential data loss)."
 )
+# Boundary lines, part headers, and the small form fields (docid, metadata)
+# that ride along with an uploaded file. Added to the ingest limit so a file
+# at exactly the configured size still fits inside its multipart envelope.
+MULTIPART_FRAMING_BYTES = 1024 * 1024
+
+
+class _BodyTooLarge(Exception):
+    """Raised from the receive chain when a streamed body passes the cap."""
+
+
+async def _closed_receive() -> dict:
+    """Receive channel for a response sent without draining the body."""
+    return {"type": "http.disconnect"}
+
+
+class BodySizeLimitMiddleware:
+    """Reject oversized request bodies before routing and authentication.
+
+    FastAPI reads and validates the whole body before it resolves route
+    dependencies, so `tenant_rate_limit` / `auth_ctx` cannot stop an
+    unauthenticated caller from making the process buffer and parse an
+    arbitrary payload. The guard therefore has to sit ahead of routing, which
+    rules out a dependency and any route-level check.
+
+    Multipart uploads spool to a temporary file, so they get the ingest
+    ceiling; every other body is parsed into Python objects in memory, where
+    a list of JSON numbers costs roughly 25x its wire size, so it gets the
+    much tighter `server.max_request_body_mb` ceiling.
+    """
+
+    def __init__(self, app) -> None:
+        self.app = app
+
+    @staticmethod
+    def _accepts_upload(path: str) -> bool:
+        # Keyed on the path, never on Content-Type: the header is the
+        # caller's, so granting the larger ceiling from it let any request
+        # claim multipart and buy the ingest limit on a JSON endpoint, where
+        # the body is parsed into memory rather than spooled to disk.
+        return path.endswith("/documents") or path == "/v1/admin/archive"
+
+    @classmethod
+    def _limit_for(cls, scope) -> int:
+        state = getattr(scope.get("app"), "state", None)
+        if state is None:
+            return 0
+        if cls._accepts_upload(str(scope.get("path") or "")):
+            return getattr(state, "max_upload_body_bytes", 0)
+        return getattr(state, "max_body_bytes", 0)
+
+    async def __call__(self, scope, receive, send):
+        limit = 0 if scope["type"] != "http" else self._limit_for(scope)
+        if limit <= 0:
+            await self.app(scope, receive, send)
+            return
+
+        declared = None
+        for name, value in scope.get("headers") or ():
+            if name == b"content-length":
+                try:
+                    declared = int(value)
+                except ValueError:
+                    declared = None
+                break
+        if declared is not None and declared > limit:
+            await self._reject(scope, send, declared, limit)
+            return
+
+        received = 0
+        oversize = False
+        started = False
+        answered = False
+
+        async def guarded_receive():
+            nonlocal received, oversize
+            message = await receive()
+            if message.get("type") == "http.request":
+                received += len(message.get("body", b""))
+                # Chunked requests carry no Content-Length. Rejecting them all
+                # would break legitimate streaming clients, so the body is
+                # counted as it arrives and cut off at the same ceiling.
+                if received > limit:
+                    oversize = True
+                    raise _BodyTooLarge()
+            return message
+
+        async def guarded_send(message):
+            nonlocal started, answered
+            if answered:
+                return
+            if oversize and not started:
+                # FastAPI turns anything raised while it reads the body into
+                # its own "error parsing the body" 400; replace that with the
+                # documented 413 envelope.
+                answered = True
+                await self._reject(scope, send, received, limit)
+                return
+            if message.get("type") == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, guarded_receive, guarded_send)
+        except _BodyTooLarge:
+            pass
+        if oversize and not started and not answered:
+            await self._reject(scope, send, received, limit)
+
+    @staticmethod
+    async def _reject(scope, send, size: int, limit: int) -> None:
+        request_id = (scope.get("state") or {}).get("request_id")
+        get_logger().warning(
+            "Request body rejected before routing: it exceeds the "
+            f"{limit} byte limit (at least {size} bytes) "
+            f"path={scope.get('path')} request_id={request_id}"
+        )
+        body = {
+            "ok": False,
+            "code": "request_too_large",
+            "error": (
+                "request body exceeds the "
+                f"{max(int(limit / (1024 * 1024)), 1)} MB limit"
+            ),
+        }
+        if request_id is not None:
+            body["request_id"] = request_id
+        response = JSONResponse(body, status_code=413)
+        await response(scope, _closed_receive, send)
 
 
 def _hw_info() -> dict:
@@ -288,6 +416,11 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     )
     app.state.ui_enabled = _ui_on
 
+    # Registered first, so it is the innermost user middleware: the request id
+    # is already on the scope when a body is rejected, and the rejection is
+    # still counted by the metrics middleware.
+    app.add_middleware(BodySizeLimitMiddleware)
+
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):
         rid = request.headers.get("x-request-id") or str(uuid.uuid4())
@@ -304,6 +437,20 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     app.state.cfg = cfg
     app.state.version = VERSION
     app.state.hw_info = _hw_info()
+
+    # Request body limits, read once here like every other instance-scoped
+    # cap. Uploads are allowed the configured ingest ceiling; an unlimited
+    # ingest limit (0) leaves them unbounded, as documented.
+    _body_mb = cfg.get("server.max_request_body_mb")
+    try:
+        _body_mb = max(float(_body_mb or 0), 0.0)
+    except (TypeError, ValueError):
+        _body_mb = 0.0
+    app.state.max_body_bytes = int(_body_mb * 1024 * 1024)
+    _ingest_bytes = ingest_upload_limit_bytes()
+    app.state.max_upload_body_bytes = (
+        _ingest_bytes + MULTIPART_FRAMING_BYTES if _ingest_bytes > 0 else 0
+    )
 
     # Search limits
     _max_conc = int(cfg.get("search.max_concurrent"))
@@ -324,6 +471,17 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     )
     app.state.max_ingests = _max_iconc
     app.state.active_ingests = 0
+    # Per-tenant share of the shared ingest pool. Without it one tenant can
+    # hold every slot while staying inside its own request cap, and every
+    # other tenant gets 503. Unset means half the pool, rounded up.
+    _raw_iper = cfg.get("ingest.max_concurrent_per_tenant")
+    app.state.max_ingests_per_tenant = (
+        int(_raw_iper) if _raw_iper is not None else (_max_iconc + 1) // 2
+    )
+    app.state.tenant_active_ingests = {}
+    # Ingest slots are now released from pool threads (detached work), so the
+    # read-modify-write genuinely races without this.
+    app.state.ingest_lock = threading.Lock()
 
     # Per-tenant concurrency limits
     _tenants_cfg = cfg.get("tenants") or {}
@@ -335,6 +493,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     app.state.tenant_default_limit = int(_raw_def) if _raw_def is not None else 0
     app.state.tenant_limits = {}
     app.state.tenant_active = {}
+    app.state.tenant_lock = threading.Lock()
     for _t, _tcfg in (_tenants_cfg.items() if isinstance(_tenants_cfg, dict) else []):
         if _t == "default_max_concurrent" or not isinstance(_tcfg, dict):
             continue
@@ -405,6 +564,10 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         """Concurrency gate + timeout wrapper for all search handlers."""
         timeout_s = app.state.search_timeout_s
         max_s = app.state.max_searches
+        # The tenant slot the request is holding, if any. A search that
+        # outlives its request keeps occupying the shared pool, so the
+        # tenant has to keep paying for it until the thread returns.
+        tenant_slot = getattr(request.state, "tenant_slot", None)
         if max_s > 0:
             with app.state.search_lock:
                 if app.state.active_searches >= max_s:
@@ -474,6 +637,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 # Thread keeps running; suppress its eventual result/exception.
                 release_in_finally = False
                 completion_future.add_done_callback(finish_background_search)
+                if tenant_slot is not None:
+                    tenant_slot.release_on(completion_future)
                 metrics_inc("searches_timeout_total", 1.0)
                 return _error(
                     503,
@@ -485,6 +650,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             except asyncio.CancelledError:
                 release_in_finally = False
                 completion_future.add_done_callback(finish_background_search)
+                if tenant_slot is not None:
+                    tenant_slot.release_on(completion_future)
                 raise
             except ServiceError as exc:
                 status_map = {

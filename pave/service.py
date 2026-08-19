@@ -745,6 +745,16 @@ def _enforce_ingest_size_limit(size_bytes: int) -> None:
         )
 
 
+def ingest_upload_limit_bytes() -> int:
+    """Largest document a file upload may carry, in bytes; 0 is unlimited.
+
+    A multipart upload holds exactly one document, so the HTTP layer sizes
+    its pre-auth guard from this and the wire cap cannot drift away from the
+    ingest limit it is protecting.
+    """
+    return _ingest_size_limit_bytes()
+
+
 def _index_records_result(
     store,
     tenant: str,
