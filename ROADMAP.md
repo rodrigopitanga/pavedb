@@ -183,6 +183,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-52 | Optional FAISS HNSW index | 🧱 | HNSW; recall/QPS gates. | v1.2 |
 | P2-53 | Optional FAISS IVF index | 🧱 | IVF plus explicit optimize. | v1.8 |
 | P2-54 | ~~Chunk limit / collection~~ | 🧩 | Billing-hard row cap for shared plans; with P2-20 bounds tenant growth | v0.9.5 |
+| P2-55 | Cross-tenant read grants per collection | 🔧 | An owner tenant grants search on one of its collections to named tenants, turning tenant↔collection into n:n for reads. Generalizes the single shared-corpus pair (`common_tenant`/`common_collection`) into a grant table, reusing the existing merge path and its embedder-compatibility check. Read-only by design: the owner keeps every write, because cross-tenant writes would move quota accounting, catalog ownership and query-log attribution. Replay resolves grants from live state, never from the logged query | v1.2 |
 
 ### P3 — Scale and long-term
 
@@ -552,6 +553,9 @@ lands where it has more impact during post-contract hardening.
   recall and throughput are gated by VectorDBBench (P2-52).
 - General embedder worker pools with bounded concurrency across providers
   (P1-61).
+- Cross-tenant read grants: an owner tenant shares search on one of its
+  collections with named tenants, generalizing the single shared-corpus
+  pair into a grant table. Reads only; writes stay with the owner (P2-55).
 - ~~Metadata-filter SQL parity: a CI-only differential corpus proves
   canonical matches are a subset of SQL survivors, with equality
   where SQL claims full support. No request-time double execution
