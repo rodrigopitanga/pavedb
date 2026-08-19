@@ -130,6 +130,11 @@ per-type fallback at `embedder.<type>.<field>` (for example
 global value applies when an instance of that type omits the
 field from its own `config`; the per-instance value always wins.
 
+OpenAI-compatible instances (`openai`, `ollama`) accept
+`timeout_s`: the total budget in seconds for one embed request,
+SDK retries included (default 60). It bounds how long an
+unresponsive provider can hold a worker slot.
+
 ### `embedder.default`
 
 - Default: `null`

@@ -11,6 +11,7 @@ import types
 import pytest
 
 import pave.embedders.factory as factory_mod
+import pave.embedders.openai as openai_mod
 
 _DEFAULT_SBERT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
@@ -280,6 +281,7 @@ def test_factory_passes_explicit_openai_spec(monkeypatch):
         "dim": 1024,
         "api_key": "instance-key",
         "base_url": "http://localhost:11434/v1",
+        "timeout_s": openai_mod._DEFAULT_TIMEOUT_S,
     }
 
 

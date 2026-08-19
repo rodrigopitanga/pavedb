@@ -21,7 +21,9 @@ class _DummyCFG:
 
 
 def test_ollama_schema_matches_openai_shape():
-    assert ollama_mod.CONFIG_KEYS == ("dim", "base_url", "batch_size")
+    assert ollama_mod.CONFIG_KEYS == (
+        "dim", "base_url", "batch_size", "timeout_s",
+    )
     assert ollama_mod.SPACE_KEYS == ("dim",)
 
 

@@ -206,6 +206,12 @@ embedder:
     # sets a default 'config' value — plus 'model' — for every instance
     # of that type. An instance's own 'config' value overrides it.
     #
+    # OpenAI-compatible instances ('openai', 'ollama') also accept
+    # 'timeout_s' in 'config': the total budget in seconds for one embed
+    # request, SDK retries included (default 60). It bounds how long an
+    # unresponsive provider can hold a worker slot; raise it for slow
+    # local daemons that load a model on first use.
+    #
     # local-small:
     #   type: 'ollama'
     #   model: 'nomic-embed-text'

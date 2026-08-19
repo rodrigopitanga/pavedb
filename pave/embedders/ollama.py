@@ -15,10 +15,10 @@ import urllib.error
 import urllib.request
 
 from .base import EmbedderUnavailableError
-from .openai import OpenAIEmbedder
+from .openai import _DEFAULT_TIMEOUT_S, OpenAIEmbedder
 
 
-CONFIG_KEYS: tuple[str, ...] = ("dim", "base_url", "batch_size")
+CONFIG_KEYS: tuple[str, ...] = ("dim", "base_url", "batch_size", "timeout_s")
 SPACE_KEYS: tuple[str, ...] = ("dim",)
 
 _DEFAULT_BASE_URL = "http://localhost:11434/v1"
@@ -44,6 +44,11 @@ def build_embedder(cfg, *, model=None, embedder_config=None, api_key=None):
     )
     batch_size = resolve_setting(cfg, "ollama", "batch_size", spec, None)
     dim = resolve_setting(cfg, "ollama", "dim", spec, _DEFAULT_DIM)
+    # Resolved under the ollama key, not inherited from embedder.openai.*, so a
+    # global openai budget cannot silently retime a local daemon.
+    timeout_s = resolve_setting(
+        cfg, "ollama", "timeout_s", spec, _DEFAULT_TIMEOUT_S
+    )
     # Ollama's OpenAI-compatible endpoint ignores the key but the SDK requires
     # a non-empty one; a per-instance api_key overrides the dummy default.
     resolved_api_key = api_key if api_key else "ollama"
@@ -56,6 +61,7 @@ def build_embedder(cfg, *, model=None, embedder_config=None, api_key=None):
         dim=dim,
         api_key=resolved_api_key,
         base_url=base_url,
+        timeout_s=timeout_s,
     )
 
 

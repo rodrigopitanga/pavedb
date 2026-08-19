@@ -18,8 +18,38 @@ from ..config import get_cfg
 from ..metrics import inc_labeled
 
 
-CONFIG_KEYS: tuple[str, ...] = ("dim", "base_url", "batch_size")
+CONFIG_KEYS: tuple[str, ...] = ("dim", "base_url", "batch_size", "timeout_s")
 SPACE_KEYS: tuple[str, ...] = ("dim",)
+
+# Total wall-clock budget for one embeddings call, retries included.
+_DEFAULT_TIMEOUT_S = 60.0
+# The SDK retries httpx.TimeoutException, so a per-request timeout bounds one
+# ATTEMPT, not the call: with the SDK default of 2 retries a provider that
+# accepts and never answers holds its pool slot for ~3x the timeout. Pin the
+# retry count here and split the operator's budget across the attempts, so
+# `timeout_s` means the whole call and an SDK default change cannot widen it.
+# The count matches the SDK's current default, so retry resilience against
+# transient 429/5xx is unchanged.
+_MAX_RETRIES = 2
+
+
+def _total_timeout_s(timeout_s: float | str | None) -> float:
+    """Validate the total per-call budget, applying the default when unset.
+
+    Rejects non-positive values rather than treating them as "no timeout": a
+    typo must not silently restore the unbounded behaviour this guards.
+    """
+    if timeout_s is None:
+        return _DEFAULT_TIMEOUT_S
+    try:
+        total = float(timeout_s)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError(
+            "embedder.openai.timeout_s must be a positive number"
+        ) from exc
+    if total <= 0:
+        raise RuntimeError("embedder.openai.timeout_s must be a positive number")
+    return total
 
 
 def validate_spec(resolved_config: dict) -> dict:
@@ -62,6 +92,9 @@ def build_embedder(cfg, *, model=None, embedder_config=None, api_key=None):
         dim=resolve_setting(cfg, "openai", "dim", spec, None),
         api_key=api_key,
         base_url=resolve_setting(cfg, "openai", "base_url", spec, None),
+        timeout_s=resolve_setting(
+            cfg, "openai", "timeout_s", spec, _DEFAULT_TIMEOUT_S
+        ),
     )
 
 
@@ -83,6 +116,7 @@ class OpenAIEmbedder:
         dim: int | str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
+        timeout_s: float | str | None = None,
     ) -> None:
         from openai import OpenAI
 
@@ -107,6 +141,11 @@ class OpenAIEmbedder:
         resolved_base_url = str(base_url if base_url is not None else "").strip()
         if resolved_base_url:
             client_kwargs["base_url"] = resolved_base_url
+        if timeout_s is None:
+            timeout_s = cfg.get("embedder.openai.timeout_s")
+        self.timeout_s = _total_timeout_s(timeout_s)
+        client_kwargs["max_retries"] = _MAX_RETRIES
+        client_kwargs["timeout"] = self.timeout_s / (_MAX_RETRIES + 1)
         self.client = OpenAI(**client_kwargs)
 
     @property
