@@ -34,8 +34,12 @@ Keys live in `config.yml` or in the sidecar named by `auth.tenants_file`.
 database and query log. There is no external database.
 
 That makes backups simple — take the directory as a unit — and it makes the
-directory the thing to protect. Use `pavecli dump-archive` for a consistent
-snapshot rather than copying files under a running server.
+directory the thing to protect.
+
+Stop the server before you back it up. Copying the directory underneath a
+running instance can catch SQLite mid-write, and `pavecli dump-archive` is an
+offline tool: it operates on the data directory directly and does not
+coordinate with a live server.
 
 ## Health
 
@@ -43,8 +47,11 @@ snapshot rather than copying files under a running server.
 |---|---|---|
 | `/health/live` | the process answers; does not touch the model | liveness |
 | `/health/ready` | the data directory is writable | readiness |
-| `/health` | a summary, including version and backend | humans |
+| `/health` | status and version | humans |
 | `/health/metrics` | operational counters | scraping |
+
+`/health/ready` also reports the vector backend it verified, which is the
+quickest way to confirm an instance is running the store you think it is.
 
 Point an orchestrator at `/health/ready`. `/health/live` will answer while the
 data directory is unwritable, which is exactly when you do not want traffic.
@@ -55,7 +62,18 @@ Set these before you have tenants, not after:
 
 - `ingest.max_file_size_mb` — largest single document accepted
 - `ingest.max_concurrent` — instance-wide ingest slots
+- `ingest.max_concurrent_per_tenant` — how many of those one tenant may hold
+  (unset: half the pool, rounded up)
+- `ingest.max_batch_size_mb` — total across one batch, not per document
+- `server.max_request_body_mb` — every non-upload request body, checked before
+  routing and before authentication
 - per-tenant collection and chunk caps — the quota surface for shared plans
+
+A body over its ceiling is refused with `413 request_too_large` before the
+request reaches a route, so an oversized client sees that rather than a
+timeout. Upload endpoints get the ingest ceiling; everything else gets the
+tighter `server.max_request_body_mb`, because a JSON body is parsed into
+memory rather than spooled to disk.
 
 A shared instance without caps means one tenant can consume the disk and index
 memory every other tenant depends on.

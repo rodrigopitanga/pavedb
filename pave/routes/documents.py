@@ -10,7 +10,7 @@ import json
 from fastapi import APIRouter, Depends, File, Form, Query, Request, Response, UploadFile
 from pydantic import ValidationError
 
-from pave.auth import AuthContext, tenant_rate_limit
+from pave.auth import AuthContext, ConcurrencySlot, tenant_rate_limit
 from pave.config import get_logger
 from pave.log import ops_event
 from pave.schemas import (
@@ -43,6 +43,63 @@ from pave.stores.base import BaseStore
 def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
     router = APIRouter()
     log = get_logger()
+
+    def ingest_gate(request, tenant, collection, rid, op):
+        """Take one instance and one per-tenant ingest slot.
+
+        Returns ``(slot, None)`` when admitted, ``(None, response)`` with the
+        503 when either bound is reached. The per-tenant bound is what stops
+        a single tenant from holding every slot in the shared pool while
+        staying inside its own request cap. Both counters move together
+        under one lock because a detached ingest thread releases them from
+        the pool, not from the event loop.
+        """
+        state = request.app.state
+        max_i = state.max_ingests
+        max_t = state.max_ingests_per_tenant
+        per = state.tenant_active_ingests
+        source = None
+        with state.ingest_lock:
+            active_i = state.active_ingests
+            active_t = per.get(tenant, 0)
+            if max_i > 0 and active_i >= max_i:
+                source, active, limit = (
+                    "instance-scoped ingest cap", active_i, max_i
+                )
+            elif max_t > 0 and active_t >= max_t:
+                source, active, limit = (
+                    "tenant-scoped ingest cap", active_t, max_t
+                )
+            else:
+                state.active_ingests = active_i + 1
+                per[tenant] = active_t + 1
+
+        if source is None:
+            def _decrement() -> None:
+                state.active_ingests -= 1
+                per[tenant] = max(0, per.get(tenant, 0) - 1)
+
+            return ConcurrencySlot(state.ingest_lock, _decrement), None
+
+        log.warning(
+            "%s capped by %s tenant=%s collection=%s active=%s limit=%s "
+            "path=%s request_id=%s",
+            op,
+            source,
+            tenant,
+            collection,
+            active,
+            limit,
+            request.url.path,
+            rid,
+        )
+        return None, error(
+            503,
+            "ingest_overloaded",
+            f"{op} capped by {source} (active={active}, limit={limit})",
+            request=request,
+            request_id=rid,
+        )
 
     @router.get(
         "/collections/{tenant}/{collection}/documents",
@@ -166,29 +223,10 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                 "include_cols": csv_include_cols or "",
             }
 
-        max_i = request.app.state.max_ingests
-        if max_i > 0:
-            if request.app.state.active_ingests >= max_i:
-                active = request.app.state.active_ingests
-                log.warning(
-                    "ingest capped by instance-scoped ingest cap tenant=%s "
-                    "collection=%s active=%s limit=%s path=%s request_id=%s",
-                    tenant,
-                    collection,
-                    active,
-                    max_i,
-                    request.url.path,
-                    rid,
-                )
-                return error(
-                    503,
-                    "ingest_overloaded",
-                    "ingest capped by instance-scoped ingest cap "
-                    f"(active={active}, limit={max_i})",
-                    request=request,
-                    request_id=rid,
-                )
-            request.app.state.active_ingests += 1
+        slot, capped = ingest_gate(request, tenant, collection, rid, "ingest")
+        if capped is not None:
+            return capped
+        completion = None
         try:
             try:
                 loop = asyncio.get_running_loop()
@@ -215,10 +253,14 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                         meta_obj,
                         csv_options=csv_opts,
                     )
-                result = await loop.run_in_executor(
-                    request.app.state.ingest_executor,
-                    call,
-                )
+                executor = request.app.state.ingest_executor
+                if executor is None:
+                    # No instance cap: no dedicated pool, and no concrete
+                    # future to hang a release callback on.
+                    result = await loop.run_in_executor(None, call)
+                else:
+                    completion = executor.submit(call)
+                    result = await asyncio.wrap_future(completion)
                 if not result.get("ok"):
                     code = result.get("code", "ingest_failed")
                     status_map = {
@@ -236,6 +278,13 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                         request_id=rid,
                     )
                 return trace(result, request, request_id=rid)
+            except asyncio.CancelledError:
+                # The pool thread cannot be recalled and still holds the
+                # uploaded bytes: keep the slot until it really finishes,
+                # or the cap admits new work while the pool is full.
+                if completion is not None:
+                    slot.release_on(completion)
+                raise
             except ServiceError as exc:
                 code = exc.code
                 status_map = {
@@ -260,8 +309,8 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     request_id=rid,
                 )
         finally:
-            if max_i > 0:
-                request.app.state.active_ingests -= 1
+            if not slot.detached:
+                slot.release()
 
     @router.post(
         "/collections/{tenant}/{collection}/documents:batch",
@@ -297,29 +346,12 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         ctx: AuthContext = Depends(tenant_rate_limit),
         store: BaseStore = Depends(current_store),
     ):
-        max_i = request.app.state.max_ingests
-        if max_i > 0:
-            if request.app.state.active_ingests >= max_i:
-                active = request.app.state.active_ingests
-                log.warning(
-                    "ingest batch capped tenant=%s collection=%s "
-                    "active=%s limit=%s path=%s request_id=%s",
-                    tenant,
-                    collection,
-                    active,
-                    max_i,
-                    request.url.path,
-                    rid,
-                )
-                return error(
-                    503,
-                    "ingest_overloaded",
-                    "ingest capped by instance-scoped ingest cap "
-                    f"(active={active}, limit={max_i})",
-                    request=request,
-                    request_id=rid,
-                )
-            request.app.state.active_ingests += 1
+        slot, capped = ingest_gate(
+            request, tenant, collection, rid, "ingest batch"
+        )
+        if capped is not None:
+            return capped
+        completion = None
         try:
             try:
                 documents = [
@@ -327,16 +359,21 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     for item in body.documents
                 ]
                 loop = asyncio.get_running_loop()
-                result = await loop.run_in_executor(
-                    request.app.state.ingest_executor,
-                    functools.partial(
-                        svc_ingest_documents_batch,
-                        store,
-                        tenant,
-                        collection,
-                        documents,
-                    ),
+                call = functools.partial(
+                    svc_ingest_documents_batch,
+                    store,
+                    tenant,
+                    collection,
+                    documents,
                 )
+                executor = request.app.state.ingest_executor
+                if executor is None:
+                    # No instance cap: no dedicated pool, and no concrete
+                    # future to hang a release callback on.
+                    result = await loop.run_in_executor(None, call)
+                else:
+                    completion = executor.submit(call)
+                    result = await asyncio.wrap_future(completion)
                 if not result.get("ok"):
                     code = result.get("code", "ingest_batch_failed")
                     status_map = {
@@ -352,6 +389,12 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                         request_id=rid,
                     )
                 return trace(result, request, request_id=rid)
+            except asyncio.CancelledError:
+                # Same as single-document ingest: the queued job outlives
+                # the request, so the slot has to outlive it too.
+                if completion is not None:
+                    slot.release_on(completion)
+                raise
             except ServiceError as exc:
                 status_map = {
                     "embedder_unavailable": 503,
@@ -370,8 +413,8 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     request_id=rid,
                 )
         finally:
-            if max_i > 0:
-                request.app.state.active_ingests -= 1
+            if not slot.detached:
+                slot.release()
 
     @router.delete(
         "/collections/{tenant}/{collection}/documents/{docid}",

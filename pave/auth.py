@@ -254,6 +254,45 @@ def _tenant_limit_exception(
     )
 
 
+class ConcurrencySlot:
+    """One held concurrency slot, released exactly once from any thread.
+
+    Work handed to an executor cannot be recalled when the request that
+    submitted it times out or the client disconnects, so the slot has to
+    follow the worker thread rather than the response. ``release_on``
+    detaches it; the request scope then leaves the release to the pool
+    thread. Release takes the same lock the admission check takes because
+    it now runs off the event loop, and it is idempotent so the normal and
+    the detached path cannot both decrement.
+    """
+
+    def __init__(self, lock, decrement):
+        self._lock = lock
+        self._decrement = decrement
+        self._released = False
+        self.detached = False
+
+    def release(self) -> None:
+        with self._lock:
+            if self._released:
+                return
+            self._released = True
+            self._decrement()
+
+    def release_on(self, future) -> None:
+        """Hand the slot to `future`'s worker; release when it finishes."""
+        self.detached = True
+        future.add_done_callback(self._finish)
+
+    def _finish(self, done) -> None:
+        try:
+            if not done.cancelled():
+                # Consume it: nothing awaits this result any more.
+                done.exception()
+        finally:
+            self.release()
+
+
 async def tenant_rate_limit(
     request: Request,
     response: Response,
@@ -286,8 +325,16 @@ async def tenant_limit_gate(
         return
 
     active = request.app.state.tenant_active
-    current = active.get(tenant, 0)
-    if current >= max_c:
+    lock = request.app.state.tenant_lock
+    # Under the lock: a detached search thread releases its slot from the
+    # pool, so the check and the increment can no longer assume the event
+    # loop serializes every writer.
+    with lock:
+        current = active.get(tenant, 0)
+        admitted = current < max_c
+        if admitted:
+            active[tenant] = current + 1
+    if not admitted:
         source = (
             "tenant-scoped cap"
             if tenant in request.app.state.tenant_limits
@@ -303,14 +350,21 @@ async def tenant_limit_gate(
             request_id=getattr(request.state, "request_id", None),
         )
 
-    active[tenant] = active.get(tenant, 0) + 1
-    remaining = max(0, max_c - active[tenant])
+    def _decrement() -> None:
+        active[tenant] = max(0, active.get(tenant, 0) - 1)
+
+    slot = ConcurrencySlot(lock, _decrement)
+    # Published so work that outlives this request (a detached search
+    # thread) can keep the tenant's slot until it really finishes.
+    request.state.tenant_slot = slot
+    remaining = max(0, max_c - (current + 1))
     response.headers["X-RateLimit-Limit"] = str(max_c)
     response.headers["X-RateLimit-Remaining"] = str(remaining)
     try:
         yield
     finally:
-        active[tenant] = max(0, active[tenant] - 1)
+        if not slot.detached:
+            slot.release()
 
 
 # --- Startup security policy -------------------------------------------------
