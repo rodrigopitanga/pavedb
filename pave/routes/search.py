@@ -6,9 +6,15 @@ from __future__ import annotations
 import functools
 import json
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Depends, Query, Request, Response
 
-from pave.auth import AuthContext, actor_of, auth_ctx, tenant_rate_limit
+from pave.auth import (
+    AuthContext,
+    actor_of,
+    auth_ctx,
+    tenant_limit_gate,
+    tenant_rate_limit,
+)
 from pave.log import ops_event
 from pave.schemas import (
     MAX_SEARCH_K,
@@ -26,6 +32,19 @@ from pave.service import (
 )
 from pave.routes._deps import current_store
 from pave.stores.base import BaseStore
+
+
+def _capped_tenant(ctx: AuthContext) -> str | None:
+    """Tenant whose cap applies, or None when the caller is uncapped.
+
+    The shared-scope routes carry no ``{tenant}`` path parameter, so they take
+    the gate by hand instead of via ``tenant_rate_limit``. That dependency
+    bypasses the cap for admin and tenantless contexts, and this must match it
+    exactly: under ``auth.mode=none`` the admin context still carries the
+    default access tenant, so keying on the tenant alone would start capping
+    the admin identity. ``tenant_limit_gate`` treats None as "no cap".
+    """
+    return None if ctx.is_admin else ctx.tenant
 
 
 def build_search_router(
@@ -270,7 +289,7 @@ def build_search_router(
         summary="Search shared collections",
         description="Searches the shared scope; empty when that scope is disabled.",
         response_model=SearchResponse,
-        responses=resp(401, 403, 500, 503),
+        responses=resp(401, 403, 429, 500, 503),
         tags=["Global Search"],
     )
     @ops_event(
@@ -286,6 +305,7 @@ def build_search_router(
     )
     async def search_common_post(
         request: Request,
+        response: Response,
         body: SearchBody,
         rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(auth_ctx),
@@ -306,29 +326,30 @@ def build_search_router(
                 request,
                 request_id=rid,
             )
-        return await do_search(
-            functools.partial(
-                svc_search,
-                store,
-                cfg.common_tenant,
-                cfg.common_collection,
-                body.q,
-                body.k,
-                filters=body.filters,
-                v=body.v,
+        async with tenant_limit_gate(request, response, _capped_tenant(ctx)):
+            return await do_search(
+                functools.partial(
+                    svc_search,
+                    store,
+                    cfg.common_tenant,
+                    cfg.common_collection,
+                    body.q,
+                    body.k,
+                    filters=body.filters,
+                    v=body.v,
+                    request_id=rid,
+                    actor=actor_of(ctx),
+                ),
+                request=request,
                 request_id=rid,
-                actor=actor_of(ctx),
-            ),
-            request=request,
-            request_id=rid,
-        )
+            )
 
     @router.get(
         "/search",
         summary="Search shared collections",
         description="Query-string form of the shared search; filters are not accepted.",
         response_model=SearchResponse,
-        responses=resp(401, 403, 500, 503),
+        responses=resp(401, 403, 429, 500, 503),
         tags=["Global Search"],
     )
     @ops_event(
@@ -344,6 +365,7 @@ def build_search_router(
     )
     async def search_common_get(
         request: Request,
+        response: Response,
         q: str = Query(...),
         k: int = Query(5, ge=1, le=MAX_SEARCH_K),
         rid: str | None = Depends(get_rid),
@@ -365,20 +387,21 @@ def build_search_router(
                 request,
                 request_id=rid,
             )
-        return await do_search(
-            functools.partial(
-                svc_search,
-                store,
-                cfg.common_tenant,
-                cfg.common_collection,
-                q,
-                k,
-                filters=None,
+        async with tenant_limit_gate(request, response, _capped_tenant(ctx)):
+            return await do_search(
+                functools.partial(
+                    svc_search,
+                    store,
+                    cfg.common_tenant,
+                    cfg.common_collection,
+                    q,
+                    k,
+                    filters=None,
+                    request_id=rid,
+                    actor=actor_of(ctx),
+                ),
+                request=request,
                 request_id=rid,
-                actor=actor_of(ctx),
-            ),
-            request=request,
-            request_id=rid,
-        )
+            )
 
     return router

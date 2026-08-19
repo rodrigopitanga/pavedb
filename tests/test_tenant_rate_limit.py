@@ -44,6 +44,52 @@ def test_admin_bypasses_tenant_limit(app, monkeypatch):
     assert r.status_code != 429
 
 
+def test_shared_scope_search_honours_tenant_limit(app, monkeypatch):
+    """/v1/search enters the per-tenant gate like the scoped search routes."""
+    cfg = app.state.cfg
+    cfg.set("common_enabled", True)
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", None)
+    cfg.set("auth.api_keys", {"acme": "acmetoken"})
+
+    monkeypatch.setitem(app.state.tenant_limits, "acme", 1)
+    monkeypatch.setitem(app.state.tenant_active, "acme", 1)
+
+    c = TestClient(app)
+    headers = {"Authorization": "Bearer acmetoken"}
+    r = c.post("/v1/search", json={"q": "x", "k": 1}, headers=headers)
+    assert r.status_code == 429
+    assert r.json()["code"] == "tenant_rate_limited"
+    assert r.headers.get("Retry-After") == "1"
+
+    g = c.get("/v1/search", params={"q": "x", "k": 1}, headers=headers)
+    assert g.status_code == 429
+    assert g.json()["code"] == "tenant_rate_limited"
+
+
+def test_admin_bypasses_shared_scope_tenant_limit(app, monkeypatch):
+    """The shared-scope gate must keep tenant_rate_limit's admin bypass.
+
+    Under auth.mode=none the admin context still carries the default access
+    tenant, so a gate keyed on ctx.tenant alone would cap the admin identity.
+    """
+    cfg = app.state.cfg
+    cfg.set("common_enabled", True)
+    saturated = (
+        str(cfg.get("auth.default_access_tenant")),
+        str(cfg.get("common_tenant")),
+    )
+    for tenant in saturated:
+        monkeypatch.setitem(app.state.tenant_limits, tenant, 1)
+        monkeypatch.setitem(app.state.tenant_active, tenant, 1)
+
+    c = TestClient(app)
+    r = c.post("/v1/search", json={"q": "x", "k": 1})
+    assert r.status_code != 429
+    g = c.get("/v1/search", params={"q": "x", "k": 1})
+    assert g.status_code != 429
+
+
 def test_unconfigured_tenant_uses_default(app, monkeypatch):
     """Tenant absent from tenant_limits uses tenant_default_limit; 429 when hit."""
     cfg = app.state.cfg
