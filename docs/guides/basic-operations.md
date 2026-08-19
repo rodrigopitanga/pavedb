@@ -47,20 +47,21 @@ to enable; it is what a hit is.
 Every search is logged as it happens.
 
 ```bash
-pavecli list-queries demo books
-pavecli get-query demo books <query_id>
-pavecli replay-query demo books <query_id>
+pavecli list-queries --tenant demo --collection books
+pavecli get-query <query_id>
+pavecli replay-query <query_id>
 ```
 
-`get-query` returns the parameters, timing and result ids of a past search.
-`replay-query` runs it again against current data — useful for telling
+A `query_id` is unique on its own, so `get-query` and `replay-query` take just
+the id. `get-query` returns the parameters, timing and result ids of a past
+search; `replay-query` runs it again against current data — useful for telling
 "the index changed" apart from "the query was always wrong".
 
 To go from a hit down to the exact stored text:
 
 ```bash
-pavecli list-chunks demo books --docid book-1
-pavecli get-chunk-content demo books <rid>
+pavecli list-chunks demo books book-1
+pavecli get-chunk-content demo books book-1::chunk_0
 ```
 
 ## Clean up

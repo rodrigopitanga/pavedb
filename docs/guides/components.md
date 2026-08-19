@@ -18,8 +18,8 @@ why you are doing that — the entry point does more than mount the app.
 ## The CLI — `pavecli`
 
 The same operations from a shell: set up an instance, ingest, search, inspect
-the query log, take an archive. It talks to a running server, or to a data
-directory directly.
+the query log, take an archive. It works directly against a data directory —
+there is no HTTP transport, so it is a local operator tool, not a client.
 
 Best for setup, one-off inspection and scripting. `pavecli init` writes the
 config and tenant files an instance needs.
