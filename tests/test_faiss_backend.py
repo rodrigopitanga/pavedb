@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import faiss
 import numpy as np
 import pytest
 
@@ -71,6 +72,41 @@ def test_flush_and_initialize_restore_index_state(tmp_path):
     b2.add(["r3"], _v([0, 0, 1, 0]))
     hits2 = b2.search(_v([0, 0, 1, 0])[0], 10)
     assert hits2[0][0] == "r3"
+
+
+def test_flush_refuses_to_erase_index_after_partial_load(tmp_path, caplog):
+    storage = tmp_path / "idx"
+    b1 = FaissBackend(4, storage_dir=storage)
+    b1.add(["r1", "r2"], _v([1, 0, 0, 0], [0, 1, 0, 0]))
+    b1.flush()
+
+    (storage / "id_map.json").unlink()
+
+    b2 = FaissBackend(4, storage_dir=storage)
+    b2.initialize()
+    assert int(b2._index.ntotal) == 0
+
+    with caplog.at_level("ERROR"):
+        with pytest.raises(RuntimeError, match="refusing to persist"):
+            b2.flush()
+    assert "would overwrite 2 vectors" in caplog.text
+
+    survived = faiss.read_index(str(storage / "faiss.index"))
+    assert int(survived.ntotal) == 2
+
+
+def test_flush_persists_an_index_emptied_by_deletes(tmp_path):
+    storage = tmp_path / "idx"
+    backend = FaissBackend(4, storage_dir=storage)
+    backend.add(["r1"], _v([1, 0, 0, 0]))
+    backend.flush()
+
+    backend.delete(["r1"])
+    backend.flush()
+
+    reopened = FaissBackend(4, storage_dir=storage)
+    reopened.initialize()
+    assert int(reopened._index.ntotal) == 0
 
 
 def test_initialize_raises_on_dimension_mismatch(tmp_path):

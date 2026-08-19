@@ -12,6 +12,7 @@ on normalized vectors) and persists the index plus an
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import faiss
@@ -19,6 +20,8 @@ import numpy as np
 from numpy.typing import NDArray
 
 from .base import SearchHit
+
+log = logging.getLogger(__name__)
 
 
 class FaissBackend:
@@ -170,6 +173,24 @@ class FaissBackend:
         persisted = self._index_file.is_file() and self._map_file.is_file()
         if persisted and not self._dirty:
             return
+
+        if int(self._index.ntotal) == 0 and not self._dirty:
+            # Empty and untouched means this instance never took ownership of
+            # whatever is on disk (partial or failed load), so writing it out
+            # would erase vectors nobody asked to delete.
+            on_disk = 0
+            if self._index_file.is_file():
+                try:
+                    on_disk = int(faiss.read_index(str(self._index_file)).ntotal)
+                except Exception:
+                    on_disk = 0
+            if on_disk > 0:
+                message = (
+                    "FAISS index refusing to persist: empty in-memory index "
+                    f"would overwrite {on_disk} vectors at {self._index_file}"
+                )
+                log.error(message)
+                raise RuntimeError(message)
 
         self._storage_dir.mkdir(parents=True, exist_ok=True)
         faiss.write_index(self._index, str(self._index_file))
