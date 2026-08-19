@@ -9,6 +9,11 @@ include requirements-cpu.txt
 include docs/reference/cli.md
 include docs/reference/config.md
 include docs/reference/protocols.md
+include docs/guides/README.md
+include docs/guides/overview.md
+include docs/guides/components.md
+include docs/guides/basic-operations.md
+include docs/guides/running-it.md
 include docs/RELEASE-v*.md
 recursive-include pave *.py
 recursive-include pave *.json

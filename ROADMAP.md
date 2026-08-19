@@ -133,7 +133,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-65 | ~~Instance archive/restore integrity~~ | 🔧 | Preflight catalog, collection sidecars, and configured embedders before rollback-safe whole-instance replacement; verify mixed-embedder round trips. | v1.0 |
 | P1-66 | Runnable book examples | 🔧 | The Python SDK and Elixir client own tested, numbered top-level examples extracted from the book; CI verifies runnable programs and distribution boundaries. See `docs/design/PLAN-EXAMPLES.md`. | v1.1 |
 | P1-67 | ~~Elixir public API parity~~ | 🔧 | Cover the current user-facing `/v1` surface plus a basic `/health` connection check; defer `/admin`, `/metrics`, and `/embedders`. | v1.0 |
-| P1-68 | Task-oriented engine guides | 🔧 | Hand-written, low-boilerplate quickstart and usage guides shipped in the PaveDB source distribution, complementing the generated reference (P1-46) with narrative task-oriented docs rather than auto-generated dumps. | v1.1 |
+| P1-68 | ~~Task-oriented engine guides~~ | 🔧 | Hand-written, low-boilerplate quickstart and usage guides shipped in the PaveDB source distribution, complementing the generated reference (P1-46) with narrative task-oriented docs rather than auto-generated dumps. | v1.1 |
 | P1-70 | SQLite chunk-text index and content filters | 🧱 | Make chunk text queryable through native FTS5 for contains/phrase/prefix filters and lexical candidates; prerequisite for P1-72 | v1.2 |
 | P1-71 | Backend-aware filtered vector search | 🧱 | Let SQLite-selected record IDs constrain vector search instead of relying on repeated vector-first overfetch; depends on P1-35 | v1.3 |
 | P1-72 | Hybrid lexical/vector retrieval | 🧱 | Fuse independent FAISS and SQLite FTS5 candidate lists; depends on P1-70 | v1.2 |
@@ -530,8 +530,8 @@ lands where it has more impact during post-contract hardening.
   the VectorDBBench adapter expands beyond its v1.0 cosine cases (P2-51).
 - Runnable book examples owned by the Python SDK and Elixir client
   distributions (P1-66).
-- Task-oriented quickstart and usage guides in the PaveDB source
-  distribution (P1-68).
+- ~~Task-oriented quickstart and usage guides in the PaveDB source
+  distribution (P1-68).~~
 - ~~Batch ingest endpoint (list of documents in one call) (P1-16).~~
 - ~~Admin key auto-generate + persist on first boot; CLI rotate /
   show; mode-`0600` enforced (P1-27).~~

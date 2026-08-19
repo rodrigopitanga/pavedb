@@ -313,6 +313,8 @@ barely changes along the way:
 
 ## 📚 Reference
 
+- [Guides](docs/guides/README.md) — start here: what PaveDB is, its components,
+  the basic operations, and what an operator has to get right
 - [CLI](docs/reference/cli.md) — `pavecli` commands and flags
 - [Configuration](docs/reference/config.md) — config fields, defaults, and environment overrides
 - [Store protocols](docs/reference/protocols.md) — `Embedder`/backend stability contract
