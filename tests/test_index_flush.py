@@ -110,6 +110,79 @@ def test_byov_ingest_survives_reopen_with_a_dirty_marker(tmp_path):
     )
 
     assert hits[0].meta["docid"] == "doc1"
+    # The rebuild carries the BYOV vector over from the live index, so it
+    # completes for real and the marker is cleared.
+    assert not (index_dir / ".pavedb-index-dirty").exists()
+
+
+def _seed_mixed_collection(store, tenant, collection):
+    """One text chunk (has a sidecar) plus one BYOV chunk (has none)."""
+    store.index_records(
+        tenant,
+        collection,
+        "doc_text",
+        [("0", "plain text chunk about otters", {"lang": "en"})],
+    )
+    vector = [0.0] * 64
+    vector[7] = 1.0
+    store.index_records(
+        tenant,
+        collection,
+        "doc_byov",
+        [("0", "", {})],
+        vectors=[vector],
+    )
+    store._save(tenant, collection)
+    return vector
+
+
+def test_rebuild_carries_byov_vectors_instead_of_bailing_out(tmp_path):
+    tenant, collection = "acme", "byov_mixed"
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    vector = _seed_mixed_collection(store, tenant, collection)
+
+    # Index drifted: the text chunk lost its vector but the BYOV one kept
+    # its own. The rebuild must repair the first and carry the second.
+    backend = store._emb[(tenant, collection)]
+    backend.delete(["doc_text::0"])
+    backend.flush()
+    store._mark_index_dirty(tenant, collection)
+    for db in list(store._dbs.values()):
+        db.close()
+
+    reopened = LocalStore(str(tmp_path), FakeEmbedder())
+    text_hits = reopened.search(tenant, collection, "otters", k=5)
+    byov_hits = reopened.search(
+        tenant,
+        collection,
+        "",
+        k=5,
+        query_vector=vector,
+    )
+
+    assert text_hits[0].meta["docid"] == "doc_text"
+    assert byov_hits[0].meta["docid"] == "doc_byov"
+    index_dir = _index_dir(store, tenant, collection)
+    assert not (index_dir / ".pavedb-index-dirty").exists()
+
+
+def test_rebuild_that_loses_a_chunk_stays_dirty(tmp_path):
+    tenant, collection = "acme", "byov_lost"
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    _seed_mixed_collection(store, tenant, collection)
+
+    index_dir = _index_dir(store, tenant, collection)
+    for db in list(store._dbs.values()):
+        db.close()
+    # Index files gone: the BYOV chunk has neither text nor a recoverable
+    # vector, so the rebuild is short and must not look successful.
+    (index_dir / "faiss.index").unlink()
+    (index_dir / "id_map.json").unlink()
+
+    reopened = LocalStore(str(tmp_path), FakeEmbedder())
+    text_hits = reopened.search(tenant, collection, "otters", k=5)
+
+    assert [h.meta["docid"] for h in text_hits] == ["doc_text"]
     assert (index_dir / ".pavedb-index-dirty").is_file()
 
 

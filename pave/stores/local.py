@@ -1234,6 +1234,29 @@ class LocalStore:
         except Exception:
             return None
 
+    @staticmethod
+    def _backend_vector_for_rid(
+        backend: FaissBackend,
+        rid: str,
+        dim: int,
+    ) -> Any | None:
+        """Read one chunk's stored vector back out of the live index."""
+        get_vector = getattr(backend, "get_vector", None)
+        if not callable(get_vector):
+            return None
+        try:
+            vector = get_vector(rid)
+        except Exception:
+            return None
+        if vector is None:
+            return None
+        vector = np.asarray(vector, dtype=np.float32).reshape(-1)
+        # A vector from an index of another width cannot be re-added, and
+        # letting FAISS raise here would fail the whole collection load.
+        if int(vector.shape[0]) != int(dim):
+            return None
+        return vector
+
     def _index_needs_rebuild(
         self,
         tenant: str,
@@ -1258,9 +1281,12 @@ class LocalStore:
         col_db: CollectionDB,
         embedder: Embedder,
     ) -> FaissBackend:
+        dim = int(embedder.dim)
         rids: list[str] = []
         texts: list[str] = []
-        missing_source = False
+        carried_rids: list[str] = []
+        carried: list[Any] = []
+        lost: list[str] = []
         for document in col_db.list_documents():
             docid = str(document.get("docid") or "")
             if not docid:
@@ -1270,32 +1296,57 @@ class LocalStore:
                 if not rid:
                     continue
                 text = self._load_chunk_text(tenant, collection, rid)
-                if text is None:
-                    missing_source = True
-                    log.warning(
-                        "Skipping missing chunk text during index rebuild "
-                        "tenant=%s coll=%s rid=%s",
-                        tenant,
-                        collection,
-                        rid,
-                    )
+                if text is not None:
+                    rids.append(rid)
+                    texts.append(text)
                     continue
-                rids.append(rid)
-                texts.append(text)
-        if missing_source and backend.count():
+                # BYOV chunks keep no text sidecar, so the live index is
+                # the only place their vector still exists; carry it over
+                # instead of dropping the record from the rebuild.
+                vector = self._backend_vector_for_rid(backend, rid, dim)
+                if vector is None:
+                    lost.append(rid)
+                    continue
+                carried_rids.append(rid)
+                carried.append(vector)
+
+        if lost and not rids and not carried_rids:
+            # Nothing survived: an empty index is strictly worse than the
+            # one already loaded, so keep it and stay dirty.
             log.warning(
-                "Preserving existing index because not every chunk has "
-                f"rebuild source tenant={tenant} coll={collection}"
+                "Index rebuild found no rebuildable chunk, preserving "
+                "existing index tenant=%s coll=%s lost=%d",
+                tenant,
+                collection,
+                len(lost),
             )
+            self._mark_index_dirty(tenant, collection)
             return backend
+
         rebuilt = FaissBackend(
-            int(embedder.dim),
+            dim,
             storage_dir=self._index_dir(tenant, collection),
         )
         if rids:
             rebuilt.add(rids, self._encode_embedder(embedder, texts))
+        if carried_rids:
+            rebuilt.add(carried_rids, np.vstack(carried))
         rebuilt.flush()
-        self._clear_index_dirty(tenant, collection)
+        if lost:
+            # A short index must never be reported as a clean rebuild:
+            # keep the marker so the next load retries rather than
+            # trusting a result we know is missing records.
+            log.warning(
+                "Index rebuild lost chunks with no text and no recoverable "
+                "vector tenant=%s coll=%s lost=%d rids=%s",
+                tenant,
+                collection,
+                len(lost),
+                lost[:20],
+            )
+            self._mark_index_dirty(tenant, collection)
+        else:
+            self._clear_index_dirty(tenant, collection)
         return rebuilt
 
     def _load_or_init(

@@ -146,6 +146,24 @@ class FaissBackend:
         """Return the number of vectors currently indexed."""
         return int(self._index.ntotal)
 
+    def get_vector(self, rid: str) -> NDArray[np.float32] | None:
+        """Return the stored (normalized) vector for `rid`, or None.
+
+        Records ingested with a caller-supplied vector keep no text to
+        re-encode, so the index is the only surviving copy of their
+        embedding and an index rebuild has to read it back from here.
+        """
+        iid = self._rid_to_id.get(str(rid))
+        if iid is None:
+            return None
+        try:
+            vector = self._index.reconstruct(int(iid))
+        except Exception:
+            # The id map can drift from the index (partial load, or a
+            # removal that only landed on one side); no vector, no lie.
+            return None
+        return np.asarray(vector, dtype=np.float32).reshape(-1)
+
     def delete(self, rids: list[str]) -> None:
         if not rids:
             return
