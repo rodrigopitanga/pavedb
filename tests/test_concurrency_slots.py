@@ -29,8 +29,9 @@ def test_ingest_share_caps_one_tenant_below_instance_cap(
     client, app, monkeypatch
 ):
     """One tenant must not be able to hold every shared ingest slot."""
-    # Shipped default: half the instance pool (7), rounded up.
-    assert app.state.max_ingests_per_tenant == 4
+    # Off by default: a share is pure throughput loss on a single-tenant
+    # instance, so it is opt-in and a shared deployment turns it on.
+    assert app.state.max_ingests_per_tenant == 0
 
     client.post("/v1/collections/acme/sharecol")
     client.post("/v1/collections/other/sharecol")

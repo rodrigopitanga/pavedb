@@ -62,12 +62,9 @@ Set these before you have tenants, not after:
 
 - `ingest.max_file_size_mb` — largest single document accepted
 - `ingest.max_concurrent` — instance-wide ingest slots
-- `ingest.max_concurrent_per_tenant` — how many of those one tenant may hold
-  (unset: half the pool, rounded up)
 - `ingest.max_batch_size_mb` — total across one batch, not per document
 - `server.max_request_body_mb` — every non-upload request body, checked before
   routing and before authentication
-- per-tenant collection and chunk caps — the quota surface for shared plans
 
 A body over its ceiling is refused with `413 request_too_large` before the
 request reaches a route, so an oversized client sees that rather than a
@@ -75,8 +72,24 @@ timeout. Upload endpoints get the ingest ceiling; everything else gets the
 tighter `server.max_request_body_mb`, because a JSON body is parsed into
 memory rather than spooled to disk.
 
-A shared instance without caps means one tenant can consume the disk and index
-memory every other tenant depends on.
+## Running a shared instance
+
+The defaults assume one tenant. If several tenants you do not control share an
+instance, three more settings stop one of them from consuming what the others
+depend on:
+
+- `ingest.max_concurrent_per_tenant` — how many of the ingest slots one tenant
+  may hold. **Off by default.** On a single-tenant instance a share is pure
+  throughput loss, so it is opt-in — but without it one tenant can hold every
+  slot and everyone else gets `503`. Note `tenants.default_max_concurrent` is
+  larger than the ingest pool, so the general per-tenant request cap cannot
+  bind here; this setting is the only per-tenant ingest bound.
+- per-tenant collection and chunk caps — bound how much of the disk and index
+  memory a tenant can claim.
+- `tenants.default_max_concurrent` — the general per-tenant request cap.
+
+A shared instance without these means one tenant can consume the disk, the
+index memory, and the ingest pool that every other tenant depends on.
 
 ## Containers
 

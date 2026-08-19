@@ -246,11 +246,14 @@ unresponsive provider can hold a worker slot.
 
 ### `ingest.max_concurrent_per_tenant`
 
-- Default: `null`
+- Default: `0`
 - Env var: `PAVEDB_INGEST__MAX_CONCURRENT_PER_TENANT`
-- Description: Maximum share of ingest.max_concurrent one tenant may hold, so a single
-  tenant cannot take every slot; null uses half of ingest.max_concurrent rounded up, 0
-  disables the per-tenant share.
+- Description: Maximum share of ingest.max_concurrent that one tenant may hold. 0 (the
+  default) disables the share: any tenant may fill the whole ingest pool, which is what
+  a single-tenant instance wants. Set it on a shared instance, where one tenant filling
+  the pool starves every other. Note ingest.max_concurrent (7) is smaller than
+  tenants.default_max_concurrent (42), so the per-tenant request cap cannot bind on
+  ingest and this is the only per-tenant ingest bound.
 
 ## Search
 

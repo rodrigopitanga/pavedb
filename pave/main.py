@@ -471,13 +471,13 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     )
     app.state.max_ingests = _max_iconc
     app.state.active_ingests = 0
-    # Per-tenant share of the shared ingest pool. Without it one tenant can
-    # hold every slot while staying inside its own request cap, and every
-    # other tenant gets 503. Unset means half the pool, rounded up.
+    # Per-tenant share of the shared ingest pool, off by default: on a
+    # single-tenant instance a share is pure throughput loss. Turn it on for a
+    # shared instance, where one tenant can otherwise hold every slot while
+    # staying inside its own request cap -- tenants.default_max_concurrent (42)
+    # is larger than this pool (7), so that cap cannot bind on ingest.
     _raw_iper = cfg.get("ingest.max_concurrent_per_tenant")
-    app.state.max_ingests_per_tenant = (
-        int(_raw_iper) if _raw_iper is not None else (_max_iconc + 1) // 2
-    )
+    app.state.max_ingests_per_tenant = int(_raw_iper or 0)
     app.state.tenant_active_ingests = {}
     # Ingest slots are now released from pool threads (detached work), so the
     # read-modify-write genuinely races without this.
