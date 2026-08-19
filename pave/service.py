@@ -745,6 +745,29 @@ def _enforce_ingest_size_limit(size_bytes: int) -> None:
         )
 
 
+def _ingest_batch_size_limit_bytes() -> int:
+    raw = get_cfg().get("ingest.max_batch_size_mb")
+    if raw is None:
+        # Unset means "one batch may carry one document's worth of text".
+        return _ingest_size_limit_bytes()
+    try:
+        max_mb = float(raw)
+    except (TypeError, ValueError):
+        return _ingest_size_limit_bytes()
+    if max_mb <= 0:
+        return 0
+    return int(max_mb * 1024 * 1024)
+
+
+def _enforce_batch_size_limit(total_bytes: int) -> None:
+    limit_bytes = _ingest_batch_size_limit_bytes()
+    if limit_bytes > 0 and total_bytes > limit_bytes:
+        raise ServiceError(
+            "file_too_large",
+            f"batch exceeds the {int(limit_bytes / (1024 * 1024))} MB limit",
+        )
+
+
 def ingest_upload_limit_bytes() -> int:
     """Largest document a file upload may carry, in bytes; 0 is unlimited.
 
@@ -1065,6 +1088,11 @@ def ingest_documents_batch(
             "error_type": "invalid",
         }
 
+    # Per-item checks alone let N documents just under the per-document limit
+    # through, so one request could carry N times the configured budget; the
+    # running total is what keeps a batch inside it. Both are checked before
+    # any preprocessing or embedding work starts.
+    batch_bytes = 0
     for index, item in enumerate(items):
         if not isinstance(item, Mapping):
             return {
@@ -1087,7 +1115,10 @@ def ingest_documents_batch(
                 "error_type": "invalid",
             }
         if has_text:
-            _enforce_ingest_size_limit(len(text.encode("utf-8")))
+            text_bytes = len(text.encode("utf-8"))
+            _enforce_ingest_size_limit(text_bytes)
+            batch_bytes += text_bytes
+            _enforce_batch_size_limit(batch_bytes)
         docid_value = item.get("docid")
         if docid_value is not None and not isinstance(docid_value, str):
             return {

@@ -43,6 +43,47 @@ def test_ingest_accepts_file_within_limit(client, cfg):
     assert r.status_code == 201
 
 
+def test_batch_ingest_rejects_oversized_total(client, cfg):
+    client.post("/v1/collections/acme/batchtotal")
+
+    cfg.set("ingest.max_file_size_mb", 0.001)  # ~1 KB per document
+
+    # Each document is under the per-document limit; the batch is not.
+    r = client.post(
+        "/v1/collections/acme/batchtotal/documents:batch",
+        json={
+            "documents": [
+                {"text": "x" * 600, "docid": f"part-{i}"} for i in range(3)
+            ]
+        },
+    )
+
+    assert r.status_code == 413
+    data = r.json()
+    assert data["ok"] is False
+    assert data["code"] == "file_too_large"
+    assert "batch" in data["error"]
+
+
+def test_batch_ingest_total_limit_has_its_own_key(client, cfg):
+    client.post("/v1/collections/acme/batchtotal2")
+
+    cfg.set("ingest.max_file_size_mb", 0.001)  # ~1 KB per document
+    cfg.set("ingest.max_batch_size_mb", 0.01)  # ~10 KB per batch
+
+    r = client.post(
+        "/v1/collections/acme/batchtotal2/documents:batch",
+        json={
+            "documents": [
+                {"text": "x" * 600, "docid": f"part-{i}"} for i in range(3)
+            ]
+        },
+    )
+
+    assert r.status_code == 201, r.text
+    assert r.json()["succeeded"] == 3
+
+
 def test_ingest_no_limit_when_zero(client, cfg):
     client.post("/v1/collections/acme/sizelimit3")
 
