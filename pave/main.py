@@ -492,6 +492,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                     "collection_not_found": 404,
                     "vectors_only": 400,
                     "dim_mismatch": 400,
+                    "invalid_collection_name": 400,
                 }
                 return _error(
                     status_map.get(exc.code, 500),

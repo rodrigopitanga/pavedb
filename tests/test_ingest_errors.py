@@ -215,3 +215,32 @@ def test_json_text_ingest_rejects_control_char_docid(client):
     )
     assert r.status_code == 400, r.text
     assert r.json()["code"] == "invalid_docid"
+
+
+@pytest.mark.parametrize("bad", BAD_NAMES)
+def test_search_rejects_invalid_collection_name(client, bad):
+    """Unvalidated, these auto-created a collection delete then refused."""
+    r = client.post(
+        f"/v1/collections/acme/{bad}/search", json={"q": "x", "k": 1}
+    )
+    assert r.status_code == 400, (bad, r.status_code, r.text)
+    assert r.json()["code"] == "invalid_collection_name"
+
+
+def test_delete_document_rejects_invalid_collection_name(client):
+    r = client.delete("/v1/collections/acme/under_score/documents/d1")
+    assert r.status_code == 400
+    assert r.json()["code"] == "invalid_collection_name"
+
+
+def test_shared_scope_search_still_works_with_a_valid_common_collection(
+    client, cfg
+):
+    """The configured collection must not be rejected by the caller-name rule."""
+    cfg.set("common_enabled", True)
+    cfg.set("common_tenant", "global")
+    cfg.set("common_collection", "common")
+    client.post("/v1/collections/global/common")
+
+    r = client.post("/v1/search", json={"q": "anything", "k": 3})
+    assert r.status_code == 200, r.text

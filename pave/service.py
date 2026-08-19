@@ -524,6 +524,7 @@ def move_collection(store, tenant: str,
 
 def delete_document(store, tenant: str, collection: str, docid: str) -> ServiceResult:
     try:
+        _validate_collection_name(collection)
         purged = store.purge_doc(tenant, collection, docid)
         if purged:
             m_inc("purge_total", float(purged))
@@ -535,6 +536,12 @@ def delete_document(store, tenant: str, collection: str, docid: str) -> ServiceR
             "docid": docid,
             "chunks_deleted": purged,
         }
+    except ServiceError as e:
+        log.info(
+            "delete_document rejected tenant=%s coll=%s docid=%s: %s",
+            tenant, collection, docid, e.message,
+        )
+        return {"ok": False, "code": e.code, "error": e.message}
     except Exception as e:
         log.warning(
             "delete_document failed tenant=%s coll=%s "
@@ -1271,6 +1278,12 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
     start = _time.perf_counter()
     m_inc("search_total", 1.0)
     try:
+        # Unvalidated here, the name reached _load_or_init and auto-created a
+        # collection that delete_collection then refused to remove, because it
+        # validates the name before checking existence. Safe for the
+        # shared-scope callers too: enforce_policy holds common_collection to
+        # the same rule at startup.
+        _validate_collection_name(collection)
         if (
             _is_identity_collection(store, tenant, collection)
             and q is not None

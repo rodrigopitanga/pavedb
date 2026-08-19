@@ -393,6 +393,12 @@ def _enforce_tenant_names(cfg) -> None:
     # routes/search.py, so it is a raw t_<x> path segment too.
     if cfg.get("common_enabled"):
         _check_tenant_name(str(cfg.get("common_tenant") or ""), "common_tenant")
+        # Same rule, same reason: it reaches store.search() as a raw c_<x> path
+        # segment, and validating it here is what lets the search path reject a
+        # caller-supplied collection name without also rejecting this one.
+        _check_tenant_name(
+            str(cfg.get("common_collection") or ""), "common_collection"
+        )
 
 def enforce_policy(cfg) -> None:
     """

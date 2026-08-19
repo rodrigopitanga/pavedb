@@ -399,7 +399,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         result = svc_delete_document(store, tenant, collection, docid)
         if not result.get("ok"):
             return error(
-                500,
+                400 if result.get("code") == "invalid_collection_name" else 500,
                 result.get("code", "delete_document_failed"),
                 result.get("error", "failed to delete document"),
                 request=request,
