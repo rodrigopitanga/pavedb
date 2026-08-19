@@ -765,3 +765,113 @@ def test_foreign_model_denies_grant_explicitly_not_by_absence():
     runtime = factory.runtime_embedder_spec_for_vector(cfg, persisted)
 
     assert runtime["embedder_config"]["trust_remote_code"] is False
+
+
+@pytest.mark.parametrize("etype", ["xml.sax", ".relative", "os"])
+def test_unshipped_embedder_type_is_rejected_without_importing(
+    monkeypatch,
+    etype,
+):
+    """A caller-named module must never become an import in this process."""
+    factory = _reload_factory()
+    imported: list[str] = []
+    real_import = importlib.import_module
+
+    def _spy(name, package=None):
+        imported.append(name)
+        return real_import(name, package)
+
+    monkeypatch.setattr(importlib, "import_module", _spy)
+
+    with pytest.raises(ValueError) as exc:
+        factory.resolve_embedder_spec(
+            _registry_cfg(),
+            embedder_type=etype,
+            model="whatever",
+        )
+
+    assert "unknown embedder type" in str(exc.value)
+    assert imported == []
+
+
+def _effective_api_key(factory, cfg, model):
+    """What build_embedder really sees: persisted -> runtime -> resolved.
+
+    The store re-resolves the runtime spec through resolve_embedder_spec
+    (stores/local.py:339, 1095), so that last resolution is where the
+    credential would land.
+    """
+    persisted = factory.resolve_embedder_spec(
+        cfg,
+        embedder_type="openai",
+        model=model,
+        embedder_config={"dim": 1536},
+    )
+    runtime = factory.runtime_embedder_spec_for_vector(
+        cfg,
+        factory.persistable_embedder_spec(persisted),
+    )
+    built = factory.resolve_embedder_spec(
+        cfg,
+        embedder_type=str(runtime["embedder_type"]),
+        model=str(runtime["embed_model"]),
+        embedder_config=runtime.get("embedder_config") or {},
+    )
+    return built.get("api_key")
+
+
+@pytest.mark.parametrize("api_key", [None, "sk-secret"])
+def test_foreign_openai_model_is_rejected_before_env_fallback(
+    monkeypatch,
+    api_key,
+):
+    """A tenant-named model must not reach any operator credential."""
+    factory = _reload_factory()
+    cfg = _openai_instance_cfg(api_key=api_key)
+    monkeypatch.setenv("OPENAI_API_KEY", "operator-env-key")
+
+    with pytest.raises(ValueError, match="openai model .* is not configured"):
+        factory.get_embedder(
+            cfg,
+            embedder_type="openai",
+            model="tenant/expensive",
+            embedder_config={"dim": 1536},
+        )
+
+
+def test_unconfigured_openai_type_cannot_use_operator_env_key(monkeypatch):
+    factory = _reload_factory()
+    monkeypatch.setenv("OPENAI_API_KEY", "operator-env-key")
+
+    with pytest.raises(ValueError, match="openai model .* is not configured"):
+        factory.get_embedder(
+            _registry_cfg(),
+            embedder_type="openai",
+            model="tenant/expensive",
+            embedder_config={"dim": 1536},
+        )
+
+
+def test_configured_model_still_gets_instance_api_key():
+    """The operator's own model keeps the credential they configured."""
+    factory = _reload_factory()
+    cfg = _openai_instance_cfg(api_key="sk-secret")
+    key = _effective_api_key(factory, cfg, "text-embedding-3-small")
+
+    assert key == "sk-secret"
+
+
+def test_configured_openai_model_still_uses_environment_key(monkeypatch):
+    factory = _reload_factory()
+    cfg = _openai_instance_cfg(api_key=None)
+    monkeypatch.setenv("OPENAI_API_KEY", "operator-env-key")
+    monkeypatch.delenv("OPENAI_ADMIN_KEY", raising=False)
+
+    embedder = factory.get_embedder(
+        cfg,
+        embedder_type="openai",
+        model="text-embedding-3-small",
+        embedder_config={"dim": 1536},
+    )
+
+    assert embedder.client.api_key == "operator-env-key"

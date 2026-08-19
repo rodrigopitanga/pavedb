@@ -73,21 +73,27 @@ class EmbedderRegistryError(ValueError):
     """Raised when configured embedder instances cannot be resolved."""
 
 
-def _embedder_module(etype: str):
-    """Import the embedder module by convention `pave.embedders.<etype>`.
+# The embedder modules this package ships. `embedder_type` is tenant-supplied
+# on collection create, and an import is process-wide and irreversible, so the
+# name is matched against this set before it can become an import path -- an
+# arbitrary dotted module must never be imported into the API process.
+_EMBEDDER_TYPES: frozenset[str] = frozenset(
+    {"identity", "ollama", "openai", "sbert"}
+)
 
-    Returns the module on success, or None if no such module exists. The
-    module's heavy class body remains deferred until the class itself is
-    referenced.
+
+def _embedder_module(etype: str):
+    """Import the shipped embedder module `pave.embedders.<etype>`.
+
+    Returns the module on success, or None for any name this package does
+    not ship. The module's heavy class body remains deferred until the class
+    itself is referenced.
     """
     import importlib
 
-    try:
-        if "." in etype:
-            return importlib.import_module(etype)
-        return importlib.import_module(f"pave.embedders.{etype}")
-    except ModuleNotFoundError:
+    if etype not in _EMBEDDER_TYPES:
         return None
+    return importlib.import_module(f"pave.embedders.{etype}")
 
 
 def _embedder_schema(etype: str) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
@@ -419,14 +425,20 @@ def resolve_default_embedder(
     )
 
 
-def _deny_execution_grant(config: dict[str, Any]) -> None:
+def _deny_execution_grant(etype: str, config: dict[str, Any]) -> None:
     """Withhold the operator's execution grant from a model they never named.
 
     Sets False rather than deleting the key: `resolve_setting` reads an absent
     key as "fall back to embedder.<type>.<key>", so a pop would let a
     type-level grant re-apply to the foreign model -- and where the instance
     sets an explicit False, popping would *grant* what the operator denied.
+
+    Only for types that own the grant: injecting the key into a type whose
+    CONFIG_KEYS lack it (openai, ollama) makes `_spec_from_parts` reject the
+    spec, which would fail every foreign model on those types.
     """
+    if "trust_remote_code" not in _allowed_config_keys(etype):
+        return
     config["trust_remote_code"] = False
 
 
@@ -460,7 +472,7 @@ def runtime_embedder_spec_for_vector(
         # grant has to be withheld here, not only where the spec is persisted.
         instance_model = str(same_type[0].spec.get("embed_model") or "").strip()
         if instance_model != str(spec.get("embed_model") or "").strip():
-            _deny_execution_grant(runtime_config)
+            _deny_execution_grant(etype, runtime_config)
         return {
             "embedder_type": etype,
             "embed_model": str(spec.get("embed_model") or ""),
@@ -534,7 +546,7 @@ def resolve_embedder_spec(
     resolved_model = str(resolved_model or "").strip()
     if not resolved_model and not _is_modelless(etype):
         raise ValueError(f"no model configured for embedder type {etype!r}")
-    # Per-collection models are a supported feature, but the operator granted
+    # Per-collection local models are supported, but the operator granted
     # trust_remote_code to the model they configured -- not to an arbitrary
     # repository a tenant names on create, which would execute its code here.
     instance_model = (
@@ -542,8 +554,9 @@ def resolve_embedder_spec(
         if matched_instance is not None
         else ""
     )
-    foreign_model = matched_instance is not None and instance_model != resolved_model
-
+    foreign_model = model is not None and (
+        matched_instance is None or instance_model != resolved_model
+    )
     resolved_config: EmbedderConfig = {}
     if matched_instance is not None:
         resolved_config.update(matched_instance.spec.get("embedder_config") or {})
@@ -555,14 +568,27 @@ def resolve_embedder_spec(
             resolved_config[key] = val
     # After the caller's own config, so neither source can re-grant it.
     if foreign_model:
-        _deny_execution_grant(resolved_config)
+        _deny_execution_grant(etype, resolved_config)
 
     spec = _spec_from_parts(
         etype=etype,
         model=resolved_model,
         config=resolved_config,
     )
-    if matched_instance is not None and "api_key" in matched_instance.spec:
+    # An OpenAI model name is a provider routing and billing key. Require an
+    # exact configured instance so the SDK cannot attach ambient credentials
+    # to a tenant-chosen model. Validate the normal config first so callers
+    # retain the existing error order for malformed specs.
+    if etype == "openai" and foreign_model:
+        raise ValueError(f"openai model {resolved_model!r} is not configured")
+    # Same reasoning as the execution grant: the operator's provider
+    # credential pays for the model they configured, not for whichever model
+    # a tenant names on create and bills to that account.
+    if (
+        matched_instance is not None
+        and not foreign_model
+        and "api_key" in matched_instance.spec
+    ):
         spec["api_key"] = matched_instance.spec["api_key"]
     return spec
 

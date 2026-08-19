@@ -104,9 +104,11 @@ Implementations:
 
 ## Embedder authoring convention
 
-Adding an embedder type `<type>` requires **no edits to
-`factory.py`**. The factory imports `pave.embedders.<type>` by
-convention and reads module-level attributes. A conforming module
+Adding an embedder type `<type>` means dropping a module into
+`pave/embedders/` and listing its name in `factory._EMBEDDER_TYPES`.
+The factory imports `pave.embedders.<type>` by convention and reads
+module-level attributes; only names in that set are ever imported,
+because `embedder_type` is caller-supplied. A conforming module
 exports:
 
 - `build_embedder(cfg, *, model=None, embedder_config=None, api_key=None)`
