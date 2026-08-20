@@ -55,9 +55,9 @@ def test_move_collection_basic(client):
         "/v1/collections/acme/invoices/search",
         json={"q": "submarine", "k": 2},
     )
-    # This should return empty results (fresh empty collection created on access)
-    assert r.status_code == 200
-    assert len(r.json()["matches"]) == 0
+    # Searching no longer re-creates the moved-away name (B33); it is gone.
+    assert r.status_code == 404
+    assert r.json()["code"] == "collection_not_found"
 
 
 def test_tenant_move_collection_route_accepts_tenant_token(client, cfg):

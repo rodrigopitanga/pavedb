@@ -299,6 +299,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     "vectors_only": 400,
                     "dim_mismatch": 400,
                     "chunk_limit_reached": 429,
+                    "collection_limit_reached": 429,
                     "ingest_failed": 500,
                 }
                 return error(
@@ -403,6 +404,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     "invalid_collection_name": 400,
                     "invalid_docid": 400,
                     "chunk_limit_reached": 429,
+                    "collection_limit_reached": 429,
                     "ingest_failed": 500,
                 }
                 return error(

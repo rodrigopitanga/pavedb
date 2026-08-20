@@ -1087,7 +1087,16 @@ class LocalStore:
         )
         cfg = self._effective_collection_config(stored)
         if stored is None:
-            self._register_catalog_collection(tenant, collection, cfg)
+            # No row means this call is what brings the collection into
+            # existence, so the per-tenant cap applies exactly as it does on
+            # an explicit create. It used to take the 0 = unlimited default,
+            # which is how read paths minted collections past the quota (B33).
+            self._register_catalog_collection(
+                tenant,
+                collection,
+                cfg,
+                max_collections=self._tenant_max_collections(tenant),
+            )
         return cfg
 
     def _get_embedder_for_config(self, cfg: CollectionConfig) -> Embedder:
@@ -1366,12 +1375,13 @@ class LocalStore:
             self._touch_cache_entry(self._dbs, key)
             return
 
-        base = self._base_path(tenant, collection)
-        os.makedirs(base, exist_ok=True)
         coll_cfg = collection_config or self._collection_config_for_load(
             tenant,
             collection,
         )
+        # After the catalog registration, not before: a registration refused
+        # by the collection quota must not leave a directory behind (B33).
+        os.makedirs(self._base_path(tenant, collection), exist_ok=True)
         embedder = self._get_embedder_for_config(coll_cfg)
         embedder_dim = self._embedder_dim_for_config(coll_cfg, embedder)
         idx_dir = self._index_dir(tenant, collection)
@@ -1924,6 +1934,16 @@ class LocalStore:
             embedder = self._collection_embedders.get(key)
             if embedder is not None:
                 return int(embedder.dim)
+        if not os.path.isdir(self._base_path(tenant, collection)):
+            # Probing dim is a read: it must not create the collection (B33).
+            # Answer from the default config rather than declining, because a
+            # None here skips the caller's dim check and turns a clean 400
+            # dim_mismatch into a backend blow-up.
+            default_cfg = self._default_collection_config()
+            return self._embedder_dim_for_config(
+                default_cfg,
+                self._get_embedder_for_config(default_cfg),
+            )
         with self._collection_write_lock(tenant, collection):
             self._load_or_init(tenant, collection)
             return int(self._collection_embedders[key].dim)
@@ -2344,6 +2364,12 @@ class LocalStore:
         collection: str,
         docid: str,
     ) -> int:
+        if not os.path.isdir(self._base_path(tenant, collection)):
+            # Deleting from a collection that does not exist stays the
+            # documented idempotent no-op, but must not conjure it: loading
+            # here created a directory and a catalog row on a read path, past
+            # the per-tenant collection quota (B33).
+            return 0
         self._load_or_init(tenant, collection)
         key = (tenant, collection)
         col_db = self._dbs[key]
@@ -2953,6 +2979,11 @@ class LocalStore:
             if out is not None:
                 return out
             with self._collection_write_lock(tenant, collection):
+                # A search must not bring a collection into existence (B33):
+                # that is how invented names got past the per-tenant quota.
+                # Missing falls through to the not-found ValueError below.
+                if not os.path.isdir(self._base_path(tenant, collection)):
+                    break
                 self._load_or_init(tenant, collection)
             # The collection may have been deleted between initialization and
             # reacquiring the shared read lock. Loop back and re-check caches.

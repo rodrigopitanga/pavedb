@@ -438,6 +438,21 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         data_dir=str(cfg.get("data_dir")),
         embedder=LazyEmbedder(get_embedder),
     )
+    # The shared corpus used to be conjured by the first include_common
+    # search. Read paths no longer create collections (B33), so the operator's
+    # configured corpus is brought into existence here instead.
+    # create_collection is idempotent, so concurrent workers and restarts
+    # converge on the same row instead of failing or duplicating.
+    if cfg.get("common_enabled"):
+        try:
+            app.state.store.create_collection(
+                str(cfg.get("common_tenant")),
+                str(cfg.get("common_collection")),
+            )
+        except Exception as exc:
+            # Never block startup on it: shared search degrades to 404, every
+            # other route keeps working.
+            log.warning(f"Common collection bootstrap failed: {exc}")
     app.state.cfg = cfg
     app.state.version = VERSION
     app.state.hw_info = _hw_info()
@@ -664,6 +679,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                     "vectors_only": 400,
                     "dim_mismatch": 400,
                     "invalid_collection_name": 400,
+                    "collection_limit_reached": 429,
                 }
                 return _error(
                     status_map.get(exc.code, 500),

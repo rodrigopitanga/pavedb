@@ -183,7 +183,7 @@ def build_search_router(
         summary="Search a collection",
         description="Ranked semantic matches with provenance and per-phase timing.",
         response_model=SearchResponse,
-        responses=resp(401, 403, 429, 500, 503),
+        responses=resp(401, 403, 404, 429, 500, 503),
         tags=["Scoped Search"],
     )
     @ops_event(
@@ -234,7 +234,7 @@ def build_search_router(
             "accepted."
         ),
         response_model=SearchResponse,
-        responses=resp(401, 403, 429, 500, 503),
+        responses=resp(401, 403, 404, 429, 500, 503),
         tags=["Scoped Search"],
     )
     @ops_event(

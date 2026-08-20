@@ -866,6 +866,10 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             raise ServiceError("invalid_metadata_keys", str(exc)) from exc
         except ChunkLimitError as exc:
             raise ServiceError("chunk_limit_reached", str(exc)) from exc
+        except CollectionLimitError as exc:
+            # Ingest into an unknown collection creates it, so it can now hit
+            # the per-tenant cap (B33). Report the quota, not a generic 500.
+            raise ServiceError("collection_limit_reached", str(exc)) from exc
         except PreprocessError as exc:
             raise ServiceError("unsupported_or_invalid_document", str(exc)) from exc
         except ValueError as exc:
@@ -993,6 +997,9 @@ def ingest_text(
             raise ServiceError("invalid_metadata_keys", str(exc)) from exc
         except ChunkLimitError as exc:
             raise ServiceError("chunk_limit_reached", str(exc)) from exc
+        except CollectionLimitError as exc:
+            # Same as ingest(): the implicit create is what can trip the cap.
+            raise ServiceError("collection_limit_reached", str(exc)) from exc
         except EmbedderUnavailableError as exc:
             log.warning(
                 "ingest_text embedder_unavailable tenant=%s coll=%s "
@@ -1227,16 +1234,21 @@ def ingest_documents_batch(
                     "code": "invalid_metadata_keys",
                     "error": str(exc),
                 }
-        except ChunkLimitError as exc:
+        except (ChunkLimitError, CollectionLimitError) as exc:
             # The store rejects the batch as a whole, so every prepared
             # document reports the quota rather than a generic failure.
             indexed = []
+            code = (
+                "chunk_limit_reached"
+                if isinstance(exc, ChunkLimitError)
+                else "collection_limit_reached"
+            )
             for result_index in prepared_indexes:
                 results[result_index] = {
                     "ok": False,
                     "index": result_index,
                     "docid": items[result_index].get("docid"),
-                    "code": "chunk_limit_reached",
+                    "code": code,
                     "error": str(exc),
                 }
         except Exception as exc:
@@ -1365,14 +1377,34 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
             )
             local = store.search(
                 tenant, collection, q, max(10, k * 2), filters=filters)
-            common = store.search(
-                effective_common_tenant,
-                effective_common_collection,
-                q,
-                max(10, k * 2),
-                filters=filters)
-            matches = list(local.matches) + list(common.matches)
-            timing = _sum_timing(local.timing, common.timing)
+            try:
+                common = store.search(
+                    effective_common_tenant,
+                    effective_common_collection,
+                    q,
+                    max(10, k * 2),
+                    filters=filters)
+            except ValueError:
+                # The shared corpus is an enrichment, not a requirement. Now
+                # that a missing collection is an error rather than something
+                # the read path creates, an operator who enabled the merge
+                # without a corpus must not break the caller's own search.
+                log.warning(
+                    "shared corpus %s/%s is missing; serving %s/%s alone",
+                    effective_common_tenant,
+                    effective_common_collection,
+                    tenant,
+                    collection,
+                )
+                common = None
+            matches = list(local.matches) + (
+                list(common.matches) if common is not None else []
+            )
+            timing = (
+                _sum_timing(local.timing, common.timing)
+                if common is not None
+                else local.timing
+            )
             from heapq import nlargest
             top = nlargest(k, matches, key=lambda x: x.score)
         elif q is None:
@@ -1446,6 +1478,11 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
         }
     except ServiceError:
         raise
+    except CollectionLimitError as exc:
+        # Binding the quota on the load path means a read can now hit it. It
+        # is still a quota answer, not a server fault: 429, like every other
+        # path that reports this.
+        raise ServiceError("collection_limit_reached", str(exc)) from exc
     except EmbedderUnavailableError as exc:
         log.warning(
             "search embedder_unavailable tenant=%s coll=%s request_id=%s: %s",
