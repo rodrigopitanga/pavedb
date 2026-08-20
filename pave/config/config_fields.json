@@ -161,6 +161,11 @@
       "description": "Maximum number of concurrent search operations; 0 disables the cap."
     },
     {
+      "key": "search.max_concurrent_per_tenant",
+      "default": 0,
+      "description": "Maximum share of search.max_concurrent that one tenant may hold. 0 (the default) disables the share: any tenant may fill the whole search pool, which is what a single-tenant instance wants. Set it on a shared instance, where one tenant filling the pool starves every other. Note search.max_concurrent (42) is not smaller than tenants.default_max_concurrent (42), so the per-tenant request cap only binds once a tenant already holds the entire pool. A search costs far less than an ingest, so this share can be generous: about two thirds of the pool still leaves room for the other tenants. A request over this share is refused with 503 search_overloaded; a request over tenants.default_max_concurrent is refused earlier, with 429 tenant_rate_limited."
+    },
+    {
       "key": "search.timeout_ms",
       "default": 30000,
       "description": "Per-search timeout in milliseconds; 0 disables the timeout."

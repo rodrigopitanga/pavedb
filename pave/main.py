@@ -28,7 +28,12 @@ from uvicorn.main import STARTUP_FAILURE
 from uvicorn.server import HANDLED_SIGNALS, Server
 from uvicorn.supervisors import ChangeReload, Multiprocess
 
-from pave.auth import bootstrap_admin_key, enforce_policy, resolve_bind
+from pave.auth import (
+    ConcurrencySlot,
+    bootstrap_admin_key,
+    enforce_policy,
+    resolve_bind,
+)
 from pave.config import (
     get_cfg,
     get_logger,
@@ -481,6 +486,15 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     # Background workers release slots after timeouts or cancellation.
     app.state.max_searches = _max_conc
     app.state.active_searches = 0
+    # Per-tenant share of the shared search pool, off by default for the same
+    # reason as the ingest share: on a single-tenant instance a share is pure
+    # throughput loss. Turn it on for a shared instance, where one tenant can
+    # otherwise hold every slot -- tenants.default_max_concurrent (42) is not
+    # smaller than this pool (42), so that cap only binds once the tenant has
+    # already taken all of it.
+    _raw_sper = cfg.get("search.max_concurrent_per_tenant")
+    app.state.max_searches_per_tenant = int(_raw_sper or 0)
+    app.state.tenant_active_searches = {}
     app.state.search_lock = threading.Lock()
     app.state.search_timeout_s = _to_ms / 1000.0 if _to_ms > 0 else 0.0
 
@@ -579,45 +593,77 @@ def build_app(cfg=get_cfg()) -> FastAPI:
         )
         return JSONResponse(body, status_code=status_code)
 
+    def _search_gate(request, tenant, request_id):
+        """Take one instance and one per-tenant search slot.
+
+        Returns ``(slot, None)`` when admitted, ``(None, response)`` with the
+        503 when either bound is reached. The per-tenant share is what stops
+        one tenant from holding every slot in the shared pool; the general
+        per-tenant request cap cannot, because it is not smaller than the
+        pool. Both counters move together under the one lock, because a
+        detached search thread releases them off the event loop.
+        """
+        state = app.state
+        max_s = state.max_searches
+        # No charged tenant (admin, or no per-tenant cap in force) means no
+        # share to apply, exactly as with the request cap it follows.
+        max_t = state.max_searches_per_tenant if tenant else 0
+        per = state.tenant_active_searches
+        source = None
+        with state.search_lock:
+            active_s = state.active_searches
+            active_t = per.get(tenant, 0)
+            if max_s > 0 and active_s >= max_s:
+                source, active, limit = (
+                    "instance-scoped search cap", active_s, max_s
+                )
+            elif max_t > 0 and active_t >= max_t:
+                source, active, limit = (
+                    "tenant-scoped search share", active_t, max_t
+                )
+            else:
+                if max_s > 0:
+                    state.active_searches = active_s + 1
+                if max_t > 0:
+                    per[tenant] = active_t + 1
+
+        if source is None:
+            def _decrement() -> None:
+                if max_s > 0:
+                    state.active_searches -= 1
+                if max_t > 0:
+                    per[tenant] = max(0, per.get(tenant, 0) - 1)
+
+            return ConcurrencySlot(state.search_lock, _decrement), None
+
+        log.warning(
+            f"search capped by {source} "
+            f"active={active} limit={limit} path={request.url.path} "
+            f"request_id={request_id}"
+        )
+        return None, _error(
+            503,
+            "search_overloaded",
+            f"search capped by {source} "
+            f"(active={active}, limit={limit})",
+            request=request,
+            request_id=request_id,
+        )
+
     async def _do_search(fn, *, request: Request, request_id: str | None = None):
         """Concurrency gate + timeout wrapper for all search handlers."""
         timeout_s = app.state.search_timeout_s
-        max_s = app.state.max_searches
         # The tenant slot the request is holding, if any. A search that
         # outlives its request keeps occupying the shared pool, so the
         # tenant has to keep paying for it until the thread returns.
         tenant_slot = getattr(request.state, "tenant_slot", None)
-        if max_s > 0:
-            with app.state.search_lock:
-                if app.state.active_searches >= max_s:
-                    active = app.state.active_searches
-                    log.warning(
-                        "search capped by instance-scoped search cap "
-                        f"active={active} limit={max_s} path={request.url.path} "
-                        f"request_id={request_id}"
-                    )
-                    return _error(
-                        503,
-                        "search_overloaded",
-                        "search capped by instance-scoped search cap "
-                        f"(active={active}, limit={max_s})",
-                        request=request,
-                        request_id=request_id,
-                    )
-                app.state.active_searches += 1
-        release_in_finally = max_s > 0
-
-        def release_search_slot():
-            with app.state.search_lock:
-                app.state.active_searches -= 1
-
-        def finish_background_search(done):
-            try:
-                if not done.cancelled():
-                    done.exception()
-            finally:
-                if max_s > 0:
-                    release_search_slot()
+        slot, capped = _search_gate(
+            request,
+            getattr(request.state, "capped_tenant", None),
+            request_id,
+        )
+        if capped is not None:
+            return capped
         try:
             loop = asyncio.get_running_loop()
             executor = app.state.search_executor
@@ -654,8 +700,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 return result
             except asyncio.TimeoutError:
                 # Thread keeps running; suppress its eventual result/exception.
-                release_in_finally = False
-                completion_future.add_done_callback(finish_background_search)
+                slot.release_on(completion_future)
                 if tenant_slot is not None:
                     tenant_slot.release_on(completion_future)
                 metrics_inc("searches_timeout_total", 1.0)
@@ -667,8 +712,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                     request_id=request_id,
                 )
             except asyncio.CancelledError:
-                release_in_finally = False
-                completion_future.add_done_callback(finish_background_search)
+                slot.release_on(completion_future)
                 if tenant_slot is not None:
                     tenant_slot.release_on(completion_future)
                 raise
@@ -689,8 +733,8 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                     request_id=request_id,
                 )
         finally:
-            if release_in_finally:
-                release_search_slot()
+            if not slot.detached:
+                slot.release()
 
     @app.exception_handler(HTTPException)
     async def http_exception_handler(request: Request, exc: HTTPException):

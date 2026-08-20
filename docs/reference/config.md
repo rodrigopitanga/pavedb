@@ -263,6 +263,20 @@ unresponsive provider can hold a worker slot.
 - Env var: `PAVEDB_SEARCH__MAX_CONCURRENT`
 - Description: Maximum number of concurrent search operations; 0 disables the cap.
 
+### `search.max_concurrent_per_tenant`
+
+- Default: `0`
+- Env var: `PAVEDB_SEARCH__MAX_CONCURRENT_PER_TENANT`
+- Description: Maximum share of search.max_concurrent that one tenant may hold. 0 (the
+  default) disables the share: any tenant may fill the whole search pool, which is what
+  a single-tenant instance wants. Set it on a shared instance, where one tenant filling
+  the pool starves every other. Note search.max_concurrent (42) is not smaller than
+  tenants.default_max_concurrent (42), so the per-tenant request cap only binds once a
+  tenant already holds the entire pool. A search costs far less than an ingest, so this
+  share can be generous: about two thirds of the pool still leaves room for the other
+  tenants. A request over this share is refused with 503 search_overloaded; a request
+  over tenants.default_max_concurrent is refused earlier, with 429 tenant_rate_limited.
+
 ### `search.timeout_ms`
 
 - Default: `30000`

@@ -75,7 +75,7 @@ memory rather than spooled to disk.
 ## Running a shared instance
 
 The defaults assume one tenant. If several tenants you do not control share an
-instance, three more settings stop one of them from consuming what the others
+instance, four more settings stop one of them from consuming what the others
 depend on:
 
 - `ingest.max_concurrent_per_tenant` — how many of the ingest slots one tenant
@@ -84,12 +84,28 @@ depend on:
   slot and everyone else gets `503`. Note `tenants.default_max_concurrent` is
   larger than the ingest pool, so the general per-tenant request cap cannot
   bind here; this setting is the only per-tenant ingest bound.
+- `search.max_concurrent_per_tenant` — the same share for the search pool, and
+  **off by default** for the same reason. `tenants.default_max_concurrent` (42)
+  is not smaller than `search.max_concurrent` (42), so that cap only bites once
+  a tenant already holds every search slot — by which point its co-tenants are
+  already seeing `503`. A search costs far less than an ingest, so this share
+  can be more generous than the ingest one; around two thirds of the pool
+  bounds a single tenant while barely costing it throughput.
 - per-tenant collection and chunk caps — bound how much of the disk and index
   memory a tenant can claim.
 - `tenants.default_max_concurrent` — the general per-tenant request cap.
 
+Two of these can reject the same search, so the codes are distinct and one of
+them always answers first. `tenants.default_max_concurrent` is enforced before
+the route runs and answers `429 tenant_rate_limited`; the search share is
+enforced at the pool and answers `503 search_overloaded`, naming the
+`tenant-scoped search share` rather than the `instance-scoped search cap`. Set
+the share below `tenants.default_max_concurrent` and it is the one you will
+see; a `429` means the tenant is over its own request budget, before the pool
+was ever consulted.
+
 A shared instance without these means one tenant can consume the disk, the
-index memory, and the ingest pool that every other tenant depends on.
+index memory, and the pools that every other tenant depends on.
 
 ## Containers
 

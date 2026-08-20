@@ -317,6 +317,12 @@ async def tenant_limit_gate(
         yield
         return
 
+    # Published so a gate outside this dependency (the search share in
+    # pave.main) charges the same identity this cap charges, instead of
+    # guessing one. Set before the max_c short-circuit: an instance that
+    # turned the request cap off still wants the share to work.
+    request.state.capped_tenant = tenant
+
     max_c = request.app.state.tenant_limits.get(
         tenant, request.app.state.tenant_default_limit
     )
