@@ -449,11 +449,19 @@ def build_app(cfg=get_cfg()) -> FastAPI:
     # create_collection is idempotent, so concurrent workers and restarts
     # converge on the same row instead of failing or duplicating.
     if cfg.get("common_enabled"):
+        _ct = str(cfg.get("common_tenant"))
+        _cc = str(cfg.get("common_collection"))
         try:
-            app.state.store.create_collection(
-                str(cfg.get("common_tenant")),
-                str(cfg.get("common_collection")),
-            )
+            # Only pay for the create when the corpus is genuinely missing:
+            # create_collection sizes the index from the embedder, so calling
+            # it on every start would load a model that
+            # embedder.warmup_default=false asked us not to load. Listing the
+            # catalog costs one query and no embedder.
+            if not any(
+                c["name"] == _cc
+                for c in app.state.store.list_collections(_ct)
+            ):
+                app.state.store.create_collection(_ct, _cc)
         except Exception as exc:
             # Never block startup on it: shared search degrades to 404, every
             # other route keeps working.
@@ -637,7 +645,7 @@ def build_app(cfg=get_cfg()) -> FastAPI:
             return ConcurrencySlot(state.search_lock, _decrement), None
 
         log.warning(
-            f"search capped by {source} "
+            f"search capped by {source} tenant={tenant} "
             f"active={active} limit={limit} path={request.url.path} "
             f"request_id={request_id}"
         )

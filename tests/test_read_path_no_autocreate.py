@@ -86,3 +86,31 @@ def test_scoped_search_survives_a_missing_shared_corpus(client, cfg):
     )
     assert r.status_code == 200, r.text
     assert [m["meta"]["docid"] for m in r.json()["matches"]] == ["d1"]
+
+
+def test_restart_does_not_recreate_the_common_corpus(tmp_path, monkeypatch):
+    """create_collection sizes the index from the embedder; a restart must
+    not pay that when the corpus already exists."""
+    import pave.main as m
+    from pave.config import get_cfg
+
+    cfg = get_cfg()
+    cfg.set("data_dir", str(tmp_path))
+    cfg.set("common_enabled", True)
+    cfg.set("common_tenant", "global")
+    cfg.set("common_collection", "shared")
+
+    first = m.build_app(cfg)
+    names = {c["name"] for c in first.state.store.list_collections("global")}
+    assert "shared" in names
+
+    calls = []
+    real = type(first.state.store).create_collection
+
+    def counting(self, *a, **kw):
+        calls.append(a[:2])
+        return real(self, *a, **kw)
+
+    monkeypatch.setattr(type(first.state.store), "create_collection", counting)
+    m.build_app(cfg)
+    assert calls == [], calls
