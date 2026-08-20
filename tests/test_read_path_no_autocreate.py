@@ -20,10 +20,12 @@ def _names(client, tenant):
     return [c["name"] for c in r.json()["collections"]]
 
 
-def test_search_on_a_missing_collection_is_404_and_creates_nothing(client):
+def test_search_on_a_missing_collection_creates_nothing(client):
+    """The answer is unchanged -- 200 with no matches. Only the side effect
+    of bringing the collection into existence is gone."""
     r = client.post("/v1/collections/ghostco/nosuch/search", json={"q": "x"})
-    assert r.status_code == 404, r.text
-    assert r.json()["code"] == "collection_not_found"
+    assert r.status_code == 200, r.text
+    assert r.json()["matches"] == []
     assert _names(client, "ghostco") == []
 
 

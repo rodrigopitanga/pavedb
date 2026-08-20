@@ -55,9 +55,10 @@ def test_move_collection_basic(client):
         "/v1/collections/acme/invoices/search",
         json={"q": "submarine", "k": 2},
     )
-    # Searching no longer re-creates the moved-away name (B33); it is gone.
-    assert r.status_code == 404
-    assert r.json()["code"] == "collection_not_found"
+    # Searching no longer re-creates the moved-away name (B33). The answer
+    # stays 200 with no matches, as it always was.
+    assert r.status_code == 200
+    assert r.json()["matches"] == []
 
 
 def test_tenant_move_collection_route_accepts_tenant_token(client, cfg):

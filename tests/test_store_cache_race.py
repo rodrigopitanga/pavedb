@@ -186,6 +186,50 @@ def test_search_final_cache_retry_does_not_run_under_write_lock(temp_data_dir):
     assert result["hits"]
 
 
+def test_search_reports_collection_moved_during_query_encode(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    tenant, collection = "acme", "moving_search"
+    store.index_records(
+        tenant,
+        collection,
+        "DOC-1",
+        [("0", "moving search probe", {"lang": "en"})],
+    )
+
+    original_encode = store._encode_query_cached
+    encode_started = threading.Event()
+    release_encode = threading.Event()
+    errors: list[BaseException] = []
+
+    def blocked_encode(*args, **kwargs):
+        encode_started.set()
+        if not release_encode.wait(timeout=2.0):
+            raise TimeoutError("blocked search encode was not released")
+        return original_encode(*args, **kwargs)
+
+    store._encode_query_cached = blocked_encode  # type: ignore[method-assign]
+
+    def search():
+        try:
+            store.search(tenant, collection, "moving", k=1)
+        except BaseException as exc:
+            errors.append(exc)
+
+    worker = threading.Thread(target=search, daemon=True)
+    worker.start()
+    assert encode_started.wait(timeout=1.0)
+    try:
+        store.move_collection(tenant, collection, "moved_search")
+    finally:
+        release_encode.set()
+    worker.join(timeout=2.0)
+
+    assert not worker.is_alive()
+    assert len(errors) == 1
+    assert isinstance(errors[0], ValueError)
+    assert str(errors[0]) == "collection 'moving_search' does not exist"
+
+
 def test_search_runs_while_batch_ingest_embeds(temp_data_dir):
     embedder = BlockingIngestEmbedder()
     store = LocalStore(str(temp_data_dir), embedder)

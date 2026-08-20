@@ -39,7 +39,7 @@ def test_search_cannot_mint_collections_past_the_limit(client):
         r = client.post(
             f"/v1/collections/kruger/{name}/search", json={"q": "x", "k": 1}
         )
-        assert r.status_code == 404, (name, r.text)
+        assert r.status_code == 200, (name, r.text)
 
     r = client.get("/v1/collections/kruger")
     assert [c["name"] for c in r.json()["collections"]] == ["one"]

@@ -1998,6 +1998,12 @@ class LocalStore:
                     break
 
             with self._collection_write_lock(tenant, collection):
+                # Logging must not conjure the collection it logs into (B33).
+                # A search of a name that does not exist answers empty; there
+                # is no collection to hold its query log, so there is nothing
+                # to write and nothing to create.
+                if not os.path.isdir(self._base_path(tenant, collection)):
+                    return
                 self._load_or_init(tenant, collection)
                 if attempt == 2:
                     _write_log(self._dbs[key])
@@ -2918,6 +2924,9 @@ class LocalStore:
             )
 
         key = (tenant, collection)
+        collection_path = self._base_path(tenant, collection)
+        with self._collection_read_lock(tenant, collection):
+            existed_at_start = os.path.isdir(collection_path)
 
         def _try_search() -> SearchOutput | None:
             """One search attempt against the cached collection state.
@@ -2981,9 +2990,25 @@ class LocalStore:
             with self._collection_write_lock(tenant, collection):
                 # A search must not bring a collection into existence (B33):
                 # that is how invented names got past the per-tenant quota.
-                # Missing falls through to the not-found ValueError below.
-                if not os.path.isdir(self._base_path(tenant, collection)):
-                    break
+                # It answers empty rather than not-found, which is what it
+                # always answered -- only the side effect was the bug. The
+                # ValueError below stays for the different case it was
+                # written for: a collection that WAS there and was deleted
+                # or moved mid-search, which must not read as "no matches".
+                if not os.path.isdir(collection_path):
+                    if existed_at_start:
+                        raise ValueError(
+                            f"collection '{collection}' does not exist"
+                        )
+                    return SearchOutput(
+                        matches=[],
+                        timing={
+                            "embed_ms": 0.0,
+                            "search_ms": 0.0,
+                            "filter_ms": 0.0,
+                            "hydrate_ms": 0.0,
+                        },
+                    )
                 self._load_or_init(tenant, collection)
             # The collection may have been deleted between initialization and
             # reacquiring the shared read lock. Loop back and re-check caches.
