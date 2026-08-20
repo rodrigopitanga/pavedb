@@ -190,7 +190,7 @@ bench:
 chaos-nightly:
   stage: benchmark
   tags:
-    - xeon
+    - jaeger
   variables:
     BENCH_FORCE_EPHEMERAL: "1"
     BENCH_STARTUP_TIMEOUT_S: "120"
@@ -267,7 +267,7 @@ publish-testpypi:
 publish-docker-rc:
   stage: release
   tags:
-    - xeon
+    - jaeger
   image: docker:24.0.9
   services:
     - docker:24.0.9-dind
@@ -294,7 +294,7 @@ publish-docker-rc:
 publish-docker:
   stage: release
   tags:
-    - xeon
+    - jaeger
   image: docker:24.0.9
   services:
     - docker:24.0.9-dind
