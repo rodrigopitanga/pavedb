@@ -62,9 +62,9 @@ debugging — and available the same way from the CLI, the REST API, or any clie
   on (and transparent when you just don't need it). Tenants carry their own API keys,
   concurrency caps, and hard collection and row quotas, so a single instance can
   safely serve a shared plan.
-- **Embed it, script it, or serve it** — use the Python SDK or Elixir client,
-  drive the CLI, or call the HTTP server from any environment. Same ops, same
-  provenance.
+- **Embed it, script it, or serve it** — use the Python SDK, the Elixir or
+  TypeScript client, drive the CLI, or call the HTTP server from any
+  environment. Same ops, same provenance.
 - **Pluggable embeddings** — swap models per collection; wire in local or hosted
   embedding backends. Each collection's embedder identity is pinned server-side, so
   vectors from mismatched models are rejected instead of silently poisoning an index.
@@ -76,7 +76,7 @@ debugging — and available the same way from the CLI, the REST API, or any clie
 
 PaveDB exposes the same operations through client libraries, a **CLI**, and a plain
 **REST API**. The Python SDK supports local embedded and remote HTTP transports;
-the Elixir client uses HTTP. Beneath every networked client sits the REST API: an
+the Elixir and TypeScript clients use HTTP. Beneath every networked client sits the REST API: an
 open wire protocol you can call directly or wrap in your own client, in any
 language. The Python examples below use Python 3.10–3.14; see
 [Install options](#-install-options) for CPU-only wheels, Docker, and source.
@@ -127,6 +127,28 @@ Enum.each(hits, &IO.inspect/1)
 The client is published on [Hex](https://hex.pm/packages/pavedb_client), with a public
 mirror on [GitHub](https://github.com/rodrigopitanga/pavedb-client-elixir) and active
 development on [GitLab](https://gitlab.com/flowlexi/pavedb-client-elixir).
+
+### 🟨 From JavaScript / TypeScript
+
+Install [`@flowlexi/pavedb-client`](https://www.npmjs.com/package/@flowlexi/pavedb-client)
+— zero dependencies, plain `fetch`, works from JavaScript (`import` on
+Node >= 20, `require` on Node >= 22) with TypeScript types included:
+
+```js
+import { PaveDBClient } from "@flowlexi/pavedb-client";
+
+const db = new PaveDBClient({
+  baseUrl: "http://127.0.0.1:8086",
+  apiKey: process.env.PAVEDB_API_KEY,
+});
+
+await db.addDocument("book", "notes", { content: "Nemo commands the Nautilus." });
+const hits = await db.search("book", "notes", { query: "submarine captain", top_k: 3 });
+```
+
+The client is published on [npm](https://www.npmjs.com/package/@flowlexi/pavedb-client),
+with a public mirror on [GitHub](https://github.com/rodrigopitanga/pavedb-client-ts)
+and active development on [GitLab](https://gitlab.com/flowlexi/pavedb-client-ts).
 
 ### ⌨️ From the CLI (local, no server)
 
