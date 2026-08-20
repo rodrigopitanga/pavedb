@@ -73,6 +73,10 @@ from pave.version import (
 )
 import pave.log as ops_log
 
+_KNOWN_HTTP_METHODS = frozenset(
+    ("GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE")
+)
+
 METRICS_FLUSH_INTERVAL_SECONDS = 10.5
 CATALOG_METRICS_REFRESH_INTERVAL_SECONDS = 10.0
 GRACEFUL_SHUTDOWN_MESSAGE = (
@@ -729,7 +733,13 @@ def build_app(cfg=get_cfg()) -> FastAPI:
                 path = "<unmatched>"
             elif request.url.path.startswith("/v1/") and not path.startswith("/v1/"):
                 path = f"/v1{path}"
-            record_http_request(request.method, path, status_code)
+            # Same reason as the path above: HTTP accepts any RFC token as a
+            # method, so an unrecognised verb is caller input and would mint
+            # unbounded permanent series just as a raw path would.
+            method = request.method
+            if method not in _KNOWN_HTTP_METHODS:
+                method = "<OTHER>"  # record_http_request upper-cases
+            record_http_request(method, path, status_code)
 
     app.include_router(
         build_health_router(

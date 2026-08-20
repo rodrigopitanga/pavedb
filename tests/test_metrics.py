@@ -435,3 +435,15 @@ def test_metrics_reset_api(client):
     snap2 = client.get("/health/metrics").json()
     assert snap2["search_total"] == 0.0
     assert snap2["documents_indexed_total"] == 0.0
+
+
+def test_unknown_methods_share_one_metrics_series(client):
+    """A verb is caller input too: any RFC token is a legal HTTP method."""
+    for verb in ("FOO1", "FOO2", "FOO3"):
+        client.request(verb, "/v1/collections/acme/whatever")
+
+    snap = client.get("/health/metrics").json()
+    methods = {item["labels"]["method"] for item in snap["http_requests_total"]}
+
+    assert "<OTHER>" in methods
+    assert not any(m.startswith("FOO") for m in methods), methods
