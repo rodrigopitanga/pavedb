@@ -147,8 +147,8 @@ const hits = await db.search("book", "notes", { query: "submarine captain", top_
 ```
 
 The client is published on [npm](https://www.npmjs.com/package/@flowlexi/pavedb-client),
-with a public mirror on [GitHub](https://github.com/rodrigopitanga/pavedb-client-ts)
-and active development on [GitLab](https://gitlab.com/flowlexi/pavedb-client-ts).
+with a public mirror on [GitHub](https://github.com/rodrigopitanga/pavedb-client-js)
+and active development on [GitLab](https://gitlab.com/flowlexi/pavedb-client-js).
 
 ### ⌨️ From the CLI (local, no server)
 
