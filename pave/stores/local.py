@@ -686,6 +686,7 @@ class LocalStore:
         data_dir: Path,
         *,
         validate_destination: bool = False,
+        scratch_dir: bool = False,
     ) -> None:
         """Validate archive consistency and repair missing config surfaces."""
         data_dir = data_dir.resolve()
@@ -856,9 +857,10 @@ class LocalStore:
             raise ValueError("invalid archive catalog") from None
         finally:
             catalog.close()
-            for suffix in ("-wal", "-shm"):
-                with suppress(FileNotFoundError):
-                    (data_dir / f"catalog.db{suffix}").unlink()
+            if scratch_dir:
+                for suffix in ("-wal", "-shm"):
+                    with suppress(FileNotFoundError):
+                        (data_dir / f"catalog.db{suffix}").unlink()
 
     def _resolve_collection_config(
         self,
@@ -3250,6 +3252,7 @@ class LocalStore:
                 raise FileNotFoundError(
                     f"data directory not found: {data_dir_path}"
                 )
+            self._ensure_catalog().checkpoint_wal()
             self._flush_caches()
             self._preflight_archive(data_dir_path)
 
@@ -3282,7 +3285,11 @@ class LocalStore:
                 except zipfile.BadZipFile as exc:
                     raise ValueError("invalid archive") from exc
 
-                self._preflight_archive(extract_dir, validate_destination=True)
+                self._preflight_archive(
+                    extract_dir,
+                    validate_destination=True,
+                    scratch_dir=True,
+                )
                 self._assert_no_restore_backup(data_dir_path)
                 data_dir_path.mkdir(parents=True, exist_ok=True)
                 self._flush_caches()

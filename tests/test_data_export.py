@@ -881,6 +881,33 @@ def test_dump_archive_rejects_conflicting_collection_config(tmp_path):
         store.dump_archive()
 
 
+def test_dump_archive_preserves_another_catalog_connection_wal(tmp_path):
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "documents")
+    other_catalog = CatalogDB()
+    other_catalog.open(tmp_path / "catalog.db")
+    try:
+        other_catalog.put_query_home("other-process-query", "acme", "documents")
+        wal_path = tmp_path / "catalog.db-wal"
+        shm_path = tmp_path / "catalog.db-shm"
+        sidecar_inodes = (wal_path.stat().st_ino, shm_path.stat().st_ino)
+
+        archive_bytes = _archive_bytes(store)
+
+        assert (wal_path.stat().st_ino, shm_path.stat().st_ino) == sidecar_inodes
+        archived_catalog = tmp_path / "archived-catalog.db"
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+            archived_catalog.write_bytes(archive.read("catalog.db"))
+        with sqlite3.connect(archived_catalog) as conn:
+            row = conn.execute(
+                "SELECT tenant, collection FROM query_home WHERE query_id=?",
+                ("other-process-query",),
+            ).fetchone()
+        assert row == ("acme", "documents")
+    finally:
+        other_catalog.close()
+
+
 def test_local_store_rejects_interrupted_restore_backup(tmp_path):
     store = LocalStore(str(tmp_path), FakeEmbedder())
     store.close()

@@ -1247,6 +1247,13 @@ class CatalogDB:
         if wconn is not None:
             wconn.close()
 
+    def checkpoint_wal(self) -> None:
+        """Make the catalog database self-contained for an archive dump."""
+        with self._writer() as conn:
+            result = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        if result is None or result[0]:
+            raise sqlite3.OperationalError("catalog WAL checkpoint is busy")
+
     @property
     def _conn(self) -> sqlite3.Connection | None:
         """Return read connection (for test introspection)."""
