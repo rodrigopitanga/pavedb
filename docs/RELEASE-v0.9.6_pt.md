@@ -51,6 +51,13 @@ deve atualizar.
   arquivos WAL e de memória compartilhada do catálogo mantidos por outro
   worker. O catálogo é consolidado para o arquivo sem apagar arquivos de outro
   processo.
+- **O servidor empacotado limita a produção a um worker.** Múltiplos workers
+  mantêm caches FAISS independentes sobre o mesmo diretório de dados e podem
+  perder vetores ou servir versões desatualizadas. `server.workers>1` agora é
+  recusado fora do modo dev; o modo dev o permite apenas com um aviso explícito
+  de risco de corrupção de dados. A execução ASGI multiprocesso direta e
+  múltiplas réplicas compartilhando um diretório de dados continuam sem
+  suporte.
 
 ### Justiça em instâncias compartilhadas
 
@@ -75,7 +82,7 @@ referências geradas respondem por completo; o livro aprofunda.
 ### Nota de atualização
 
 Sem mudança no esquema das respostas de sucesso e sem migração de dados.
-Requisições grandes demais agora podem responder `413`; há outros três
+Requisições grandes demais agora podem responder `413`; há outros quatro
 comportamentos a conhecer:
 
 - Buscar em uma coleção inexistente continua respondendo `200` sem resultados —
@@ -86,6 +93,9 @@ comportamentos a conhecer:
 - Um modelo OpenAI precisa corresponder a uma instância de embedder configurada.
   Configure cada modelo que tenants podem selecionar; nomes não configurados
   são rejeitados antes da criação de qualquer cliente do provedor.
+- A inicialização empacotada em produção agora recusa `server.workers>1`.
+  Defina-o como `1`; o modo dev continua disponível para experimentos
+  multi-worker com dados descartáveis.
 
 As verificações de inicialização introduzidas na 0.9.5 seguem iguais: nomes de
 tenant precisam casar com `^[a-z0-9][a-z0-9-]{0,62}$`, tokens precisam ser

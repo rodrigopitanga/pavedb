@@ -462,13 +462,23 @@ def _enforce_tenant_names(cfg) -> None:
 
 def enforce_policy(cfg) -> None:
     """
-    Fail fast if auth is not configured in prod.
-    Allow auth=none only in dev mode, force loopback bind.
+    Fail fast if production auth or process safety is not configured.
+    Allow unsafe development settings only in dev mode.
     """
     mode = str(cfg.get("auth.mode")).strip().lower()
     dev = _is_dev(cfg)
 
     _enforce_tenant_names(cfg)
+
+    workers = int(cfg.get("server.workers"))
+    if workers > 1:
+        message = (
+            "server.workers > 1 is experimental and may corrupt data; "
+            "it is NOT FOR PRODUCTION AS OF NOW"
+        )
+        if not dev:
+            raise RuntimeError(f"{message}. Set server.workers=1.")
+        log.warning(f"{message}. Use only disposable development data.")
 
     if mode == "none":
         if not dev:

@@ -77,6 +77,30 @@ def test_enforce_policy_dev_loopback_coercion():
     enforce_policy(cfg)
     assert resolve_bind(cfg) == ("127.0.0.1", 8086)
 
+
+def test_enforce_policy_constrains_multiple_workers_to_dev(caplog):
+    from pave.auth import enforce_policy
+    from pave.config.config import Config
+
+    production = Config(data={
+        "dev": False,
+        "auth": {"mode": "static", "global_key": "test-key"},
+        "server": {"workers": 2},
+    })
+    with pytest.raises(RuntimeError, match="NOT FOR PRODUCTION AS OF NOW"):
+        enforce_policy(production)
+
+    development = Config(data={
+        "dev": True,
+        "auth": {"mode": "none"},
+        "server": {"workers": 2},
+    })
+    enforce_policy(development)
+
+    assert "may corrupt data" in caplog.text
+    assert "disposable development data" in caplog.text
+
+
 def test_bearer_scheme_case_insensitive(monkeypatch):
     import pave.auth as auth_mod
     class CFGGlobal:

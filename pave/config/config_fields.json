@@ -213,7 +213,7 @@
     {
       "key": "server.workers",
       "default": 1,
-      "description": "Number of uvicorn worker processes."
+      "description": "Number of Uvicorn worker processes launched by pavesrv. Values greater than 1 are experimental, allowed only in dev mode, and may corrupt data; packaged production startup rejects them."
     },
     {
       "key": "server.max_request_body_mb",

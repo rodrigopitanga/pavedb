@@ -47,6 +47,12 @@ credentials, and archive safety. Operators running 0.9.5 should upgrade.
 - **Archive dumps preserve live SQLite state.** A dump no longer removes the
   live catalog WAL and shared-memory files held by another worker. The catalog
   is checkpointed for the archive without unlinking another process's files.
+- **The packaged server constrains production to one worker.** Multiple
+  workers keep independent FAISS caches over the same data directory and can
+  lose or serve stale vectors. `server.workers>1` is now rejected outside dev
+  mode; dev mode permits it only with an explicit data-corruption warning.
+  Direct multi-process ASGI launch and multiple replicas sharing one data
+  directory remain unsupported.
 
 ### Fairness on shared instances
 
@@ -71,7 +77,7 @@ references answer in full; the book goes deep.
 ### Upgrade note
 
 No success-response schema change and no data migration. Oversized requests can
-now return `413`; three other behaviours are worth noting:
+now return `413`; four other behaviours are worth noting:
 
 - Search on a collection that does not exist still answers `200` with no
   matches — but no longer creates that collection as a side effect. If you
@@ -81,6 +87,8 @@ now return `413`; three other behaviours are worth noting:
 - An OpenAI model must match a configured embedder instance. Configure every
   model tenants are allowed to select; unconfigured names are rejected before
   any provider client is created.
+- Packaged production startup now rejects `server.workers>1`. Set it to `1`;
+  dev mode remains available for disposable multi-worker experiments.
 
 The startup checks introduced in 0.9.5 are unchanged: tenant names must match
 `^[a-z0-9][a-z0-9-]{0,62}$`, tokens must be quoted non-empty strings, and no

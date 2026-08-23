@@ -117,8 +117,13 @@ mount. Two things people get wrong:
 - **Pass the key by environment.** Baking `admin.key` into an image layer
   publishes it to anyone who can pull the image.
 
-`server.host`, `server.port` and `server.workers` control the bind. With more
-than one worker, remember that they share the data directory.
+`server.host`, `server.port` and `server.workers` control the bind. Keep
+`server.workers=1` in production. Multiple workers currently keep independent
+FAISS caches over the same data directory, so `pavesrv` rejects them in
+production. Dev mode permits `server.workers>1` only for experiments and warns
+that it may corrupt data; use disposable data. Do not bypass this with raw
+Uvicorn, Gunicorn or multiple replicas sharing one data directory: those
+multi-process deployments are unsupported.
 
 ## The UI
 

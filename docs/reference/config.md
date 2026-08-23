@@ -343,7 +343,9 @@ unresponsive provider can hold a worker slot.
 
 - Default: `1`
 - Env var: `PAVEDB_SERVER__WORKERS`
-- Description: Number of uvicorn worker processes.
+- Description: Number of Uvicorn worker processes launched by pavesrv. Values greater
+  than 1 are experimental, allowed only in dev mode, and may corrupt data; packaged
+  production startup rejects them.
 
 ### `server.max_request_body_mb`
 
