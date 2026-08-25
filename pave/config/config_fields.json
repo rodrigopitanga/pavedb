@@ -275,7 +275,7 @@
     },
     {
       "key": "instance.desc",
-      "default": "Vector Search Microservice",
+      "default": "Inspectable Retrieval Database",
       "description": "Description used by the API metadata and UI."
     }
   ]

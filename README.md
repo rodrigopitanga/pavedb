@@ -1,19 +1,22 @@
 <!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> --> 
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-# 🛣️ PaveDB — Vector search you can inspect, replay & deploy in minutes
+# 🛣️ PaveDB — Retrieval you can inspect. Infrastructure you can own.
 
-PaveDB is a single-process vector search engine for AI applications.
+PaveDB is an inspectable retrieval database for AI applications. By default,
+text searches keep their source provenance, stored query record, and replay
+trail instead of disappearing into an opaque pipeline.
 
-It ingests your documents, chunks and embeds them, and gives you semantic search with
-full provenance — document id, page, character offset, and the exact snippet that
-matched.
+Start in-process with Python, serve the same engine over HTTP on your own
+infrastructure, or point the same clients at
+[managed PaveDB](https://cloud.flowlexi.com/). The API stays stable and the
+archive remains portable, so the prototype is not a throwaway and the hosted
+path keeps an exit.
 
-Built for developers shipping **RAG (Retrieval-Augmented Generation)** systems, PaveDB
-provides a straightforward service for **vector search, embeddings pipelines, and
-semantic retrieval**. Embed it in your app, drive it from a CLI, or call its **REST API
-from any language** — the same codebase, so you can ship your first version quickly and
-keep growing as your application scales. No cluster. No opaque pipelines.
+PaveDB ingests your documents, chunks and embeds them, and gives you semantic
+search with full provenance — document id, exact snippet, and source-specific
+page, row, or character offset. Embed it in your app, drive it from a CLI, or
+call its **REST API from any language**. No cluster. No opaque pipelines.
 
 Drop a file in. Search it. See exactly what came back — and why. Minutes after your
 first commit.
@@ -294,8 +297,8 @@ log:
 
 ## 📈 Growing your app with PaveDB
 
-The same engine scales from a throwaway prototype to a remote deployment — and your code
-barely changes along the way:
+The same engine scales from a throwaway prototype to self-hosted or managed
+production — and your code barely changes along the way:
 
 1. **Prototype with zero setup.** `connect()` opens an ephemeral store in a temp
    directory, discarded on close. No config, nothing left behind.
@@ -310,12 +313,16 @@ barely changes along the way:
    Run your staging checks against the real wire protocol your production deploy will
    speak. Your app switches transports with one line:
    `connect("http://localhost:8086")`.
-4. **Deploy remotely.** Run the prebuilt Docker image on your server (see
+4. **Deploy it yourself.** Run the prebuilt Docker image on your server (see
    [Install options](#-install-options)). A misconfigured deploy fails loudly:
    outside dev mode the server refuses to start without authentication rather than
    quietly exposing your data.
-5. **Migrate your data.** Snapshot the local instance and restore it into the remote one —
-   a point-in-time copy of every tenant and collection:
+5. **Or use managed PaveDB.** Point the same client at
+   [Flowlexi Cloud](https://cloud.flowlexi.com/). It runs the same engine and API;
+   you keep the keys, archive, and exit.
+6. **Move data without changing formats.** Snapshot the local instance and
+   restore it into the remote one — a point-in-time copy of every tenant and
+   collection:
    ```bash
    # local: snapshot the data dir
    pavecli --data-dir ./data dump-archive --output snapshot.zip

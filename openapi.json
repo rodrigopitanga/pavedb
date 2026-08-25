@@ -3172,7 +3172,7 @@
     }
   },
   "info": {
-    "description": "Vector Search Microservice",
+    "description": "Inspectable Retrieval Database",
     "title": "PaveDB",
     "version": "0.9.6"
   },

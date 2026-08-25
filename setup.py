@@ -6,6 +6,10 @@ from pathlib import Path
 import os
 
 here = Path(__file__).parent.resolve()
+SUMMARY = (
+    "PaveDB — Inspectable retrieval you can own, embedded, self-hosted, "
+    "or managed."
+)
 
 
 def read_version():
@@ -21,14 +25,14 @@ def read_long_description():
         path = here / candidate
         if path.exists():
             return path.read_text(encoding="utf-8"), "text/markdown"
-    return "PaveDB — A lightweight, pluggable vector search microservice.", "text/plain"
+    return SUMMARY, "text/plain"
 
 long_description, long_type = read_long_description()
 
 setup(
     name="pavedb",                        # external name
     version=read_version(),
-    description="PaveDB — A lightweight, pluggable vector search microservice.",
+    description=SUMMARY,
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Rodrigo Rodrigues da Silva",
@@ -87,7 +91,9 @@ setup(
         "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
     ],
     project_urls={
-        "Homepage": "https://github.com/rodrigopitanga/pavedb",
+        "Homepage": "https://pavedb.org/",
+        "Documentation": "https://pavedb.org/docs/",
+        "Managed PaveDB": "https://cloud.flowlexi.com/",
         "Source": "https://github.com/rodrigopitanga/pavedb",
         "Tracker": "https://github.com/rodrigopitanga/pavedb/issues",
     },

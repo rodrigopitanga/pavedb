@@ -1,18 +1,29 @@
 <!-- (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-# PaveDB — A lightweight, pluggable vector search microservice.
+# PaveDB — Retrieval you can inspect. Infrastructure you can own.
 
-Upload → chunk → index (with metadata) → search via REST and CLI.
+PaveDB is an inspectable retrieval database for AI applications. By default,
+text searches keep their source provenance, stored query record, and replay
+trail.
+
+Start embedded in Python, self-host the same engine over HTTP, or point the same
+clients at [managed PaveDB](https://cloud.flowlexi.com/). The API stays stable
+and the archive remains portable, so the prototype is not a throwaway and the
+hosted path keeps an exit.
 
 ## Highlights
+- One engine and interface from embedded prototype to self-hosted or managed
+  production
+- Query history and replay for text searches, enabled by default
+- Deterministic provenance: every text-backed hit returns a document id,
+  snippet, and source-specific page, row, or offset
 - Multi-tenant collections: `/collections/{tenant}/{name}`
 - Upload and search TXT, CSV, and PDF
-- Deterministic provenance: every hit returns doc id, page, offset, snippet
 - Metadata filters on search (`{"filters": {"docid": "DOC-1"}}`)
-- REST and CLI entry points
+- Embedded Python, REST, and CLI entry points
 - Health/metrics endpoints + Prometheus exporter
-- Pluggable embeddings and stores; default stack is local FAISS + SBERT
+- Local and hosted embedding choices; default stack is FAISS + SBERT
 
 ## Requirements
 - Python 3.10–3.14
@@ -32,6 +43,20 @@ pip install "pavedb[cpu]" \
 ```
 
 ## Quickstart
+
+Embedded, with no server or config:
+
+```python
+from pavesdk.client import connect
+
+db = connect("./data")
+books = db.create_collection("books")
+books.add("Captain Nemo commands the Nautilus.", docid="note-1")
+hits = books.search("submarine captain", k=3)
+```
+
+Serve the same engine over HTTP:
+
 ```bash
 # Start the server (installed entry point)
 pavesrv

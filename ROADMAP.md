@@ -7,12 +7,14 @@ tl;dr: This roadmap tracks production readiness and integration milestones. To c
 task, open an issue titled `claim: <task ID>` and link your branch or PR.
 Detailed design plans live under `docs/design/` and are indexed after the task tables.
 
-> PaveDB is a general-purpose vector search engine. The roadmap that follows is
-> driven by production readiness for its first downstream consumer — an application
-> that maps natural-language queries to structured codes via semantic search in a
-> non-English language. The core product metric is **time saved to reach the correct
-> results**. Every TODO is evaluated against that metric and general production
-> readiness.
+> PaveDB is an inspectable retrieval database: text searches keep their source
+> provenance, query record, and replay trail, while one interface carries an
+> embedded prototype into self-hosted or managed production. The roadmap is
+> driven by production readiness for its first downstream consumer — an
+> application that maps natural-language queries to structured codes via
+> semantic search in a non-English language. The core product metric is
+> **time saved to reach the correct results**. Every TODO is evaluated against
+> that metric and general production readiness.
 
 ## Design Principles
 
@@ -883,7 +885,7 @@ One of eight practices is still partial (hot-reload / model swap).
 
 ---
 
-## Pluggability: PaveDB as a General-Purpose Vector Search Microservice
+## Pluggability: one retrieval core, multiple interfaces
 
 > Secondary priority — after the first consumer reaches GA. But
 > architectural decisions made in v0.5.7–v1.0 determine whether this
@@ -1035,15 +1037,17 @@ the coverage.
 
 ### PaveDB's positioning in the vector DB landscape
 
-PaveDB is not Qdrant or Pinecone. It does not compete on billion-vector scale or sub-
-millisecond latency. Its niche is:
+PaveDB is not Qdrant or Pinecone. It does not compete on billion-vector scale
+or sub-millisecond latency. Its niche is retrieval that stays inspectable and
+under the operator's control:
 
-**"The SQLite of vector search"** — embed it, no cluster, no cloud, good enough for most
-workloads under 10M vectors.
+**"Retrieval you can inspect. Infrastructure you can own."** Start embedded,
+self-host the same engine, or use it managed without changing the API or
+archive format.
 
 | | PaveDB | ChromaDB | Qdrant | Pinecone |
 |---|--------|----------|--------|----------|
-| Deployment | Single-process | Single-process | Docker/K8s | Managed |
+| Deployment | Embedded, self-hosted, managed | Single-process | Docker/K8s | Managed |
 | Multi-tenancy | Built-in | No | Namespaces | Namespaces |
 | File preprocessing | CSV/PDF/TXT | No | No | No |
 | Embedding choice | Pluggable | BYO | BYO | BYO |
@@ -1051,9 +1055,9 @@ workloads under 10M vectors.
 | Inspectability | Query log, replay, chunk inspector | No | No | No |
 | License | AGPL-3.0 | Apache-2.0 | Apache-2.0 | Proprietary |
 
-The **built-in preprocessing**, **multi-tenancy**, and **inspectability**
-are real differentiators. ChromaDB, the closest lightweight competitor,
-has none of them.
+The **provenance and replay trail**, **owned deployment path**, **built-in
+preprocessing**, and **multi-tenancy** are the differentiators. ChromaDB, the
+closest lightweight competitor, does not combine them.
 
 ### Architectural decisions that affect pluggability NOW
 

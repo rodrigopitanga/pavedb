@@ -421,6 +421,6 @@ unresponsive provider can hold a worker slot.
 
 ### `instance.desc`
 
-- Default: `"Vector Search Microservice"`
+- Default: `"Inspectable Retrieval Database"`
 - Env var: `PAVEDB_INSTANCE__DESC`
 - Description: Description used by the API metadata and UI.

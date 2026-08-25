@@ -424,4 +424,4 @@ instance:
 
   # Description used by the API metadata and UI.
   # Env: PAVEDB_INSTANCE__DESC
-  desc: 'Vector Search Microservice'
+  desc: 'Inspectable Retrieval Database'

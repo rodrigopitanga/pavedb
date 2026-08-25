@@ -3,11 +3,17 @@
 
 # PaveDB in one page
 
-PaveDB is a single-process vector search engine. You hand it files, it chunks,
+PaveDB is an inspectable retrieval database. You hand it files, it chunks,
 embeds and indexes them, and it answers semantic queries with the exact snippet
-that matched and where it came from.
+that matched and where it came from. By default, text searches keep their query
+record and replay trail as well as their source provenance.
 
-One process, one data directory. No cluster to operate, no external database.
+Use the same engine embedded in Python, self-host it over HTTP, or point the
+same clients at managed PaveDB. One interface carries the prototype into
+production without replacing the retrieval stack.
+
+When you run it yourself: one process, one data directory. No cluster to
+operate, no external database.
 
 ## The model
 
@@ -18,15 +24,15 @@ Four nouns, in order of containment:
 | **Tenant** | A namespace. Carries its own API key, quotas and data directory. |
 | **Collection** | A set of documents that share one embedding model. Search happens inside one collection. |
 | **Document** | What you ingested — a PDF, CSV, TXT, or a string you passed directly. Identified by a `docid` you choose. |
-| **Chunk** | The unit that is actually embedded and returned. Carries its page, character offset and metadata. |
+| **Chunk** | The embedded return unit. Carries source location and metadata. |
 
 A collection pins its embedder when you create it. That binding is enforced:
 vectors produced by a different model are rejected rather than mixed into an
 index where they would silently degrade results.
 
-Every search is written to a **query log** with its parameters, timing and
-result ids, and can be **replayed** later. This is not a debug mode you switch
-on — it is how the engine behaves by default.
+By default, every search is written to a **query log** with its parameters,
+timing and result ids, and can be **replayed** later. This is not a debug mode
+you switch on — it is the normal engine behavior.
 
 ## The pieces
 
