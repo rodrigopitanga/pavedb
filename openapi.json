@@ -3348,7 +3348,7 @@
         ]
       },
       "put": {
-        "description": "Overwrites current data with the uploaded zip; requires the admin key.",
+        "description": "Overwrites current data with the uploaded zip. The admin key is checked before body consumption; general request and document size limits do not apply.",
         "operationId": "restore_archive_v1_admin_archive_put",
         "requestBody": {
           "content": {

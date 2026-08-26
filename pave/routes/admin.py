@@ -106,8 +106,9 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         "/admin/archive",
         summary="Restore an archive",
         description=(
-            "Overwrites current data with the uploaded zip; requires the "
-            "admin key."
+            "Overwrites current data with the uploaded zip. The admin key "
+            "is checked before body consumption; general request and "
+            "document size limits do not apply."
         ),
         response_model=RestoreArchiveResponse,
         responses=resp(400, 401, 403, 500),

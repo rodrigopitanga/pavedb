@@ -30,6 +30,8 @@ from uvicorn.supervisors import ChangeReload, Multiprocess
 
 from pave.auth import (
     ConcurrencySlot,
+    auth_ctx,
+    bearer,
     bootstrap_admin_key,
     enforce_policy,
     resolve_bind,
@@ -115,10 +117,9 @@ class BodySizeLimitMiddleware:
     arbitrary payload. The guard therefore has to sit ahead of routing, which
     rules out a dependency and any route-level check.
 
-    Multipart uploads spool to a temporary file, so they get the ingest
-    ceiling; every other body is parsed into Python objects in memory, where
-    a list of JSON numbers costs roughly 25x its wire size, so it gets the
-    much tighter `server.max_request_body_mb` ceiling.
+    Multipart document uploads spool to a temporary file, so they get the
+    ingest ceiling. Archive restore has its own authenticated, exempt path;
+    every other body gets the tighter `server.max_request_body_mb` ceiling.
     """
 
     def __init__(self, app) -> None:
@@ -130,18 +131,34 @@ class BodySizeLimitMiddleware:
         # caller's, so granting the larger ceiling from it let any request
         # claim multipart and buy the ingest limit on a JSON endpoint, where
         # the body is parsed into memory rather than spooled to disk.
-        return path.endswith("/documents") or path == "/v1/admin/archive"
+        return path.endswith("/documents")
+
+    @staticmethod
+    def _restores_archive(scope) -> bool:
+        return (
+            scope.get("method") == "PUT"
+            and scope.get("path") == "/v1/admin/archive"
+        )
 
     @classmethod
     def _limit_for(cls, scope) -> int:
         state = getattr(scope.get("app"), "state", None)
         if state is None:
             return 0
-        if cls._accepts_upload(str(scope.get("path") or "")):
+        path = str(scope.get("path") or "")
+        # A whole-instance archive is unrelated to the largest accepted
+        # document. Starlette spools this multipart upload to disk; do not
+        # reject a valid backup under either in-memory request ceiling.
+        if cls._restores_archive(scope):
+            return 0
+        if cls._accepts_upload(path):
             return getattr(state, "max_upload_body_bytes", 0)
         return getattr(state, "max_body_bytes", 0)
 
     async def __call__(self, scope, receive, send):
+        if scope["type"] == "http" and self._restores_archive(scope):
+            if not await self._authorize_archive(scope, send):
+                return
         limit = 0 if scope["type"] != "http" else self._limit_for(scope)
         if limit <= 0:
             await self.app(scope, receive, send)
@@ -198,6 +215,38 @@ class BodySizeLimitMiddleware:
             pass
         if oversize and not started and not answered:
             await self._reject(scope, send, received, limit)
+
+    @staticmethod
+    async def _authorize_archive(scope, send) -> bool:
+        credentials = await bearer(Request(scope))
+        try:
+            ctx = auth_ctx(credentials)
+            if not ctx.is_admin:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "code": "admin_required",
+                        "error": "admin access required",
+                    },
+                )
+        except HTTPException as exc:
+            detail = exc.detail if isinstance(exc.detail, dict) else {}
+            body = {
+                "ok": False,
+                "code": detail.get("code", "http_error"),
+                "error": detail.get("error") or str(exc.detail),
+            }
+            request_id = (scope.get("state") or {}).get("request_id")
+            if request_id is not None:
+                body["request_id"] = request_id
+            response = JSONResponse(
+                body,
+                status_code=exc.status_code,
+                headers=exc.headers,
+            )
+            await response(scope, _closed_receive, send)
+            return False
+        return True
 
     @staticmethod
     async def _reject(scope, send, size: int, limit: int) -> None:

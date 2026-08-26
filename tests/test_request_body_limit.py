@@ -3,6 +3,9 @@
 
 """Request bodies are bounded before routing, parsing, and auth (B37)."""
 
+import asyncio
+import json
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -101,6 +104,51 @@ def test_upload_over_ingest_limit_rejected_before_auth(guarded):
 
     assert r.status_code == 413
     assert r.json()["code"] == "request_too_large"
+
+
+def test_archive_restore_is_not_limited_by_document_size(guarded):
+    blob = b"not a zip" + b"z" * (4 * 1024 * 1024)
+
+    r = guarded.put(
+        "/v1/admin/archive",
+        files={"file": ("backup.zip", blob, "application/zip")},
+        headers={"Authorization": "Bearer test-key"},
+    )
+
+    assert r.status_code == 400
+    assert r.json()["code"] == "archive_invalid"
+
+
+def test_archive_auth_is_checked_before_body_is_read(cfg):
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", "test-key")
+    received = False
+    sent = []
+
+    async def downstream(_scope, _receive, _send):
+        raise AssertionError("request reached routing")
+
+    async def receive():
+        nonlocal received
+        received = True
+        raise AssertionError("request body was read")
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {
+        "type": "http",
+        "method": "PUT",
+        "path": "/v1/admin/archive",
+        "headers": [],
+        "state": {},
+    }
+    middleware = main_mod.BodySizeLimitMiddleware(downstream)
+    asyncio.run(middleware(scope, receive, send))
+
+    assert received is False
+    assert sent[0]["status"] == 401
+    assert json.loads(sent[1]["body"])["code"] == "auth_invalid"
 
 
 def test_small_request_is_untouched(guarded):
