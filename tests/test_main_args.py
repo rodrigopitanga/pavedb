@@ -1,6 +1,8 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import os
+
 import pytest
 
 import pave.main as main_mod
@@ -12,7 +14,13 @@ def _capture_server_run(monkeypatch):
     calls: dict[str, object] = {}
 
     def capture(*args, **kwargs):
-        calls.update({"args": args, "kwargs": kwargs})
+        calls.update(
+            {
+                "args": args,
+                "kwargs": kwargs,
+                "asgi_context": os.environ.get(main_mod._ASGI_CONTEXT_ENV),
+            }
+        )
 
     monkeypatch.setattr(main_mod, "_run_pave_server", capture)
     return calls
@@ -22,6 +30,7 @@ def test_main_srv_accepts_home_flag(monkeypatch, tmp_path):
     calls = _capture_server_run(monkeypatch)
     home = tmp_path / "instance"
 
+    monkeypatch.delenv(main_mod._ASGI_CONTEXT_ENV, raising=False)
     monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
     monkeypatch.setattr(main_mod, "enforce_policy", lambda _cfg: None)
     monkeypatch.setattr(main_mod, "resolve_bind", lambda _cfg: ("127.0.0.1", 8086))
@@ -33,6 +42,8 @@ def test_main_srv_accepts_home_flag(monkeypatch, tmp_path):
     assert cfg.get("auth.tenants_file") == str(home / "tenants.yml")
     assert calls["kwargs"]["host"] == "127.0.0.1"
     assert calls["kwargs"]["port"] == 8086
+    assert calls["asgi_context"] == "pavesrv"
+    assert main_mod._ASGI_CONTEXT_ENV not in os.environ
 
 
 def test_main_srv_config_data_dir_beats_home(monkeypatch, tmp_path):

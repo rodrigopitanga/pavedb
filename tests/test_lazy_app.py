@@ -4,8 +4,11 @@
 import asyncio
 import sys
 from contextlib import suppress
+from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
+from uvicorn.importer import import_from_string
 
 
 def test_importing_build_app_and_version_does_not_build_app():
@@ -25,15 +28,23 @@ def test_importing_build_app_and_version_does_not_build_app():
     assert m._app is None, "_app must stay None after importing build_app/VERSION"
 
 
-def test_accessing_app_attribute_builds_and_caches():
-    """Accessing pave.main.app must build the app exactly once."""
+def test_uvicorn_import_requires_packaged_context(monkeypatch):
     import pave.main as m
-    m._app = None  # reset
+    m._app = None
+    monkeypatch.delenv(m._ASGI_CONTEXT_ENV, raising=False)
 
-    app1 = m.app
-    assert app1 is not None
-    app2 = m.app
-    assert app1 is app2, "app must be the same object on repeated access (cached)"
+    with pytest.raises(SystemExit, match="run `pavesrv`"):
+        import_from_string("pave.main:app")
+
+    app = SimpleNamespace(state=SimpleNamespace(ui_enabled=False))
+    with pytest.raises(TypeError):
+        m.build_app()
+
+    monkeypatch.setenv(m._ASGI_CONTEXT_ENV, "pavesrv")
+    monkeypatch.setattr(m, "build_app", lambda _cfg: app)
+
+    assert import_from_string("pave.main:app") is app
+    assert import_from_string("pave.main:app") is app
 
 
 def test_live_health_does_not_load_embedder(monkeypatch, tmp_path):
@@ -210,8 +221,6 @@ def test_lifespan_flushes_metrics_on_shutdown(monkeypatch, tmp_path):
 
 def test_build_app_enforces_auth_policy(tmp_path):
     """The uvicorn entry point must not bypass the production auth policy."""
-    import pytest
-
     import pave.main as m
     from pave.config import get_cfg
 

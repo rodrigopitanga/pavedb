@@ -97,6 +97,7 @@ FORCE_SHUTDOWN_MESSAGE = (
 # that ride along with an uploaded file. Added to the ingest limit so a file
 # at exactly the configured size still fits inside its multipart envelope.
 MULTIPART_FRAMING_BYTES = 1024 * 1024
+_ASGI_CONTEXT_ENV = "_PAVEDB_ASGI_CONTEXT"
 
 
 class _BodyTooLarge(Exception):
@@ -408,13 +409,12 @@ def _run_pave_server(app: str, **kwargs) -> None:
         sys.exit(STARTUP_FAILURE)
 
 
-def build_app(cfg=get_cfg()) -> FastAPI:
+def build_app(cfg) -> FastAPI:
     bootstrap_admin_key(cfg, resolve_runtime_paths().home)
-    # Every ASGI entry point goes through here, including
-    # `uvicorn pave.main:app`, which never reaches main_srv(). Without this
-    # call that launch path serves auth.mode=none unauthenticated in prod.
-    # Ordered after bootstrap, as in main_srv: bootstrap is what sets
-    # auth.admin_key_file, which the static-mode check looks for.
+    # Workers launched by pavesrv and callers using build_app(cfg) both enter
+    # here. Keep policy enforcement at the construction boundary even though
+    # the lazy module-level app now rejects raw ASGI startup first. Ordered
+    # after bootstrap: that sets the key file the static-mode check sees.
     enforce_policy(cfg)
     log = get_logger()
 
@@ -1110,10 +1110,17 @@ def main_srv(argv=None):
     }
     if _access_log_config:
         _run_kwargs["log_config"] = _access_log_config
+    previous_asgi_context = os.environ.get(_ASGI_CONTEXT_ENV)
+    os.environ[_ASGI_CONTEXT_ENV] = "pavesrv"
     try:
         _run_pave_server("pave.main:app", **_run_kwargs)
     except (SchemaMigrationError, UnsupportedSchemaVersionError) as exc:
         raise SystemExit(f"ERROR: {exc}") from None
+    finally:
+        if previous_asgi_context is None:
+            os.environ.pop(_ASGI_CONTEXT_ENV, None)
+        else:
+            os.environ[_ASGI_CONTEXT_ENV] = previous_asgi_context
 
 # Lazy module-level `app` — only built when first accessed (e.g. by Uvicorn).
 # Importing `build_app` or `VERSION` from this module is side-effect-free.
@@ -1122,9 +1129,13 @@ _app = None
 
 def __getattr__(name: str):
     if name == "app":
+        if os.environ.get(_ASGI_CONTEXT_ENV) != "pavesrv":
+            raise SystemExit(
+                "ERROR: direct ASGI startup is unsupported; run `pavesrv`."
+            )
         global _app
         if _app is None:
-            _app = build_app()
+            _app = build_app(get_cfg())
             if getattr(_app.state, "ui_enabled", True):
                 try:
                     attach_ui(_app)
