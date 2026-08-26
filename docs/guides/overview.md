@@ -30,9 +30,9 @@ A collection pins its embedder when you create it. That binding is enforced:
 vectors produced by a different model are rejected rather than mixed into an
 index where they would silently degrade results.
 
-By default, every search is written to a **query log** with its parameters,
-timing and result ids, and can be **replayed** later. This is not a debug mode
-you switch on — it is the normal engine behavior.
+By default, each text search is written to a **query log** with its parameters,
+timing and result ids, and can be **replayed** later. Raw-vector searches are
+not replayable because their query vectors are not stored.
 
 ## The pieces
 
@@ -62,8 +62,8 @@ The shortest useful path, in any of the interfaces:
    `docid` replaces that document; no restart, no reindex step.
 3. **Search** — send a query and a `k`. Each hit carries its score, its text and
    the provenance of the chunk it came from.
-4. **Inspect** — pull the query back out of the log, look at what it did, replay
-   it.
+4. **Inspect** — for a logged text search, pull the query back out, inspect it,
+   and replay it.
 
 Concrete commands and payloads live in the CLI reference and the OpenAPI
 document; this page deliberately does not repeat them.

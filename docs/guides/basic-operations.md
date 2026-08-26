@@ -39,12 +39,14 @@ pavecli search demo books "captain nemo" -k 3
 ```
 
 Each hit carries its score, the matched text, and where it came from — document
-id, page, character offset. That provenance is not optional metadata you have
-to enable; it is what a hit is.
+id plus the source-specific page, row, or character offset. That provenance is
+not optional metadata you have to enable; it is what a text-backed hit is.
 
 ## Inspect and replay
 
-Every search is logged as it happens.
+Text searches are logged by default and can be replayed. Query logging can be
+disabled; raw-vector searches cannot be replayed because no query vector is
+stored.
 
 ```bash
 pavecli list-queries --tenant demo --collection books

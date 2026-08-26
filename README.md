@@ -55,15 +55,15 @@ debugging — and available the same way from the CLI, the REST API, or any clie
 
 - **Ingest files, not embeddings** — hand it a PDF, CSV, or TXT (more formats to come)
   and PaveDB chunks, embeds, and indexes it. No preprocessing pipeline to build.
-- **Full provenance on every hit** — every search result traces back to a document,
-  page, and character offset. Latency and request traceability are built into every
-  response.
-- **Inspect and replay every query** — each search is logged with its params, timing, and
-  results; pull it back up, replay it byte-for-byte, and drill into the exact chunk that
-  matched. Observability is the product, not an add-on.
+- **Source-specific provenance on text hits** — every result traces back to a
+  document and the relevant page, row, or character offset. Latency and request
+  traceability are built into every response.
+- **Inspect and replay text queries** — with query logging enabled (the
+  default), each text search keeps its params, timing, and results. Pull it back
+  up, replay it, and inspect the exact chunk that matched.
 - **Multi-tenant by default** — tenant/collection namespacing is built in, not bolted
   on (and transparent when you just don't need it). Tenants carry their own API keys,
-  concurrency caps, and hard collection and row quotas, so a single instance can
+  concurrency caps, and hard collection and chunk quotas, so a single instance can
   safely serve a shared plan.
 - **Embed it, script it, or serve it** — use the Python SDK, the Elixir or
   TypeScript client, drive the CLI, or call the HTTP server from any
@@ -77,11 +77,11 @@ debugging — and available the same way from the CLI, the REST API, or any clie
 
 ## 🧭 How to
 
-PaveDB exposes the same operations through client libraries, a **CLI**, and a plain
-**REST API**. The Python SDK supports local embedded and remote HTTP transports;
-the Elixir and TypeScript clients use HTTP. Beneath every networked client sits the REST API: an
-open wire protocol you can call directly or wrap in your own client, in any
-language. The Python examples below use Python 3.10–3.14; see
+PaveDB exposes the same operations through client libraries, a **CLI**, and a
+plain **REST API**. The Python SDK supports local embedded and remote HTTP
+transports; the Elixir and TypeScript clients use HTTP. The REST API is the wire
+protocol beneath every networked client and can be wrapped in any language.
+The Python examples below use Python 3.10–3.14; see
 [Install options](#-install-options) for CPU-only wheels, Docker, and source.
 
 The standalone Python SDK is published on
@@ -112,15 +112,21 @@ for hit in books.search("captain nemo", k=3):
 
 Use the same SDK handle API against a remote server with
 `connect("http://your-host:8086")`. Whichever transport you use, every hit
-carries the same provenance: document id, offset, and the matched snippet.
+carries the same provenance: document id, matched snippet, and source-specific
+page, row, or offset.
 
 ### ⚗️ From Elixir
 
 Add `{:pavedb_client, "~> 0.1.0"}` to your Mix dependencies and run
-`mix deps.get`. The client connects to a running PaveDB server:
+`mix deps.get`. Set `PAVEDB_TOKEN` to the server key; the client connects to a
+running PaveDB server:
 
 ```elixir
-client = PaveDBClient.connect("http://localhost:8086")
+client =
+  PaveDBClient.connect("http://localhost:8086",
+    api_key: System.fetch_env!("PAVEDB_TOKEN")
+  )
+
 {:ok, books} = PaveDBClient.create_collection(client, "books")
 {:ok, _} = PaveDBClient.Collection.add(books, "Captain Nemo commands the Nautilus.")
 {:ok, %{"matches" => hits}} = PaveDBClient.Collection.search(books, "captain nemo", k: 3)
@@ -174,10 +180,11 @@ Run a server — `pavesrv` (from a PyPI install) or a Docker image (see
 [Install options](#-install-options)) — and PaveDB exposes a plain HTTP API on
 `http://localhost:8086`. This is the open wire protocol every networked client wraps
 and the one you'd target to build your own — in any language. No black box:
-every route is documented in OpenAPI at `/openapi.json` and browsable at
-`/ui`. Create and ingest mirror the CLI. Set an auth key
-(`PAVEDB_AUTH__GLOBAL_KEY`) so the server accepts requests; then a search looks
-like:
+the wire contract is committed as [`openapi.json`](openapi.json). Runtime
+`/openapi.json` and `/ui` are enabled in dev; in production, set
+`PAVEDB_UI__ENABLED=true` to expose them. Create and ingest mirror the CLI. Set
+an auth key (`PAVEDB_AUTH__GLOBAL_KEY`) so the server accepts requests; then a
+search looks like:
 
 ```bash
 export PAVEDB_AUTH__GLOBAL_KEY=super-sekret
