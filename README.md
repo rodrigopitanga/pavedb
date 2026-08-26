@@ -327,17 +327,20 @@ production — and your code barely changes along the way:
 5. **Or use managed PaveDB.** Point the same client at
    [Flowlexi Cloud](https://cloud.flowlexi.com/). It runs the same engine and API;
    you keep the keys, archive, and exit.
-6. **Move data without changing formats.** Snapshot the local instance and
-   restore it into the remote one — a point-in-time copy of every tenant and
-   collection:
+6. **Move data without changing formats.** Close the process that owns a local
+   data directory before using the offline CLI. Restore into a running remote
+   server through its admin API:
    ```bash
-   # local: snapshot the data dir
+   # local: run only after closing the embedded client or server
    pavecli --data-dir ./data dump-archive --output snapshot.zip
 
-   # remote: load the snapshot into the container, then restart it
-   docker cp snapshot.zip pavedb:/tmp/snapshot.zip
-   docker exec pavedb pavecli restore-archive /tmp/snapshot.zip
-   docker restart pavedb
+   # remote: the server coordinates the live replacement
+   export PAVEDB_URL=http://localhost:8086
+   export PAVEDB_TOKEN=super-sekret
+   curl -X PUT \
+     -H "Authorization: Bearer $PAVEDB_TOKEN" \
+     -F "file=@snapshot.zip;type=application/zip" \
+     "$PAVEDB_URL/v1/admin/archive"
    ```
 
    Archives carry each collection's vector-space identity, not credentials or

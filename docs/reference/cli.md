@@ -527,7 +527,7 @@ pavecli delete-document demo books book-1
 
 ## `dump-archive`
 
-Write a zip archive containing the current instance data directory.
+Offline only; stop the server before reading its data directory.
 
 ### Usage
 
@@ -547,7 +547,7 @@ pavecli dump-archive --output pavedb-data.zip
 
 ## `restore-archive`
 
-Replace the instance data directory from a zip archive.
+Offline only; stop the server before replacing its data directory.
 
 ### Usage
 

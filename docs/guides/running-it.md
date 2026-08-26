@@ -41,6 +41,10 @@ running instance can catch SQLite mid-write, and `pavecli dump-archive` is an
 offline tool: it operates on the data directory directly and does not
 coordinate with a live server.
 
+For a running server, use `GET /v1/admin/archive` to download a snapshot and
+`PUT /v1/admin/archive` to restore one. Those routes coordinate with the live
+store; do not run `pavecli dump-archive` or `restore-archive` beside it.
+
 ## Health
 
 | Endpoint | Checks | Use for |
@@ -63,14 +67,15 @@ Set these before you have tenants, not after:
 - `ingest.max_file_size_mb` — largest single document accepted
 - `ingest.max_concurrent` — instance-wide ingest slots
 - `ingest.max_batch_size_mb` — total across one batch, not per document
-- `server.max_request_body_mb` — every non-upload request body, checked before
-  routing and before authentication
+- `server.max_request_body_mb` — general request bodies, checked before routing
+  or authentication; `0` disables the cap
 
 A body over its ceiling is refused with `413 request_too_large` before the
 request reaches a route, so an oversized client sees that rather than a
-timeout. Upload endpoints get the ingest ceiling; everything else gets the
-tighter `server.max_request_body_mb`, because a JSON body is parsed into
-memory rather than spooled to disk.
+timeout. Document uploads get the ingest ceiling; other bodies get the tighter
+`server.max_request_body_mb`. Whole-instance restore checks the admin credential
+before consuming the upload and is exempt from both limits. The handler reads
+the archive into memory, so leave enough headroom for its compressed size.
 
 ## Running a shared instance
 
@@ -121,9 +126,9 @@ mount. Two things people get wrong:
 `server.workers=1` in production. Multiple workers currently keep independent
 FAISS caches over the same data directory, so `pavesrv` rejects them in
 production. Dev mode permits `server.workers>1` only for experiments and warns
-that it may corrupt data; use disposable data. Do not bypass this with raw
-Uvicorn, Gunicorn or multiple replicas sharing one data directory: those
-multi-process deployments are unsupported.
+that it may corrupt data; use disposable data. The packaged `pave.main:app`
+target rejects direct ASGI loading; custom ASGI wrappers remain unsupported.
+Multiple replicas sharing one data directory remain unsupported.
 
 ## The UI
 

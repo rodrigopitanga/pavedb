@@ -9,11 +9,13 @@ identically whichever one you pick. Choose by how you want to talk to it.
 ## The server — `pavesrv`
 
 One process. It owns the data directory and exposes the REST API, which is the
-wire protocol every other client speaks. If you are deploying PaveDB, this is
+wire protocol every networked client speaks. If you are deploying PaveDB, this is
 the only thing you deploy.
 
-Start it with `pavesrv`. Do not start it with `uvicorn` directly unless you know
-why you are doing that — the entry point does more than mount the app.
+Start it with `pavesrv`. The packaged `pave.main:app` target rejects direct ASGI
+loading because the entry point owns startup policy. Tests should call
+`build_app(get_cfg())` directly instead of starting an external server. Custom
+ASGI wrappers are unsupported.
 
 ## The CLI — `pavecli`
 

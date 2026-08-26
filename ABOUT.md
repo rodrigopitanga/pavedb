@@ -60,10 +60,10 @@ Serve the same engine over HTTP:
 ```bash
 # Start the server (installed entry point)
 pavesrv
-
-# Or run with uvicorn manually if you prefer:
-uvicorn pave.main:app --host 0.0.0.0 --port 8086
 ```
+
+`pavesrv` is the supported server entry point. The packaged `pave.main:app`
+target rejects direct ASGI loading because it bypasses startup policy.
 
 Auth defaults to `static`. `none` is refused outside dev mode. For production,
 set a key:

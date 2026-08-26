@@ -843,8 +843,7 @@ def build_parser() -> argparse.ArgumentParser:
         "dump-archive",
         help="Export the instance data archive.",
         description=(
-            "Write a zip archive containing the current instance data "
-            "directory."
+            "Offline only; stop the server before reading its data directory."
         ),
         example="pavecli dump-archive --output pavedb-data.zip",
     )
@@ -855,7 +854,9 @@ def build_parser() -> argparse.ArgumentParser:
         sub,
         "restore-archive",
         help="Restore an instance data archive.",
-        description="Replace the instance data directory from a zip archive.",
+        description=(
+            "Offline only; stop the server before replacing its data directory."
+        ),
         example="pavecli restore-archive pavedb-data.zip",
     )
     p_restore.add_argument("file", help="Archive zip file path")
