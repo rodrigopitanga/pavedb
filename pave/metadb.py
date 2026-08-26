@@ -982,6 +982,13 @@ class CollectionDB:
                 return (0, 0)
             return (int(row[0] or 0), int(row[1] or 0))
 
+    def get_chunk_rids(self) -> set[str]:
+        with self._reader() as conn:
+            return {
+                str(row[0])
+                for row in conn.execute("SELECT rid FROM chunks")
+            }
+
     def _chunk_meta_matches(
         self,
         conn: sqlite3.Connection,

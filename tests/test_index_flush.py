@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+
+import pytest
 
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
@@ -166,7 +169,7 @@ def test_rebuild_carries_byov_vectors_instead_of_bailing_out(tmp_path):
     assert not (index_dir / ".pavedb-index-dirty").exists()
 
 
-def test_rebuild_that_loses_a_chunk_stays_dirty(tmp_path):
+def test_rebuild_that_loses_a_chunk_fails_closed(tmp_path):
     tenant, collection = "acme", "byov_lost"
     store = LocalStore(str(tmp_path), FakeEmbedder())
     _seed_mixed_collection(store, tenant, collection)
@@ -180,10 +183,60 @@ def test_rebuild_that_loses_a_chunk_stays_dirty(tmp_path):
     (index_dir / "id_map.json").unlink()
 
     reopened = LocalStore(str(tmp_path), FakeEmbedder())
-    text_hits = reopened.search(tenant, collection, "otters", k=5)
+    with pytest.raises(RuntimeError, match="refusing to publish"):
+        reopened.search(tenant, collection, "otters", k=5)
 
-    assert [h.meta["docid"] for h in text_hits] == ["doc_text"]
     assert (index_dir / ".pavedb-index-dirty").is_file()
+
+
+@pytest.mark.parametrize(
+    "damage",
+    ["missing", "invalid_json", "truncated", "wrong_rid"],
+)
+def test_partial_faiss_load_preserves_byov_index(tmp_path, damage):
+    tenant, collection = "acme", "byov_partial"
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    vector = _seed_mixed_collection(store, tenant, collection)
+    index_dir = _index_dir(store, tenant, collection)
+    store.close()
+
+    index_before = (index_dir / "faiss.index").read_bytes()
+    map_path = index_dir / "id_map.json"
+    map_before = map_path.read_bytes()
+    if damage == "missing":
+        map_path.unlink()
+    elif damage == "invalid_json":
+        map_path.write_text("not json", encoding="utf-8")
+    else:
+        id_map = json.loads(map_before)
+        if damage == "truncated":
+            id_map["rid_to_id"] = {}
+            id_map["id_to_rid"] = {}
+            id_map["next_id"] = 0
+        else:
+            index_id = id_map["rid_to_id"].pop("doc_byov::0")
+            id_map["rid_to_id"]["wrong::0"] = index_id
+            id_map["id_to_rid"][str(index_id)] = "wrong::0"
+        map_path.write_text(json.dumps(id_map), encoding="utf-8")
+
+    reopened = LocalStore(str(tmp_path), FakeEmbedder())
+    with pytest.raises(RuntimeError, match="refusing"):
+        reopened.search(tenant, collection, "otters", k=5)
+    reopened.close()
+
+    assert (index_dir / "faiss.index").read_bytes() == index_before
+    map_path.write_bytes(map_before)
+
+    recovered = LocalStore(str(tmp_path), FakeEmbedder())
+    hits = recovered.search(
+        tenant,
+        collection,
+        "",
+        k=5,
+        query_vector=vector,
+    )
+    recovered.close()
+    assert hits[0].meta["docid"] == "doc_byov"
 
 
 def test_dirty_index_rebuilds_from_chunks_on_reopen(tmp_path):

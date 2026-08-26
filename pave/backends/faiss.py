@@ -65,19 +65,35 @@ class FaissBackend:
                 "FAISS index dimension mismatch: "
                 f"expected {self._dimension}, found {loaded_dim}"
             )
-        self._index = loaded
         data = json.loads(self._map_file.read_text(encoding="utf-8"))
         rid_to_id_raw = data.get("rid_to_id", {})
         id_to_rid_raw = data.get("id_to_rid", {})
-        self._rid_to_id = {
+        rid_to_id = {
             str(rid): int(iid)
             for rid, iid in rid_to_id_raw.items()
         }
-        self._id_to_rid = {
+        id_to_rid = {
             int(iid): str(rid)
             for iid, rid in id_to_rid_raw.items()
         }
-        self._next_id = int(data.get("next_id", 0))
+        next_id = int(data.get("next_id", 0))
+        index_ids = {
+            int(iid) for iid in faiss.vector_to_array(loaded.id_map)
+        }
+        if (
+            loaded.metric_type != faiss.METRIC_INNER_PRODUCT
+            or len(rid_to_id) != int(loaded.ntotal)
+            or len(id_to_rid) != int(loaded.ntotal)
+            or {iid: rid for rid, iid in rid_to_id.items()} != id_to_rid
+            or index_ids != set(id_to_rid)
+            or next_id < 0
+            or next_id <= max(id_to_rid, default=-1)
+        ):
+            raise ValueError("FAISS id map is inconsistent with index")
+        self._index = loaded
+        self._rid_to_id = rid_to_id
+        self._id_to_rid = id_to_rid
+        self._next_id = next_id
         self._dirty = False
 
     def add(self, rids: list[str], vectors: NDArray[np.float32]) -> None:
@@ -145,6 +161,9 @@ class FaissBackend:
     def count(self) -> int:
         """Return the number of vectors currently indexed."""
         return int(self._index.ntotal)
+
+    def rids(self) -> set[str]:
+        return set(self._rid_to_id)
 
     def get_vector(self, rid: str) -> NDArray[np.float32] | None:
         """Return the stored (normalized) vector for `rid`, or None.

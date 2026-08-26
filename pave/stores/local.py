@@ -1229,23 +1229,6 @@ class LocalStore:
         self._evict_embedder_cache_if_needed()
 
     @staticmethod
-    def _backend_vector_count(backend: FaissBackend) -> int | None:
-        count = getattr(backend, "count", None)
-        if callable(count):
-            try:
-                return max(0, int(count()))
-            except Exception:
-                return None
-        index = getattr(backend, "_index", None)
-        total = getattr(index, "ntotal", None)
-        if total is None:
-            return None
-        try:
-            return max(0, int(total))
-        except Exception:
-            return None
-
-    @staticmethod
     def _backend_vector_for_rid(
         backend: FaissBackend,
         rid: str,
@@ -1278,11 +1261,10 @@ class LocalStore:
         if self._index_is_dirty(tenant, collection):
             return True
         try:
-            _docs, chunks = col_db.get_doc_chunk_counts()
+            chunk_rids = col_db.get_chunk_rids()
         except Exception:
             return False
-        total = self._backend_vector_count(backend)
-        return total is not None and total != chunks
+        return backend.rids() != chunk_rids
 
     def _rebuild_index_from_chunks(
         self,
@@ -1321,18 +1303,12 @@ class LocalStore:
                 carried_rids.append(rid)
                 carried.append(vector)
 
-        if lost and not rids and not carried_rids:
-            # Nothing survived: an empty index is strictly worse than the
-            # one already loaded, so keep it and stay dirty.
-            log.warning(
-                "Index rebuild found no rebuildable chunk, preserving "
-                "existing index tenant=%s coll=%s lost=%d",
-                tenant,
-                collection,
-                len(lost),
-            )
+        if lost:
             self._mark_index_dirty(tenant, collection)
-            return backend
+            raise RuntimeError(
+                "FAISS rebuild has unreconstructible chunks for "
+                f"{tenant}/{collection}; refusing to publish a partial index"
+            )
 
         rebuilt = FaissBackend(
             dim,
@@ -1343,21 +1319,7 @@ class LocalStore:
         if carried_rids:
             rebuilt.add(carried_rids, np.vstack(carried))
         rebuilt.flush()
-        if lost:
-            # A short index must never be reported as a clean rebuild:
-            # keep the marker so the next load retries rather than
-            # trusting a result we know is missing records.
-            log.warning(
-                "Index rebuild lost chunks with no text and no recoverable "
-                "vector tenant=%s coll=%s lost=%d rids=%s",
-                tenant,
-                collection,
-                len(lost),
-                lost[:20],
-            )
-            self._mark_index_dirty(tenant, collection)
-        else:
-            self._clear_index_dirty(tenant, collection)
+        self._clear_index_dirty(tenant, collection)
         return rebuilt
 
     def _load_or_init(
@@ -1395,9 +1357,19 @@ class LocalStore:
                 storage_dir=idx_dir,
             )
 
+            index_path = idx_dir / "faiss.index"
+            map_path = idx_dir / "id_map.json"
             try:
+                if index_path.is_file() and not map_path.is_file():
+                    raise ValueError("id_map.json is missing")
                 backend.initialize()
-            except Exception:
+            except Exception as exc:
+                if index_path.is_file():
+                    raise RuntimeError(
+                        "Persisted FAISS state for "
+                        f"{tenant}/{collection} is incomplete or invalid; "
+                        "refusing to rebuild over faiss.index"
+                    ) from exc
                 log.warning(
                     "Corrupt index at %s for %s/%s, starting fresh",
                     idx_dir,
@@ -1414,19 +1386,29 @@ class LocalStore:
             col_db = CollectionDB()
             col_db.open(self._db_path(tenant, collection))
 
-        if self._index_needs_rebuild(tenant, collection, backend, col_db):
-            log.info(
-                "Rebuilding dirty index tenant=%s coll=%s",
-                tenant,
-                collection,
-            )
-            backend = self._rebuild_index_from_chunks(
+        try:
+            if self._index_needs_rebuild(
                 tenant,
                 collection,
                 backend,
                 col_db,
-                embedder,
-            )
+            ):
+                log.info(
+                    "Rebuilding dirty index tenant=%s coll=%s",
+                    tenant,
+                    collection,
+                )
+                backend = self._rebuild_index_from_chunks(
+                    tenant,
+                    collection,
+                    backend,
+                    col_db,
+                    embedder,
+                )
+        except Exception:
+            if key not in self._dbs:
+                col_db.close()
+            raise
 
         self._emb[key] = backend
         self._collection_embedders[key] = embedder
@@ -1904,12 +1886,11 @@ class LocalStore:
     def _cache_estimated_bytes(self) -> int:
         total = 0
         for backend in list(self._emb.values()):
-            count = self._backend_vector_count(backend)
             dim = getattr(backend, "_dimension", None)
-            if count is None or dim is None:
+            if dim is None:
                 continue
             try:
-                total += count * int(dim) * 4
+                total += backend.count() * int(dim) * 4
             except (TypeError, ValueError):
                 continue
         return total
