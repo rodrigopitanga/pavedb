@@ -13,10 +13,13 @@ hand-written guides for operators. It is a 1.0 preview release.
 This release closes defects in request handling, tenant isolation, provider
 credentials, and archive safety. Operators running 0.9.5 should upgrade.
 
-- **Request bodies are bounded before authentication.** The whole body used to
-  be read and parsed before any credential was checked, so an unauthenticated
-  caller could make the process buffer an arbitrary payload. Oversized requests
-  now answer `413 request_too_large` before routing.
+- **In-memory request bodies and document uploads are bounded before
+  authentication.** The whole body used to be read and parsed before any
+  credential was checked, so an unauthenticated caller could make the process
+  buffer an arbitrary payload. Oversized JSON and document uploads now answer
+  `413 request_too_large` before routing. Whole-instance restore checks the
+  admin credential before consuming the upload and does not inherit the
+  single-document ceiling.
 - **Batch ingest is capped on the total.** The size limit applied per document,
   so a batch of many documents each just under the cap passed while the total
   was many times the limit.
@@ -43,7 +46,10 @@ credentials, and archive safety. Operators running 0.9.5 should upgrade.
   could mint permanent series in the shared catalog by varying the request path
   or the HTTP verb.
 - **Index durability.** A rebuild no longer drops raw (BYOV) vectors silently,
-  and `flush()` refuses to overwrite a populated index with an empty one.
+  and `flush()` refuses to overwrite a populated index with an empty one. An
+  invalid or inconsistent FAISS/ID-map pair now fails closed, and a rebuild
+  with any unreconstructible chunk is refused before it can publish a partial
+  index.
 - **Archive dumps preserve live SQLite state.** A dump no longer removes the
   live catalog WAL and shared-memory files held by another worker. The catalog
   is checkpointed for the archive without unlinking another process's files.
@@ -51,8 +57,8 @@ credentials, and archive safety. Operators running 0.9.5 should upgrade.
   workers keep independent FAISS caches over the same data directory and can
   lose or serve stale vectors. `server.workers>1` is now rejected outside dev
   mode; dev mode permits it only with an explicit data-corruption warning.
-  Direct multi-process ASGI launch and multiple replicas sharing one data
-  directory remain unsupported.
+  The packaged `pave.main:app` target now rejects direct ASGI loading; use
+  `pavesrv`. Multiple replicas sharing one data directory remain unsupported.
 
 ### Fairness on shared instances
 
@@ -77,7 +83,7 @@ references answer in full; the book goes deep.
 ### Upgrade note
 
 No success-response schema change and no data migration. Oversized requests can
-now return `413`; four other behaviours are worth noting:
+now return `413`; these other behaviours are worth noting:
 
 - Search on a collection that does not exist still answers `200` with no
   matches — but no longer creates that collection as a side effect. If you
@@ -89,6 +95,11 @@ now return `413`; four other behaviours are worth noting:
   any provider client is created.
 - Packaged production startup now rejects `server.workers>1`. Set it to `1`;
   dev mode remains available for disposable multi-worker experiments.
+- Direct loading of `pave.main:app`, such as `uvicorn pave.main:app`, is
+  rejected. Use `pavesrv`; tests should call `build_app(get_cfg())` directly.
+- An invalid FAISS/ID-map pair, or any chunk that cannot be reconstructed,
+  now makes that collection unavailable instead of risking a partial rebuild.
+  Repair or restore the index state before serving the collection.
 
 The startup checks introduced in 0.9.5 are unchanged: tenant names must match
 `^[a-z0-9][a-z0-9-]{0,62}$`, tokens must be quoted non-empty strings, and no

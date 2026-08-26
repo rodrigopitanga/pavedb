@@ -14,11 +14,13 @@ Esta versão fecha defeitos no tratamento de requisições, isolamento entre
 tenants, credenciais de provedor e segurança de arquivos. Quem opera a 0.9.5
 deve atualizar.
 
-- **O corpo da requisição é limitado antes da autenticação.** Antes ele era
-  lido e interpretado por inteiro antes de qualquer credencial ser conferida,
-  então um chamador não autenticado podia fazer o processo bufferizar uma carga
-  arbitrária. Requisições grandes demais passam a responder
-  `413 request_too_large` antes do roteamento.
+- **Corpos interpretados em memória e uploads de documentos são limitados antes
+  da autenticação.** Antes o corpo era lido e interpretado por inteiro antes de
+  qualquer credencial ser conferida, então um chamador não autenticado podia
+  fazer o processo bufferizar uma carga arbitrária. JSON e documentos grandes
+  demais passam a responder `413 request_too_large` antes do roteamento. A
+  restauração da instância confere a credencial de administrador antes de
+  consumir o upload e não herda o teto de um documento.
 - **A ingestão em lote é limitada no total.** O limite valia por documento,
   então um lote com vários documentos logo abaixo do teto passava enquanto o
   total era várias vezes o limite.
@@ -46,7 +48,9 @@ deve atualizar.
   da requisição ou o verbo HTTP.
 - **Durabilidade do índice.** Uma reconstrução não descarta mais em silêncio
   vetores crus (BYOV), e o `flush()` recusa sobrescrever um índice populado com
-  um vazio.
+  um vazio. Um par FAISS/mapa de IDs inválido ou inconsistente agora falha de
+  modo seguro, e uma reconstrução com qualquer trecho irrecuperável é recusada
+  antes de publicar um índice parcial.
 - **O dump preserva o estado vivo do SQLite.** Um dump não remove mais os
   arquivos WAL e de memória compartilhada do catálogo mantidos por outro
   worker. O catálogo é consolidado para o arquivo sem apagar arquivos de outro
@@ -55,9 +59,9 @@ deve atualizar.
   mantêm caches FAISS independentes sobre o mesmo diretório de dados e podem
   perder vetores ou servir versões desatualizadas. `server.workers>1` agora é
   recusado fora do modo dev; o modo dev o permite apenas com um aviso explícito
-  de risco de corrupção de dados. A execução ASGI multiprocesso direta e
-  múltiplas réplicas compartilhando um diretório de dados continuam sem
-  suporte.
+  de risco de corrupção de dados. O alvo empacotado `pave.main:app` agora recusa
+  o carregamento ASGI direto; use `pavesrv`. Múltiplas réplicas compartilhando
+  um diretório de dados continuam sem suporte.
 
 ### Justiça em instâncias compartilhadas
 
@@ -82,7 +86,7 @@ referências geradas respondem por completo; o livro aprofunda.
 ### Nota de atualização
 
 Sem mudança no esquema das respostas de sucesso e sem migração de dados.
-Requisições grandes demais agora podem responder `413`; há outros quatro
+Requisições grandes demais agora podem responder `413`; há outros
 comportamentos a conhecer:
 
 - Buscar em uma coleção inexistente continua respondendo `200` sem resultados —
@@ -96,6 +100,12 @@ comportamentos a conhecer:
 - A inicialização empacotada em produção agora recusa `server.workers>1`.
   Defina-o como `1`; o modo dev continua disponível para experimentos
   multi-worker com dados descartáveis.
+- O carregamento direto de `pave.main:app`, como em
+  `uvicorn pave.main:app`, é recusado. Use `pavesrv`; em testes, chame
+  `build_app(get_cfg())` diretamente.
+- Um par FAISS/mapa de IDs inválido, ou qualquer trecho impossível de
+  reconstruir, agora deixa a coleção indisponível em vez de arriscar uma
+  reconstrução parcial. Repare ou restaure o índice antes de servir a coleção.
 
 As verificações de inicialização introduzidas na 0.9.5 seguem iguais: nomes de
 tenant precisam casar com `^[a-z0-9][a-z0-9-]{0,62}$`, tokens precisam ser
