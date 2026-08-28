@@ -141,6 +141,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-72 | Hybrid lexical/vector retrieval | 🧱 | Fuse independent FAISS and SQLite FTS5 candidate lists; depends on P1-70 | v1.2 |
 | P1-73 | ~~Preview SQLite compatibility baseline~~ | 🔧 | Transactional forward migrations from v0.9.5; reject downgrades and pre-baseline schemas | v0.9.5 |
 | P1-74 | Sbert embedder options: `trust_remote_code`, task prefixes (space keys), `runtime=remote` (TEI) | 🔧 | Unlocks custom-architecture local models and GPU offload with an unchanged `vector_space_key`; additive config, frozen protocol untouched. | v1.1 |
+| P1-75 | Exclusive local data-directory ownership | 🧩 | Fail closed before a second server, local client, or offline CLI opens the same canonical data directory | v0.9.6 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -162,7 +163,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-29 | ~~Public cross-language retrieval fixtures~~ | 🧩 | Recall validation | v0.5.9 |
 | P2-30 | ~~Benchmark CI gate + p99 SLO~~ | 🧩 | Latency contract | v0.5.9 |
 | P2-31 | Formalize collection independence | 🔧 | Portability contract | v1.5 |
-| P2-32 | `pavecli --host` remote mode | 🧩 | CLI/SDK parity | v1.3 |
+| P2-32 | Remote CLI usability evaluation | 🔧 | Multisite Cloud management by agents and orchestrators | v1.1 |
 | P2-33 | JS/TS client | 🧱 | Web + Node adoption | v1.3 |
 | P2-34 | LangChain adapter | 🧱 | Framework coverage | v1.3 |
 | P2-35 | MCP server | 🧱 | AI agent integration | v1.3 |
@@ -236,6 +237,7 @@ Substantial features are specified under `docs/design/` before implementation.
 | File | Plan ID | Feature |
 |---|---|---|
 | [`docs/design/PLAN-OPS-LOG.md`](docs/design/PLAN-OPS-LOG.md) | P2-28 | Structured log emission — ops JSON stream |
+| [`docs/design/PLAN-CLIENT.md`](docs/design/PLAN-CLIENT.md) | P1-15 / P1-24 / P1-75 / P2-32 | Local and HTTP clients, local ownership, and remote CLI evaluation |
 | [`docs/design/PLAN-SQLITE.md`](docs/design/PLAN-SQLITE.md) | P1-09 / P1-33 / P1-73 | Internal SQLite metadata, global catalog, and preview migrations |
 | [`docs/design/PLAN-METRICS-PERSISTENCE.md`](docs/design/PLAN-METRICS-PERSISTENCE.md) | P1-50 | Worker-safe metrics |
 | [`docs/design/PLAN-STORE.md`](docs/design/PLAN-STORE.md) | P1-29/P1-29b/P1-29c/P1-31/P1-32 | Store split; P1-30 superseded by P1-29b |
@@ -414,6 +416,11 @@ latency on every search/ingest/delete.~~
   is declared only when the distribution docs, Python API reference, examples,
   and rendered site land together at v1.0.
 
+### PaveDB v0.9.6 — 1.0 preview hardening
+
+- Give each canonical local data directory one process owner; a second server,
+  local client, or offline CLI fails before opening the store (P1-75).
+
 ### PaveDB v1.0 — Supported contract
 
 - ~~Define embedder/store separation contract (P3-26).~~
@@ -548,6 +555,9 @@ lands where it has more impact during post-contract hardening.
   create/delete/move/ingest/search/dump/restore with post-run
   catalog↔disk invariants. Regression net for the lock lattice
   hardened during the v0.9 rc cycle (P1-52).~~
+- Evaluate remote CLI usability for Cloud multisite management by agents and
+  orchestrators. One invocation targets one HTTP instance through the SDK;
+  fleet policy remains outside PaveDB (P2-32).
 
 ### PaveDB v1.2 — Control
 
@@ -586,9 +596,6 @@ lands where it has more impact during post-contract hardening.
 
 ### PaveDB v1.3 — Reach
 
-- `pavecli --host`: route CLI commands through the HTTP client
-  instead of the service layer directly; depends on Python client.
-  CLI becomes a thin wrapper (P2-32).
 - Backend-aware filtered vector search using SQLite-selected record IDs;
   depends on P1-35 (P1-71).
 - JavaScript/TypeScript client: typed, bootstrapped from OpenAPI
@@ -1091,7 +1098,7 @@ Status: done.
 |---------|------------|------------|
 | v1.0 | Python SDK (`pavedb-sdk`): HTTP + optional local provider | Stable REST API (v1.0) |
 | v1.1 | Embedded mode, batch ingest | Python client |
-| v1.3 | `pavecli --host` (remote CLI via HTTP client) | Python client |
+| v1.1 | Evaluate remote CLI for multisite automation | Python client + Cloud management use cases |
 | v1.3 | JS/TS client (npm) | OpenAPI spec (auto-generated, then typed) |
 | v1.3 | LangChain `VectorStore` adapter | Python client |
 | v1.3 | MCP server | Python client |
@@ -1119,6 +1126,11 @@ Status: done.
 PaveDB stays "no cluster, no cloud" as *software*. The hosted offering wraps
 that single-process model per tenant rather than replacing it with a shared
 cluster — same deployment shape, someone else runs it.
+
+Multisite agents and orchestrators motivate an early remote CLI usability
+evaluation (P2-32). Each invocation would target one explicit HTTP instance;
+fleet scheduling, credential distribution, and failover policy remain outside
+PaveDB.
 
 ### Control/data plane: Fly.io
 

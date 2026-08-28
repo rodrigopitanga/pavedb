@@ -1,7 +1,7 @@
 <!-- (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-# Client / Library Plan (P1-15 + P1-24 + CLI port)
+# Client / Library Plan (P1-15 + P1-24 + P1-75 + P2-32)
 
 PaveDB's core principle: **the service layer is the API; HTTP is
 just one transport.** This plan defines a single client interface
@@ -74,9 +74,12 @@ Sequence:
 - **P1-24 — Python HTTP client (v1.0).** `HttpClient`
   implementing the same `Client`/`Collection` interface — mimics
   the library. This is the *next* item after P1-15.
-- **CLI port (sub-task of the HTTP client item).** Move the CLI
-  off direct `service.py` calls onto the client abstraction, so
-  `pavecli --remote http://…` swaps `LocalClient` for `HttpClient`.
+- **P1-75 — local data-directory ownership fence (v0.9.6).**
+  One process owns a local data directory; competing server, CLI,
+  or local-client opens fail before constructing `LocalStore`.
+- **P2-32 — remote CLI usability evaluation (v1.1).** Evaluate
+  whether a thin CLI over the SDK helps Cloud agents and
+  orchestrators manage several PaveDB sites.
 
 ## Object model — handle-based
 
@@ -197,16 +200,45 @@ on `POST /documents:batch`. P1-16 is not a separate raw-text API;
 raw text is one document payload shape. Do not emulate it through
 fake file uploads.
 
-## CLI port — deferred, not now
+## Local data-directory ownership — P1-75
+
+`LocalStore` coordinates threads inside one process. Its FAISS
+cache, SQLite handles, catalog, and chunk sidecars do not form one
+cross-process transaction, so a second process must never open the
+same live directory.
+
+The supported local owners take one non-blocking OS lease:
+
+- the `pavesrv` supervisor holds it for the server lifetime;
+- `pavecli` holds it while a command uses its direct local store;
+- a persistent `LocalClient` holds it until `close()`.
+
+The lease file sits beside the resolved data directory, not inside
+it, because whole-instance restore replaces the directory contents.
+It is never a PID-based source of truth and is not removed on
+shutdown; the kernel lock releases on process exit. There is no
+force switch or read-only bypass. Tests may still construct
+`build_app()` directly, and dev multi-worker mode remains explicitly
+unsafe; neither is a supported second local owner.
+
+## Remote CLI usability evaluation — P2-32
 
 The CLI today prints the full `{ok, latency_ms, timing, query_id,
 request_id, …}` JSON envelope, a tested contract (`test_cli.py`,
-`test_cli_reference.py`). Porting it onto `LocalClient` now would
-either regress that output or force an "envelope/raw" accessor onto
-the fresh public API just to feed an internal caller.
+`test_cli_reference.py`). The SDK now provides local and HTTP
+transports, but core PaveDB must not import or construct its HTTP
+client.
 
-Defer the port to the HTTP-client item, where it actually buys
-something (CLI-over-HTTP) and both transports are in hand to design
-the rich result object once. Until then no logic is duplicated:
-CLI and `LocalClient` both sit on `service.py`. The port is a
-separate commit with its own exception→exit-code/JSON-error tests.
+The v1.1 evaluation starts from agents and orchestrators managing
+several Cloud sites through stable, non-interactive commands. It
+must decide whether a CLI adds a useful process boundary over
+calling the SDK directly, and whether `--host` is the right target
+selection UX. The minimum shape is one explicit site per invocation,
+deterministic endpoint and credential selection, machine-readable
+output, bounded timeouts, and preserved exception-to-exit-code
+behavior. It is not a fleet scheduler or credential store.
+
+If the evaluation justifies delivery, the HTTP-capable command shell
+belongs in `pavedb-sdk`; PaveDB keeps the local provider. Preserve the
+current CLI envelope rather than adding a raw escape hatch to the
+public client API solely for CLI compatibility.
