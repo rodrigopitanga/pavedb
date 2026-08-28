@@ -22,6 +22,8 @@ ASGI wrappers are unsupported.
 The same operations from a shell: set up an instance, ingest, search, inspect
 the query log, take an archive. It works directly against a data directory —
 there is no HTTP transport, so it is a local operator tool, not a client.
+It refuses to open a directory owned by `pavesrv` or a persistent local Python
+client; use an HTTP client to operate on a running server.
 
 Best for setup, one-off inspection and scripting. `pavecli init` writes the
 config and tenant files an instance needs.

@@ -46,6 +46,7 @@ again = books.replay(q["query_id"])
 
 # 4. live update — re-ingest the same docid to swap content, no restart
 books.ingest("20k_leagues_v2.txt", docid="verne-20k")
+db.close()
 ```
 
 The query log, replay, and chunk-level provenance are first-class — not bolted-on
@@ -108,6 +109,7 @@ books.add("Captain Nemo commands the Nautilus.", docid="note-1")  # index a stri
 
 for hit in books.search("captain nemo", k=3):
     print(hit["score"], hit["meta"]["docid"], hit["text"][:60])
+db.close()
 ```
 
 Use the same SDK handle API against a remote server with
@@ -161,7 +163,10 @@ and active development on [GitLab](https://gitlab.com/flowlexi/pavedb-client-js)
 
 ### ⌨️ From the CLI (local, no server)
 
-`pavecli` runs the full workflow against a local instance — no server process required.
+`pavecli` runs the full workflow against a local instance — no server process
+required. It opens the data directory directly and refuses to run while a
+server or persistent local Python client owns that directory; use an HTTP
+client for a running server.
 
 ```bash
 pavecli init   # create the default instance under ~/pavedb
@@ -317,6 +322,8 @@ production — and your code barely changes along the way:
    ```bash
    pavesrv --data-dir ./data
    ```
+   Close the embedded client first; one supported local entry point owns a data
+   directory at a time.
    Run your staging checks against the real wire protocol your production deploy will
    speak. Your app switches transports with one line:
    `connect("http://localhost:8086")`.

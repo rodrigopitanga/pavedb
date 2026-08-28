@@ -75,7 +75,7 @@ Sequence:
   implementing the same `Client`/`Collection` interface — mimics
   the library. This is the *next* item after P1-15.
 - **P1-75 — local data-directory ownership fence (v0.9.6).**
-  One process owns a local data directory; competing server, CLI,
+  One supported local entry point owns a data directory; competing server, CLI,
   or local-client opens fail before constructing `LocalStore`.
 - **P2-32 — remote CLI usability evaluation (v1.1).** Evaluate
   whether a thin CLI over the SDK helps Cloud agents and
@@ -211,15 +211,16 @@ The supported local owners take one non-blocking OS lease:
 
 - the `pavesrv` supervisor holds it for the server lifetime;
 - `pavecli` holds it while a command uses its direct local store;
-- a persistent `LocalClient` holds it until `close()`.
+- each `LocalClient`-created store holds it until `close()`.
 
-The lease file sits beside the resolved data directory, not inside
-it, because whole-instance restore replaces the directory contents.
-It is never a PID-based source of truth and is not removed on
-shutdown; the kernel lock releases on process exit. There is no
-force switch or read-only bypass. Tests may still construct
-`build_app()` directly, and dev multi-worker mode remains explicitly
-unsafe; neither is a supported second local owner.
+The lease file sits at `.pavedb.lock` inside the resolved data
+directory so bind-mounted aliases share the same fence. Archive dump
+omits it, restore rejects an archive-supplied copy, and live restore
+preserves it. It is never a PID-based source of truth and is not
+removed on persistent shutdown; the kernel lock releases on process
+exit. There is no force switch or read-only bypass. Tests may still
+construct `build_app()` directly, and dev multi-worker mode remains
+explicitly unsafe; neither is a supported second local owner.
 
 ## Remote CLI usability evaluation — P2-32
 

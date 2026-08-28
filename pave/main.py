@@ -43,6 +43,7 @@ from pave.config import (
     should_enable_ui,
     should_warm_default_embedder,
 )
+from pave.data_dir_lease import DataDirInUseError, DataDirLease
 from pave.embedders import LazyEmbedder, get_embedder
 from pave.metadb import SchemaMigrationError, UnsupportedSchemaVersionError
 from pave.metrics import (
@@ -1113,8 +1114,13 @@ def main_srv(argv=None):
     previous_asgi_context = os.environ.get(_ASGI_CONTEXT_ENV)
     os.environ[_ASGI_CONTEXT_ENV] = "pavesrv"
     try:
-        _run_pave_server("pave.main:app", **_run_kwargs)
-    except (SchemaMigrationError, UnsupportedSchemaVersionError) as exc:
+        with DataDirLease(str(cfg.get("data_dir"))):
+            _run_pave_server("pave.main:app", **_run_kwargs)
+    except (
+        DataDirInUseError,
+        SchemaMigrationError,
+        UnsupportedSchemaVersionError,
+    ) as exc:
         raise SystemExit(f"ERROR: {exc}") from None
     finally:
         if previous_asgi_context is None:

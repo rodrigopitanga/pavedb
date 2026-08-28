@@ -36,6 +36,7 @@ from pave.service import (
 )
 from pave.auth import current_admin_key, rotate_admin_key
 from pave.config import get_cfg, reload_cfg
+from pave.data_dir_lease import DataDirInUseError, DataDirLease
 from pave import metrics
 from pave.runtime_paths import (
     DEFAULT_HOME,
@@ -47,6 +48,7 @@ from pave.runtime_paths import (
 from pave.version import help_notice, version_banner
 
 store: BaseStore | None = None
+store_lease: DataDirLease | None = None
 
 
 @dataclass
@@ -55,14 +57,33 @@ class RawCLIOutput:
 
 
 def _get_store() -> BaseStore:
-    global store
+    global store, store_lease
     if store is None:
         cfg = get_cfg()
-        store = LocalStore(
-            data_dir=str(cfg.get("data_dir")),
-            embedder=LazyEmbedder(get_embedder),
-        )
+        lease = DataDirLease(str(cfg.get("data_dir"))).acquire()
+        try:
+            store = LocalStore(
+                data_dir=str(cfg.get("data_dir")),
+                embedder=LazyEmbedder(get_embedder),
+            )
+        except BaseException:
+            lease.close()
+            raise
+        store_lease = lease
     return store
+
+
+def _close_owned_store() -> None:
+    global store, store_lease
+    if store_lease is None:
+        return
+    close = getattr(store, "close", None)
+    if callable(close):
+        close()
+    store_lease.close()
+    store = None
+    store_lease = None
+
 
 def _dump(out, pretty: bool = True):
     if pretty:
@@ -97,6 +118,8 @@ def _parse_json_object_arg(raw: str | None, option: str) -> dict | None:
 def _prepare_runtime(args) -> None:
     global store
     has_runtime_args = any((args.home, args.config, args.tenants, args.data_dir))
+    if has_runtime_args:
+        _close_owned_store()
     apply_runtime_env(
         home=args.home,
         config=args.config,
@@ -448,7 +471,9 @@ def build_parser() -> argparse.ArgumentParser:
         "  Runtime selectors (--home, --config, --tenants, --data-dir) "
         "are global options.\n"
         "  Pass them before the command, e.g. "
-        "pavecli --home ./instance list-tenants."
+        "pavecli --home ./instance list-tenants.\n"
+        "  Store commands open the local data directory directly.\n"
+        "  They refuse to run while another PaveDB process owns it."
     )
     notice = help_notice("pavecli")
     p = argparse.ArgumentParser(
@@ -938,9 +963,18 @@ def main_cli(argv=None):
     if args.cmd != "init":
         _prepare_runtime(args)
     try:
-        out = args.func(args)
-    except ServiceError as exc:
-        out = {"ok": False, "code": exc.code, "error": exc.message}
+        try:
+            out = args.func(args)
+        except ServiceError as exc:
+            out = {"ok": False, "code": exc.code, "error": exc.message}
+        except DataDirInUseError as exc:
+            out = {
+                "ok": False,
+                "code": "data_dir_in_use",
+                "error": str(exc),
+            }
+    finally:
+        _close_owned_store()
     if isinstance(out, RawCLIOutput):
         sys.stdout.buffer.write(out.content)
         return 0

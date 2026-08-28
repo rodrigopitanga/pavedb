@@ -68,6 +68,7 @@ from pave.stores.base import (
     SearchResult,
 )
 from pave.config import get_cfg, get_logger
+from pave.data_dir_lease import DATA_DIR_LOCK_NAME
 from pave.metrics import inc_labeled as m_inc_labeled
 
 log = get_logger()
@@ -3127,6 +3128,8 @@ class LocalStore:
                         continue
                     file_path = root_path / filename
                     rel_name = file_path.relative_to(source_dir)
+                    if rel_name == Path(DATA_DIR_LOCK_NAME):
+                        continue
                     try:
                         zf.write(file_path, rel_name.as_posix())
                     except FileNotFoundError:
@@ -3148,6 +3151,10 @@ class LocalStore:
                 raise ValueError(f"invalid archive member: {name}")
             if rel_path.name.endswith(("-wal", "-shm")):
                 raise ValueError(f"archive contains SQLite sidecar: {name}")
+            if rel_path.parts and rel_path.parts[0] == DATA_DIR_LOCK_NAME:
+                raise ValueError(
+                    f"archive contains data-directory ownership lock: {name}"
+                )
 
     @staticmethod
     def _remove_path(path: Path, *, retries: int = 4) -> None:
@@ -3182,7 +3189,9 @@ class LocalStore:
             tempfile.mkdtemp(prefix=_RESTORE_BACKUP_PREFIX, dir=data_dir)
         )
         old_entries = [
-            entry for entry in data_dir.iterdir() if entry != backup_dir
+            entry
+            for entry in data_dir.iterdir()
+            if entry != backup_dir and entry.name != DATA_DIR_LOCK_NAME
         ]
         moved_old: list[str] = []
         installed: list[str] = []

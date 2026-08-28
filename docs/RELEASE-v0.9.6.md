@@ -59,6 +59,11 @@ credentials, and archive safety. Operators running 0.9.5 should upgrade.
   mode; dev mode permits it only with an explicit data-corruption warning.
   The packaged `pave.main:app` target now rejects direct ASGI loading; use
   `pavesrv`. Multiple replicas sharing one data directory remain unsupported.
+- **Local entry points fence the data directory.** `pavesrv`, direct `pavecli`
+  store commands, and persistent local Python clients now refuse to open a
+  canonical data directory already owned by another supported local entry
+  point. This prevents separate supported entry points from racing one local
+  store with independent FAISS caches and SQLite handles.
 
 ### Fairness on shared instances
 
@@ -97,6 +102,9 @@ now return `413`; these other behaviours are worth noting:
   dev mode remains available for disposable multi-worker experiments.
 - Direct loading of `pave.main:app`, such as `uvicorn pave.main:app`, is
   rejected. Use `pavesrv`; tests should call `build_app(get_cfg())` directly.
+- A server, direct CLI command, and persistent local Python client can no
+  longer open the same data directory concurrently. Close the current local
+  owner, or use an HTTP client against the running server.
 - An invalid FAISS/ID-map pair, or any chunk that cannot be reconstructed,
   now makes that collection unavailable instead of risking a partial rebuild.
   Repair or restore the index state before serving the collection.

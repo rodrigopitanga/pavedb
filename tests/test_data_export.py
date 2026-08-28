@@ -19,6 +19,11 @@ import pytest
 
 import pave.metadb as metadb
 from pave.config import get_cfg
+from pave.data_dir_lease import (
+    DATA_DIR_LOCK_NAME,
+    DataDirInUseError,
+    DataDirLease,
+)
 from pave.metadb import CatalogDB, COLLECTION_CONFIG_FIELDS
 from pave.service import (
     create_collection,
@@ -113,6 +118,35 @@ def test_dump_archive_returns_zip(tmp_path):
         names = set(zf.namelist())
         assert "catalog.db" in names
         assert "t_acme/c_documents/collection.json" in names
+
+
+def test_archive_omits_rejects_and_preserves_data_dir_lease(tmp_path):
+    data_dir = tmp_path / "data"
+    lease = DataDirLease(data_dir).acquire()
+    store = None
+    try:
+        store = LocalStore(str(data_dir), FakeEmbedder())
+        store.create_collection("acme", "documents")
+        archive_bytes = _archive_bytes(store)
+
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+            assert DATA_DIR_LOCK_NAME not in archive.namelist()
+
+        store.restore_archive(archive_bytes)
+        with pytest.raises(DataDirInUseError):
+            DataDirLease(data_dir).acquire()
+
+        supplied_lock = io.BytesIO(archive_bytes)
+        with zipfile.ZipFile(supplied_lock, "a") as archive:
+            archive.writestr(DATA_DIR_LOCK_NAME, b"not an ownership grant")
+        with pytest.raises(ValueError, match="ownership lock"):
+            store.restore_archive(supplied_lock.getvalue())
+    finally:
+        try:
+            if store is not None:
+                store.close()
+        finally:
+            lease.close()
 
 
 def test_dump_archive_allows_unroutable_vector_space(tmp_path):

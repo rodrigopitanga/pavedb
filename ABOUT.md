@@ -53,6 +53,7 @@ db = connect("./data")
 books = db.create_collection("books")
 books.add("Captain Nemo commands the Nautilus.", docid="note-1")
 hits = books.search("submarine captain", k=3)
+db.close()
 ```
 
 Serve the same engine over HTTP:
@@ -64,6 +65,8 @@ pavesrv
 
 `pavesrv` is the supported server entry point. The packaged `pave.main:app`
 target rejects direct ASGI loading because it bypasses startup policy.
+Close an embedded client before serving its data directory: one supported local
+entry point owns a directory at a time.
 
 Auth defaults to `static`. `none` is refused outside dev mode. For production,
 set a key:

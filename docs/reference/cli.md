@@ -29,6 +29,8 @@ pavecli [-h] [--compact] [--version] [--home HOME]
 
 Runtime selectors (--home, --config, --tenants, --data-dir) are global options.
 Pass them before the command, e.g. pavecli --home ./instance list-tenants.
+Store commands open the local data directory directly.
+They refuse to run while another PaveDB process owns it.
 
 ## Legal Notice
 

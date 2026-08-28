@@ -49,8 +49,8 @@ You will touch some subset of these; they all drive the same service layer.
 - **Store and embedder** — internal, but you choose them by configuration: which
   vector backend holds the index, which model produces the vectors.
 
-If you are deciding where to start: run the server, drive it with the CLI, then
-pick a client.
+If you are deciding where to start: use the local CLI for an offline instance,
+or run the server and drive it with an HTTP client.
 
 ## Doing the basic things
 
@@ -75,7 +75,8 @@ Three things decide whether a deployment is sound:
 - **Auth.** `auth.mode=static` with a key per tenant. The server refuses to
   start unauthenticated outside dev mode — that refusal is the feature.
 - **The data directory.** One directory holds every tenant, collection, index
-  and log. Back it up as a unit; it is the whole state.
+  and log. One supported local entry point owns it at a time. Back it up as a
+  unit; it is the whole state.
 - **Health.** `/health/live` answers without touching the model;
   `/health/ready` verifies the data directory is writable. Point your
   orchestrator at the second one.

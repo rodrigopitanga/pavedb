@@ -235,6 +235,14 @@ asking for permission to ask.
 
 ## Concurrency model
 
+Supported local entry points first take a non-blocking OS lease on
+`.pavedb.lock` inside the canonical data directory. One supported local entry
+point owns that directory: `pavesrv` holds the lease for its lifetime,
+`pavecli` for one store command, and a persistent `LocalClient` until `close()`.
+This is a same-filesystem ownership fence, not a distributed or NFS lease.
+Internal tests may still construct `LocalStore` directly, and dev multi-worker
+mode remains explicitly unsafe.
+
 Per-collection SQLite + per-collection FAISS gives us portable
 collections (dump = zip a directory) but it also means consistency across
 collections, the catalog, and the filesystem is enforced in the application,
@@ -242,14 +250,16 @@ not by a single transactional store. Three lock layers do the work; reach
 for the right one for what you're protecting:
 
 ```
-State lock        (_StoreStateLock,     reentrant rw)
-  └─ Collection lock  (_CollectionReadWriteLock,  reentrant reads)
-       └─ DB-internal cvs  (CollectionDB / CatalogDB writer/reader gates)
-            └─ SQLite WAL (file-level, transparent to us)
+Owner lease       (DataDirLease, one supported local entry point)
+  └─ State lock        (_StoreStateLock,     reentrant rw)
+       └─ Collection lock  (_CollectionReadWriteLock,  reentrant reads)
+            └─ DB-internal cvs  (CollectionDB / CatalogDB gates)
+                 └─ SQLite WAL (file-level, transparent to us)
 ```
 
 | Lock | Defined in | Held by |
 |---|---|---|
+| `DataDirLease` | `pave/data_dir_lease.py` | `pavesrv`, direct `pavecli` store commands, and persistent `LocalClient` instances. |
 | `_StoreStateLock` | `pave/stores/local.py` | `restore_archive` / `dump_archive` take the write side; every other op takes the read side via the per-collection helpers. |
 | `_CollectionReadWriteLock` | `pave/stores/local.py` | `search` and other reads take `_collection_read_lock`; `index_records`, `purge_doc`, `delete_collection`, `create_collection`, `move_collection` take `_collection_write_lock` (variadic `_collection_write_locks` for multi-collection ops like move). |
 | `CollectionDB` / `CatalogDB` internal cvs | `pave/metadb.py` | Taken inside the db classes' `_reader`/`_writer` context managers. Don't take these from `pave/stores/*`. |

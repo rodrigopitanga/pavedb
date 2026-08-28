@@ -62,6 +62,12 @@ deve atualizar.
   de risco de corrupção de dados. O alvo empacotado `pave.main:app` agora recusa
   o carregamento ASGI direto; use `pavesrv`. Múltiplas réplicas compartilhando
   um diretório de dados continuam sem suporte.
+- **Pontos de entrada locais protegem o diretório de dados.** `pavesrv`,
+  comandos diretos do `pavecli` e clientes Python locais persistentes agora
+  recusam abrir um diretório de dados canônico que já pertença a outro ponto de
+  entrada local suportado. Isso impede que pontos de entrada suportados
+  separados disputem o mesmo armazenamento local com caches FAISS e conexões
+  SQLite independentes.
 
 ### Justiça em instâncias compartilhadas
 
@@ -103,6 +109,9 @@ comportamentos a conhecer:
 - O carregamento direto de `pave.main:app`, como em
   `uvicorn pave.main:app`, é recusado. Use `pavesrv`; em testes, chame
   `build_app(get_cfg())` diretamente.
+- Um servidor, comando direto do CLI e cliente Python local persistente não
+  podem mais abrir o mesmo diretório de dados ao mesmo tempo. Feche o atual
+  dono local ou use um cliente HTTP contra o servidor em execução.
 - Um par FAISS/mapa de IDs inválido, ou qualquer trecho impossível de
   reconstruir, agora deixa a coleção indisponível em vez de arriscar uma
   reconstrução parcial. Repare ou restaure o índice antes de servir a coleção.

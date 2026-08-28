@@ -141,7 +141,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-72 | Hybrid lexical/vector retrieval | 🧱 | Fuse independent FAISS and SQLite FTS5 candidate lists; depends on P1-70 | v1.2 |
 | P1-73 | ~~Preview SQLite compatibility baseline~~ | 🔧 | Transactional forward migrations from v0.9.5; reject downgrades and pre-baseline schemas | v0.9.5 |
 | P1-74 | Sbert embedder options: `trust_remote_code`, task prefixes (space keys), `runtime=remote` (TEI) | 🔧 | Unlocks custom-architecture local models and GPU offload with an unchanged `vector_space_key`; additive config, frozen protocol untouched. | v1.1 |
-| P1-75 | Exclusive local data-directory ownership | 🧩 | Fail closed before a second server, local client, or offline CLI opens the same canonical data directory | v0.9.6 |
+| P1-75 | ~~Exclusive local data-directory ownership~~ | 🧩 | Fail closed before a second server, local client, or offline CLI opens the same canonical data directory | v0.9.6 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -418,8 +418,9 @@ latency on every search/ingest/delete.~~
 
 ### PaveDB v0.9.6 — 1.0 preview hardening
 
-- Give each canonical local data directory one process owner; a second server,
-  local client, or offline CLI fails before opening the store (P1-75).
+- ~~Give each canonical local data directory one supported local owner; a
+  second server, local client, or offline CLI fails before opening the store
+  (P1-75).~~
 
 ### PaveDB v1.0 — Supported contract
 

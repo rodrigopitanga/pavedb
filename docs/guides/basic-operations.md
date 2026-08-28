@@ -8,6 +8,8 @@ ceremonious. Every flag is in [`cli.md`](../reference/cli.md); every endpoint is
 in `openapi.json`. This page shows the shape, not the surface.
 
 Examples use tenant `demo` and collection `books`.
+They open the local data directory directly, so stop any `pavesrv` or persistent
+local Python client using that directory first.
 
 ## Create a collection
 

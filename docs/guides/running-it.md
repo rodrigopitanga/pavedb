@@ -36,10 +36,17 @@ database and query log. There is no external database.
 That makes backups simple — take the directory as a unit — and it makes the
 directory the thing to protect.
 
-Stop the server before you back it up. Copying the directory underneath a
-running instance can catch SQLite mid-write, and `pavecli dump-archive` is an
-offline tool: it operates on the data directory directly and does not
-coordinate with a live server.
+Each canonical local data directory has one supported local owner. `pavesrv`,
+direct `pavecli` store commands, and a persistent local Python client take the
+same non-blocking ownership lease. A second supported owner fails before
+opening the store. To work with a running server, use an HTTP client instead
+of the local CLI. The fence is for entry points on one filesystem; it is not a
+distributed or NFS lease, and it does not make dev multi-worker mode safe.
+
+Stop the server before copying the data directory. Copying it underneath a
+running instance can catch SQLite mid-write. `pavecli dump-archive` is an
+offline tool and refuses to run while another supported process owns the data
+directory.
 
 For a running server, use `GET /v1/admin/archive` to download a snapshot and
 `PUT /v1/admin/archive` to restore one. Those routes coordinate with the live

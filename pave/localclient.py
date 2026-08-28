@@ -7,6 +7,7 @@ import os
 import shutil
 import tempfile
 from collections.abc import Mapping
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -26,6 +27,7 @@ from pavesdk.interface import (
 
 import pave.embedders as embedders
 from pave.config import get_cfg, get_logger, should_warm_default_embedder
+from pave.data_dir_lease import DataDirInUseError, DataDirLease
 from pave.embedders import LazyEmbedder
 from pave.service import (
     ServiceError,
@@ -161,8 +163,21 @@ class LocalClient(BaseClient):
     ) -> None:
         self.path = os.fspath(path)
         self.tenant = tenant
-        self._store = store or _store_for_path(self.path)
         self._ephemeral = _ephemeral
+        self._lease = None
+        if store is None:
+            try:
+                self._lease = DataDirLease(self.path).acquire()
+            except DataDirInUseError as exc:
+                raise Unavailable("data_dir_in_use", str(exc)) from None
+        try:
+            self._store = (
+                store if store is not None else _store_for_path(self.path)
+            )
+        except BaseException:
+            if self._lease is not None:
+                self._lease.close()
+            raise
         self._closed = False
 
     @classmethod
@@ -180,8 +195,16 @@ class LocalClient(BaseClient):
             flush = getattr(self._store, "_flush_caches", None)
             if callable(flush):
                 flush()
+        lock_path = self._lease.path if self._lease is not None else None
         if self._ephemeral:
             shutil.rmtree(self.path, ignore_errors=True)
+        if self._lease is not None:
+            self._lease.close()
+        if self._ephemeral and os.name == "nt" and lock_path is not None:
+            with suppress(OSError):
+                lock_path.unlink()
+            with suppress(OSError):
+                Path(self.path).rmdir()
         self._closed = True
 
     def _call(self, func, *args, **kwargs):
