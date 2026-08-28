@@ -13,7 +13,7 @@ import pave.main as main_mod
 from pave.stores.local import LocalStore
 from pave.ui import attach_ui
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def temp_data_dir(tmp_path_factory):
     return tmp_path_factory.mktemp("pvdata")
 
