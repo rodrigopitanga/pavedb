@@ -1,6 +1,49 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
+## 0.9.6 — 2026-08-29
+
+### Bug Fixes
+- [core] Bound embedder type and credential to the operator (B41, B42)
+- [store] Refuse to flush an empty index over a populated one (B46)
+- [api] Apply the per-tenant cap to shared-scope search (B35)
+- [core] Bound the total budget of a remote embedder call (B53)
+- [core] Validate the collection name on read paths (B33)
+- [api] Bound the request body before routing (B37)
+- [core] Cap the total size of a batch ingest (B58)
+- [api] Make concurrency slot release exactly-once (B54, B55, B56)
+- [store] Rebuild the index without dropping raw vectors (B52)
+- [log] Bound the metrics method label too (B36)
+- [store] Stop read paths creating collections outside the quota (B33)
+- [api] Add a per-tenant share of the search pool (B87)
+- [api] Do not load an embedder to bootstrap an existing corpus (B33)
+- [store] Keep search on a missing collection at 200 (B33)
+- [store] Preserve live catalog WAL during archive dumps (B51)
+- [conf] Reject multiple workers outside dev mode
+- [store] Fail closed on incomplete FAISS recovery (B52)
+- [api] Authenticate archive restore before upload (B37)
+- [conf] Reject direct packaged ASGI startup (R1-82)
+- [store] Fence local data-directory ownership (P1-75)
+
+### Documentation
+- Add task-oriented engine guides (P1-68)
+- Correct the guide commands and operator claims (P1-68)
+- Add the TypeScript client alongside Python and Elixir
+
+### Testing
+- Pin the remote embedder call budget (B53)
+- Isolate per-test data directories
+
+### Build
+- Start 0.9.6 development
+
+### Config
+- Make the per-tenant ingest share opt-in (B54)
+
+### Infrastructure
+- Gate every published image on the arm64 test
+
+---
 ## 0.9.5 — 2026-08-18
 
 ### Bug Fixes
