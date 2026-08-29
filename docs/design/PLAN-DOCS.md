@@ -86,7 +86,7 @@ Top-level documentation and book examples remain sdist-only. Do not install
 examples that depend on checkout-relative files.
 
 P1-62 defines generation and example migration in
-`docs/design/PLAN-EXAMPLES.md`.
+[`PLAN-EXAMPLES.md`](PLAN-EXAMPLES.md).
 
 ## Generation
 

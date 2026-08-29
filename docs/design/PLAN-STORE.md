@@ -879,7 +879,7 @@ race fixes are useful for perf interpretation too:
 
 ## Step 5 — CatalogDB + catalog separation (owned by PLAN-SQLITE)
 
-This step is specified in `PLAN-SQLITE.md` (Phase 2) and
+This step is specified in [`PLAN-SQLITE.md`](PLAN-SQLITE.md) (Phase 2) and
 tracked as roadmap item `P1-33`.
 
 `PLAN-STORE` treats Step 5 as an external dependency:

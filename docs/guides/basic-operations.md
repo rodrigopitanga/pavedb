@@ -5,7 +5,8 @@
 
 The shortest useful path, shown with `pavecli` because it is the least
 ceremonious. Every flag is in [`cli.md`](../reference/cli.md); every endpoint is
-in `openapi.json`. This page shows the shape, not the surface.
+in [`openapi.json`](../../openapi.json). This page shows the shape, not the
+surface.
 
 Examples use tenant `demo` and collection `books`.
 They open the local data directory directly, so stop any `pavesrv` or persistent
@@ -78,5 +79,5 @@ pavecli delete-collection demo books
 ## Where this goes next
 
 - Every command, flag and output shape — [`cli.md`](../reference/cli.md)
-- The same operations over HTTP — `openapi.json`
+- The same operations over HTTP — [`openapi.json`](../../openapi.json)
 - Deploying this for real — [Running it](running-it.md)

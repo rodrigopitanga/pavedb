@@ -662,7 +662,7 @@ CREATE TABLE IF NOT EXISTS rate_limit_buckets (
 
 **Aggregate metrics** — doc/chunk counts by collection for `/metrics` and admin
 endpoints. Runtime counter persistence is defined in
-`PLAN-METRICS-PERSISTENCE.md`.
+[`PLAN-METRICS-PERSISTENCE.md`](PLAN-METRICS-PERSISTENCE.md).
 
 ```sql
 -- Doc/chunk counts derived from per-collection meta.db; no new table needed.

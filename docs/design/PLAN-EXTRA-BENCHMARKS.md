@@ -54,4 +54,4 @@ P2-51 adds exact flat inner-product and L2 metrics in v1.1. The adapter then
 forwards the upstream case metric through the shared collection
 `backend_config`. P2-52 adds HNSW benchmark coverage in v1.2, and P2-53 adds
 IVF plus the public optimize operation in v1.8. See
-`docs/design/PLAN-ANN.md` for the core index and lifecycle contract.
+[`PLAN-ANN.md`](PLAN-ANN.md) for the core index and lifecycle contract.

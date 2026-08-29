@@ -117,8 +117,8 @@ search.
 
 A JSON-lines ops log, separate from the dev stderr log, emits
 one event per operation with stable fields. Configurable via
-`log.ops_log: null | stdout | <path>`. Full schema and
-rationale: `docs/PLAN-OPS-LOG.md`.
+`log.ops_log: null | stdout | <path>`. Full schema and rationale:
+[`PLAN-OPS-LOG.md`](PLAN-OPS-LOG.md).
 
 This is the **transient** observability stream — designed for
 log aggregators (Datadog, Loki, ELK). It is not queryable via
@@ -157,8 +157,8 @@ All read endpoints in this family tolerate transient
 `meta.db` read errors under concurrent writes (fallback to a
 read-only open). The cached `col_db` is pinned by the
 per-collection read lock so concurrent `delete_collection` /
-`restore_archive` cannot close the handle mid-read (lock
-lattice documented in CONTRIBUTING.md "Concurrency model").
+`restore_archive` cannot close the handle mid-read (lock lattice documented in
+[`CONTRIBUTING.md`](../../CONTRIBUTING.md#concurrency-model)).
 
 ### Service-layer error logging — P2-40 (v0.5.9)
 

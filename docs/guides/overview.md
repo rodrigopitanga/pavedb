@@ -85,12 +85,11 @@ Three things decide whether a deployment is sound:
 
 | You want | Go to |
 |---|---|
-| Every config key, default and env var | `docs/reference/config.md` |
-| Every command and flag | `docs/reference/cli.md` |
-| Every endpoint, request and response | `openapi.json` |
-| The embedder and backend contracts | `docs/reference/protocols.md` |
+| Every config key, default and env var | [`docs/reference/config.md`](../reference/config.md) |
+| Every command and flag | [`docs/reference/cli.md`](../reference/cli.md) |
+| Every endpoint, request and response | [`openapi.json`](../../openapi.json) |
+| The embedder and backend contracts | [`docs/reference/protocols.md`](../reference/protocols.md) |
 | Why it works this way, and the hard parts | the PaveDB book |
-| To change PaveDB itself | `CONTRIBUTING.md` |
 
 The references above are generated from the code, so they do not drift. This
 guide is written by hand and stays deliberately short: it orients you, the

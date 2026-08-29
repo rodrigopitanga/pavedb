@@ -19,8 +19,8 @@ Four sources, and they do not overlap by accident:
 | Source | What it is | When it changes |
 |---|---|---|
 | **These guides** | Hand-written orientation. Deliberately short. | When the mental model changes |
-| **`docs/reference/`** | Generated from the code: every config key, every command, every protocol. | Every release, automatically |
-| **`openapi.json`** | The wire contract: every endpoint, request and response. | Every release, automatically |
+| **[`docs/reference/`](../reference/)** | Generated from the code: every config key, every command, every protocol. | Every release, automatically |
+| **[`openapi.json`](../../openapi.json)** | The wire contract: every endpoint, request and response. | Every release, automatically |
 | **The PaveDB book** | Long-form: why it works this way, and the hard parts. | Independently |
 
 The references are generated, so they are exhaustive and never drift. These

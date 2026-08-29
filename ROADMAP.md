@@ -80,7 +80,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-12 | ~~Ingest timeout guidance~~ | 🧩 | Avoid client timeouts | v0.5.8 |
 | P1-13 | ~~Ingest size limits~~ | 🧩 | Fail fast on huge uploads | v0.5.8 |
 | P1-14 | ~~Response envelope standardization~~ | 🧱 | SDK-friendly API | v0.9 |
-| P1-15 | ~~Embedded/library mode~~ | 🧱 | In-app use, adoption. Handle-based `Client`/`Collection` over `service.py`; `pave.connect()` dispatches local/ephemeral/HTTP by scheme; raises typed `PaveError`. Canonical interface every transport implements. See `docs/design/PLAN-CLIENT.md` | v1.0 |
+| P1-15 | ~~Embedded/library mode~~ | 🧱 | In-app use, adoption. Handle-based `Client`/`Collection` over `service.py`; `pave.connect()` dispatches local/ephemeral/HTTP by scheme; raises typed `PaveError`. Canonical interface every transport implements. See [`docs/design/PLAN-CLIENT.md`](docs/design/PLAN-CLIENT.md) | v1.0 |
 | P1-16 | ~~JSON + batch document ingest~~ | 🧩 | Throughput, DX. `POST /documents` accepts multipart files or JSON text documents; `POST /documents:batch` ingests a list of JSON text documents. Python exposes `add_many`; CLI exposes `ingest-text` and `ingest-batch`. Multi-file batch waits for async jobs. | v1.1 |
 | P1-17 | ~~Get document by ID~~ | 🧩 | Visibility, library mode | v0.9 |
 | P1-18 | ~~Error code standardization~~ | 🧩 | Consistent API errors | v0.5.8 |
@@ -128,12 +128,12 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-58 | ~~Embedder instance registry core~~ | 🧩 | Registry-shaped config with keyed instances, `embedder.default` as instance/type/type:model/vector-key selector, useful CRITICAL failures for missing or ambiguous defaults, deterministic first compatible runtime instance, and catalog persistence limited to vector-space identity. Depends on P1-32 (done) | v1.0 |
 | P1-59 | ~~Admin embedder inventory endpoint~~ | 🧩 | v1.0 slice: admin-only `GET /v1/admin/embedders` and tenant-scoped `GET /v1/embedders/{tenant}` surface configured instance keys, vector-space keys, types, models, and default resolution. No credentials, no readiness probe. Mirrored by `Client.embedders()` and `pavecli list-embedders`. v1.6 expansion: readiness probe + credential-ref identity per P2-49. Per-tenant embedder assignment stays a post-1.0 direction once tenant profiles (P2-26) land. Builds on P1-58. | v1.0 / v1.6 |
 | P1-60 | Embedder selection shorthand + routing policy | 🧱 | Collection create accepts an `embedder` selector shorthand; compatible instance routing grows from deterministic first configured to explicit policy (`first`, `round_robin`, weighted/failover). Any pinning is operational config, not catalog state. | v1.7 |
-| P1-61 | General embedder worker pools | 🧱 | Extend the SBERT worker-pool idea across all embedders with bounded concurrency as the default behavior where safe. Worker counts stay operational config and never enter vector-space identity. See `docs/design/PLAN-EMBEDDER-WORKERS.md`. | v1.2 |
-| P1-62 | ~~Python API reference~~ | 🔧 | `pavedb-sdk` generates a drift-checked public API reference shipped in its sdist. Runnable examples split to P1-66. See `docs/design/PLAN-EXAMPLES.md`. | v1.0 |
+| P1-61 | General embedder worker pools | 🧱 | Extend the SBERT worker-pool idea across all embedders with bounded concurrency as the default behavior where safe. Worker counts stay operational config and never enter vector-space identity. See [`docs/design/PLAN-EMBEDDER-WORKERS.md`](docs/design/PLAN-EMBEDDER-WORKERS.md). | v1.2 |
+| P1-62 | ~~Python API reference~~ | 🔧 | `pavedb-sdk` generates a drift-checked public API reference shipped in its sdist. Runnable examples split to P1-66. See [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md). | v1.0 |
 | P1-63 | ~~VectorDBBench adapter~~ | 🔧 | Standard benchmark adapter over BYOV HTTP raw-vector ingest/search, with flat FAISS recall baseline and no PaveDB runtime dependency on VectorDBBench. External adapter (separate repo/fork), not in-repo. Depends on P1-64 (BYOV raw-vector round trip). | v1.0 |
 | P1-64 | ~~Bring-your-own-vector (BYOV) raw-vector mode~~ | 🔧 | Additive raw-vector ingest/search mirroring Chroma. New `identity` embedder (`encode(x)→x`, dim from `embedder_config`); raw-vector schema fields `vector`/`v` paired with `text`/`q` (exactly-one). Embedding collections stay permissive (text or raw vector); identity collections are vector-only. No new endpoints; FAISS backend unchanged. Serves pre-computed-embedding users and unblocks P1-63. | v1.0 |
 | P1-65 | ~~Instance archive/restore integrity~~ | 🔧 | Preflight catalog, collection sidecars, and configured embedders before rollback-safe whole-instance replacement; verify mixed-embedder round trips. | v1.0 |
-| P1-66 | Runnable book examples | 🔧 | The Python SDK and Elixir client own tested, numbered top-level examples extracted from the book; CI verifies runnable programs and distribution boundaries. See `docs/design/PLAN-EXAMPLES.md`. | v1.1 |
+| P1-66 | Runnable book examples | 🔧 | The Python SDK and Elixir client own tested, numbered top-level examples extracted from the book; CI verifies runnable programs and distribution boundaries. See [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md). | v1.1 |
 | P1-67 | ~~Elixir public API parity~~ | 🔧 | Cover the current user-facing `/v1` surface plus a basic `/health` connection check; defer `/admin`, `/metrics`, and `/embedders`. | v1.0 |
 | P1-68 | ~~Task-oriented engine guides~~ | 🔧 | Hand-written, low-boilerplate quickstart and usage guides shipped in the PaveDB source distribution, complementing the generated reference (P1-46) with narrative task-oriented docs rather than auto-generated dumps. | v1.1 |
 | P1-70 | SQLite chunk-text index and content filters | 🧱 | Make chunk text queryable through native FTS5 for contains/phrase/prefix filters and lexical candidates; prerequisite for P1-72 | v1.2 |
@@ -433,7 +433,8 @@ latency on every search/ingest/delete.~~
   server required. Lowers the install friction bar (a few lines to
   first search) without sacrificing the inspectability surface.
   The library API is the canonical interface the v1.0 Python HTTP
-  client mirrors 1:1. Design in `docs/design/PLAN-CLIENT.md`
+  client mirrors 1:1. Design in
+  [`docs/design/PLAN-CLIENT.md`](docs/design/PLAN-CLIENT.md)
   (P1-15).~~
 - ~~Python SDK package: `pavedb-sdk` distribution. It provides
   the shared API and `HttpClient`; the `pavedb` package depends on
@@ -1160,7 +1161,8 @@ hardware they control. Net effect: Flowlexi never operates GPU infrastructure
 for embedding. GPU compute is either OpenAI's problem or the customer's.
 
 Matches the existing sidecar/thread-pool split in
-`docs/design/PLAN-EMBEDDER-WORKERS.md` (P1-61): `sbert` as a co-located
+[`docs/design/PLAN-EMBEDDER-WORKERS.md`](docs/design/PLAN-EMBEDDER-WORKERS.md)
+(P1-61): `sbert` as a co-located
 process pool, `openai`/`ollama` as remote clients over HTTP — the cloud
 offering doesn't need a new execution model, just a place to run the
 sidecar.

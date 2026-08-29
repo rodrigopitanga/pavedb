@@ -9,9 +9,9 @@ and staged rebranding.
 ## Status
 
 Relicensing and the PatchVec to PaveDB rebrand are complete. This file is
-retained as historical rationale for P3-34/P3-35 only; use `README.md`,
-`ROADMAP.md`, and the generated references for current package, runtime, and
-operator guidance.
+retained as historical rationale for P3-34/P3-35 only; use
+[`README.md`](../../README.md), [`ROADMAP.md`](../../ROADMAP.md), and the
+generated references for current package, runtime, and operator guidance.
 
 ## Historical decisions
 
