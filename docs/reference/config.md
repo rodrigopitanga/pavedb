@@ -311,7 +311,7 @@ collection's vector-space identity.
 - Description: Re-rank candidates already inside the vector fetch window by exact query-
   token overlap with chunk text (P1-07). Off by default: it reads chunk text for the
   whole fetch window (up to max(50, 5*k) chunks), not just the returned k, so enabling
-  it trades extra per-search sidecar I/O for better lexical precision.
+  it trades extra per-search database I/O for better lexical precision.
 
 ### `search.exact_token_boost_weight`
 

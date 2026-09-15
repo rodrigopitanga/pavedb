@@ -229,6 +229,21 @@ def test_local_byov_vector_round_trip(tmp_path):
             vecs.add("plain text", docid="C")
 
 
+def test_local_client_search_accepts_content_filter(tmp_path):
+    with provider(tmp_path / "db") as db:
+        books = db.create_collection("books")
+        books.add("Captain Nemo commands the Nautilus", docid="BOOK-1")
+
+        hits = db._search(
+            "default",
+            "books",
+            "captain",
+            content_filter={"op": "contains", "value": "Nemo"},
+        )
+
+        assert [match["meta"]["docid"] for match in hits] == ["BOOK-1"]
+
+
 def test_collection_surface_returns_clean_data(tmp_path):
     file_path = tmp_path / "book.txt"
     file_path.write_text("Captain Nemo commands the Nautilus", encoding="utf-8")

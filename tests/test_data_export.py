@@ -314,11 +314,14 @@ def test_restore_archive_migrates_preview_baseline(monkeypatch, tmp_path):
             8: ["CREATE TABLE catalog_preview_probe (value TEXT)"],
         },
     )
-    monkeypatch.setattr(metadb, "_COLLECTION_SCHEMA_VERSION", 7)
+    monkeypatch.setattr(metadb, "_COLLECTION_SCHEMA_VERSION", 8)
     monkeypatch.setattr(
         metadb,
         "_COLLECTION_MIGRATIONS",
-        {7: ["CREATE TABLE collection_preview_probe (value TEXT)"]},
+        {
+            **metadb._COLLECTION_MIGRATIONS,
+            8: ["CREATE TABLE collection_preview_probe (value TEXT)"],
+        },
     )
 
     target = tmp_path / "target"
@@ -331,7 +334,7 @@ def test_restore_archive_migrates_preview_baseline(monkeypatch, tmp_path):
     with sqlite3.connect(
         target / "t_acme" / "c_restored" / "meta.db"
     ) as metadata:
-        assert metadb.CollectionDB._schema_version(metadata) == 7
+        assert metadb.CollectionDB._schema_version(metadata) == 8
 
 
 @pytest.mark.parametrize(

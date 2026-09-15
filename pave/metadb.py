@@ -6,8 +6,8 @@
 Two stores live here:
 
 - `CollectionDB`: per-collection SQLite that holds documents,
-  chunks, the write-once `chunk_meta` k/v filter index, and the
-  query log. Uses a read/write connection split (both
+  canonical chunk text, the `chunk_meta` k/v filter index, FTS5 text
+  indexes, and the query log. Uses a read/write connection split (both
   `check_same_thread=False`) serialized by separate locks.
 - `CatalogDB`: global SQLite catalog mapping tenants/collections to
   their configured embedder spec and display label, plus persistent
@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import sqlite3
 import threading
 import time
@@ -79,9 +80,70 @@ class RateLimitDecision:
 
 _COLLECTION_BASELINE_SCHEMA_VERSION = 6
 _CATALOG_BASELINE_SCHEMA_VERSION = 5
-_COLLECTION_SCHEMA_VERSION = 6
+_COLLECTION_SCHEMA_VERSION = 7
 _CATALOG_SCHEMA_VERSION = 7
-_COLLECTION_MIGRATIONS: dict[int, list[str]] = {}
+_COLLECTION_MIGRATIONS: dict[int, list[str]] = {
+    7: [
+        "ALTER TABLE chunks ADD COLUMN text TEXT",
+        "ALTER TABLE query_log ADD COLUMN content_filter_json TEXT",
+        """
+        CREATE VIRTUAL TABLE chunk_text_fts USING fts5(
+            text,
+            content='chunks',
+            content_rowid='rowid',
+            tokenize='unicode61'
+        )
+        """,
+        """
+        CREATE VIRTUAL TABLE chunk_text_trigram USING fts5(
+            text,
+            content='chunks',
+            content_rowid='rowid',
+            tokenize='trigram'
+        )
+        """,
+        # Both indexes are external-content: their integrity check requires
+        # every chunks row to be indexed, so text-less (BYOV / identity)
+        # chunks index as '' -- no tokens, still unsearchable. Updates use
+        # one trigger, delete then insert: SQLite does not order sibling
+        # triggers, and an insert landing before its delete drops the row.
+        """
+        CREATE TRIGGER chunks_text_ai AFTER INSERT ON chunks
+        BEGIN
+            INSERT INTO chunk_text_fts(rowid, text)
+                VALUES (new.rowid, COALESCE(new.text, ''));
+            INSERT INTO chunk_text_trigram(rowid, text)
+                VALUES (new.rowid, COALESCE(new.text, ''));
+        END
+        """,
+        """
+        CREATE TRIGGER chunks_text_ad AFTER DELETE ON chunks
+        BEGIN
+            INSERT INTO chunk_text_fts(chunk_text_fts, rowid, text)
+                VALUES ('delete', old.rowid, COALESCE(old.text, ''));
+            INSERT INTO chunk_text_trigram(chunk_text_trigram, rowid, text)
+                VALUES ('delete', old.rowid, COALESCE(old.text, ''));
+        END
+        """,
+        """
+        CREATE TRIGGER chunks_text_au AFTER UPDATE OF text ON chunks
+        BEGIN
+            INSERT INTO chunk_text_fts(chunk_text_fts, rowid, text)
+                VALUES ('delete', old.rowid, COALESCE(old.text, ''));
+            INSERT INTO chunk_text_trigram(chunk_text_trigram, rowid, text)
+                VALUES ('delete', old.rowid, COALESCE(old.text, ''));
+            INSERT INTO chunk_text_fts(rowid, text)
+                VALUES (new.rowid, COALESCE(new.text, ''));
+            INSERT INTO chunk_text_trigram(rowid, text)
+                VALUES (new.rowid, COALESCE(new.text, ''));
+        END
+        """,
+        # Rows that predate the text column (upgraded v6 collections) are
+        # indexed here, so the migration leaves both indexes consistent.
+        "INSERT INTO chunk_text_fts(chunk_text_fts) VALUES ('rebuild')",
+        "INSERT INTO chunk_text_trigram(chunk_text_trigram) VALUES ('rebuild')",
+    ],
+}
 _CATALOG_MIGRATIONS: dict[int, list[str]] = {
     6: [
         """
@@ -407,7 +469,7 @@ def _apply_schema_migrations(
 
 
 class CollectionDB:
-    """Per-collection SQLite metadata store (impl2).
+    """Per-collection SQLite metadata and chunk-text store (impl2).
 
     Three persistent connections with check_same_thread=False:
       _rconn: used for reads (WAL, protected by _read_lock)
@@ -691,6 +753,8 @@ class CollectionDB:
         docid: str,
         chunks: list[tuple[str, str | None, dict[str, Any]]],
         doc_meta: dict[str, Any] | None = None,
+        *,
+        texts: dict[str, str | None] | None = None,
     ) -> None:
         """Insert/replace chunk rows and upsert the document row.
 
@@ -703,7 +767,8 @@ class CollectionDB:
         rows = []
         for rid, chunk_path, meta in chunks:
             meta_json = json.dumps(meta, ensure_ascii=False)
-            rows.append((docid, rid, chunk_path, meta_json, now))
+            text = texts.get(rid) if texts is not None else None
+            rows.append((docid, rid, chunk_path, text, meta_json, now))
         with self._writer() as conn, conn:
             conn.execute(
                 """
@@ -736,9 +801,15 @@ class CollectionDB:
                 )
             conn.executemany(
                 """
-                INSERT OR REPLACE INTO chunks
-                (docid, rid, chunk_path, meta_json, ingested_at)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO chunks
+                (docid, rid, chunk_path, text, meta_json, ingested_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(rid) DO UPDATE SET
+                    docid=excluded.docid,
+                    chunk_path=excluded.chunk_path,
+                    text=excluded.text,
+                    meta_json=excluded.meta_json,
+                    ingested_at=excluded.ingested_at
                 """,
                 rows,
             )
@@ -761,6 +832,89 @@ class CollectionDB:
                     "(rid, key, value) VALUES (?, ?, ?)",
                     kv_rows,
                 )
+
+    def legacy_chunk_text_rows(self) -> list[tuple[str, str, str | None]]:
+        """Return rows still pointing at a pre-v1.2 text sidecar."""
+        with self._reader() as conn:
+            rows = conn.execute(
+                "SELECT rid, chunk_path, text FROM chunks "
+                "WHERE chunk_path IS NOT NULL ORDER BY rowid"
+            ).fetchall()
+        return [
+            (str(rid), str(chunk_path), text)
+            for rid, chunk_path, text in rows
+        ]
+
+    def migrate_chunk_texts(self, texts: dict[str, str]) -> None:
+        """Copy verified legacy sidecar text into canonical SQLite rows."""
+        if not texts:
+            return
+        with self._writer() as conn, conn:
+            conn.executemany(
+                "UPDATE chunks SET text=? WHERE rid=?",
+                [(text, rid) for rid, text in texts.items()],
+            )
+
+    def clear_chunk_paths(self, rids: list[str]) -> None:
+        """Clear obsolete sidecar pointers after their files are removed."""
+        if not rids:
+            return
+        with self._writer() as conn, conn:
+            for i in range(0, len(rids), 999):
+                batch = rids[i : i + 999]
+                placeholders = ",".join(["?"] * len(batch))
+                conn.execute(
+                    f"UPDATE chunks SET chunk_path=NULL "
+                    f"WHERE rid IN ({placeholders})",
+                    batch,
+                )
+
+    def get_chunk_text(self, rid: str) -> str | None:
+        with self._reader() as conn:
+            row = conn.execute(
+                "SELECT text FROM chunks WHERE rid=?",
+                (rid,),
+            ).fetchone()
+        return None if row is None else row[0]
+
+    def get_chunk_texts(self, rids: list[str]) -> dict[str, str | None]:
+        if not rids:
+            return {}
+        out: dict[str, str | None] = {}
+        with self._reader() as conn:
+            for i in range(0, len(rids), 999):
+                batch = rids[i : i + 999]
+                placeholders = ",".join(["?"] * len(batch))
+                rows = conn.execute(
+                    f"SELECT rid, text FROM chunks "
+                    f"WHERE rid IN ({placeholders})",
+                    batch,
+                ).fetchall()
+                out.update((str(rid), text) for rid, text in rows)
+        return out
+
+    def rebuild_text_indexes(self) -> None:
+        """Rebuild both FTS5 indexes from canonical non-null chunk text."""
+        with self._writer() as conn, conn:
+            conn.execute(
+                "INSERT INTO chunk_text_fts(chunk_text_fts) VALUES ('rebuild')"
+            )
+            conn.execute(
+                "INSERT INTO chunk_text_trigram(chunk_text_trigram) "
+                "VALUES ('rebuild')"
+            )
+
+    def verify_text_indexes(self) -> None:
+        """Verify both external-content indexes against canonical text."""
+        with self._writer() as conn, conn:
+            conn.execute(
+                "INSERT INTO chunk_text_fts(chunk_text_fts, rank) "
+                "VALUES ('integrity-check', 1)"
+            )
+            conn.execute(
+                "INSERT INTO chunk_text_trigram(chunk_text_trigram, rank) "
+                "VALUES ('integrity-check', 1)"
+            )
 
     def delete_doc(self, docid: str) -> list[str]:
         """Delete all chunks and the document row for *docid*.
@@ -800,6 +954,7 @@ class CollectionDB:
         query_text: str,
         k: int,
         filters: dict[str, Any] | None = None,
+        content_filter: dict[str, str] | None = None,
         include_common: bool = False,
         common_tenant: str | None = None,
         common_collection: str | None = None,
@@ -813,11 +968,12 @@ class CollectionDB:
         with self._query_log_writer() as conn, conn:
             conn.execute(
                 "INSERT INTO query_log "
-                "(query_id, tenant, collection, actor, query_text, k, filters_json, "
-                "include_common, common_tenant, common_collection, "
+                "(query_id, tenant, collection, actor, query_text, k, "
+                "filters_json, content_filter_json, include_common, "
+                "common_tenant, common_collection, "
                 "result_ids_json, result_count, latency_ms, timing_json, "
                 "request_id, replay_of) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     query_id,
                     tenant,
@@ -826,6 +982,7 @@ class CollectionDB:
                     query_text,
                     k,
                     self._dump_json(filters),
+                    self._dump_json(content_filter),
                     1 if include_common else 0,
                     common_tenant,
                     common_collection,
@@ -846,7 +1003,7 @@ class CollectionDB:
         with self._reader() as conn:
             row = conn.execute(
                 "SELECT query_id, tenant, collection, actor, "
-                "query_text, k, filters_json, "
+                "query_text, k, filters_json, content_filter_json, "
                 "include_common, common_tenant, common_collection, "
                 "result_ids_json, result_count, latency_ms, timing_json, "
                 "request_id, replay_of, executed_at "
@@ -863,16 +1020,17 @@ class CollectionDB:
             "query_text": row[4],
             "k": row[5],
             "filters": self._load_json(row[6]),
-            "include_common": bool(row[7]),
-            "common_tenant": row[8],
-            "common_collection": row[9],
-            "result_ids": json.loads(row[10]) if row[10] else [],
-            "result_count": row[11],
-            "latency_ms": row[12],
-            "timing": self._load_json(row[13]),
-            "request_id": row[14],
-            "replay_of": row[15],
-            "executed_at": row[16],
+            "content_filter": self._load_json(row[7]) if row[7] else None,
+            "include_common": bool(row[8]),
+            "common_tenant": row[9],
+            "common_collection": row[10],
+            "result_ids": json.loads(row[11]) if row[11] else [],
+            "result_count": row[12],
+            "latency_ms": row[13],
+            "timing": self._load_json(row[14]),
+            "request_id": row[15],
+            "replay_of": row[16],
+            "executed_at": row[17],
         }
 
     def list_query_logs(
@@ -914,7 +1072,8 @@ class CollectionDB:
     def chunk_paths(self) -> set[str]:
         with self._reader() as conn:
             rows = conn.execute(
-                "SELECT chunk_path FROM chunks WHERE chunk_path IS NOT NULL"
+                "SELECT chunk_path FROM chunks "
+                "WHERE text IS NULL AND chunk_path IS NOT NULL"
             ).fetchall()
         return {str(row[0]) for row in rows}
 
@@ -1070,6 +1229,90 @@ class CollectionDB:
                 str(row[0])
                 for row in conn.execute("SELECT rid FROM chunks")
             }
+
+    @staticmethod
+    def _fts5_quote(value: str) -> str:
+        """Return one literal FTS5 phrase without exposing query syntax."""
+        return '"' + value.replace('"', '""') + '"'
+
+    def filter_by_content(
+        self,
+        candidate_rids: list[str],
+        content_filter: dict[str, str],
+    ) -> set[str]:
+        """Reduce vector candidates with exact or indexed text matching."""
+        if not candidate_rids:
+            return set()
+        op = str(content_filter.get("op") or "")
+        value = content_filter.get("value")
+        if op not in {"exact", "phrase", "prefix", "contains"}:
+            raise ValueError(f"unsupported content filter operation: {op!r}")
+        if not isinstance(value, str) or not value:
+            raise ValueError("content filter value must be a non-empty string")
+        if op == "contains" and len(value) < 3:
+            raise ValueError(
+                "contains content filter requires at least three characters"
+            )
+
+        matches: set[str] = set()
+        if op == "exact":
+            table = None
+            query = value
+        elif op == "contains":
+            table = "chunk_text_trigram"
+            query = self._fts5_quote(value)
+        else:
+            table = "chunk_text_fts"
+            query = self._fts5_quote(value)
+            if op == "prefix":
+                # FTS5 recognizes a trailing star outside the quoted phrase
+                # as a prefix marker for the phrase's final token.
+                query += " *"
+
+        with self._reader() as conn:
+            for i in range(0, len(candidate_rids), 998):
+                batch = candidate_rids[i : i + 998]
+                placeholders = ",".join(["?"] * len(batch))
+                if table is None:
+                    rows = conn.execute(
+                        f"SELECT rid FROM chunks WHERE text=? "
+                        f"AND rid IN ({placeholders})",
+                        [query, *batch],
+                    ).fetchall()
+                else:
+                    rows = conn.execute(
+                        f"SELECT c.rid FROM chunks AS c "
+                        f"JOIN {table} ON {table}.rowid=c.rowid "
+                        f"WHERE {table} MATCH ? "
+                        f"AND c.rid IN ({placeholders})",
+                        [query, *batch],
+                    ).fetchall()
+                matches.update(str(row[0]) for row in rows)
+        return matches
+
+    def lexical_candidates(
+        self,
+        query: str,
+        limit: int,
+    ) -> list[tuple[str, float]]:
+        """Return independent FTS5/BM25 candidates for future hybrid search."""
+        tokens = [
+            match.group(0)
+            for match in re.finditer(r"\w+", query, flags=re.UNICODE)
+        ]
+        if not tokens or limit <= 0:
+            return []
+        fts_query = " OR ".join(self._fts5_quote(token) for token in tokens)
+        with self._reader() as conn:
+            rows = conn.execute(
+                "SELECT c.rid, bm25(chunk_text_fts) AS score "
+                "FROM chunk_text_fts "
+                "JOIN chunks AS c ON c.rowid=chunk_text_fts.rowid "
+                "WHERE chunk_text_fts MATCH ? "
+                "ORDER BY score, c.rid LIMIT ?",
+                (fts_query, int(limit)),
+            ).fetchall()
+        return [(str(rid), float(score)) for rid, score in rows]
 
     def _chunk_meta_matches(
         self,

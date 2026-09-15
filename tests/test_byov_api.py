@@ -33,6 +33,15 @@ def test_identity_vector_round_trip(client, cfg):
     assert r.status_code == 200, r.text
     matches = r.json()["matches"]
     assert matches[0]["meta"]["docid"] == "A"
+    filtered = client.post(
+        f"/v1/collections/{tenant}/{name}/search",
+        json={
+            "v": [1.0, 0.0, 0.0, 0.0],
+            "content_filter": {"op": "exact", "value": "anything"},
+        },
+    )
+    assert filtered.status_code == 200
+    assert filtered.json()["matches"] == []
 
     cfg.set("common_enabled", True)
     cfg.set("common_tenant", tenant)

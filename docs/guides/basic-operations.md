@@ -42,11 +42,16 @@ The `docid` is yours to choose and is the update key: re-ingesting the same
 
 ```bash
 pavecli search demo books "captain nemo" -k 3
+pavecli search demo books "captain" \
+  --content-filter '{"op":"phrase","value":"captain nemo"}'
 ```
 
 Each hit carries its score, the matched text, and where it came from — document
 id plus the source-specific page, row, or character offset. That provenance is
 not optional metadata you have to enable; it is what a text-backed hit is.
+Content filters are additive to semantic search and metadata filters. `exact`,
+`phrase`, and token `prefix` use SQLite text indexes; `contains` uses the
+trigram index and requires at least three characters.
 
 ## Inspect and replay
 

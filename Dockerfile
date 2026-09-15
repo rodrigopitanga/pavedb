@@ -28,6 +28,11 @@ COPY setup.py /app/
 COPY pyproject.toml /app/
 COPY requirements-cpu.txt /app/
 COPY LICENSE /app/
+COPY scripts/check_sqlite_fts.py /app/scripts/check_sqlite_fts.py
+
+# P1-70 is an indexed-search contract: fail the image build if the selected
+# Python base lacks either the FTS5 unicode tokenizer or trigram tokenizer.
+RUN python /app/scripts/check_sqlite_fts.py
 
 # create a dummy package so setup.py can resolve deps without full source
 RUN mkdir -p /app/pave && touch /app/pave/__init__.py

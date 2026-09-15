@@ -250,6 +250,7 @@ Run semantic search over a collection and print the response envelope.
 
 ```bash
 pavecli search [-h] [-k K] [--include-common] [--filters FILTERS]
+                      [--content-filter CONTENT_FILTER]
                       tenant collection query
 ```
 
@@ -267,6 +268,8 @@ pavecli search demo books "captain nemo" -k 3
 - `-k` (optional): Number of matches to return (default: 5)
 - `--include-common` (optional): Include configured common collection results
 - `--filters` (optional): JSON object, e.g. {"docid":"DOC-1"}
+- `--content-filter` (optional): JSON object with op exact, phrase, prefix, or
+  contains and a non-empty value
 
 ## `list-queries`
 

@@ -119,7 +119,7 @@ def test_byov_ingest_survives_reopen_with_a_dirty_marker(tmp_path):
 
 
 def _seed_mixed_collection(store, tenant, collection):
-    """One text chunk (has a sidecar) plus one BYOV chunk (has none)."""
+    """One stored-text chunk plus one BYOV chunk with NULL text."""
     store.index_records(
         tenant,
         collection,

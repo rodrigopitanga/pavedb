@@ -61,7 +61,7 @@ def test_collection_archive_manifest_and_members(tmp_path):
     assert {"manifest.json", "collection.json", "meta.db"} <= names
     assert "catalog.db" not in names
     assert {"index/faiss.index", "index/id_map.json"} <= names
-    assert any(name.startswith("chunks/") for name in names)
+    assert not any(name.startswith("chunks/") for name in names)
     assert manifest["archive_format"] == "pavedb.collection"
     assert manifest["archive_version"] == 1
     assert manifest["pavedb_version"] == VERSION
@@ -108,7 +108,11 @@ def test_collection_archive_restore_replaces_only_target(tmp_path):
     assert destination.get_document("new-tenant", "library", "old") is None
     assert destination.get_document("new-tenant", "library", "verne") is not None
     assert destination.search(
-        "new-tenant", "library", "submarine", k=1
+        "new-tenant",
+        "library",
+        "submarine",
+        k=1,
+        content_filter={"op": "contains", "value": "Nemo sub"},
     )[0].id == "verne::0"
     assert destination.get_document("other", "keep", "sentinel") is not None
 
@@ -232,7 +236,11 @@ def test_collection_archive_http_round_trip(client):
     assert restored.json()["collection"] == "library"
     result = client.post(
         "/v1/collections/imported/library/search",
-        json={"q": "submarine", "k": 1},
+        json={
+            "q": "submarine",
+            "k": 1,
+            "content_filter": {"op": "prefix", "value": "captain ne"},
+        },
     )
     assert result.status_code == 200
     assert result.json()["matches"][0]["id"] == "verne::chunk_0"

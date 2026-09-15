@@ -319,9 +319,9 @@ search:
   timeout_ms: 30000
 
   # Re-rank candidates already inside the vector fetch window by exact query-token
-  # overlap with chunk text (P1-07). Off by default: it reads chunk text for the whole
-  # fetch window (up to max(50, 5*k) chunks), not just the returned k, so enabling it
-  # trades extra per-search sidecar I/O for better lexical precision.
+  # overlap with chunk text (P1-07). Off by default: it reads SQLite chunk text for the
+  # whole fetch window (up to max(50, 5*k) chunks), not just the returned k, so enabling
+  # it trades extra per-search database I/O for better lexical precision.
   # Env: PAVEDB_SEARCH__EXACT_TOKEN_BOOST
   exact_token_boost: false
 

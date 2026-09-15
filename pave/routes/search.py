@@ -215,6 +215,11 @@ def build_search_router(
                 body.q,
                 body.k,
                 filters=body.filters,
+                content_filter=(
+                    body.content_filter.model_dump()
+                    if body.content_filter is not None
+                    else None
+                ),
                 v=body.v,
                 include_common=include_common,
                 common_tenant=cfg.common_tenant,
@@ -336,6 +341,11 @@ def build_search_router(
                     body.q,
                     body.k,
                     filters=body.filters,
+                    content_filter=(
+                        body.content_filter.model_dump()
+                        if body.content_filter is not None
+                        else None
+                    ),
                     v=body.v,
                     request_id=rid,
                     actor=actor_of(ctx),

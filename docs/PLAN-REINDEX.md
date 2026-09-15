@@ -58,7 +58,7 @@ target embedder/backend, then removes the rollback copy.
 
 ## Not in scope
 
-- Reconstructing text for BYOV chunks that intentionally have no sidecar.
+- Reconstructing text for BYOV chunks that intentionally store `NULL` text.
 - Cross-instance or distributed workers; the data-directory owner runs jobs.
 - Keeping the collection writable during a vector-space migration.
 - Rechunking source documents or changing their metadata.

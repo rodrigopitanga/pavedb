@@ -649,6 +649,40 @@
         "title": "CollectionSummary",
         "type": "object"
       },
+      "ContentFilter": {
+        "description": "One additive chunk-text predicate for a vector search.",
+        "properties": {
+          "op": {
+            "description": "Text matching operation.",
+            "enum": [
+              "exact",
+              "phrase",
+              "prefix",
+              "contains"
+            ],
+            "examples": [
+              "phrase"
+            ],
+            "title": "Op",
+            "type": "string"
+          },
+          "value": {
+            "description": "Non-empty text value to match against stored chunks.",
+            "examples": [
+              "captain nemo"
+            ],
+            "minLength": 1,
+            "title": "Value",
+            "type": "string"
+          }
+        },
+        "required": [
+          "op",
+          "value"
+        ],
+        "title": "ContentFilter",
+        "type": "object"
+      },
       "CreateCollectionOptionsBody": {
         "description": "Optional settings when creating a collection.",
         "properties": {
@@ -2273,6 +2307,23 @@
             ],
             "title": "Common Tenant"
           },
+          "content_filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentFilter"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Chunk-text predicate applied to the search.",
+            "examples": [
+              {
+                "op": "prefix",
+                "value": "captain ne"
+              }
+            ]
+          },
           "executed_at": {
             "description": "When the search ran (ISO 8601).",
             "examples": [
@@ -3110,6 +3161,23 @@
       "SearchBody": {
         "description": "Search request body.",
         "properties": {
+          "content_filter": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentFilter"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Additive exact, phrase, token-prefix, or substring predicate over stored chunk text.",
+            "examples": [
+              {
+                "op": "phrase",
+                "value": "captain nemo"
+              }
+            ]
+          },
           "filters": {
             "anyOf": [
               {

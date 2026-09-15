@@ -55,9 +55,10 @@ from pave.preprocess import (
     preprocess,
     preprocess_text,
 )
-from pave.schemas import MAX_SEARCH_K
+from pave.schemas import ContentFilter, MAX_SEARCH_K
 from pave.stores.base import (
     BaseStore,
+    ContentFilterSpec,
     FilterSpec,
     Metadata,
     MetadataValidationError,
@@ -71,6 +72,16 @@ ServiceResult = dict[str, Any]
 
 def _query_log_enabled() -> bool:
     return bool(get_cfg().get("query_log.enabled", True))
+
+
+def _normalize_content_filter(value: Any) -> ContentFilterSpec | None:
+    if value is None:
+        return None
+    try:
+        parsed = ContentFilter.model_validate(value)
+    except Exception as exc:
+        raise ServiceError("invalid_content_filter", str(exc)) from exc
+    return parsed.model_dump()
 
 
 # Pure-ish service functions operating on a store adapter
@@ -138,9 +149,8 @@ def _validate_collection_name(value: str | None) -> str:
 
 
 def _validate_docid(value: str) -> str:
-    # The docid becomes part of a chunk sidecar filename, so a control
-    # character (NUL in particular) would fail mid-write and leave metadata
-    # rows without vectors.
+    # Control characters and lone surrogates do not survive every storage and
+    # archive boundary, so reject them before indexing starts.
     if _has_control_chars(value):
         raise ServiceError(
             "invalid_docid",
@@ -1063,7 +1073,7 @@ def ingest_text(
                     **meta_from_call,
                 }
                 # 1 vector = 1 record, rid namespaced under docid; store's
-                # vector branch skips embed + chunk-text sidecar.
+                # vector branch skips embed and keeps chunk text NULL.
                 records = [(f"{baseid}::0", "", {})]
                 return _index_records_result(
                     store,
@@ -1440,6 +1450,7 @@ def ingest_documents_batch(
 
 def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
            filters: FilterSpec | None = None,
+           content_filter: ContentFilterSpec | None = None,
            include_common: bool = False,
            common_tenant: str | None = None,
            common_collection: str | None = None,
@@ -1451,6 +1462,10 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
     start = _time.perf_counter()
     m_inc("search_total", 1.0)
     try:
+        content_filter = _normalize_content_filter(content_filter)
+        content_search_kw = (
+            {"content_filter": content_filter} if content_filter else {}
+        )
         # Unvalidated here, the name reached _load_or_init and auto-created a
         # collection that delete_collection then refused to remove, because it
         # validates the name before checking existence. Safe for the
@@ -1496,14 +1511,22 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
                 effective_common_collection,
             )
             local = store.search(
-                tenant, collection, q, max(10, k * 2), filters=filters)
+                tenant,
+                collection,
+                q,
+                max(10, k * 2),
+                filters=filters,
+                **content_search_kw,
+            )
             try:
                 common = store.search(
                     effective_common_tenant,
                     effective_common_collection,
                     q,
                     max(10, k * 2),
-                    filters=filters)
+                    filters=filters,
+                    **content_search_kw,
+                )
             except ValueError:
                 # The shared corpus is an enrichment, not a requirement. Now
                 # that a missing collection is an error rather than something
@@ -1530,11 +1553,20 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
         elif q is None:
             # BYOV: q is None → pass the raw query vector, store skips embed.
             result = store.search(tenant, collection, "", k,
-                                  filters=filters, query_vector=v)
+                                  filters=filters,
+                                  query_vector=v,
+                                  **content_search_kw)
             top = result.matches
             timing = result.timing
         else:
-            result = store.search(tenant, collection, q, k, filters=filters)
+            result = store.search(
+                tenant,
+                collection,
+                q,
+                k,
+                filters=filters,
+                **content_search_kw,
+            )
             top = result.matches
             timing = result.timing
         m_inc("matches_total", float(len(top) or 0))
@@ -1543,7 +1575,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
             m_inc_labeled("searches_zero_matches_total", labels)
         m_inc_labeled(
             "searches_with_filters_total"
-            if filters
+            if filters or content_filter
             else "searches_without_filters_total",
             labels,
         )
@@ -1576,6 +1608,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
                     query_text=q or "",
                     k=k,
                     filters=filters,
+                    content_filter=content_filter,
                     include_common=merge_common,
                     common_tenant=effective_common_tenant,
                     common_collection=effective_common_collection,
@@ -1905,6 +1938,7 @@ def execute_replay(
             entry["query_text"],
             replay_k,
             filters=entry.get("filters"),
+            content_filter=entry.get("content_filter"),
             include_common=replay_common,
             common_tenant=replay_common_tenant,
             common_collection=replay_common_collection,
@@ -1927,6 +1961,7 @@ def execute_replay(
                     query_text=entry["query_text"],
                     k=replay_k,
                     filters=entry.get("filters"),
+                    content_filter=entry.get("content_filter"),
                     include_common=replay_common,
                     common_tenant=replay_common_tenant,
                     common_collection=replay_common_collection,

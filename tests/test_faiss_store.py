@@ -3,7 +3,6 @@
 
 import json
 import types
-import builtins
 import os
 import io
 import pytest
@@ -78,7 +77,7 @@ def test_index_adds_docid_prefix(store):
     assert hits[0].text is not None and "verde" in hits[0].text.lower()
     assert hits[0].id is not None and "docbike::0" == hits[0].id
 
-def test_chunk_sidecar_preserves_crlf(store):
+def test_sqlite_chunk_text_preserves_crlf(store):
     text = "First line\r\nSecond line\r\n"
     recs = [
         {"id": "0", "content": text, "metadata": {"lang": "en"}},
@@ -91,7 +90,7 @@ def test_chunk_sidecar_preserves_crlf(store):
     assert stored == text
 
 
-def test_load_chunk_text_tolerates_toctou_delete(monkeypatch, store):
+def test_load_chunk_text_does_not_depend_on_legacy_sidecar(store):
     recs = [
         {"id": "0", "content": "chunk text", "metadata": {"lang": "en"}},
     ]
@@ -100,15 +99,10 @@ def test_load_chunk_text_tolerates_toctou_delete(monkeypatch, store):
         store.impl._chunks_dir("acme", "race"),
         store.impl._urid_to_fname("docrace::0"),
     )
-    real_open = builtins.open
-
-    def flaky_open(path, mode="r", *args, **kwargs):
-        if "rb" in mode and str(path) == target:
-            raise FileNotFoundError(str(path))
-        return real_open(path, mode, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "open", flaky_open)
-    assert store.impl._load_chunk_text("acme", "race", "docrace::0") is None
+    assert not os.path.isfile(target)
+    assert store.impl._load_chunk_text(
+        "acme", "race", "docrace::0"
+    ) == "chunk text"
 
 
 def test_meta_json_and_filters(store):

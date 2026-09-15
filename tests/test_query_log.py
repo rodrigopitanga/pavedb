@@ -37,6 +37,7 @@ def test_collection_db_query_log_roundtrip(tmp_path):
         query_text="captain nemo",
         k=3,
         filters={"lang": "en"},
+        content_filter={"op": "phrase", "value": "captain nemo"},
         include_common=True,
         common_tenant="global",
         common_collection="common",
@@ -62,6 +63,10 @@ def test_collection_db_query_log_roundtrip(tmp_path):
     assert entry["query_text"] == "captain nemo"
     assert entry["k"] == 3
     assert entry["filters"] == {"lang": "en"}
+    assert entry["content_filter"] == {
+        "op": "phrase",
+        "value": "captain nemo",
+    }
     assert entry["include_common"] is True
     assert entry["common_tenant"] == "global"
     assert entry["common_collection"] == "common"

@@ -124,6 +124,25 @@ class SearchResponse(OkResponse):
     )
 
 
+class ContentFilter(BaseModel):
+    """One additive chunk-text predicate for a vector search."""
+    op: Literal["exact", "phrase", "prefix", "contains"] = Field(
+        description="Text matching operation.",
+        examples=["phrase"],
+    )
+    value: str = Field(
+        min_length=1,
+        description="Non-empty text value to match against stored chunks.",
+        examples=["captain nemo"],
+    )
+
+    @model_validator(mode="after")
+    def require_indexable_contains(self) -> "ContentFilter":
+        if self.op == "contains" and len(self.value) < 3:
+            raise ValueError("contains requires at least three characters")
+        return self
+
+
 class SearchBody(BaseModel):
     """Search request body."""
     q: str | None = Field(
@@ -147,6 +166,14 @@ class SearchBody(BaseModel):
         default=None,
         description="Metadata equality filters to narrow results.",
         examples=[{"lang": "en"}],
+    )
+    content_filter: ContentFilter | None = Field(
+        default=None,
+        description=(
+            "Additive exact, phrase, token-prefix, or substring predicate "
+            "over stored chunk text."
+        ),
+        examples=[{"op": "phrase", "value": "captain nemo"}],
     )
     include_common: bool = Field(
         default=False,
@@ -191,6 +218,11 @@ class QueryLogEntry(BaseModel):
         default=None,
         description="Metadata filters applied to the search.",
         examples=[{"lang": "en"}],
+    )
+    content_filter: ContentFilter | None = Field(
+        default=None,
+        description="Chunk-text predicate applied to the search.",
+        examples=[{"op": "prefix", "value": "captain ne"}],
     )
     include_common: bool = Field(
         default=False,

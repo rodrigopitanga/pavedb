@@ -3,11 +3,11 @@
 
 # PLAN-HYBRID-SEARCH — Metadata parity and lexical retrieval
 
-PaveDB currently searches vectors first, screens those candidates with
-SQLite metadata, applies canonical Python filter semantics, and finally
-hydrates chunk text from sidecar files. This plan separates correctness,
-content search, hybrid ranking, and true vector prefiltering so none is
-mistaken for another.
+PaveDB searches vectors first, screens those candidates with SQLite metadata
+and content predicates, applies canonical Python metadata-filter semantics,
+and hydrates canonical chunk text from SQLite. This plan separates
+correctness, content search, hybrid ranking, and true vector prefiltering so
+none is mistaken for another.
 
 Roadmap ownership:
 
@@ -19,14 +19,14 @@ Roadmap ownership:
 ## Current flow
 
 ```text
-query -> embed -> FAISS top-N -> SQLite metadata screen
+query -> embed -> FAISS top-N -> SQLite metadata/content screen
       -> canonical Python filter -> expand N if needed
-      -> hydrate result text from sidecars
+      -> hydrate result text from SQLite
 ```
 
 SQLite currently reduces only the candidates already returned by FAISS. It
-can save metadata hydration and Python work, but it does not make vector search
-itself smaller.
+can save metadata hydration and Python work, but it does not make vector
+search itself smaller.
 
 ## P1-35 — metadata-filter SQL parity
 

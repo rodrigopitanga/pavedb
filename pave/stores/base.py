@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 Metadata = dict[str, Any]
 FilterSpec = dict[str, Any]
+ContentFilterSpec = dict[str, str]
 CollectionInfo = dict[str, Any]
 DocumentInfo = dict[str, Any]
 ChunkInfo = dict[str, Any]
@@ -201,7 +202,8 @@ class BaseStore(Protocol):
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: FilterSpec | None = None,
-               *, query_vector: list[float] | None = None) -> SearchOutput:
+               *, content_filter: ContentFilterSpec | None = None,
+               query_vector: list[float] | None = None) -> SearchOutput:
         """Search for similar documents."""
         ...
 
@@ -215,6 +217,7 @@ class BaseStore(Protocol):
         query_text: str,
         k: int,
         filters: FilterSpec | None = None,
+        content_filter: ContentFilterSpec | None = None,
         include_common: bool = False,
         common_tenant: str | None = None,
         common_collection: str | None = None,

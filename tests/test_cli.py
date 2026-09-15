@@ -124,6 +124,37 @@ def test_cli_ingest_text_indexes_raw_text_document(cli_env, capsys):
     )
 
 
+def test_cli_search_accepts_content_filter(cli_query_env, capsys):
+    pvcli, _store, _ = cli_query_env
+    pvcli.main_cli(["create-collection", "acme", "content-cli"])
+    pvcli.main_cli(
+        [
+            "ingest-text",
+            "acme",
+            "content-cli",
+            "Captain Nemo commands the Nautilus",
+            "--docid",
+            "BOOK-1",
+        ]
+    )
+    capsys.readouterr()
+
+    rc = pvcli.main_cli(
+        [
+            "search",
+            "acme",
+            "content-cli",
+            "captain",
+            "--content-filter",
+            '{"op":"prefix","value":"captain ne"}',
+        ]
+    )
+    out = json.loads(capsys.readouterr().out)
+
+    assert rc == 0
+    assert [match["meta"]["docid"] for match in out["matches"]] == ["BOOK-1"]
+
+
 def test_cli_create_collection_accepts_embedder_args(cli_env, capsys):
     pvcli, store, _ = cli_env
     tenant, coll = "acme", "cfgcli"

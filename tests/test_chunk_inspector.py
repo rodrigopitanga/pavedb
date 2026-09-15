@@ -32,7 +32,7 @@ def test_list_chunks_returns_chunk_summaries_without_text_preview(client):
     assert data["chunks"] == [
         {
             "rid": "DOC-CHUNKS-1::chunk_0",
-            "chunk_path": "chunks/DOC-CHUNKS-1__chunk_0.txt",
+            "chunk_path": None,
             "meta": {"offset": 0},
             "ingested_at": data["chunks"][0]["ingested_at"],
         }
@@ -79,7 +79,7 @@ def test_get_chunk_returns_chunk_metadata_only(client):
     assert data["collection"] == "chunks-get"
     assert data["docid"] == "DOC-CHUNK-GET"
     assert data["rid"] == "DOC-CHUNK-GET::chunk_0"
-    assert data["chunk_path"] == "chunks/DOC-CHUNK-GET__chunk_0.txt"
+    assert data["chunk_path"] is None
     assert data["meta"] == {"offset": 0}
     assert data["ingested_at"].endswith("Z")
     assert "text" not in data

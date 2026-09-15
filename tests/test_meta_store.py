@@ -31,6 +31,27 @@ def _catalog_db(tmp_path: Path) -> Path:
     return tmp_path / "catalog.db"
 
 
+def test_chunk_text_updates_keep_text_indexes_intact(tmp_path):
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    try:
+        for text in ("alpha words", "beta words", None, "gamma words"):
+            # Same rid again: ON CONFLICT DO UPDATE fires the update trigger.
+            db.upsert_chunks(
+                "doc", [("doc::0", None, {})], texts={"doc::0": text}
+            )
+            db.verify_text_indexes()
+        db.migrate_chunk_texts({"doc::0": "delta words"})
+        db.verify_text_indexes()
+        hits = db._require_rconn().execute(
+            "SELECT rowid FROM chunk_text_fts WHERE chunk_text_fts MATCH ?",
+            ("delta",),
+        ).fetchall()
+        assert len(hits) == 1
+    finally:
+        db.close()
+
+
 def test_open_creates_schema(tmp_path):
     db_path = _meta_db(tmp_path)
     db = CollectionDB()
@@ -41,7 +62,8 @@ def test_open_creates_schema(tmp_path):
         "SELECT name FROM sqlite_master WHERE type='table' "
         "AND name IN "
         "('schema_migrations', 'documents', 'chunks', "
-        "'chunk_meta', 'document_meta', 'query_log')"
+        "'chunk_meta', 'document_meta', 'query_log', "
+        "'chunk_text_fts', 'chunk_text_trigram')"
     )
     names = {row[0] for row in cur.fetchall()}
     assert {
@@ -51,9 +73,11 @@ def test_open_creates_schema(tmp_path):
         "chunk_meta",
         "document_meta",
         "query_log",
+        "chunk_text_fts",
+        "chunk_text_trigram",
     } <= names
     version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
-    assert version == (6,)
+    assert version == (7,)
     db.close()
 
 
@@ -548,11 +572,14 @@ def test_collection_db_migrates_from_preview_baseline(monkeypatch, tmp_path):
     db.upsert_chunks("doc", [("doc::0", None, {})])
     db.close()
 
-    monkeypatch.setattr(metadb, "_COLLECTION_SCHEMA_VERSION", 7)
+    monkeypatch.setattr(metadb, "_COLLECTION_SCHEMA_VERSION", 8)
     monkeypatch.setattr(
         metadb,
         "_COLLECTION_MIGRATIONS",
-        {7: ["ALTER TABLE documents ADD COLUMN preview_note TEXT"]},
+        {
+            **metadb._COLLECTION_MIGRATIONS,
+            8: ["ALTER TABLE documents ADD COLUMN preview_note TEXT"],
+        },
     )
 
     with pytest.raises(UnsupportedSchemaVersionError, match="requires migration"):
@@ -561,7 +588,7 @@ def test_collection_db_migrates_from_preview_baseline(monkeypatch, tmp_path):
     db.open(db_path)
 
     assert db.has_doc("doc") is True
-    assert db._schema_version(db._require_rconn()) == 7
+    assert db._schema_version(db._require_rconn()) == 8
     assert "preview_note" in {
         row[1]
         for row in db._require_rconn().execute("PRAGMA table_info(documents)")

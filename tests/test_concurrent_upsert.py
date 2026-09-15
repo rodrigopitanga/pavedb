@@ -21,12 +21,14 @@ def test_concurrent_upsert_with_manual_lock(cfg, temp_data_dir):
     def safe_upsert(data):
         with store._collection_write_lock(tenant, coll):
             rid, text, meta = data
-            chunk_path = f"chunks/{store._urid_to_fname(rid)}"
             parsed_meta = json.loads(meta) if isinstance(meta, str) else meta
             parsed_meta = dict(parsed_meta or {})
             parsed_meta["docid"] = "doc"
-            store._save_chunk_text(tenant, coll, rid, text)
-            col_db.upsert_chunks("doc", [(rid, chunk_path, parsed_meta)])
+            col_db.upsert_chunks(
+                "doc",
+                [(rid, None, parsed_meta)],
+                texts={rid: text},
+            )
             backend.delete([rid])
             vectors = store._embedder.encode([text])
             backend.add([rid], vectors)

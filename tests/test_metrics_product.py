@@ -51,7 +51,7 @@ def test_product_search_metrics(client, app, cfg):
     assert 'collection="metrics",tenant="acme"' in prom
 
 
-def test_chunk_drift_metrics(client, app):
+def test_new_chunks_have_no_sidecar_drift(client, app):
     client.post("/v1/collections/acme/drift")
     client.post(
         "/v1/collections/acme/drift/documents",
@@ -59,14 +59,15 @@ def test_chunk_drift_metrics(client, app):
         data={"docid": "doc-1"},
     )
     chunk = app.state.store.list_chunks("acme", "drift", "doc-1")[0]
-    path = Path(app.state.cfg.data_dir) / "t_acme" / "c_drift" / chunk["chunk_path"]
-    path.rename(path.with_name("orphan.txt"))
+    assert chunk["chunk_path"] is None
+    path = Path(app.state.cfg.data_dir) / "t_acme" / "c_drift" / "chunks"
+    assert not path.exists()
     app.state.store.impl._chunk_drift_metrics_cache = None
     refresh_product_gauges(app.state.store)
 
     snap = client.get("/health/metrics").json()
-    assert snap["chunks_missing_sidecar_total"] >= 1
-    assert snap["chunks_orphaned_total"] >= 1
+    assert snap["chunks_missing_sidecar_total"] == 0
+    assert snap["chunks_orphaned_total"] == 0
 
 
 def test_search_timeout_metric(client, app):

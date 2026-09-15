@@ -87,6 +87,21 @@ issue-reconcile:
   rules:
     - if: '$GITLAB_ISSUE_TOKEN && $CI_PIPELINE_SOURCE == "schedule"'
 
+sqlite-fts:
+  stage: test
+  image: $PYTHON_IMAGE
+  parallel:
+    matrix:
+      - PYTHON_IMAGE:
+          - "python:3.10"
+          - "python:3.11"
+          - "python:3.11-slim"
+          - "python:3.12"
+          - "python:3.13"
+          - "python:3.14"
+  script:
+    - python scripts/check_sqlite_fts.py
+
 validate-release-announcement:
   stage: test
   script:

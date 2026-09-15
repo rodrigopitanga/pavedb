@@ -5,7 +5,7 @@
 
 `LocalStore` is the default `BaseStore` for single-instance
 deployments. It owns the data directory layout
-(`{data_dir}/{tenant}/{collection}/{meta.db, index/, chunks/}`),
+(`{data_dir}/{tenant}/{collection}/{meta.db, index/}`),
 the per-collection read/write lock lattice, the catalog
 (`pave.metadb.CatalogDB`) bootstrap pass, and the runtime embedder cache.
 Collections persist a vector-space identity; instance routing stays in config.
@@ -62,6 +62,7 @@ from pave.stores.base import (
     BaseStore,
     ChunkInfo,
     CollectionInfo,
+    ContentFilterSpec,
     DocumentInfo,
     FilterSpec,
     IndexResult,
@@ -112,11 +113,10 @@ def _tokenize_exact(text: str | None) -> frozenset[str]:
 
 
 def _assert_writable_rid(rid: str) -> None:
-    """Reject a chunk id that cannot become a sidecar filename.
+    """Reject control characters and invalid Unicode in a chunk id.
 
-    Control characters truncate the name at the OS boundary (NUL) and lone
-    surrogates cannot be UTF-8 encoded, so `_save_chunk_text` would raise
-    partway through a write the caller has already begun committing.
+    Lone surrogates cannot be encoded by the JSON, SQLite, and archive
+    boundaries a record crosses; reject them before a write starts.
     """
     for ch in rid:
         code = ord(ch)
@@ -265,8 +265,8 @@ class _CollectionReadWriteLock:
 class LocalStore:
     """Default `BaseStore` implementation backed by local files.
 
-    Each collection maps to a directory holding a SQLite metadata DB,
-    a FAISS index, and chunk-text sidecars. Collection lifecycle and
+    Each collection maps to a directory holding a SQLite metadata/text DB
+    and a FAISS index. Collection lifecycle and
     document writes acquire a per-collection write lock; reads take
     a shared read lock and pin cached handles against concurrent
     writers. The embedder cache is keyed by runtime spec, while compatible
@@ -777,6 +777,11 @@ class LocalStore:
                 metadata = CollectionDB()
                 try:
                     metadata.open(metadata_path)
+                    self._migrate_chunk_text_sidecars_in(
+                        collection_dir,
+                        metadata,
+                    )
+                    metadata.verify_text_indexes()
                     with metadata._reader() as conn:
                         required_columns = {
                             "documents": {
@@ -784,13 +789,16 @@ class LocalStore:
                             },
                             "chunks": {
                                 "docid", "rid", "chunk_path", "meta_json",
-                                "ingested_at",
+                                "ingested_at", "text",
                             },
+                            "chunk_text_fts": {"text"},
+                            "chunk_text_trigram": {"text"},
                             "chunk_meta": {"rid", "key", "value"},
                             "document_meta": {"docid", "key", "value"},
                             "query_log": {
                                 "query_id", "tenant", "collection", "actor",
                                 "query_text", "k", "filters_json", "include_common",
+                                "content_filter_json",
                                 "common_tenant", "common_collection", "result_ids_json",
                                 "result_count", "latency_ms", "timing_json",
                                 "request_id", "replay_of", "executed_at",
@@ -809,6 +817,7 @@ class LocalStore:
                             str(row[0])
                             for row in conn.execute("SELECT rid FROM chunks")
                         }
+                    metadata.checkpoint_wal()
                 except Exception:
                     raise ValueError(
                         "invalid archive collection metadata database: "
@@ -1370,12 +1379,17 @@ class LocalStore:
                 rid = str(chunk.get("rid") or "")
                 if not rid:
                     continue
-                text = self._load_chunk_text(tenant, collection, rid)
+                text = self._load_chunk_text(
+                    tenant,
+                    collection,
+                    rid,
+                    col_db=col_db,
+                )
                 if text is not None:
                     rids.append(rid)
                     texts.append(text)
                     continue
-                # BYOV chunks keep no text sidecar, so the live index is
+                # BYOV chunks keep NULL text, so the live index is
                 # the only place their vector still exists; carry it over
                 # instead of dropping the record from the rebuild.
                 vector = self._backend_vector_for_rid(backend, rid, dim)
@@ -1464,11 +1478,14 @@ class LocalStore:
                 )
 
         col_db = self._dbs.get(key)
-        if col_db is None:
-            col_db = CollectionDB()
-            col_db.open(self._db_path(tenant, collection))
-
         try:
+            if col_db is None:
+                col_db = CollectionDB()
+                col_db.open(self._db_path(tenant, collection))
+                self._migrate_chunk_text_sidecars_in(
+                    Path(self._base_path(tenant, collection)),
+                    col_db,
+                )
             if self._index_needs_rebuild(
                 tenant,
                 collection,
@@ -2876,6 +2893,7 @@ class LocalStore:
         query_text: str,
         k: int,
         filters: FilterSpec | None = None,
+        content_filter: ContentFilterSpec | None = None,
         include_common: bool = False,
         common_tenant: str | None = None,
         common_collection: str | None = None,
@@ -2897,6 +2915,7 @@ class LocalStore:
                 query_text=query_text,
                 k=k,
                 filters=filters,
+                content_filter=content_filter,
                 include_common=include_common,
                 common_tenant=common_tenant,
                 common_collection=common_collection,
@@ -3320,7 +3339,7 @@ class LocalStore:
                 backend.delete(ids)
             except Exception:
                 # Skip silently. Metadata-side cleanup already happened
-                # and searches hydrate text from sidecars.
+                # and searches hydrate text from the collection database.
                 pass
 
         return len(ids)
@@ -3328,22 +3347,102 @@ class LocalStore:
     def _chunks_dir(self, tenant: str, collection: str) -> str:
         return os.path.join(self._base_path(tenant, collection), "chunks")
 
+    @staticmethod
+    def _migrate_chunk_text_sidecars_in(
+        collection_dir: Path,
+        col_db: CollectionDB,
+    ) -> None:
+        """Copy legacy sidecars into SQLite, verify, then remove the files."""
+        rows = col_db.legacy_chunk_text_rows()
+        if not rows:
+            return
+
+        base = collection_dir.resolve()
+        expected: dict[str, str] = {}
+        sidecars: set[Path] = set()
+        for rid, chunk_path, current_text in rows:
+            relative = Path(chunk_path)
+            if relative.is_absolute() or ".." in relative.parts:
+                raise ValueError(f"invalid legacy chunk path for {rid}")
+            sidecar = base / relative
+            if not sidecar.resolve().is_relative_to(base):
+                raise ValueError(f"invalid legacy chunk path for {rid}")
+            if sidecar.is_file():
+                text = sidecar.read_bytes().decode("utf-8")
+                if current_text is not None and current_text != text:
+                    raise ValueError(
+                        f"legacy chunk text does not match SQLite for {rid}"
+                    )
+                expected[rid] = text
+                sidecars.add(sidecar)
+            elif current_text is None:
+                raise FileNotFoundError(
+                    f"legacy chunk text is missing for {rid}: {chunk_path}"
+                )
+            else:
+                expected[rid] = current_text
+
+        pending = {
+            rid: expected[rid]
+            for rid, _chunk_path, current_text in rows
+            if current_text is None
+        }
+        col_db.migrate_chunk_texts(pending)
+        stored = col_db.get_chunk_texts(list(expected))
+        if stored != expected:
+            raise RuntimeError("legacy chunk-text migration verification failed")
+        col_db.rebuild_text_indexes()
+        col_db.verify_text_indexes()
+
+        for sidecar in sorted(sidecars):
+            sidecar.unlink()
+        col_db.clear_chunk_paths(list(expected))
+        with suppress(OSError):
+            (base / "chunks").rmdir()
+
     def _urid_to_fname(self, urid: str) -> str:
         return (
             urid.replace("/", "_").replace("\\", "_").replace(":", "_") + ".txt"
         )
 
-    def _save_chunk_text(self, tenant: str, collection: str,
-                         urid: str, t: str) -> None:
-        p = os.path.join(self._chunks_dir(tenant, collection),
-                         self._urid_to_fname(urid))
-        os.makedirs(os.path.dirname(p), exist_ok=True)
-        data = (t or "").encode("utf-8")
-        with open(p, "wb") as f:
-            f.write(data)
+    def _load_chunk_text(
+        self,
+        tenant: str,
+        collection: str,
+        urid: str,
+        *,
+        col_db: CollectionDB | None = None,
+    ) -> str | None:
+        db = col_db or self._dbs.get((tenant, collection))
+        if db is not None:
+            try:
+                text = db.get_chunk_text(urid)
+            except Exception as exc:
+                if not self._is_transient_db_read_error(exc):
+                    raise
+                # The cached db was closed underneath the search (a delete /
+                # move / restore race). Recover the text through a fresh
+                # read-only handle, the same fallback get_document takes via
+                # _read_collection_db, instead of failing the whole search.
+                text = None
+                db_path = self._db_path(tenant, collection)
+                if db_path.exists():
+                    fallback = CollectionDB()
+                    try:
+                        fallback.open(db_path, read_only=True)
+                        text = fallback.get_chunk_text(urid)
+                    except Exception as fallback_exc:
+                        if not self._is_transient_db_read_error(fallback_exc):
+                            raise
+                        text = None
+                    finally:
+                        fallback.close()
+            if text is not None:
+                return text
 
-    def _load_chunk_text(self, tenant: str, collection: str,
-                         urid: str) -> str | None:
+        # Compatibility path for an interrupted v6 -> v7 migration. Normal
+        # v7 writes never create this file, and successful migration removes
+        # it only after SQLite content and both FTS indexes verify.
         p = os.path.join(self._chunks_dir(tenant, collection),
                          self._urid_to_fname(urid))
         if not os.path.isfile(p):
@@ -3364,9 +3463,6 @@ class LocalStore:
         docid: str,
         records: Iterable[Record],
         doc_meta: Metadata | None,
-        *,
-        verify_roundtrip: bool,
-        save_text: bool = True,
     ) -> tuple[list[str], list[str], list[tuple[str, str | None, Metadata]], Metadata]:
         raw_doc_meta = dict(doc_meta or {})
         raw_doc_meta.setdefault("docid", docid)
@@ -3422,26 +3518,15 @@ class LocalStore:
             if not rid.startswith(f"{docid}::"):
                 rid = f"{docid}::{rid}"
             # Both callers prepare before they purge or commit, so rejecting an
-            # unwritable sidecar name here fails the whole request cleanly.
+            # invalid identifier here fails the whole request cleanly.
             # Checked mid-loop it would destroy the previous version of the
             # document (index_records) or leave earlier documents committed
             # without vectors (index_documents).
             _assert_writable_rid(rid)
 
-            chunk_path = os.path.join("chunks", self._urid_to_fname(rid))
-            chunk_rows.append((rid, chunk_path, safe_meta))
+            chunk_rows.append((rid, None, safe_meta))
             rids_to_add.append(rid)
             texts_to_encode.append(txt)
-
-            if save_text:
-                self._save_chunk_text(tenant, collection, rid, txt)
-            if save_text and verify_roundtrip:
-                loaded = self._load_chunk_text(tenant, collection, rid) or ""
-                if txt != loaded:
-                    log.warning(
-                        f"Chunk text round-trip mismatch for {rid}: "
-                        f"saved {len(txt)} chars, loaded {len(loaded)} chars"
-                    )
 
         return rids_to_add, texts_to_encode, chunk_rows, safe_doc_meta
 
@@ -3460,8 +3545,8 @@ class LocalStore:
         dict-records, updates SQLite metadata, saves index. Thread critical.
 
         BYOV: when ``vectors`` is given (one raw vector per record) the embed
-        step and the chunk-text sidecar are skipped; the vectors go straight to
-        the backend and hydration returns no text for those records.
+        step is skipped and SQLite stores NULL text; the vectors go straight
+        to the backend and hydration returns no text for those records.
         """
         byov = vectors is not None
         chunk_count = 0
@@ -3478,8 +3563,6 @@ class LocalStore:
                 docid,
                 records,
                 doc_meta,
-                verify_roundtrip=False,
-                save_text=False,
             )
         )
         if byov:
@@ -3522,12 +3605,6 @@ class LocalStore:
 
             self._mark_index_dirty(tenant, collection)
             if not byov:
-                for rid, text in zip(
-                    rids_to_add,
-                    texts_to_encode,
-                    strict=False,
-                ):
-                    self._save_chunk_text(tenant, collection, rid, text)
                 if current_embedder is not embedder:
                     vectors = self._encode_embedder(
                         current_embedder,
@@ -3536,7 +3613,16 @@ class LocalStore:
             assert vectors is not None
 
             # Write metadata to SQLite (inside collection_lock)
-            col_db.upsert_chunks(docid, chunk_rows, doc_meta=safe_doc_meta)
+            col_db.upsert_chunks(
+                docid,
+                chunk_rows,
+                doc_meta=safe_doc_meta,
+                texts=(
+                    None
+                    if byov
+                    else dict(zip(rids_to_add, texts_to_encode, strict=False))
+                ),
+            )
             backend.add(rids_to_add, vectors)
             _rids = rids_to_add[:3]
             _sfx = " ..." if len(rids_to_add) > 3 else ""
@@ -3577,7 +3663,6 @@ class LocalStore:
                 Metadata,
             ]
         ] = []
-        changed = False
         key = (tenant, collection)
 
         with self._collection_write_lock(tenant, collection):
@@ -3592,8 +3677,6 @@ class LocalStore:
                     docid,
                     records,
                     doc_meta,
-                    verify_roundtrip=False,
-                    save_text=False,
                 )
             )
             docs_to_commit.append(
@@ -3646,7 +3729,6 @@ class LocalStore:
                         docid,
                         purged,
                     )
-                    changed = True
 
                 results.append(
                     IndexResult(indexed_chunks=len(rids), purged_chunks=purged)
@@ -3654,10 +3736,12 @@ class LocalStore:
                 if not rids:
                     continue
 
-                for rid, text in zip(rids, texts, strict=False):
-                    self._save_chunk_text(tenant, collection, rid, text)
-                col_db.upsert_chunks(docid, chunk_rows, doc_meta=safe_doc_meta)
-                changed = True
+                col_db.upsert_chunks(
+                    docid,
+                    chunk_rows,
+                    doc_meta=safe_doc_meta,
+                    texts=dict(zip(rids, texts, strict=False)),
+                )
 
             if all_rids:
                 self._mark_index_dirty(tenant, collection)
@@ -3682,19 +3766,23 @@ class LocalStore:
 
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: FilterSpec | None = None,
-               *, query_vector: list[float] | None = None) -> SearchOutput:
+               *, content_filter: ContentFilterSpec | None = None,
+               query_vector: list[float] | None = None) -> SearchOutput:
         """
         Queries the FAISS backend for top-k and keeps overfetch inside the
         store.
 
         Search holds the shared collection read lock while touching cached
-        backend, metadata, and chunk files. Collection mutation/delete/restore
+        backend, metadata, and chunk text. Collection mutation/delete/restore
         take the write side, so same-collection searches can overlap without
         racing cache close or data-dir replacement.
         """
         _fspec_str = "N/A" if filters is None else json.dumps(dict(filters))
+        _content_str = (
+            "N/A" if content_filter is None else json.dumps(content_filter)
+        )
         log.debug(f"SEARCH-IN: tenant> {tenant} coll> {collection} query> {query} \
-                  k> {k} filters> {_fspec_str}")
+                  k> {k} filters> {_fspec_str} content> {_content_str}")
         _perf = _time.perf_counter
 
         def _ms_since(t0: float) -> float:
@@ -3716,6 +3804,7 @@ class LocalStore:
                 normed_filters[safe_key] = vals
             else:
                 normed_filters[safe_key] = [vals]
+        requires_expansion = bool(normed_filters or content_filter)
 
         def _backend_count(backend: FaissBackend) -> int | None:
             count = getattr(backend, "count", None)
@@ -3769,6 +3858,20 @@ class LocalStore:
 
                 candidate_rids = [rid for rid, _score in raw if rid]
 
+                if content_filter:
+                    t0 = _perf()
+                    content_rids = col_db.filter_by_content(
+                        candidate_rids,
+                        content_filter,
+                    )
+                    filter_push_ms += _ms_since(t0)
+                    raw = [
+                        (rid, score)
+                        for rid, score in raw
+                        if rid in content_rids
+                    ]
+                    candidate_rids = [rid for rid, _score in raw if rid]
+
                 if normed_filters:
                     surviving, meta_batch, meta_timing = (
                         col_db.filter_meta_batch(
@@ -3807,7 +3910,7 @@ class LocalStore:
                             break
                 filter_post_ms += _ms_since(t0)
 
-                if not normed_filters or len(kept) >= kk:
+                if not requires_expansion or len(kept) >= kk:
                     break
                 exhausted_by_total = total is not None and limit >= total
                 exhausted_by_result = raw_count < limit
@@ -3839,6 +3942,7 @@ class LocalStore:
                     meta=rid_meta,
                     match_reason=self._build_match_reason(
                         query, score, filters, rid_meta,
+                        content_filter=content_filter,
                         exact_token_hit=rid in exact_hits,
                     ),
                 ))
@@ -3853,7 +3957,7 @@ class LocalStore:
                     "search_ms": round(search_ms, 2),
                     "filter_ms": round(filter_push_ms + filter_post_ms, 2),
                     # Exact-token boost reads chunk text inside the fetch
-                    # loop, same sidecar I/O as hydration -- folded into
+                    # loop, same SQLite work as hydration -- folded into
                     # hydrate_ms so the timing contract stays 4 fields
                     # whether or not P1-07 is enabled.
                     "hydrate_ms": round(
@@ -3873,7 +3977,7 @@ class LocalStore:
             Returns None if the caches aren't loaded (caller reloads and
             retries). The embed runs *outside* the collection lock: it only
             needs the query and the stable per-collection embedder, touching
-            neither the FAISS backend, col_db, nor chunk files. Keeping it out
+            neither the FAISS backend nor col_db. Keeping it out
             of the lock shrinks the read-lock hold to the FAISS search + filter
             + hydrate, so concurrent ingest/delete/move writers and embed-CPU
             contention stop serializing on the search path.
@@ -4001,7 +4105,9 @@ class LocalStore:
     def _build_match_reason(self, query: str, score: float,
                             filters: FilterSpec | None,
                             meta: Metadata | None,
-                            *, exact_token_hit: bool = False) -> str:
+                            *,
+                            content_filter: ContentFilterSpec | None = None,
+                            exact_token_hit: bool = False) -> str:
         """Build a human-readable explanation of why a result matched."""
         parts = []
 
@@ -4022,6 +4128,8 @@ class LocalStore:
                     filter_parts.append(f"{key}={meta_val}")
             if filter_parts:
                 parts.append("filters: " + ", ".join(filter_parts))
+        if content_filter:
+            parts.append(f"content {content_filter['op']} match")
 
         return "; ".join(parts) if parts else "matched"
 
@@ -4184,13 +4292,16 @@ class LocalStore:
                     },
                     "chunks": {
                         "docid", "rid", "chunk_path", "meta_json",
-                        "ingested_at",
+                        "ingested_at", "text",
                     },
+                    "chunk_text_fts": {"text"},
+                    "chunk_text_trigram": {"text"},
                     "chunk_meta": {"rid", "key", "value"},
                     "document_meta": {"docid", "key", "value"},
                     "query_log": {
                         "query_id", "tenant", "collection", "actor",
                         "query_text", "k", "filters_json", "include_common",
+                        "content_filter_json",
                         "common_tenant", "common_collection", "result_ids_json",
                         "result_count", "latency_ms", "timing_json",
                         "request_id", "replay_of", "executed_at",
@@ -4305,6 +4416,19 @@ class LocalStore:
                 "collection archive manifest and sidecar conflict: "
                 f"{source_tenant}/{source_collection}"
             )
+
+        metadata = CollectionDB()
+        try:
+            metadata.open(collection_dir / "meta.db")
+            metadata.verify_text_indexes()
+            metadata.checkpoint_wal()
+        except Exception:
+            raise ValueError(
+                "invalid archive collection text index: "
+                f"{source_tenant}/{source_collection}"
+            ) from None
+        finally:
+            metadata.close()
 
         schema_version, rids, query_homes = self._collection_archive_db_info(
             collection_dir,
@@ -4637,6 +4761,11 @@ class LocalStore:
                 metadata = CollectionDB()
                 metadata.open(self._db_path(tenant, collection))
             try:
+                self._migrate_chunk_text_sidecars_in(
+                    collection_dir,
+                    metadata,
+                )
+                metadata.verify_text_indexes()
                 metadata.checkpoint_wal()
             finally:
                 if temporary_metadata:

@@ -133,15 +133,15 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-63 | ~~VectorDBBench adapter~~ | 🔧 | Standard benchmark adapter over BYOV HTTP raw-vector ingest/search, with flat FAISS recall baseline and no PaveDB runtime dependency on VectorDBBench. External adapter (separate repo/fork), not in-repo. Depends on P1-64 (BYOV raw-vector round trip). | v1.0 |
 | P1-64 | ~~Bring-your-own-vector (BYOV) raw-vector mode~~ | 🔧 | Additive raw-vector ingest/search mirroring Chroma. New `identity` embedder (`encode(x)→x`, dim from `embedder_config`); raw-vector schema fields `vector`/`v` paired with `text`/`q` (exactly-one). Embedding collections stay permissive (text or raw vector); identity collections are vector-only. No new endpoints; FAISS backend unchanged. Serves pre-computed-embedding users and unblocks P1-63. | v1.0 |
 | P1-65 | ~~Instance archive/restore integrity~~ | 🔧 | Preflight catalog, collection sidecars, and configured embedders before rollback-safe whole-instance replacement; verify mixed-embedder round trips. | v1.0 |
-| P1-66 | Runnable book examples | 🔧 | The Python SDK and Elixir client own tested, numbered top-level examples extracted from the book; CI verifies runnable programs and distribution boundaries. See [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md). | v1.1 |
 | P1-67 | ~~Elixir public API parity~~ | 🔧 | Cover the current user-facing `/v1` surface plus a basic `/health` connection check; defer `/admin`, `/metrics`, and `/embedders`. | v1.0 |
 | P1-68 | ~~Task-oriented engine guides~~ | 🔧 | Hand-written, low-boilerplate quickstart and usage guides shipped in the PaveDB source distribution, complementing the generated reference (P1-46) with narrative task-oriented docs rather than auto-generated dumps. | v1.1 |
-| P1-70 | SQLite chunk-text index and content filters | 🧱 | Make chunk text queryable through native FTS5 for contains/phrase/prefix filters and lexical candidates; prerequisite for P1-72 | v1.2 |
+| P1-70 | ~~SQLite chunk-text index and content filters~~ | 🧱 | Make chunk text queryable through native FTS5 for contains/phrase/prefix filters and lexical candidates; prerequisite for P1-72 | v1.2 |
 | P1-71 | Backend-aware filtered vector search | 🧱 | Let SQLite-selected record IDs constrain vector search instead of relying on repeated vector-first overfetch; depends on P1-35 | v1.3 |
 | P1-72 | Hybrid lexical/vector retrieval | 🧱 | Fuse independent FAISS and SQLite FTS5 candidate lists; depends on P1-70 | v1.2 |
 | P1-73 | ~~Preview SQLite compatibility baseline~~ | 🔧 | Transactional forward migrations from v0.9.5; reject downgrades and pre-baseline schemas | v0.9.5 |
-| P1-74 | Sbert embedder options: `trust_remote_code`, task prefixes (space keys), `runtime=remote` (TEI) | 🔧 | Unlocks custom-architecture local models and GPU offload with an unchanged `vector_space_key`; additive config, frozen protocol untouched. | v1.1 |
+| P1-74 | ~~Sbert embedder options: `trust_remote_code`, task prefixes (space keys), `runtime=remote` (TEI)~~ | 🔧 | Unlocks custom-architecture local models and GPU offload with an unchanged `vector_space_key`; additive config, frozen protocol untouched. | v1.1 |
 | P1-75 | ~~Exclusive local data-directory ownership~~ | 🧩 | Fail closed before a second server, local client, or offline CLI opens the same canonical data directory | v0.9.6 |
+| P1-66 | Runnable book examples | 🔧 | The Python SDK and Elixir client own tested, numbered top-level examples extracted from the book; CI verifies runnable programs and distribution boundaries. Delivery happens in `pavedb-sdk` and `pavedb-client-elixir` — the engine repo carries no build work for this task; tracked here for the v1.1 milestone. See [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md). | v1.1 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -565,6 +565,10 @@ lands where it has more impact during post-contract hardening.
   create/delete/move/ingest/search/dump/restore with post-run
   catalog↔disk invariants. Regression net for the lock lattice
   hardened during the v0.9 rc cycle (P1-52).~~
+- ~~Sbert embedder options: `trust_remote_code` for custom-architecture
+  models, e5-style task prefixes that join the vector-space key, and
+  `runtime=remote` delegation to a TEI-compatible endpoint serving the
+  identical model (P1-74).~~
 - Evaluate remote CLI usability for Cloud multisite management by agents and
   orchestrators. One invocation targets one HTTP instance through the SDK;
   fleet policy remains outside PaveDB (P2-32).
@@ -582,9 +586,9 @@ lands where it has more impact during post-contract hardening.
   canonical matches are a subset of SQL survivors, with equality
   where SQL claims full support. No request-time double execution
   (P1-35).~~
-- SQLite chunk-text index and additive content filters: migrate
+- ~~SQLite chunk-text index and additive content filters: migrate
   sidecar text into the collection database, index it with native
-  FTS5, and expose contains/phrase/prefix matching (P1-70).
+  FTS5, and expose contains/phrase/prefix matching (P1-70).~~
 - Honor `meta.priority` boosts during scoring (P2-11).
 - ~~Add exact token boost inside the vector candidate window (P1-07).~~
 - Add hybrid retrieval by fusing independent FAISS and FTS5
@@ -739,8 +743,8 @@ is thorough and has dedicated tests.
 - **Pluggable architecture** (BaseStore ABC, Embedder/VectorBackend protocols,
 factory pattern) makes it straightforward to swap backends without touching
 consumers.
-- **Chunk text sidecar storage** guarantees text is always retrievable even when
-the vector index loses content — a practical reliability win.
+- **Canonical SQLite chunk text** keeps text retrievable when the vector index
+  loses content and makes the text projection independently rebuildable.
 - **Auth policy enforcement** (`enforce_policy`) correctly prevents auth=none in
 production. The loopback-only dev mode is a good guardrail.
 - **Data archive/restore** with lock acquisition is operationally useful for

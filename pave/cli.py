@@ -282,6 +282,10 @@ def cmd_ingest_text(args):
 def cmd_search(args):
     cfg = get_cfg()
     filters = _parse_json_object_arg(args.filters, "--filters")
+    content_filter = _parse_json_object_arg(
+        args.content_filter,
+        "--content-filter",
+    )
     include_common = bool(args.include_common and cfg.common_enabled)
     return svc_search(
         _get_store(),
@@ -290,6 +294,7 @@ def cmd_search(args):
         args.query,
         args.k,
         filters=filters,
+        content_filter=content_filter,
         include_common=include_common,
         common_tenant=cfg.common_tenant,
         common_collection=cfg.common_collection,
@@ -697,6 +702,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Include configured common collection results",
     )
     p_search.add_argument("--filters", help='JSON object, e.g. {"docid":"DOC-1"}')
+    p_search.add_argument(
+        "--content-filter",
+        help=(
+            "JSON object with op exact, phrase, prefix, or contains and a "
+            "non-empty value"
+        ),
+    )
     p_search.set_defaults(func=cmd_search)
 
     p_list_queries = _command(

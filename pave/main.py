@@ -816,6 +816,7 @@ def build_app(cfg) -> FastAPI:
                     "vectors_only": 400,
                     "dim_mismatch": 400,
                     "invalid_collection_name": 400,
+                    "invalid_content_filter": 400,
                     "collection_limit_reached": 429,
                 }
                 return _error(

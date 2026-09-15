@@ -375,9 +375,8 @@ transcripts, OCR, page renders):
 
 - `GET /v1/collections/{t}/{c}/documents/{docid}/chunks` —
   summaries only (RID, chunk_path, meta, ingested_at). No
-  text preview: loading previews would be O(N) sidecar-file
-  reads per request, the same N+1 class of bug avoided in
-  P1-44/P1-45.
+  text preview: summaries stay small and content-type-agnostic;
+  consumers fetch canonical SQLite text through the content endpoint.
 - `GET /v1/collections/{t}/{c}/chunks/{rid}` — single chunk
   metadata (rid, docid, chunk_path, meta, ingested_at). No
   `text` field.
