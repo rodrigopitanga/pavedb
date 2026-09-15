@@ -119,7 +119,27 @@ def test_archive_restore_is_not_limited_by_document_size(guarded):
     assert r.json()["code"] == "archive_invalid"
 
 
-def test_archive_auth_is_checked_before_body_is_read(cfg):
+def test_collection_archive_restore_is_not_limited_by_document_size(guarded):
+    blob = b"not a zip" + b"z" * (4 * 1024 * 1024)
+
+    r = guarded.post(
+        "/v1/admin/collections/acme/books/archive",
+        files={"file": ("backup.zip", blob, "application/zip")},
+        headers={"Authorization": "Bearer test-key"},
+    )
+
+    assert r.status_code == 400
+    assert r.json()["code"] == "collection_archive_invalid"
+
+
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [
+        ("PUT", "/v1/admin/archive"),
+        ("POST", "/v1/admin/collections/acme/books/archive"),
+    ],
+)
+def test_archive_auth_is_checked_before_body_is_read(cfg, method, path):
     cfg.set("auth.mode", "static")
     cfg.set("auth.global_key", "test-key")
     received = False
@@ -138,8 +158,8 @@ def test_archive_auth_is_checked_before_body_is_read(cfg):
 
     scope = {
         "type": "http",
-        "method": "PUT",
-        "path": "/v1/admin/archive",
+        "method": method,
+        "path": path,
         "headers": [],
         "state": {},
     }

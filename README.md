@@ -357,6 +357,26 @@ production — and your code barely changes along the way:
    supported by the destination configuration. A failed replacement rolls back
    the live tree; an incomplete rollback leaves a recovery marker for repair.
 
+   A single collection can move independently without replacing the rest of
+   the instance. The destination tenant and collection come from the restore
+   URL, so an archive can be imported under a new namespace:
+
+   ```bash
+   curl -H "Authorization: Bearer $PAVEDB_TOKEN" \
+     -o books.zip \
+     "$PAVEDB_URL/v1/admin/collections/acme/books/archive"
+
+   curl -X POST \
+     -H "Authorization: Bearer $PAVEDB_TOKEN" \
+     -F "file=@books.zip;type=application/zip" \
+     "$PAVEDB_URL/v1/admin/collections/imported/library/archive"
+   ```
+
+   Collection archives contain `manifest.json`, `meta.db`, the FAISS index,
+   and collection sidecars. Restore accepts the current PaveDB and collection
+   schema version only, and resolves the archived embedder specification from
+   local configuration before changing the destination collection.
+
 ## 📚 Reference
 
 - [Guides](docs/guides/README.md) — start here: what PaveDB is, its components,

@@ -277,9 +277,17 @@ def attach_ui(app: FastAPI):
             "Instance Admin": {
                 ("get", "/v1/admin/archive"): 0,
                 ("put", "/v1/admin/archive"): 1,
-                ("get", "/v1/admin/tenants"): 2,
-                ("post", "/v1/admin/collections/{tenant}/{name}/move"): 3,
-                ("delete", "/v1/admin/metrics"): 4,
+                (
+                    "get",
+                    "/v1/admin/collections/{tenant}/{name}/archive",
+                ): 2,
+                (
+                    "post",
+                    "/v1/admin/collections/{tenant}/{name}/archive",
+                ): 3,
+                ("get", "/v1/admin/tenants"): 4,
+                ("post", "/v1/admin/collections/{tenant}/{name}/move"): 5,
+                ("delete", "/v1/admin/metrics"): 6,
             },
         }
         return ranks.get(tag, {}).get(key, 100)

@@ -486,6 +486,13 @@ class CollectionDB:
         if log_conn is not None:
             log_conn.close()
 
+    def checkpoint_wal(self) -> None:
+        """Make the collection database self-contained for an archive dump."""
+        with self._writer() as conn:
+            result = conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        if result is None or result[0]:
+            raise sqlite3.OperationalError("collection WAL checkpoint is busy")
+
     @property
     def _conn(self) -> sqlite3.Connection | None:
         """Return read connection (for test introspection)."""
@@ -1865,6 +1872,82 @@ class CatalogDB:
                     embed_model,
                     self._dump_json(embed_config),
                 ),
+            )
+
+    def restore_collection(
+        self,
+        tenant: str,
+        name: str,
+        *,
+        display_name: str | None,
+        meta: dict[str, Any],
+        backend_type: str,
+        backend_config: dict[str, Any],
+        embedder_type: str,
+        embed_model: str,
+        embed_config: dict[str, Any],
+        created_at: str | None,
+        query_homes: list[tuple[str, str]],
+    ) -> None:
+        """Replace one catalog row and its query-home index atomically."""
+        restored_at = created_at or datetime.now(tz.utc).isoformat(
+            timespec="seconds"
+        )
+        with self._writer() as conn, conn:
+            conn.execute(
+                """
+                INSERT INTO collections (
+                    tenant,
+                    name,
+                    display_name,
+                    meta_json,
+                    backend_type,
+                    backend_config_json,
+                    embedder_type,
+                    embed_model,
+                    embed_config_json,
+                    created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(tenant, name) DO UPDATE SET
+                    display_name=excluded.display_name,
+                    meta_json=excluded.meta_json,
+                    backend_type=excluded.backend_type,
+                    backend_config_json=excluded.backend_config_json,
+                    embedder_type=excluded.embedder_type,
+                    embed_model=excluded.embed_model,
+                    embed_config_json=excluded.embed_config_json,
+                    created_at=excluded.created_at
+                """,
+                (
+                    tenant,
+                    name,
+                    display_name,
+                    self._dump_json(meta),
+                    backend_type,
+                    self._dump_json(backend_config),
+                    embedder_type,
+                    embed_model,
+                    self._dump_json(embed_config),
+                    restored_at,
+                ),
+            )
+            conn.execute(
+                "DELETE FROM query_home WHERE tenant=? AND collection=?",
+                (tenant, name),
+            )
+            conn.executemany(
+                """
+                INSERT OR IGNORE INTO query_home (
+                    query_id,
+                    tenant,
+                    collection,
+                    created_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                [
+                    (query_id, tenant, name, executed_at)
+                    for query_id, executed_at in query_homes
+                ],
             )
 
     def unregister_collection(self, tenant: str, name: str) -> None:

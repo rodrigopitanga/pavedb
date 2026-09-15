@@ -477,6 +477,22 @@ class DummyStore:
         with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as zf:
             zf.extractall(data_dir)
 
+    def dump_collection_archive(
+        self,
+        tenant: str,
+        collection: str,
+        output_path: str | os.PathLike[str] | None = None,
+    ) -> tuple[str, str | None]:
+        raise NotImplementedError
+
+    def restore_collection_archive(
+        self,
+        tenant: str,
+        collection: str,
+        archive_bytes: bytes,
+    ) -> None:
+        raise NotImplementedError
+
 
 class SpyStore:
     def __init__(self, impl: BaseStore):
@@ -844,3 +860,33 @@ class SpyStore:
     def restore_archive(self, archive_bytes: bytes) -> None:
         self.calls.append(("restore_archive", len(archive_bytes)))
         return self.impl.restore_archive(archive_bytes)
+
+    def dump_collection_archive(
+        self,
+        tenant: str,
+        collection: str,
+        output_path: str | os.PathLike[str] | None = None,
+    ) -> tuple[str, str | None]:
+        self.calls.append(
+            ("dump_collection_archive", tenant, collection, output_path)
+        )
+        return self.impl.dump_collection_archive(
+            tenant,
+            collection,
+            output_path,
+        )
+
+    def restore_collection_archive(
+        self,
+        tenant: str,
+        collection: str,
+        archive_bytes: bytes,
+    ) -> None:
+        self.calls.append(
+            ("restore_collection_archive", tenant, collection, len(archive_bytes))
+        )
+        return self.impl.restore_collection_archive(
+            tenant,
+            collection,
+            archive_bytes,
+        )

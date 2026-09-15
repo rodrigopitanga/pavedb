@@ -121,7 +121,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-53c | ~~Reference-source plumbing: config schema refactor~~ | 🔧 | Single (key, default, description, env_var) source for `_DEFAULTS`, `config.yml.example`, and `docs/reference/config.md`. Closes P1-26 (drift check) as a side effect. | v1.0 |
 | P1-53d | ~~Reference-source plumbing: module/class docstrings on public seams~~ | 🔧 | `pave/stores`, `pave/backends`, `pave/embedders`, catalog, and `pave/service.py` public functions provide source documentation for supported seams. | v1.0 |
 | P1-53e | ~~API contract snapshot + drift check~~ | 🔧 | Commit `openapi.json` as a checked-in snapshot; `docs-ref-openapi` dump + drift check (mirrors P1-53b's CLI gate) enforces the P1-43 "frozen at v1.0, additive-after" contract — breaking changes fail CI. Depends on P1-53a. | v1.0 |
-| P1-54 | Per-collection archive (dump + restore) | 🧱 | Admin-only `GET`/`POST` archive endpoints for a single collection. Carries `manifest.json` (PaveDB version, embedder spec, schema version), `meta.db`, FAISS index, sidecars. Restore must verify embedder spec is resolvable locally before touching disk. Same-version restore only at v1.5; cross-version waits on P3-37. Depends on P2-25. | v1.5 |
+| P1-54 | ~~Per-collection archive (dump + restore)~~ | 🧱 | Admin-only `GET`/`POST` archive endpoints for a single collection. Carries `manifest.json` (PaveDB version, embedder spec, schema version), `meta.db`, FAISS index, sidecars. Restore must verify embedder spec is resolvable locally before touching disk. Same-version restore only at v1.0; cross-version waits on P3-37. Depends on P2-25. | v1.0 |
 | P1-55 | Per-collection reindex | 🧱 | Admin-only operation: rebuild vectors against a new embedder spec. Needs a job model (interruptible, resumable, status-trackable). Splits cleanly from PATCH (cheap label edit) and `move` (slug/path move + disk move) because it's the only one that rewrites stored vectors. | v1.6 |
 | P1-56 | ~~Chroma comparison benchmark~~ | 🔧 | Optional local compare bench for PaveDB vs Chroma using the same corpus, same sentence-transformers model, comparable create/upsert/delete/search operations, exact metadata filters only, and consolidated latency/stress output. Keep Chroma deps off the default install/test path. | v1.0 |
 | P1-57 | ~~Typing policy + SDK-ready type vocabulary~~ | 🧩 | Boundary-focused typing rules, named internal JSON vocabulary, and lighter test annotations without duplicating API/client schemas | v1.0 |
@@ -157,7 +157,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-22 | Usage stats to mothership |  | Capacity planning | v1.4 |
 | P2-23 | ~~Chunk inspector + collection browser~~ | 🔧 | List chunks, get chunk by ID, browse doc→chunk tree | v0.9 |
 | P2-24 | Delete by ID list / by query | 🧩 | Bulk ops, DX | v1.6 |
-| P2-25 | Collection version tagging | 🧩 | Portability, migration | v1.5 |
+| P2-25 | Collection version tagging | 🧩 | Portability, migration | v1.0 |
 | P2-26 | Tenant profiles + templates | 🧱 | Quota governance, tiers | v1.6 |
 | P2-28 | ~~Structured log emission~~ | 🧩 | JSON lines per operation with request_id, tenant, latency | v0.5.8 |
 | P2-29 | ~~Public cross-language retrieval fixtures~~ | 🧩 | Recall validation | v0.5.9 |
@@ -480,6 +480,13 @@ latency on every search/ingest/delete.~~
 - ~~Instance archive restore integrity: validate catalog/sidecar parity
   and local embedder resolution before rollback-safe replacement;
   cover mixed-embedder round trips (P1-65).~~
+- Collection version tagging (P2-25) — prerequisite for safe
+  archive restore.
+- ~~Per-collection archive (dump + same-version restore): admin
+  endpoints carrying `manifest.json` + `meta.db` + FAISS index +
+  sidecars. Embedder spec validated locally before restore touches
+  disk. Cross-version restore waits on P3-37 migration tooling
+  (P1-54).~~
 - ~~Dev vs prod config defaults: code defaults are prod-safe, the dev
   convenience overlay lives in the Makefile/env, enforced by
   `enforce_policy` fail-fast (P1-25).~~
@@ -622,13 +629,6 @@ lands where it has more impact during post-contract hardening.
 - Per-tenant storage limit (P2-21).
 - Per-collection storage accounting: `document_bytes` exposed for
   quota surfaces; `chunk_bytes` admin-only (P2-47).
-- Collection version tagging (P2-25) — prerequisite for safe
-  archive restore.
-- Per-collection archive (dump + same-version restore): admin
-  endpoints carrying `manifest.json` + `meta.db` + FAISS index +
-  sidecars. Embedder spec validated locally before restore touches
-  disk. Cross-version restore waits on P3-37 migration tooling
-  (P1-54).
 - Formalize collection independence from tenant (P2-31).
 - Tenant key management API: `POST /admin/tenants/{tenant}/keys`,
   `DELETE /admin/tenants/{tenant}/keys/{id}`. Seed `tenants.yml`

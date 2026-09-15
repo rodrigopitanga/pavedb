@@ -791,6 +791,15 @@ class RestoreArchiveResponse(OkResponse):
     """Confirmation of a restored archive."""
 
 
+class RestoreCollectionArchiveResponse(OkResponse):
+    """Confirmation of a restored collection archive."""
+    tenant: str = Field(description="Destination tenant.", examples=["demo"])
+    collection: str = Field(
+        description="Destination collection slug.",
+        examples=["books"],
+    )
+
+
 class ResetMetricsResponse(OkResponse):
     """Confirmation that metrics were reset."""
     reset_at: float = Field(

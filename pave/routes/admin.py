@@ -24,8 +24,11 @@ from pave.schemas import (
     MoveCollectionResponse,
     ResetMetricsResponse,
     RestoreArchiveResponse,
+    RestoreCollectionArchiveResponse,
 )
 from pave.service import (
+    ServiceError,
+    dump_collection_archive as svc_dump_collection_archive,
     dump_archive as svc_dump_archive,
     get_query_log_entry_scoped as svc_get_query_log_entry_scoped,
     list_embedders as svc_list_embedders,
@@ -33,10 +36,16 @@ from pave.service import (
     move_collection as svc_move_collection,
     replay_query_scoped as svc_replay_query_scoped,
     resolve_query_home as svc_resolve_query_home,
+    restore_collection_archive as svc_restore_collection_archive,
     restore_archive as svc_restore_archive,
 )
 from pave.routes._deps import current_store
 from pave.stores.base import BaseStore
+
+
+def _cleanup_archive_dir(path: str | None) -> None:
+    if path:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
@@ -89,12 +98,7 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
 
         filename = os.path.basename(archive_path)
 
-        def cleanup(path: str | None) -> None:
-            if not path:
-                return
-            shutil.rmtree(path, ignore_errors=True)
-
-        background = BackgroundTask(cleanup, tmp_dir)
+        background = BackgroundTask(_cleanup_archive_dir, tmp_dir)
         return FileResponse(
             archive_path,
             media_type="application/zip",
@@ -150,6 +154,144 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
                 500,
                 "archive_restore_failed",
                 f"failed to restore archive: {exc}",
+                request=request,
+                request_id=rid,
+            )
+
+    @router.get(
+        "/admin/collections/{tenant}/{name}/archive",
+        summary="Download a collection archive",
+        description=(
+            "Streams one collection and its portable manifest as a zip; "
+            "requires the admin key."
+        ),
+        response_class=FileResponse,
+        responses=resp(400, 401, 403, 404, 500),
+        tags=["Instance Admin"],
+    )
+    @ops_event("dump_collection_archive", coll="name", request_id="rid")
+    async def dump_collection_archive(
+        request: Request,
+        tenant: str,
+        name: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+    ):
+        if not ctx.is_admin:
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
+        try:
+            archive_path, tmp_dir = await run_in_threadpool(
+                svc_dump_collection_archive,
+                store,
+                tenant,
+                name,
+            )
+        except ServiceError as exc:
+            return error(
+                400,
+                exc.code,
+                exc.message,
+                request=request,
+                request_id=rid,
+            )
+        except FileNotFoundError as exc:
+            return error(
+                404,
+                "collection_not_found",
+                str(exc),
+                request=request,
+                request_id=rid,
+            )
+        except ValueError as exc:
+            return error(
+                400,
+                "collection_archive_invalid",
+                str(exc),
+                request=request,
+                request_id=rid,
+            )
+        except Exception as exc:
+            return error(
+                500,
+                "collection_archive_dump_failed",
+                f"failed to dump collection archive: {exc}",
+                request=request,
+                request_id=rid,
+            )
+        return FileResponse(
+            archive_path,
+            media_type="application/zip",
+            filename=os.path.basename(archive_path),
+            background=BackgroundTask(_cleanup_archive_dir, tmp_dir),
+        )
+
+    @router.post(
+        "/admin/collections/{tenant}/{name}/archive",
+        summary="Restore a collection archive",
+        description=(
+            "Replaces one collection from a same-version archive after local "
+            "embedder preflight; requires the admin key."
+        ),
+        response_model=RestoreCollectionArchiveResponse,
+        responses=resp(400, 401, 403, 500),
+        tags=["Instance Admin"],
+    )
+    @ops_event("restore_collection_archive", coll="name", request_id="rid")
+    async def restore_collection_archive(
+        request: Request,
+        tenant: str,
+        name: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+        file: UploadFile = File(...),
+    ):
+        if not ctx.is_admin:
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
+        content = await file.read()
+        try:
+            out = await run_in_threadpool(
+                svc_restore_collection_archive,
+                store,
+                tenant,
+                name,
+                content,
+            )
+            return trace(out, request, request_id=rid)
+        except ServiceError as exc:
+            return error(
+                400,
+                exc.code,
+                exc.message,
+                request=request,
+                request_id=rid,
+            )
+        except ValueError as exc:
+            return error(
+                400,
+                "collection_archive_invalid",
+                str(exc),
+                request=request,
+                request_id=rid,
+            )
+        except Exception as exc:
+            return error(
+                500,
+                "collection_archive_restore_failed",
+                f"failed to restore collection archive: {exc}",
                 request=request,
                 request_id=rid,
             )

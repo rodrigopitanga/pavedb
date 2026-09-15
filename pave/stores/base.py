@@ -313,3 +313,19 @@ class BaseStore(Protocol):
 
     def restore_archive(self, archive_bytes: bytes) -> None:
         raise NotImplementedError
+
+    def dump_collection_archive(
+        self,
+        tenant: str,
+        collection: str,
+        output_path: str | os.PathLike[str] | None = None,
+    ) -> tuple[str, str | None]:
+        raise NotImplementedError
+
+    def restore_collection_archive(
+        self,
+        tenant: str,
+        collection: str,
+        archive_bytes: bytes,
+    ) -> None:
+        raise NotImplementedError

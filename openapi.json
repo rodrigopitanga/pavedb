@@ -349,6 +349,20 @@
         "title": "Body_restore_archive_v1_admin_archive_put",
         "type": "object"
       },
+      "Body_restore_collection_archive_v1_admin_collections__tenant___name__archive_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_restore_collection_archive_v1_admin_collections__tenant___name__archive_post",
+        "type": "object"
+      },
       "ChunkSummary": {
         "description": "Compact entry for chunk listings.",
         "properties": {
@@ -2734,6 +2748,73 @@
         "title": "RestoreArchiveResponse",
         "type": "object"
       },
+      "RestoreCollectionArchiveResponse": {
+        "description": "Confirmation of a restored collection archive.",
+        "properties": {
+          "collection": {
+            "description": "Destination collection slug.",
+            "examples": [
+              "books"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "tenant": {
+            "description": "Destination tenant.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant",
+          "collection"
+        ],
+        "title": "RestoreCollectionArchiveResponse",
+        "type": "object"
+      },
       "SearchBody": {
         "description": "Search request body.",
         "properties": {
@@ -3428,6 +3509,211 @@
           }
         ],
         "summary": "Restore an archive",
+        "tags": [
+          "Instance Admin"
+        ]
+      }
+    },
+    "/v1/admin/collections/{tenant}/{name}/archive": {
+      "get": {
+        "description": "Streams one collection and its portable manifest as a zip; requires the admin key.",
+        "operationId": "dump_collection_archive_v1_admin_collections__tenant___name__archive_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Download a collection archive",
+        "tags": [
+          "Instance Admin"
+        ]
+      },
+      "post": {
+        "description": "Replaces one collection from a same-version archive after local embedder preflight; requires the admin key.",
+        "operationId": "restore_collection_archive_v1_admin_collections__tenant___name__archive_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_restore_collection_archive_v1_admin_collections__tenant___name__archive_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RestoreCollectionArchiveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Restore a collection archive",
         "tags": [
           "Instance Admin"
         ]

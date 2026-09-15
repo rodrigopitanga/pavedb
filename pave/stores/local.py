@@ -16,6 +16,7 @@ the embedder and vector-backend seams this store composes.
 
 from __future__ import annotations
 import errno
+import io
 import json
 import os
 import re
@@ -72,6 +73,7 @@ from pave.stores.base import (
 from pave.config import get_cfg, get_logger
 from pave.data_dir_lease import DATA_DIR_LOCK_NAME
 from pave.metrics import inc_labeled as m_inc_labeled
+from pave.version import VERSION
 
 log = get_logger()
 
@@ -87,6 +89,10 @@ _COLLECTION_CACHE_DEFAULT_MAX = 64
 _EMBEDDER_CACHE_DEFAULT_MAX = 32
 _INDEX_DIRTY_FILE = ".pavedb-index-dirty"
 _RESTORE_BACKUP_PREFIX = ".pavedb-restore-backup-"
+_COLLECTION_ARCHIVE_FORMAT = "pavedb.collection"
+_COLLECTION_ARCHIVE_VERSION = 1
+_COLLECTION_ARCHIVE_MANIFEST = "manifest.json"
+_COLLECTION_RESTORE_BACKUP_PREFIX = ".pavedb-collection-restore-backup-"
 
 # P1-07: exact-token boost tokenizer. Word-boundary matching only, no
 # stemming/normalization beyond casefolding -- the boost is a narrow nudge
@@ -3229,10 +3235,14 @@ class LocalStore:
                         raise
 
     def _validate_zip_members(self, zf: zipfile.ZipFile) -> None:
+        seen: set[str] = set()
         for member in zf.infolist():
             name = member.filename
             if not name:
                 continue
+            if name in seen:
+                raise ValueError(f"duplicate archive member: {name}")
+            seen.add(name)
             rel_path = Path(name)
             if rel_path.is_absolute() or ".." in rel_path.parts:
                 raise ValueError(f"invalid archive member: {name}")
@@ -3243,6 +3253,296 @@ class LocalStore:
             if rel_path.parts and rel_path.parts[0] == DATA_DIR_LOCK_NAME:
                 raise ValueError(
                     f"archive contains data-directory ownership lock: {name}"
+                )
+
+    @staticmethod
+    def _collection_archive_db_info(
+        collection_dir: Path,
+        tenant: str,
+        collection: str,
+    ) -> tuple[int, set[str], list[tuple[str, str]]]:
+        metadata = CollectionDB()
+        try:
+            metadata.open(
+                collection_dir / "meta.db",
+                read_only=True,
+                immutable=True,
+            )
+            with metadata._reader() as conn:
+                required_columns = {
+                    "documents": {
+                        "docid", "version", "ingested_at", "meta_json"
+                    },
+                    "chunks": {
+                        "docid", "rid", "chunk_path", "meta_json",
+                        "ingested_at",
+                    },
+                    "chunk_meta": {"rid", "key", "value"},
+                    "document_meta": {"docid", "key", "value"},
+                    "query_log": {
+                        "query_id", "tenant", "collection", "actor",
+                        "query_text", "k", "filters_json", "include_common",
+                        "common_tenant", "common_collection", "result_ids_json",
+                        "result_count", "latency_ms", "timing_json",
+                        "request_id", "replay_of", "executed_at",
+                    },
+                }
+                for table, columns in required_columns.items():
+                    found = {
+                        row[1]
+                        for row in conn.execute(f"PRAGMA table_info({table})")
+                    }
+                    if not columns <= found:
+                        raise ValueError("incomplete archive metadata schema")
+                schema_version = CollectionDB._schema_version(conn)
+                rids = {
+                    str(row[0]) for row in conn.execute("SELECT rid FROM chunks")
+                }
+                query_homes = [
+                    (str(row[0]), str(row[1]))
+                    for row in conn.execute(
+                        "SELECT query_id, executed_at FROM query_log"
+                    )
+                ]
+        except Exception:
+            raise ValueError(
+                "invalid archive collection metadata database: "
+                f"{tenant}/{collection}"
+            ) from None
+        finally:
+            metadata.close()
+        return schema_version, rids, query_homes
+
+    def _preflight_collection_archive(
+        self,
+        collection_dir: Path,
+    ) -> tuple[dict[str, Any], CollectionConfig, list[tuple[str, str]]]:
+        allowed_roots = {
+            _COLLECTION_ARCHIVE_MANIFEST,
+            COLLECTION_CONFIG_FILENAME,
+            "meta.db",
+            "index",
+            "chunks",
+        }
+        unexpected = sorted(
+            entry.name
+            for entry in collection_dir.iterdir()
+            if entry.name not in allowed_roots
+        )
+        if unexpected:
+            raise ValueError(
+                "unexpected collection archive member: "
+                f"{unexpected[0]}"
+            )
+        manifest_path = collection_dir / _COLLECTION_ARCHIVE_MANIFEST
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            raise ValueError(
+                "collection archive is missing a valid manifest.json"
+            ) from None
+        if not isinstance(manifest, dict):
+            raise ValueError("collection archive manifest must be an object")
+        if manifest.get("archive_format") != _COLLECTION_ARCHIVE_FORMAT:
+            raise ValueError("unsupported collection archive format")
+        if manifest.get("archive_version") != _COLLECTION_ARCHIVE_VERSION:
+            raise ValueError("unsupported collection archive format version")
+        archive_pavedb_version = manifest.get("pavedb_version")
+        if archive_pavedb_version != VERSION:
+            raise ValueError(
+                "collection archive PaveDB version mismatch: "
+                f"expected {VERSION}, found {archive_pavedb_version!r}"
+            )
+
+        source = manifest.get("source")
+        if not isinstance(source, dict):
+            raise ValueError("collection archive source is invalid")
+        source_tenant = source.get("tenant")
+        source_collection = source.get("collection")
+        if not isinstance(source_tenant, str) or not source_tenant:
+            raise ValueError("collection archive source tenant is invalid")
+        if not isinstance(source_collection, str) or not source_collection:
+            raise ValueError("collection archive source collection is invalid")
+
+        backend_spec = manifest.get("backend_spec")
+        embedder_spec = manifest.get("embedder_spec")
+        if not isinstance(backend_spec, dict) or not isinstance(embedder_spec, dict):
+            raise ValueError("collection archive runtime specification is invalid")
+        config = self._validate_archive_collection_config(
+            {
+                "backend_type": backend_spec.get("backend_type"),
+                "backend_config": backend_spec.get("backend_config"),
+                "embedder_type": embedder_spec.get("embedder_type"),
+                "embed_model": embedder_spec.get("embed_model"),
+                "embedder_config": embedder_spec.get("embedder_config"),
+            },
+            source_tenant,
+            source_collection,
+        )
+        if config["backend_type"] != "faiss":
+            raise ValueError(
+                "unsupported collection archive backend: "
+                f"{config['backend_type']}"
+            )
+        sidecar = self._archive_sidecar_config(
+            collection_dir,
+            source_tenant,
+            source_collection,
+        )
+        if sidecar is None:
+            raise ValueError("collection archive is missing collection.json")
+        if sidecar != config:
+            raise ValueError(
+                "collection archive manifest and sidecar conflict: "
+                f"{source_tenant}/{source_collection}"
+            )
+
+        schema_version, rids, query_homes = self._collection_archive_db_info(
+            collection_dir,
+            source_tenant,
+            source_collection,
+        )
+        manifest_schema = manifest.get("schema_version")
+        if not isinstance(manifest_schema, int) or isinstance(manifest_schema, bool):
+            raise ValueError("collection archive schema version is invalid")
+        if manifest_schema != schema_version:
+            raise ValueError(
+                "collection archive schema version mismatch: "
+                f"manifest {manifest_schema}, metadata {schema_version}"
+            )
+        self._validate_archive_index(
+            collection_dir,
+            source_tenant,
+            source_collection,
+            rids,
+            expected_dim=(
+                int(config["embedder_config"]["dim"])
+                if "dim" in config["embedder_config"]
+                else None
+            ),
+        )
+        try:
+            embedder_factory_mod.runtime_embedder_spec_for_vector(
+                get_cfg(),
+                config,
+            )
+        except Exception:
+            vector_key = embedder_factory_mod.vector_space_key(config)
+            raise ValueError(
+                "no compatible destination embedder for vector space "
+                f"{vector_key}"
+            ) from None
+
+        collection_meta = manifest.get("collection")
+        if not isinstance(collection_meta, dict):
+            raise ValueError("collection archive metadata is invalid")
+        if not isinstance(collection_meta.get("meta", {}), dict):
+            raise ValueError("collection archive catalog metadata is invalid")
+        if collection_meta.get("display_name") is not None and not isinstance(
+            collection_meta.get("display_name"),
+            str,
+        ):
+            raise ValueError("collection archive display name is invalid")
+        if collection_meta.get("created_at") is not None and not isinstance(
+            collection_meta.get("created_at"),
+            str,
+        ):
+            raise ValueError("collection archive creation time is invalid")
+        return manifest, config, query_homes
+
+    def _close_collection_for_restore(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> None:
+        key = (tenant, collection)
+        backend = self._emb.pop(key, None)
+        if backend is not None:
+            backend.flush()
+            backend.close()
+            self._clear_index_dirty(tenant, collection)
+        col_db = self._dbs.pop(key, None)
+        if col_db is not None:
+            col_db.close()
+        self._drop_collection_embedder(key)
+        self._drop_query_vector_cache(tenant, collection)
+
+    @staticmethod
+    def _assert_no_collection_restore_backup(target: Path) -> None:
+        if not target.parent.is_dir():
+            return
+        prefix = f"{_COLLECTION_RESTORE_BACKUP_PREFIX}{target.name}-"
+        marker = next(
+            (
+                entry.name
+                for entry in target.parent.iterdir()
+                if entry.name.startswith(prefix)
+            ),
+            None,
+        )
+        if marker is not None:
+            raise RuntimeError(
+                "interrupted collection archive restore detected; recover or "
+                f"remove {marker} before starting"
+            )
+
+    def _install_collection_archive(
+        self,
+        target: Path,
+        staged: Path,
+        publish: Callable[[], None],
+    ) -> None:
+        backup_root: Path | None = None
+        backup_entry: Path | None = None
+        installed = False
+        moved_old = False
+        try:
+            if target.exists() or target.is_symlink():
+                backup_root = Path(
+                    tempfile.mkdtemp(
+                        prefix=(
+                            f"{_COLLECTION_RESTORE_BACKUP_PREFIX}{target.name}-"
+                        ),
+                        dir=target.parent,
+                    )
+                )
+                backup_entry = backup_root / "collection"
+                os.rename(target, backup_entry)
+                moved_old = True
+            os.rename(staged, target)
+            installed = True
+            publish()
+        except Exception as exc:
+            rollback_errors: list[Exception] = []
+            if installed:
+                try:
+                    self._remove_path(target)
+                except Exception as rollback_exc:
+                    rollback_errors.append(rollback_exc)
+            if moved_old and backup_entry is not None:
+                try:
+                    os.rename(backup_entry, target)
+                except Exception as rollback_exc:
+                    rollback_errors.append(rollback_exc)
+            if rollback_errors:
+                raise RuntimeError(
+                    "collection archive restore failed and rollback is incomplete"
+                ) from exc
+            if backup_root is not None:
+                with suppress(OSError):
+                    self._remove_path(backup_root)
+            raise
+        finally:
+            with suppress(OSError):
+                self._remove_path(staged.parent)
+        if backup_root is not None:
+            try:
+                self._remove_path(backup_root)
+            except OSError:
+                log.warning(
+                    "Failed to remove collection archive backup %s",
+                    backup_root,
+                    exc_info=True,
                 )
 
     @staticmethod
@@ -3374,3 +3674,229 @@ class LocalStore:
                 self._flush_caches()
                 self._replace_archive_tree(data_dir_path, extract_dir)
                 self._ensure_catalog().rotate_metrics_generation()
+
+    def dump_collection_archive(
+        self,
+        tenant: str,
+        collection: str,
+        output_path: str | os.PathLike[str] | None = None,
+    ) -> tuple[str, str | None]:
+        """Export one collection with a versioned, credential-free manifest."""
+        with self._collection_write_lock(tenant, collection):
+            collection_dir = Path(self._base_path(tenant, collection)).resolve()
+            data_dir = Path(self._data_dir).resolve()
+            if not collection_dir.is_relative_to(data_dir):
+                raise ValueError("invalid collection archive target")
+            self._assert_no_collection_restore_backup(collection_dir)
+            catalog_config = self._with_catalog_retry(
+                "dump_collection_archive",
+                lambda catalog: catalog.get_collection_config(tenant, collection),
+            )
+            if catalog_config is None or not collection_dir.is_dir():
+                raise FileNotFoundError(
+                    f"collection '{tenant}/{collection}' does not exist"
+                )
+            config = self._validate_archive_collection_config(
+                catalog_config,
+                tenant,
+                collection,
+            )
+            sidecar = self._archive_sidecar_config(
+                collection_dir,
+                tenant,
+                collection,
+            )
+            if sidecar is None:
+                self._write_collection_config(tenant, collection, config)
+            elif sidecar != config:
+                raise ValueError(
+                    "catalog and collection sidecar conflict: "
+                    f"{tenant}/{collection}"
+                )
+
+            self._save(tenant, collection)
+            key = (tenant, collection)
+            metadata = self._dbs.get(key)
+            temporary_metadata = metadata is None
+            if metadata is None:
+                if not self._db_path(tenant, collection).is_file():
+                    raise ValueError(
+                        "collection metadata database is missing: "
+                        f"{tenant}/{collection}"
+                    )
+                metadata = CollectionDB()
+                metadata.open(self._db_path(tenant, collection))
+            try:
+                metadata.checkpoint_wal()
+            finally:
+                if temporary_metadata:
+                    metadata.close()
+
+            schema_version, rids, _query_homes = self._collection_archive_db_info(
+                collection_dir,
+                tenant,
+                collection,
+            )
+            self._validate_archive_index(
+                collection_dir,
+                tenant,
+                collection,
+                rids,
+                expected_dim=(
+                    int(config["embedder_config"]["dim"])
+                    if "dim" in config["embedder_config"]
+                    else None
+                ),
+            )
+            manifest = {
+                "archive_format": _COLLECTION_ARCHIVE_FORMAT,
+                "archive_version": _COLLECTION_ARCHIVE_VERSION,
+                "pavedb_version": VERSION,
+                "schema_version": schema_version,
+                "source": {
+                    "tenant": tenant,
+                    "collection": collection,
+                },
+                "collection": {
+                    "display_name": catalog_config.get("display_name"),
+                    "meta": catalog_config.get("meta") or {},
+                    "created_at": catalog_config.get("created_at"),
+                },
+                "backend_spec": {
+                    "backend_type": config["backend_type"],
+                    "backend_config": config["backend_config"],
+                },
+                "embedder_spec": {
+                    "embedder_type": config["embedder_type"],
+                    "embed_model": config["embed_model"],
+                    "embedder_config": config["embedder_config"],
+                },
+            }
+
+            export_root = Path(
+                tempfile.mkdtemp(prefix="pavedb_collection_export_")
+            )
+            staged = export_root / "collection"
+            try:
+                shutil.copytree(
+                    collection_dir,
+                    staged,
+                    ignore=shutil.ignore_patterns(
+                        "*-wal",
+                        "*-shm",
+                        _COLLECTION_ARCHIVE_MANIFEST,
+                    ),
+                )
+                (staged / _COLLECTION_ARCHIVE_MANIFEST).write_text(
+                    json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True)
+                    + "\n",
+                    encoding="utf-8",
+                )
+                if output_path is not None:
+                    archive_path = Path(output_path).resolve()
+                    self._write_zip(staged, archive_path)
+                    self._remove_path(export_root)
+                    return str(archive_path), None
+
+                timestamp = datetime.now(tz.utc).strftime("%Y%m%dT%H%M%SZ")
+                archive_path = export_root / (
+                    f"pavedb-collection-{timestamp}.zip"
+                )
+                self._write_zip(staged, archive_path)
+                return str(archive_path), str(export_root)
+            except Exception:
+                with suppress(OSError):
+                    self._remove_path(export_root)
+                raise
+
+    def restore_collection_archive(
+        self,
+        tenant: str,
+        collection: str,
+        archive_bytes: bytes,
+    ) -> None:
+        """Replace one collection after complete same-version preflight."""
+        with tempfile.TemporaryDirectory(
+            prefix="pavedb_collection_import_"
+        ) as tmp_dir:
+            extract_dir = Path(tmp_dir) / "extracted"
+            extract_dir.mkdir()
+            try:
+                with zipfile.ZipFile(
+                    io.BytesIO(archive_bytes),
+                    "r",
+                ) as archive:
+                    self._validate_zip_members(archive)
+                    archive.extractall(extract_dir)
+            except zipfile.BadZipFile as exc:
+                raise ValueError("invalid collection archive") from exc
+
+            manifest, config, query_homes = self._preflight_collection_archive(
+                extract_dir
+            )
+            collection_meta = manifest["collection"]
+
+            with self._collection_write_lock(tenant, collection):
+                data_dir = Path(self._data_dir).resolve()
+                target = Path(self._base_path(tenant, collection)).resolve()
+                if not target.is_relative_to(data_dir):
+                    raise ValueError("invalid collection archive target")
+                target.parent.mkdir(parents=True, exist_ok=True)
+                self._assert_no_collection_restore_backup(target)
+                install_root = Path(
+                    tempfile.mkdtemp(
+                        prefix=".pavedb-collection-install-",
+                        dir=target.parent,
+                    )
+                )
+                staged = install_root / "collection"
+                try:
+                    shutil.copytree(extract_dir, staged)
+                    (staged / _COLLECTION_ARCHIVE_MANIFEST).unlink()
+                    with sqlite3.connect(staged / "meta.db") as metadata:
+                        metadata.execute("PRAGMA journal_mode=DELETE")
+                        metadata.execute(
+                            "UPDATE query_log SET tenant=?, collection=?",
+                            (tenant, collection),
+                        )
+                except Exception:
+                    with suppress(OSError):
+                        self._remove_path(install_root)
+                    raise
+
+                try:
+                    self._close_collection_for_restore(tenant, collection)
+                except Exception:
+                    with suppress(OSError):
+                        self._remove_path(install_root)
+                    raise
+
+                def publish() -> None:
+                    self._with_catalog_retry(
+                        "restore_collection_archive",
+                        lambda catalog: catalog.restore_collection(
+                            tenant,
+                            collection,
+                            display_name=collection_meta.get("display_name"),
+                            meta=collection_meta.get("meta") or {},
+                            backend_type=config["backend_type"],
+                            backend_config=config["backend_config"],
+                            embedder_type=config["embedder_type"],
+                            embed_model=config["embed_model"],
+                            embed_config=config["embedder_config"],
+                            created_at=collection_meta.get("created_at"),
+                            query_homes=query_homes,
+                        ),
+                    )
+
+                self._install_collection_archive(
+                    target,
+                    staged,
+                    publish,
+                )
+                with self._catalog_metrics_lock:
+                    self._catalog_metrics_cache = None
+                with self._chunk_drift_metrics_lock:
+                    self._chunk_drift_metrics_cache = None
+                with self._query_log_gauge_metrics_lock:
+                    self._query_log_gauge_metrics_cache = None

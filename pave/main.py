@@ -137,9 +137,15 @@ class BodySizeLimitMiddleware:
 
     @staticmethod
     def _restores_archive(scope) -> bool:
+        method = scope.get("method")
+        path = str(scope.get("path") or "")
+        if method == "PUT" and path == "/v1/admin/archive":
+            return True
         return (
-            scope.get("method") == "PUT"
-            and scope.get("path") == "/v1/admin/archive"
+            method == "POST"
+            and path.startswith("/v1/admin/collections/")
+            and path.endswith("/archive")
+            and len(path.split("/")) == 7
         )
 
     @classmethod
@@ -148,9 +154,9 @@ class BodySizeLimitMiddleware:
         if state is None:
             return 0
         path = str(scope.get("path") or "")
-        # A whole-instance archive is unrelated to the largest accepted
-        # document. Starlette spools this multipart upload to disk; do not
-        # reject a valid backup under either in-memory request ceiling.
+        # Archives are unrelated to the largest accepted document. Starlette
+        # spools these multipart uploads to disk; do not reject a valid backup
+        # under either in-memory request ceiling.
         if cls._restores_archive(scope):
             return 0
         if cls._accepts_upload(path):

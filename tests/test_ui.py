@@ -104,6 +104,9 @@ def test_openapi_split_covers_all_v1_paths(client):
     assert data_paths.isdisjoint(admin_paths)
     assert "/v1/search" in search_paths
     assert "/v1/admin/archive" in admin_paths
+    assert (
+        "/v1/admin/collections/{tenant}/{name}/archive" in admin_paths
+    )
     assert "/v1/admin/tenants" in admin_paths
     assert "/v1/admin/queries/{query_id}" in admin_paths
     assert (

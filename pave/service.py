@@ -1526,6 +1526,39 @@ def restore_archive(store: BaseStore, archive_bytes: bytes) -> ServiceResult:
     return {"ok": True}
 
 
+def dump_collection_archive(
+    store: BaseStore,
+    tenant: str,
+    collection: str,
+    output_path: str | os.PathLike[str] | None = None,
+) -> tuple[str, str | None]:
+    resolved_collection = _validate_collection_name(collection)
+    return store.dump_collection_archive(
+        tenant,
+        resolved_collection,
+        output_path,
+    )
+
+
+def restore_collection_archive(
+    store: BaseStore,
+    tenant: str,
+    collection: str,
+    archive_bytes: bytes,
+) -> ServiceResult:
+    resolved_collection = _validate_collection_name(collection)
+    store.restore_collection_archive(
+        tenant,
+        resolved_collection,
+        archive_bytes,
+    )
+    return {
+        "ok": True,
+        "tenant": tenant,
+        "collection": resolved_collection,
+    }
+
+
 def list_tenants(store) -> ServiceResult:
     try:
         tenants = sorted(store.list_tenants())
