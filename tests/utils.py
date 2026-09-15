@@ -541,6 +541,40 @@ class SpyStore:
         self.calls.append(("move_collection", tenant, old_name, new_name))
         return self.impl.move_collection(tenant, old_name, new_name)
 
+    def start_reindex(
+        self,
+        tenant: str,
+        collection: str,
+        *,
+        embedder_type: str | None = None,
+        embed_model: str | None = None,
+        embedder_config: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        self.calls.append(("start_reindex", tenant, collection))
+        return self.impl.start_reindex(
+            tenant,
+            collection,
+            embedder_type=embedder_type,
+            embed_model=embed_model,
+            embedder_config=embedder_config,
+        )
+
+    def get_reindex_job(self, job_id: str) -> dict[str, Any]:
+        self.calls.append(("get_reindex_job", job_id))
+        return self.impl.get_reindex_job(job_id)
+
+    def pause_reindex(self, job_id: str) -> dict[str, Any]:
+        self.calls.append(("pause_reindex", job_id))
+        return self.impl.pause_reindex(job_id)
+
+    def resume_reindex(self, job_id: str) -> dict[str, Any]:
+        self.calls.append(("resume_reindex", job_id))
+        return self.impl.resume_reindex(job_id)
+
+    def cancel_reindex(self, job_id: str) -> dict[str, Any]:
+        self.calls.append(("cancel_reindex", job_id))
+        return self.impl.cancel_reindex(job_id)
+
     def list_collections(self, tenant: str) -> list[dict[str, Any]]:
         self.calls.append(("list_collections", tenant))
         return self.impl.list_collections(tenant)

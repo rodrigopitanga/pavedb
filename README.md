@@ -377,6 +377,26 @@ production — and your code barely changes along the way:
    schema version only, and resolves the archived embedder specification from
    local configuration before changing the destination collection.
 
+7. **Rebuild a collection's vector space.** Start an admin reindex job when a
+   collection must move to another configured embedding model. The live index
+   remains unchanged until the staged replacement is complete:
+
+   ```bash
+   job_id=$(curl -fsS -X POST \
+     -H "Authorization: Bearer $PAVEDB_TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"embed_model":"sentence-transformers/all-MiniLM-L6-v2"}' \
+     "$PAVEDB_URL/v1/admin/collections/acme/books/reindex" \
+     | jq -r .job_id)
+
+   curl -H "Authorization: Bearer $PAVEDB_TOKEN" \
+     "$PAVEDB_URL/v1/admin/reindex/$job_id"
+   ```
+
+   `POST .../$job_id/pause` and `POST .../$job_id/resume` control a job at
+   persisted batch boundaries; `DELETE .../$job_id` cancels it. Paused jobs
+   survive restart and refuse to resume if the source corpus changed.
+
 ## 📚 Reference
 
 - [Guides](docs/guides/README.md) — start here: what PaveDB is, its components,

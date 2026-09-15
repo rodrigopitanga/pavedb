@@ -27,6 +27,7 @@ DocumentInfo = dict[str, Any]
 ChunkInfo = dict[str, Any]
 QueryLogEntry = dict[str, Any]
 QueryHomeEntry = dict[str, Any]
+ReindexJobInfo = dict[str, Any]
 Record = tuple[str, str, Metadata]  # (rid, text, meta)
 
 
@@ -113,6 +114,24 @@ class BaseStore(Protocol):
     def move_collection(self, tenant: str, old_name: str, new_name: str) -> None:
         """Move a collection slug/path. Raises ValueError if invalid."""
         ...
+
+    def start_reindex(
+        self,
+        tenant: str,
+        collection: str,
+        *,
+        embedder_type: str | None = None,
+        embed_model: str | None = None,
+        embedder_config: EmbedderConfig | None = None,
+    ) -> ReindexJobInfo: ...
+
+    def get_reindex_job(self, job_id: str) -> ReindexJobInfo: ...
+
+    def pause_reindex(self, job_id: str) -> ReindexJobInfo: ...
+
+    def resume_reindex(self, job_id: str) -> ReindexJobInfo: ...
+
+    def cancel_reindex(self, job_id: str) -> ReindexJobInfo: ...
 
     def list_collections(self, tenant: str) -> list[CollectionInfo]:
         """List collection summaries for a tenant."""

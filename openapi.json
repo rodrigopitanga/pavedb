@@ -2643,6 +2643,283 @@
         "title": "QueryReplayResponse",
         "type": "object"
       },
+      "ReindexCollectionBody": {
+        "description": "New embedder vector space for a collection reindex job.",
+        "properties": {
+          "embed_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Embedding model to use for the rebuilt index.",
+            "examples": [
+              "sentence-transformers/all-MiniLM-L6-v2"
+            ],
+            "title": "Embed Model"
+          },
+          "embedder_config": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Space-affecting options for the target embedder.",
+            "examples": [
+              {
+                "passage_prefix": "passage: "
+              }
+            ],
+            "title": "Embedder Config"
+          },
+          "embedder_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Embedding backend to use for the rebuilt index.",
+            "examples": [
+              "sbert"
+            ],
+            "title": "Embedder Type"
+          }
+        },
+        "title": "ReindexCollectionBody",
+        "type": "object"
+      },
+      "ReindexJobResponse": {
+        "description": "Durable status and progress for one collection reindex job.",
+        "properties": {
+          "collection": {
+            "description": "Collection slug being reindexed.",
+            "examples": [
+              "books"
+            ],
+            "title": "Collection",
+            "type": "string"
+          },
+          "completed_chunks": {
+            "description": "Chunks reindexed so far.",
+            "examples": [
+              64
+            ],
+            "minimum": 0.0,
+            "title": "Completed Chunks",
+            "type": "integer"
+          },
+          "created_at": {
+            "description": "When the job was created (ISO 8601).",
+            "examples": [
+              "2026-09-22T07:40:00Z"
+            ],
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Failure detail when the job status is failed.",
+            "examples": [
+              "embedder unavailable"
+            ],
+            "title": "Error"
+          },
+          "finished_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the job reached a terminal state (ISO 8601), or null.",
+            "examples": [
+              "2026-09-22T07:45:00Z"
+            ],
+            "title": "Finished At"
+          },
+          "job_id": {
+            "description": "Stable job identifier.",
+            "examples": [
+              "9f1c2b3a"
+            ],
+            "title": "Job Id",
+            "type": "string"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "When the job began running (ISO 8601), or null.",
+            "examples": [
+              "2026-09-22T07:40:05Z"
+            ],
+            "title": "Started At"
+          },
+          "status": {
+            "description": "Current lifecycle state of the reindex job.",
+            "enum": [
+              "queued",
+              "running",
+              "pausing",
+              "paused",
+              "committing",
+              "cancelling",
+              "cancelled",
+              "failed",
+              "succeeded"
+            ],
+            "examples": [
+              "running"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ReindexTarget",
+            "description": "Vector space the job rebuilds the collection into."
+          },
+          "tenant": {
+            "description": "Tenant that owns the collection.",
+            "examples": [
+              "demo"
+            ],
+            "title": "Tenant",
+            "type": "string"
+          },
+          "total_chunks": {
+            "description": "Total chunks the job will reindex.",
+            "examples": [
+              128
+            ],
+            "minimum": 0.0,
+            "title": "Total Chunks",
+            "type": "integer"
+          },
+          "updated_at": {
+            "description": "When the job last advanced (ISO 8601).",
+            "examples": [
+              "2026-09-22T07:41:00Z"
+            ],
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "tenant",
+          "collection",
+          "status",
+          "target",
+          "total_chunks",
+          "completed_chunks",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ReindexJobResponse",
+        "type": "object"
+      },
+      "ReindexTarget": {
+        "description": "Persistable target vector-space identity for a reindex job.",
+        "properties": {
+          "embed_model": {
+            "description": "Embedding model the rebuilt index uses.",
+            "examples": [
+              "sentence-transformers/all-MiniLM-L6-v2"
+            ],
+            "title": "Embed Model",
+            "type": "string"
+          },
+          "embedder_config": {
+            "additionalProperties": true,
+            "description": "Space-affecting options for the target embedder.",
+            "examples": [
+              {
+                "passage_prefix": "passage: "
+              }
+            ],
+            "title": "Embedder Config",
+            "type": "object"
+          },
+          "embedder_type": {
+            "description": "Embedding backend the job rebuilds the index with.",
+            "examples": [
+              "sbert"
+            ],
+            "title": "Embedder Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "embedder_type",
+          "embed_model"
+        ],
+        "title": "ReindexTarget",
+        "type": "object"
+      },
       "ResetMetricsResponse": {
         "description": "Confirmation that metrics were reset.",
         "properties": {
@@ -3846,6 +4123,143 @@
         ]
       }
     },
+    "/v1/admin/collections/{tenant}/{name}/reindex": {
+      "post": {
+        "description": "Starts an interruptible, resumable vector rebuild against a new embedder specification; requires the admin key.",
+        "operationId": "start_collection_reindex_v1_admin_collections__tenant___name__reindex_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "tenant",
+            "required": true,
+            "schema": {
+              "title": "Tenant",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "title": "Name",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReindexCollectionBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReindexJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Reindex a collection",
+        "tags": [
+          "Instance Admin"
+        ]
+      }
+    },
     "/v1/admin/embedders": {
       "get": {
         "description": "Lists configured embedder instances and the resolved default; requires the admin key.",
@@ -4143,6 +4557,386 @@
         "summary": "Replay any logged search",
         "tags": [
           "Query Admin"
+        ]
+      }
+    },
+    "/v1/admin/reindex/{job_id}": {
+      "delete": {
+        "description": "Discards staged vectors without changing the live index; requires the admin key.",
+        "operationId": "cancel_reindex_job_v1_admin_reindex__job_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReindexJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Cancel a reindex job",
+        "tags": [
+          "Instance Admin"
+        ]
+      },
+      "get": {
+        "description": "Returns durable reindex progress; requires the admin key.",
+        "operationId": "get_reindex_job_v1_admin_reindex__job_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReindexJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get reindex job status",
+        "tags": [
+          "Instance Admin"
+        ]
+      }
+    },
+    "/v1/admin/reindex/{job_id}/pause": {
+      "post": {
+        "description": "Requests a pause after the current persisted batch; requires the admin key.",
+        "operationId": "pause_reindex_job_v1_admin_reindex__job_id__pause_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReindexJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Pause a reindex job",
+        "tags": [
+          "Instance Admin"
+        ]
+      }
+    },
+    "/v1/admin/reindex/{job_id}/resume": {
+      "post": {
+        "description": "Resumes from persisted batches; requires the admin key.",
+        "operationId": "resume_reindex_job_v1_admin_reindex__job_id__resume_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReindexJobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Resume a reindex job",
+        "tags": [
+          "Instance Admin"
         ]
       }
     },

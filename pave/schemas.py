@@ -352,6 +352,118 @@ class UpdateCollectionBody(BaseModel):
     )
 
 
+class ReindexCollectionBody(BaseModel):
+    """New embedder vector space for a collection reindex job."""
+    embedder_type: str | None = Field(
+        default=None,
+        description="Embedding backend to use for the rebuilt index.",
+        examples=["sbert"],
+    )
+    embed_model: str | None = Field(
+        default=None,
+        description="Embedding model to use for the rebuilt index.",
+        examples=["sentence-transformers/all-MiniLM-L6-v2"],
+    )
+    embedder_config: dict[str, Any] | None = Field(
+        default=None,
+        description="Space-affecting options for the target embedder.",
+        examples=[{"passage_prefix": "passage: "}],
+    )
+
+    @model_validator(mode="after")
+    def require_target(self) -> "ReindexCollectionBody":
+        if (
+            self.embedder_type is None
+            and self.embed_model is None
+            and self.embedder_config is None
+        ):
+            raise ValueError("a target embedder setting is required")
+        return self
+
+
+class ReindexTarget(BaseModel):
+    """Persistable target vector-space identity for a reindex job."""
+    embedder_type: str = Field(
+        description="Embedding backend the job rebuilds the index with.",
+        examples=["sbert"],
+    )
+    embed_model: str = Field(
+        description="Embedding model the rebuilt index uses.",
+        examples=["sentence-transformers/all-MiniLM-L6-v2"],
+    )
+    embedder_config: dict[str, Any] = Field(
+        default_factory=dict,
+        description="Space-affecting options for the target embedder.",
+        examples=[{"passage_prefix": "passage: "}],
+    )
+
+
+class ReindexJobResponse(OkResponse):
+    """Durable status and progress for one collection reindex job."""
+    job_id: str = Field(
+        description="Stable job identifier.",
+        examples=["9f1c2b3a"],
+    )
+    tenant: str = Field(
+        description="Tenant that owns the collection.",
+        examples=["demo"],
+    )
+    collection: str = Field(
+        description="Collection slug being reindexed.",
+        examples=["books"],
+    )
+    status: Literal[
+        "queued",
+        "running",
+        "pausing",
+        "paused",
+        "committing",
+        "cancelling",
+        "cancelled",
+        "failed",
+        "succeeded",
+    ] = Field(
+        description="Current lifecycle state of the reindex job.",
+        examples=["running"],
+    )
+    target: ReindexTarget = Field(
+        description="Vector space the job rebuilds the collection into.",
+    )
+    total_chunks: int = Field(
+        ge=0,
+        description="Total chunks the job will reindex.",
+        examples=[128],
+    )
+    completed_chunks: int = Field(
+        ge=0,
+        description="Chunks reindexed so far.",
+        examples=[64],
+    )
+    error: str | None = Field(
+        default=None,
+        description="Failure detail when the job status is failed.",
+        examples=["embedder unavailable"],
+    )
+    created_at: str = Field(
+        description="When the job was created (ISO 8601).",
+        examples=["2026-09-22T07:40:00Z"],
+    )
+    updated_at: str = Field(
+        description="When the job last advanced (ISO 8601).",
+        examples=["2026-09-22T07:41:00Z"],
+    )
+    started_at: str | None = Field(
+        default=None,
+        description="When the job began running (ISO 8601), or null.",
+        examples=["2026-09-22T07:40:05Z"],
+    )
+    finished_at: str | None = Field(
+        default=None,
+        description="When the job reached a terminal state (ISO 8601), or null.",
+        examples=["2026-09-22T07:45:00Z"],
+    )
+
+
 class CreateCollectionResponse(OkResponse):
     """A newly created collection."""
     tenant: str = Field(

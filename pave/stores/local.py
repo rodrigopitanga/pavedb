@@ -16,6 +16,7 @@ the embedder and vector-backend seams this store composes.
 
 from __future__ import annotations
 import errno
+import hashlib
 import io
 import json
 import os
@@ -23,13 +24,14 @@ import re
 import shutil
 import sqlite3
 import tempfile
+import uuid
 import zipfile
 from collections import OrderedDict
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import ExitStack, contextmanager, suppress
 from datetime import datetime, date, timezone as tz
 from pathlib import Path
-from threading import Condition, Lock, get_ident
+from threading import Condition, Lock, Thread, current_thread, get_ident
 from typing import Any
 import time as _time
 
@@ -52,6 +54,7 @@ from pave.metadb import (
     CollectionConfigRecoveryError,
     CollectionDB,
     RateLimitDecision,
+    ReindexJobStateError,
     UnsupportedSchemaVersionError,
     validate_collection_config,
 )
@@ -93,6 +96,8 @@ _COLLECTION_ARCHIVE_FORMAT = "pavedb.collection"
 _COLLECTION_ARCHIVE_VERSION = 1
 _COLLECTION_ARCHIVE_MANIFEST = "manifest.json"
 _COLLECTION_RESTORE_BACKUP_PREFIX = ".pavedb-collection-restore-backup-"
+_REINDEX_DIR = ".pavedb-reindex"
+_REINDEX_BATCH_SIZE = 32
 
 # P1-07: exact-token boost tokenizer. Word-boundary matching only, no
 # stemming/normalization beyond casefolding -- the boost is a narrow nudge
@@ -315,6 +320,8 @@ class LocalStore:
             tuple[Embedder, Any],
         ] = OrderedDict()
         self._query_vector_cache_lock = Lock()
+        self._reindex_threads: dict[str, Thread] = {}
+        self._reindex_threads_lock = Lock()
         self._closed = False
         configured_embedders = embedder_factory_mod.embedder_instances()
         log.info(
@@ -336,6 +343,7 @@ class LocalStore:
         )
         self._embedder_cache[default_key] = embedder
         self._ensure_catalog()
+        self._recover_reindex_jobs()
 
     @staticmethod
     def _positive_config_int(key: str, default: int) -> int:
@@ -1781,6 +1789,858 @@ class LocalStore:
                 ),
             )
 
+    def _reindex_job_dir(self, job_id: str) -> Path:
+        try:
+            canonical = str(uuid.UUID(job_id))
+        except (ValueError, AttributeError) as exc:
+            raise ValueError("invalid reindex job id") from exc
+        return Path(self._data_dir).resolve() / _REINDEX_DIR / canonical
+
+    @staticmethod
+    def _public_reindex_job(job: dict[str, Any]) -> dict[str, Any]:
+        target = dict(job.get("target_config") or {})
+        return {
+            "job_id": job["job_id"],
+            "tenant": job["tenant"],
+            "collection": job["collection"],
+            "status": job["status"],
+            "target": {
+                "embedder_type": target.get("embedder_type"),
+                "embed_model": target.get("embed_model"),
+                "embedder_config": dict(target.get("embedder_config") or {}),
+            },
+            "total_chunks": int(job.get("total_chunks") or 0),
+            "completed_chunks": int(job.get("completed_chunks") or 0),
+            "error": job.get("error"),
+            "created_at": job.get("created_at"),
+            "updated_at": job.get("updated_at"),
+            "started_at": job.get("started_at"),
+            "finished_at": job.get("finished_at"),
+        }
+
+    def _get_reindex_job_internal(self, job_id: str) -> dict[str, Any]:
+        job = self._with_catalog_retry(
+            "get_reindex_job",
+            lambda catalog: catalog.get_reindex_job(job_id),
+        )
+        if job is None:
+            raise FileNotFoundError(f"reindex job '{job_id}' does not exist")
+        return job
+
+    def get_reindex_job(self, job_id: str) -> dict[str, Any]:
+        """Return durable progress for one collection reindex job."""
+        return self._public_reindex_job(
+            self._get_reindex_job_internal(job_id)
+        )
+
+    def start_reindex(
+        self,
+        tenant: str,
+        collection: str,
+        *,
+        embedder_type: str | None = None,
+        embed_model: str | None = None,
+        embedder_config: EmbedderConfig | None = None,
+    ) -> dict[str, Any]:
+        """Create and launch a persistent, resumable collection reindex."""
+        if self._closed:
+            raise RuntimeError("store is closed")
+        with self._collection_write_lock(tenant, collection):
+            stored = self._with_catalog_retry(
+                "get_collection_config",
+                lambda catalog: catalog.get_collection_config(
+                    tenant,
+                    collection,
+                ),
+            )
+            if stored is None or not os.path.isdir(
+                self._base_path(tenant, collection)
+            ):
+                raise FileNotFoundError(
+                    f"collection '{tenant}/{collection}' does not exist"
+                )
+            source = self._effective_collection_config(stored)
+            if str(source["embedder_type"]).lower() == "identity":
+                raise ValueError(
+                    "identity/BYOV collections have no source text to reindex"
+                )
+            requested = self._resolve_collection_config(
+                embedder_type=embedder_type,
+                embed_model=embed_model,
+                embedder_config=embedder_config,
+            )
+            target: CollectionConfig = {
+                "backend_type": source["backend_type"],
+                "backend_config": dict(source.get("backend_config") or {}),
+                "embedder_type": requested["embedder_type"],
+                "embed_model": requested["embed_model"],
+                "embedder_config": dict(
+                    requested.get("embedder_config") or {}
+                ),
+            }
+            if str(target["embedder_type"]).lower() == "identity":
+                raise ValueError(
+                    "text collections cannot be reindexed to identity/BYOV"
+                )
+            if (
+                embedder_factory_mod.vector_space_key(source)
+                == embedder_factory_mod.vector_space_key(target)
+            ):
+                raise ValueError("target embedder matches the current vector space")
+            self._validate_embedder_for_config(target)
+            job_id = str(uuid.uuid4())
+            job = self._with_catalog_retry(
+                "create_reindex_job",
+                lambda catalog: catalog.create_reindex_job(
+                    job_id,
+                    tenant,
+                    collection,
+                    source,
+                    target,
+                ),
+            )
+        try:
+            self._launch_reindex_job(job_id)
+        except Exception as exc:
+            self._with_catalog_retry(
+                "cancel_unlaunched_reindex_job",
+                lambda catalog: catalog.update_reindex_job(
+                    job_id,
+                    expected_statuses=("queued",),
+                    status="cancelled",
+                    error=str(exc),
+                    set_finished=True,
+                ),
+            )
+            raise
+        latest = self._with_catalog_retry(
+            "get_reindex_job",
+            lambda catalog: catalog.get_reindex_job(job_id),
+        )
+        return self._public_reindex_job(latest or job)
+
+    def pause_reindex(self, job_id: str) -> dict[str, Any]:
+        """Request a cooperative pause at the next persisted batch."""
+        for _attempt in range(3):
+            job = self._get_reindex_job_internal(job_id)
+            status = str(job["status"])
+            if status in {"paused", "pausing"}:
+                return self._public_reindex_job(job)
+            if status == "queued":
+                next_status = "paused"
+            elif status == "running":
+                next_status = "pausing"
+            else:
+                raise ReindexJobStateError(
+                    f"reindex job cannot be paused from status '{status}'"
+                )
+            changed = self._with_catalog_retry(
+                "pause_reindex_job",
+                lambda catalog: catalog.update_reindex_job(
+                    job_id,
+                    expected_statuses=(status,),
+                    status=next_status,
+                ),
+            )
+            if changed:
+                if status == "queued":
+                    self._join_reindex_thread(job_id)
+                return self.get_reindex_job(job_id)
+        raise ReindexJobStateError("reindex job state changed while pausing")
+
+    def resume_reindex(self, job_id: str) -> dict[str, Any]:
+        """Resume a paused or retryable failed job from its staged index."""
+        for _attempt in range(3):
+            job = self._get_reindex_job_internal(job_id)
+            status = str(job["status"])
+            if status in {"queued", "running"}:
+                return self._public_reindex_job(job)
+            if status not in {"paused", "failed"}:
+                raise ReindexJobStateError(
+                    f"reindex job cannot be resumed from status '{status}'"
+                )
+            changed = self._with_catalog_retry(
+                "resume_reindex_job",
+                lambda catalog: catalog.update_reindex_job(
+                    job_id,
+                    expected_statuses=(status,),
+                    status="queued",
+                    clear_error=True,
+                    clear_finished=True,
+                ),
+            )
+            if changed:
+                try:
+                    self._launch_reindex_job(job_id)
+                except Exception as exc:
+                    self._with_catalog_retry(
+                        "fail_unlaunched_reindex_job",
+                        lambda catalog: catalog.update_reindex_job(
+                            job_id,
+                            expected_statuses=("queued",),
+                            status="failed",
+                            error=str(exc),
+                            set_finished=True,
+                        ),
+                    )
+                    raise
+                return self.get_reindex_job(job_id)
+        raise ReindexJobStateError("reindex job state changed while resuming")
+
+    def cancel_reindex(self, job_id: str) -> dict[str, Any]:
+        """Cancel a job, preserving the collection's current live index."""
+        for _attempt in range(3):
+            job = self._get_reindex_job_internal(job_id)
+            status = str(job["status"])
+            if status in {"cancelled", "cancelling"}:
+                return self._public_reindex_job(job)
+            idle = status in {"queued", "paused", "failed"}
+            if not idle and status not in {"running", "pausing"}:
+                raise ReindexJobStateError(
+                    f"reindex job cannot be cancelled from status '{status}'"
+                )
+            changed = self._with_catalog_retry(
+                "cancel_reindex_job",
+                lambda catalog: catalog.update_reindex_job(
+                    job_id,
+                    expected_statuses=(status,),
+                    status="cancelling",
+                ),
+            )
+            if not changed:
+                continue
+            if idle:
+                try:
+                    self._cleanup_reindex_job_dir(job_id)
+                except Exception as exc:
+                    self._with_catalog_retry(
+                        "fail_cancel_reindex_job",
+                        lambda catalog: catalog.update_reindex_job(
+                            job_id,
+                            expected_statuses=("cancelling",),
+                            status="failed",
+                            error=str(exc),
+                            set_finished=True,
+                        ),
+                    )
+                    raise
+                self._with_catalog_retry(
+                    "finish_cancel_reindex_job",
+                    lambda catalog: catalog.update_reindex_job(
+                        job_id,
+                        expected_statuses=("cancelling",),
+                        status="cancelled",
+                        set_finished=True,
+                    ),
+                )
+            return self.get_reindex_job(job_id)
+        raise ReindexJobStateError("reindex job state changed while cancelling")
+
+    def _launch_reindex_job(self, job_id: str) -> None:
+        with self._reindex_threads_lock:
+            if self._closed:
+                raise RuntimeError("store is closed")
+            prior = self._reindex_threads.get(job_id)
+            if prior is not None and prior.is_alive():
+                return
+            worker = Thread(
+                target=self._run_reindex_job,
+                args=(job_id,),
+                name=f"pavedb-reindex-{job_id[:8]}",
+                daemon=True,
+            )
+            self._reindex_threads[job_id] = worker
+            try:
+                worker.start()
+            except Exception:
+                self._reindex_threads.pop(job_id, None)
+                raise
+
+    def _join_reindex_thread(self, job_id: str) -> None:
+        with self._reindex_threads_lock:
+            worker = self._reindex_threads.get(job_id)
+        if worker is not None and worker is not current_thread():
+            worker.join()
+
+    def _discard_reindex_thread(self, job_id: str) -> None:
+        with self._reindex_threads_lock:
+            worker = self._reindex_threads.get(job_id)
+            if worker is current_thread() or (
+                worker is not None and not worker.is_alive()
+            ):
+                self._reindex_threads.pop(job_id, None)
+
+    def _cleanup_reindex_job_dir(self, job_id: str) -> None:
+        with suppress(ValueError):
+            self._remove_path(self._reindex_job_dir(job_id))
+
+    def _reindex_manifest_locked(
+        self,
+        tenant: str,
+        collection: str,
+        source_config: CollectionConfig,
+    ) -> tuple[list[str], str]:
+        self._load_or_init(
+            tenant,
+            collection,
+            collection_config=source_config,
+        )
+        col_db = self._dbs[(tenant, collection)]
+        digest = hashlib.sha256()
+        digest.update(
+            json.dumps(source_config, sort_keys=True).encode("utf-8")
+        )
+        rids: list[str] = []
+        for document in col_db.list_documents():
+            docid = str(document.get("docid") or "")
+            for chunk in col_db.list_chunks(docid):
+                rid = str(chunk.get("rid") or "")
+                if not rid:
+                    continue
+                text = self._load_chunk_text(tenant, collection, rid)
+                if text is None:
+                    raise ValueError(
+                        "collection contains chunks without source text; "
+                        "BYOV chunks cannot be reindexed"
+                    )
+                rid_bytes = rid.encode("utf-8")
+                text_bytes = text.encode("utf-8")
+                digest.update(len(rid_bytes).to_bytes(8, "big"))
+                digest.update(rid_bytes)
+                digest.update(len(text_bytes).to_bytes(8, "big"))
+                digest.update(text_bytes)
+                rids.append(rid)
+        return rids, digest.hexdigest()
+
+    def _reindex_batch_texts(
+        self,
+        tenant: str,
+        collection: str,
+        rids: list[str],
+    ) -> list[str]:
+        texts: list[str] = []
+        for rid in rids:
+            text = self._load_chunk_text(tenant, collection, rid)
+            if text is None:
+                raise ValueError(
+                    f"source text disappeared during reindex: {rid}"
+                )
+            texts.append(text)
+        return texts
+
+    def _settle_reindex_interrupt(
+        self,
+        job_id: str,
+        status: str,
+    ) -> bool:
+        if status == "pausing":
+            self._discard_reindex_thread(job_id)
+            self._with_catalog_retry(
+                "pause_reindex_job",
+                lambda catalog: catalog.update_reindex_job(
+                    job_id,
+                    expected_statuses=("pausing",),
+                    status="paused",
+                ),
+            )
+            return True
+        if status == "cancelling":
+            self._discard_reindex_thread(job_id)
+            self._with_catalog_retry(
+                "cancel_reindex_job",
+                lambda catalog: catalog.update_reindex_job(
+                    job_id,
+                    expected_statuses=("cancelling",),
+                    status="cancelled",
+                    set_finished=True,
+                ),
+            )
+            return True
+        return False
+
+    def _reindex_stop_requested(self, job_id: str) -> bool:
+        status = str(self._get_reindex_job_internal(job_id)["status"])
+        if status == "cancelling":
+            self._cleanup_reindex_job_dir(job_id)
+        if self._settle_reindex_interrupt(job_id, status):
+            return True
+        return status != "running"
+
+    def _run_reindex_job(self, job_id: str) -> None:
+        staged: FaissBackend | None = None
+        try:
+            claimed = self._with_catalog_retry(
+                "run_reindex_job",
+                lambda catalog: catalog.update_reindex_job(
+                    job_id,
+                    expected_statuses=("queued",),
+                    status="running",
+                    set_started=True,
+                ),
+            )
+            if not claimed:
+                return
+            job = self._get_reindex_job_internal(job_id)
+            tenant = str(job["tenant"])
+            collection = str(job["collection"])
+            source = validate_collection_config(job["source_config"])
+            target = validate_collection_config(job["target_config"])
+            with self._collection_write_lock(tenant, collection):
+                current = self._with_catalog_retry(
+                    "get_collection_config",
+                    lambda catalog: catalog.get_collection_config(
+                        tenant,
+                        collection,
+                    ),
+                )
+                if current is None:
+                    raise FileNotFoundError(
+                        f"collection '{tenant}/{collection}' does not exist"
+                    )
+                current_config = self._effective_collection_config(current)
+                if current_config != source:
+                    raise ValueError(
+                        "collection embedder changed since the job was created"
+                    )
+                if self._reindex_stop_requested(job_id):
+                    return
+
+                rids, source_digest = self._reindex_manifest_locked(
+                    tenant,
+                    collection,
+                    source,
+                )
+                previous_digest = job.get("source_digest")
+                if previous_digest and previous_digest != source_digest:
+                    raise ValueError(
+                        "collection contents changed while the job was paused"
+                    )
+                if self._reindex_stop_requested(job_id):
+                    return
+
+                target_embedder = self._get_embedder_for_config(target)
+                target_dim = self._embedder_dim_for_config(
+                    target,
+                    target_embedder,
+                )
+                if self._reindex_stop_requested(job_id):
+                    return
+                stage_dir = self._reindex_job_dir(job_id) / "index"
+                stage_dir.mkdir(parents=True, exist_ok=True)
+                staged = FaissBackend(target_dim, storage_dir=stage_dir)
+                try:
+                    staged.initialize()
+                    staged_rids = staged.rids()
+                    completed = len(staged_rids)
+                    if staged_rids != set(rids[:completed]):
+                        raise ValueError(
+                            "staged reindex progress is inconsistent"
+                        )
+                except Exception:
+                    staged.discard()
+                    with suppress(Exception):
+                        staged.close()
+                    self._remove_path(stage_dir)
+                    stage_dir.mkdir(parents=True, exist_ok=True)
+                    staged = FaissBackend(
+                        target_dim,
+                        storage_dir=stage_dir,
+                    )
+                    staged.initialize()
+                    staged_rids = set()
+                completed = len(staged_rids)
+                self._with_catalog_retry(
+                    "update_reindex_progress",
+                    lambda catalog: catalog.update_reindex_job(
+                        job_id,
+                        expected_statuses=(
+                            "running",
+                            "pausing",
+                            "cancelling",
+                        ),
+                        source_digest=source_digest,
+                        total_chunks=len(rids),
+                        completed_chunks=completed,
+                    ),
+                )
+
+                while completed < len(rids):
+                    status = str(
+                        self._get_reindex_job_internal(job_id)["status"]
+                    )
+                    if status in {"pausing", "cancelling"}:
+                        staged.close()
+                        staged = None
+                        if status == "cancelling":
+                            self._cleanup_reindex_job_dir(job_id)
+                        self._settle_reindex_interrupt(job_id, status)
+                        return
+                    if status != "running":
+                        return
+                    batch_rids = rids[
+                        completed : completed + _REINDEX_BATCH_SIZE
+                    ]
+                    texts = self._reindex_batch_texts(
+                        tenant,
+                        collection,
+                        batch_rids,
+                    )
+                    vectors = self._encode_embedder(target_embedder, texts)
+                    staged.add(batch_rids, vectors)
+                    staged.flush()
+                    completed += len(batch_rids)
+                    self._with_catalog_retry(
+                        "update_reindex_progress",
+                        lambda catalog: catalog.update_reindex_job(
+                            job_id,
+                            expected_statuses=(
+                                "running",
+                                "pausing",
+                                "cancelling",
+                            ),
+                            completed_chunks=completed,
+                        ),
+                    )
+
+                status = str(self._get_reindex_job_internal(job_id)["status"])
+                if status in {"pausing", "cancelling"}:
+                    staged.close()
+                    staged = None
+                    if status == "cancelling":
+                        self._cleanup_reindex_job_dir(job_id)
+                    self._settle_reindex_interrupt(job_id, status)
+                    return
+                if status != "running":
+                    return
+                committing = self._with_catalog_retry(
+                    "commit_reindex_job",
+                    lambda catalog: catalog.update_reindex_job(
+                        job_id,
+                        expected_statuses=("running",),
+                        status="committing",
+                    ),
+                )
+                if not committing:
+                    status = str(
+                        self._get_reindex_job_internal(job_id)["status"]
+                    )
+                    staged.close()
+                    staged = None
+                    if status == "cancelling":
+                        self._cleanup_reindex_job_dir(job_id)
+                    self._settle_reindex_interrupt(job_id, status)
+                    return
+                staged.close()
+                staged = None
+                self._install_reindex(
+                    job_id,
+                    tenant,
+                    collection,
+                    source,
+                    target,
+                    len(rids),
+                )
+        except Exception as exc:
+            self._fail_reindex_job(job_id, exc)
+        finally:
+            if staged is not None:
+                with suppress(Exception):
+                    staged.close()
+            self._discard_reindex_thread(job_id)
+
+    def _set_collection_embedder_config(
+        self,
+        tenant: str,
+        collection: str,
+        config: CollectionConfig,
+    ) -> None:
+        self._write_collection_config(tenant, collection, config)
+        self._with_catalog_retry(
+            "update_collection_embedder",
+            lambda catalog: catalog.update_collection_embedder(
+                tenant,
+                collection,
+                embedder_type=str(config["embedder_type"]),
+                embed_model=str(config["embed_model"]),
+                embed_config=dict(config.get("embedder_config") or {}),
+            ),
+        )
+
+    def _install_reindex(
+        self,
+        job_id: str,
+        tenant: str,
+        collection: str,
+        source: CollectionConfig,
+        target: CollectionConfig,
+        total_chunks: int,
+    ) -> None:
+        key = (tenant, collection)
+        job_dir = self._reindex_job_dir(job_id)
+        staged_index = job_dir / "index"
+        backup_index = job_dir / "previous-index"
+        live_index = self._index_dir(tenant, collection)
+        if not staged_index.is_dir():
+            raise RuntimeError("completed reindex stage is missing")
+
+        old_backend = self._emb.pop(key, None)
+        if old_backend is not None:
+            old_backend.close()
+        self._drop_collection_embedder(key)
+        self._drop_query_vector_cache(tenant, collection)
+
+        try:
+            if backup_index.exists():
+                self._remove_path(backup_index)
+            if live_index.exists():
+                os.rename(live_index, backup_index)
+            os.rename(staged_index, live_index)
+            self._set_collection_embedder_config(
+                tenant,
+                collection,
+                target,
+            )
+            self._load_or_init(
+                tenant,
+                collection,
+                collection_config=target,
+            )
+            changed = self._with_catalog_retry(
+                "finish_reindex_job",
+                lambda catalog: catalog.update_reindex_job(
+                    job_id,
+                    expected_statuses=("committing",),
+                    status="succeeded",
+                    completed_chunks=total_chunks,
+                    clear_error=True,
+                    set_finished=True,
+                ),
+            )
+            if not changed:
+                raise RuntimeError("reindex job lost its commit claim")
+        except Exception as exc:
+            target_backend = self._emb.pop(key, None)
+            if target_backend is not None:
+                discard = getattr(target_backend, "discard", None)
+                if callable(discard):
+                    discard()
+                with suppress(Exception):
+                    target_backend.close()
+            self._drop_collection_embedder(key)
+            self._drop_query_vector_cache(tenant, collection)
+            if live_index.exists() and not staged_index.exists():
+                os.rename(live_index, staged_index)
+            if backup_index.exists():
+                os.rename(backup_index, live_index)
+            self._set_collection_embedder_config(
+                tenant,
+                collection,
+                source,
+            )
+            self._load_or_init(
+                tenant,
+                collection,
+                collection_config=source,
+            )
+            self._discard_reindex_thread(job_id)
+            rolled_back = self._with_catalog_retry(
+                "rollback_reindex_job",
+                lambda catalog: catalog.update_reindex_job(
+                    job_id,
+                    expected_statuses=("committing",),
+                    status="paused",
+                    error=str(exc),
+                ),
+            )
+            if rolled_back:
+                return
+            raise
+        self._remove_path(job_dir)
+
+    def _fail_reindex_job(self, job_id: str, exc: Exception) -> None:
+        with suppress(Exception):
+            job = self._get_reindex_job_internal(job_id)
+            status = str(job["status"])
+            reported_exc = exc
+            if status == "cancelling":
+                try:
+                    self._cleanup_reindex_job_dir(job_id)
+                except Exception as cleanup_exc:
+                    reported_exc = cleanup_exc
+                    next_status = "failed"
+                else:
+                    next_status = "cancelled"
+            elif status == "pausing":
+                next_status = "paused"
+            elif status == "committing":
+                next_status = "committing"
+            elif status in {"cancelled", "succeeded", "paused"}:
+                return
+            else:
+                next_status = "failed"
+            self._discard_reindex_thread(job_id)
+            self._with_catalog_retry(
+                "fail_reindex_job",
+                lambda catalog: catalog.update_reindex_job(
+                    job_id,
+                    expected_statuses=(status,),
+                    status=next_status,
+                    error=(
+                        None
+                        if next_status == "cancelled"
+                        else str(reported_exc)
+                    ),
+                    clear_error=next_status == "cancelled",
+                    set_finished=next_status in {"failed", "cancelled"},
+                ),
+            )
+
+    @staticmethod
+    def _valid_reindex_index(path: Path, expected_count: int) -> bool:
+        index_path = path / "faiss.index"
+        map_path = path / "id_map.json"
+        if not index_path.is_file() or not map_path.is_file():
+            return False
+        try:
+            index = faiss.read_index(str(index_path))
+            mapping = json.loads(map_path.read_text(encoding="utf-8"))
+            rid_to_id = {
+                str(rid): int(index_id)
+                for rid, index_id in mapping["rid_to_id"].items()
+            }
+            id_to_rid = {
+                int(index_id): str(rid)
+                for index_id, rid in mapping["id_to_rid"].items()
+            }
+            index_ids = {
+                int(index_id)
+                for index_id in faiss.vector_to_array(index.id_map)
+            }
+            next_id = int(mapping["next_id"])
+            return (
+                index.metric_type == faiss.METRIC_INNER_PRODUCT
+                and int(index.ntotal) == expected_count
+                and len(rid_to_id) == expected_count
+                and len(id_to_rid) == expected_count
+                and {index_id: rid for rid, index_id in rid_to_id.items()}
+                == id_to_rid
+                and index_ids == set(id_to_rid)
+                and next_id >= 0
+                and next_id > max(id_to_rid, default=-1)
+            )
+        except Exception:
+            return False
+
+    def _recover_reindex_jobs(self) -> None:
+        committing = self._with_catalog_retry(
+            "list_committing_reindex_jobs",
+            lambda catalog: catalog.list_reindex_jobs(("committing",)),
+        )
+        for job in committing:
+            job_id = str(job["job_id"])
+            tenant = str(job["tenant"])
+            collection = str(job["collection"])
+            job_dir = self._reindex_job_dir(job_id)
+            staged = job_dir / "index"
+            backup = job_dir / "previous-index"
+            live = self._index_dir(tenant, collection)
+            total = int(job.get("total_chunks") or 0)
+            try:
+                if staged.is_dir() and not backup.exists():
+                    source = validate_collection_config(job["source_config"])
+                    self._set_collection_embedder_config(
+                        tenant,
+                        collection,
+                        source,
+                    )
+                    self._with_catalog_retry(
+                        "recover_reindex_job",
+                        lambda catalog: catalog.update_reindex_job(
+                            job_id,
+                            expected_statuses=("committing",),
+                            status="paused",
+                            error="interrupted before index installation",
+                        ),
+                    )
+                    continue
+                if backup.is_dir() and self._valid_reindex_index(live, total):
+                    target = validate_collection_config(job["target_config"])
+                    self._set_collection_embedder_config(
+                        tenant,
+                        collection,
+                        target,
+                    )
+                    self._with_catalog_retry(
+                        "recover_reindex_job",
+                        lambda catalog: catalog.update_reindex_job(
+                            job_id,
+                            expected_statuses=("committing",),
+                            status="succeeded",
+                            completed_chunks=total,
+                            clear_error=True,
+                            set_finished=True,
+                        ),
+                    )
+                    self._remove_path(job_dir)
+                    continue
+                if backup.is_dir():
+                    resume_chunks = total if staged.is_dir() else 0
+                    if live.exists():
+                        self._remove_path(live)
+                    os.rename(backup, live)
+                    source = validate_collection_config(job["source_config"])
+                    self._set_collection_embedder_config(
+                        tenant,
+                        collection,
+                        source,
+                    )
+                    self._with_catalog_retry(
+                        "recover_reindex_job",
+                        lambda catalog: catalog.update_reindex_job(
+                            job_id,
+                            expected_statuses=("committing",),
+                            status="paused",
+                            completed_chunks=resume_chunks,
+                            error="interrupted index installation was rolled back",
+                        ),
+                    )
+                    continue
+                self._with_catalog_retry(
+                    "recover_reindex_job",
+                    lambda catalog: catalog.update_reindex_job(
+                        job_id,
+                        expected_statuses=("committing",),
+                        status="failed",
+                        error="could not recover interrupted index installation",
+                        set_finished=True,
+                    ),
+                )
+            except Exception as exc:
+                with suppress(Exception):
+                    self._with_catalog_retry(
+                        "recover_reindex_job",
+                        lambda catalog: catalog.update_reindex_job(
+                            job_id,
+                            expected_statuses=("committing",),
+                            error=f"reindex recovery failed: {exc}",
+                        ),
+                    )
+                raise RuntimeError(
+                    f"reindex recovery failed for job {job_id}"
+                ) from exc
+        self._with_catalog_retry(
+            "interrupt_reindex_jobs",
+            lambda catalog: catalog.interrupt_reindex_jobs(),
+        )
+        terminal = self._with_catalog_retry(
+            "list_terminal_reindex_jobs",
+            lambda catalog: catalog.list_reindex_jobs(
+                ("cancelled", "succeeded"),
+            ),
+        )
+        for job in terminal:
+            self._cleanup_reindex_job_dir(str(job["job_id"]))
+
     @staticmethod
     def _is_transient_db_read_error(exc: Exception) -> bool:
         msg = str(exc).lower()
@@ -3166,8 +4026,19 @@ class LocalStore:
 
     def close(self) -> None:
         """Close open collection handles and cached runtime embedders."""
-        if self._closed:
-            return
+        with self._reindex_threads_lock:
+            if self._closed:
+                return
+            self._closed = True
+            reindex_workers = list(self._reindex_threads.items())
+        for job_id, worker in reindex_workers:
+            if not worker.is_alive():
+                continue
+            with suppress(FileNotFoundError, ReindexJobStateError):
+                self.pause_reindex(job_id)
+        for _job_id, worker in reindex_workers:
+            if worker is not current_thread():
+                worker.join()
         self._flush_caches()
         embedders = list(self._embedder_cache.values())
         if all(embedder is not self._embedder for embedder in embedders):
@@ -3186,7 +4057,6 @@ class LocalStore:
                     close()
                 except Exception:
                     pass
-        self._closed = True
 
     def _write_zip(self, source_dir: Path, target_path: Path) -> None:
         source_dir = source_dir.resolve()
@@ -3674,6 +4544,7 @@ class LocalStore:
                 self._flush_caches()
                 self._replace_archive_tree(data_dir_path, extract_dir)
                 self._ensure_catalog().rotate_metrics_generation()
+                self._recover_reindex_jobs()
 
     def dump_collection_archive(
         self,

@@ -11,9 +11,9 @@ Two stores live here:
   `check_same_thread=False`) serialized by separate locks.
 - `CatalogDB`: global SQLite catalog mapping tenants/collections to
   their configured embedder spec and display label, plus persistent
-  operational counters such as request-rate buckets. Source of truth for
-  collection listings; bootstraps itself from the data directory layout on
-  first open.
+  operational state such as request-rate buckets and reindex jobs. Source of
+  truth for collection listings; bootstraps itself from the data directory
+  layout on first open.
 
 Both stores enable WAL mode and run their own schema migrations.
 The store layer (`pave.stores.local`) opens them; nothing else
@@ -60,6 +60,14 @@ class ChunkLimitError(RuntimeError):
     pass
 
 
+class ReindexJobConflictError(RuntimeError):
+    pass
+
+
+class ReindexJobStateError(RuntimeError):
+    pass
+
+
 @dataclass(frozen=True)
 class RateLimitDecision:
     allowed: bool
@@ -72,7 +80,7 @@ class RateLimitDecision:
 _COLLECTION_BASELINE_SCHEMA_VERSION = 6
 _CATALOG_BASELINE_SCHEMA_VERSION = 5
 _COLLECTION_SCHEMA_VERSION = 6
-_CATALOG_SCHEMA_VERSION = 6
+_CATALOG_SCHEMA_VERSION = 7
 _COLLECTION_MIGRATIONS: dict[int, list[str]] = {}
 _CATALOG_MIGRATIONS: dict[int, list[str]] = {
     6: [
@@ -84,6 +92,49 @@ _CATALOG_MIGRATIONS: dict[int, list[str]] = {
             count        INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (tenant, operation, window_start)
         )
+        """,
+    ],
+    7: [
+        """
+        CREATE TABLE IF NOT EXISTS reindex_jobs (
+            job_id             TEXT PRIMARY KEY,
+            tenant             TEXT NOT NULL,
+            collection         TEXT NOT NULL,
+            status             TEXT NOT NULL,
+            source_config_json TEXT NOT NULL,
+            target_config_json TEXT NOT NULL,
+            source_digest      TEXT,
+            total_chunks       INTEGER NOT NULL DEFAULT 0,
+            completed_chunks   INTEGER NOT NULL DEFAULT 0,
+            error              TEXT,
+            created_at         TEXT NOT NULL DEFAULT (
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            ),
+            updated_at         TEXT NOT NULL DEFAULT (
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            ),
+            started_at         TEXT,
+            finished_at        TEXT,
+            CHECK (status IN (
+                'queued', 'running', 'pausing', 'paused', 'committing',
+                'cancelling', 'cancelled', 'failed', 'succeeded'
+            )),
+            CHECK (total_chunks >= 0),
+            CHECK (completed_chunks >= 0),
+            CHECK (completed_chunks <= total_chunks)
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_reindex_jobs_collection
+            ON reindex_jobs (tenant, collection, created_at DESC)
+        """,
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_reindex_jobs_active
+            ON reindex_jobs (tenant, collection)
+            WHERE status IN (
+                'queued', 'running', 'pausing', 'paused', 'committing',
+                'cancelling', 'failed'
+            )
         """,
     ],
 }
@@ -1394,6 +1445,184 @@ class CatalogDB:
         return loaded if isinstance(loaded, dict) else {}
 
     @staticmethod
+    def _reindex_job_from_row(row: sqlite3.Row | tuple) -> dict[str, Any]:
+        return {
+            "job_id": str(row[0]),
+            "tenant": str(row[1]),
+            "collection": str(row[2]),
+            "status": str(row[3]),
+            "source_config": CatalogDB._load_json(str(row[4])),
+            "target_config": CatalogDB._load_json(str(row[5])),
+            "source_digest": row[6],
+            "total_chunks": int(row[7] or 0),
+            "completed_chunks": int(row[8] or 0),
+            "error": row[9],
+            "created_at": str(row[10]),
+            "updated_at": str(row[11]),
+            "started_at": row[12],
+            "finished_at": row[13],
+        }
+
+    @staticmethod
+    def _reindex_job_select() -> str:
+        return (
+            "SELECT job_id, tenant, collection, status, "
+            "source_config_json, target_config_json, source_digest, "
+            "total_chunks, completed_chunks, error, created_at, updated_at, "
+            "started_at, finished_at FROM reindex_jobs"
+        )
+
+    def create_reindex_job(
+        self,
+        job_id: str,
+        tenant: str,
+        collection: str,
+        source_config: dict[str, Any],
+        target_config: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist one queued reindex job, rejecting overlapping work."""
+        with self._writer() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                active = conn.execute(
+                    "SELECT job_id FROM reindex_jobs "
+                    "WHERE tenant=? AND collection=? AND status IN ("
+                    "'queued', 'running', 'pausing', 'paused', 'committing', "
+                    "'cancelling', 'failed') LIMIT 1",
+                    (tenant, collection),
+                ).fetchone()
+                if active is not None:
+                    if str(active[0]) != job_id:
+                        raise ReindexJobConflictError(
+                            "collection already has an unfinished reindex job: "
+                            f"{active[0]}"
+                        )
+                else:
+                    conn.execute(
+                        "INSERT INTO reindex_jobs ("
+                        "job_id, tenant, collection, status, "
+                        "source_config_json, target_config_json) "
+                        "VALUES (?, ?, ?, 'queued', ?, ?)",
+                        (
+                            job_id,
+                            tenant,
+                            collection,
+                            json.dumps(source_config, sort_keys=True),
+                            json.dumps(target_config, sort_keys=True),
+                        ),
+                    )
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+        job = self.get_reindex_job(job_id)
+        if job is None:
+            raise RuntimeError(f"reindex job disappeared after create: {job_id}")
+        return job
+
+    def get_reindex_job(self, job_id: str) -> dict[str, Any] | None:
+        with self._reader() as conn:
+            row = conn.execute(
+                self._reindex_job_select() + " WHERE job_id=?",
+                (job_id,),
+            ).fetchone()
+        return None if row is None else self._reindex_job_from_row(row)
+
+    def list_reindex_jobs(
+        self,
+        statuses: tuple[str, ...] | None = None,
+    ) -> list[dict[str, Any]]:
+        query = self._reindex_job_select()
+        params: list[str] = []
+        if statuses:
+            placeholders = ",".join("?" for _ in statuses)
+            query += f" WHERE status IN ({placeholders})"
+            params.extend(statuses)
+        query += " ORDER BY created_at"
+        with self._reader() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._reindex_job_from_row(row) for row in rows]
+
+    def update_reindex_job(
+        self,
+        job_id: str,
+        *,
+        expected_statuses: tuple[str, ...] | None = None,
+        status: str | None = None,
+        source_digest: str | None = None,
+        total_chunks: int | None = None,
+        completed_chunks: int | None = None,
+        error: str | None = None,
+        clear_error: bool = False,
+        set_started: bool = False,
+        set_finished: bool = False,
+        clear_finished: bool = False,
+    ) -> bool:
+        """Conditionally update a job and report whether the CAS matched."""
+        assignments = [
+            "updated_at=strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"
+        ]
+        params: list[Any] = []
+        if status is not None:
+            assignments.append("status=?")
+            params.append(status)
+        if source_digest is not None:
+            assignments.append("source_digest=?")
+            params.append(source_digest)
+        if total_chunks is not None:
+            assignments.append("total_chunks=?")
+            params.append(int(total_chunks))
+        if completed_chunks is not None:
+            assignments.append("completed_chunks=?")
+            params.append(int(completed_chunks))
+        if error is not None:
+            assignments.append("error=?")
+            params.append(error)
+        elif clear_error:
+            assignments.append("error=NULL")
+        if set_started:
+            assignments.append(
+                "started_at=COALESCE(started_at, "
+                "strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+            )
+        if set_finished:
+            assignments.append(
+                "finished_at=strftime('%Y-%m-%dT%H:%M:%fZ', 'now')"
+            )
+        elif clear_finished:
+            assignments.append("finished_at=NULL")
+
+        where = "job_id=?"
+        params.append(job_id)
+        if expected_statuses:
+            placeholders = ",".join("?" for _ in expected_statuses)
+            where += f" AND status IN ({placeholders})"
+            params.extend(expected_statuses)
+        with self._writer() as conn, conn:
+            cur = conn.execute(
+                "UPDATE reindex_jobs SET " + ", ".join(assignments)
+                + " WHERE " + where,
+                params,
+            )
+        return cur.rowcount > 0
+
+    def interrupt_reindex_jobs(self) -> None:
+        """Make jobs abandoned by a prior process explicitly resumable."""
+        with self._writer() as conn, conn:
+            conn.execute(
+                "UPDATE reindex_jobs SET status='paused', "
+                "error='interrupted by server shutdown', "
+                "updated_at=strftime('%Y-%m-%dT%H:%M:%fZ', 'now') "
+                "WHERE status IN ('queued', 'running', 'pausing')"
+            )
+            conn.execute(
+                "UPDATE reindex_jobs SET status='cancelled', "
+                "updated_at=strftime('%Y-%m-%dT%H:%M:%fZ', 'now'), "
+                "finished_at=strftime('%Y-%m-%dT%H:%M:%fZ', 'now') "
+                "WHERE status='cancelling'"
+            )
+
+    @staticmethod
     def _rate_bucket_start(timestamp: float, window_seconds: int) -> int:
         return int(timestamp // window_seconds) * window_seconds
 
@@ -1972,6 +2201,36 @@ class CatalogDB:
                 WHERE tenant=? AND name=?
                 """,
                 (display_name, tenant, name),
+            )
+            if cur.rowcount <= 0:
+                raise ValueError(
+                    f"catalog row missing for collection '{tenant}/{name}'"
+                )
+
+    def update_collection_embedder(
+        self,
+        tenant: str,
+        name: str,
+        *,
+        embedder_type: str,
+        embed_model: str,
+        embed_config: dict[str, Any],
+    ) -> None:
+        """Replace a collection's vector-space identity after reindex."""
+        with self._writer() as conn, conn:
+            cur = conn.execute(
+                """
+                UPDATE collections
+                SET embedder_type=?, embed_model=?, embed_config_json=?
+                WHERE tenant=? AND name=?
+                """,
+                (
+                    embedder_type,
+                    embed_model,
+                    self._dump_json(embed_config),
+                    tenant,
+                    name,
+                ),
             )
             if cur.rowcount <= 0:
                 raise ValueError(

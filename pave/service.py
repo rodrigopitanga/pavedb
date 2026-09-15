@@ -30,7 +30,12 @@ from typing import Any
 import time as _time
 from pave.config import get_cfg, get_logger
 from pave.embedders import EmbedderUnavailableError
-from pave.metadb import ChunkLimitError, CollectionLimitError
+from pave.metadb import (
+    ChunkLimitError,
+    CollectionLimitError,
+    ReindexJobConflictError,
+    ReindexJobStateError,
+)
 from pave.embedders.base import EmbedderConfig
 from pave.embedders.factory import (
     embedder_instances,
@@ -346,6 +351,120 @@ def update_collection(
             "error": str(e),
             "error_type": "failed",
         }
+
+
+def start_collection_reindex(
+    store,
+    tenant: str,
+    collection: str,
+    *,
+    embedder_type: str | None = None,
+    embed_model: str | None = None,
+    embedder_config: EmbedderConfig | None = None,
+) -> ServiceResult:
+    """Launch an admin reindex job against a new embedder vector space."""
+    try:
+        resolved_collection = _validate_collection_name(collection)
+        job = store.start_reindex(
+            tenant,
+            resolved_collection,
+            embedder_type=embedder_type,
+            embed_model=embed_model,
+            embedder_config=embedder_config,
+        )
+        return {"ok": True, **job}
+    except ServiceError as exc:
+        return {
+            "ok": False,
+            "code": exc.code,
+            "error": exc.message,
+            "error_type": "invalid",
+        }
+    except FileNotFoundError as exc:
+        return {
+            "ok": False,
+            "code": "collection_not_found",
+            "error": str(exc),
+            "error_type": "not_found",
+        }
+    except ReindexJobConflictError as exc:
+        return {
+            "ok": False,
+            "code": "reindex_conflict",
+            "error": str(exc),
+            "error_type": "conflict",
+        }
+    except EmbedderUnavailableError as exc:
+        return {
+            "ok": False,
+            "code": "embedder_unavailable",
+            "error": str(exc),
+            "error_type": "unavailable",
+        }
+    except ValueError as exc:
+        return {
+            "ok": False,
+            "code": "reindex_invalid",
+            "error": str(exc),
+            "error_type": "invalid",
+        }
+    except Exception as exc:
+        log.warning(
+            f"start_collection_reindex failed tenant={tenant} "
+            f"coll={collection}: {exc}"
+        )
+        return {
+            "ok": False,
+            "code": "reindex_failed",
+            "error": str(exc),
+            "error_type": "failed",
+        }
+
+
+def _reindex_job_action(store, job_id: str, action: str) -> ServiceResult:
+    try:
+        operation = getattr(store, action)
+        return {"ok": True, **operation(job_id)}
+    except FileNotFoundError as exc:
+        return {
+            "ok": False,
+            "code": "reindex_job_not_found",
+            "error": str(exc),
+            "error_type": "not_found",
+        }
+    except (ReindexJobStateError, ValueError) as exc:
+        return {
+            "ok": False,
+            "code": "reindex_state_conflict",
+            "error": str(exc),
+            "error_type": "conflict",
+        }
+    except Exception as exc:
+        log.warning(
+            f"reindex job action failed job={job_id} action={action}: {exc}"
+        )
+        return {
+            "ok": False,
+            "code": "reindex_failed",
+            "error": str(exc),
+            "error_type": "failed",
+        }
+
+
+def get_reindex_job(store, job_id: str) -> ServiceResult:
+    return _reindex_job_action(store, job_id, "get_reindex_job")
+
+
+def pause_reindex_job(store, job_id: str) -> ServiceResult:
+    return _reindex_job_action(store, job_id, "pause_reindex")
+
+
+def resume_reindex_job(store, job_id: str) -> ServiceResult:
+    return _reindex_job_action(store, job_id, "resume_reindex")
+
+
+def cancel_reindex_job(store, job_id: str) -> ServiceResult:
+    return _reindex_job_action(store, job_id, "cancel_reindex")
 
 
 def _sum_timing(*timings: dict[str, float]) -> dict[str, float]:

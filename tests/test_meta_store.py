@@ -17,6 +17,7 @@ from pave.metadb import (
     CatalogDB,
     CollectionDB,
     LegacyMetadataError,
+    ReindexJobConflictError,
     SchemaMigrationError,
     UnsupportedSchemaVersionError,
 )
@@ -66,7 +67,7 @@ def test_catalog_db_open_creates_schema(tmp_path):
         "AND name IN ("
         "'schema_migrations', 'collections', 'query_home', "
         "'metrics_state', 'metrics_counters', 'metrics_latency_samples', "
-        "'rate_limit_buckets'"
+        "'rate_limit_buckets', 'reindex_jobs'"
         ")"
     )
     names = {row[0] for row in cur.fetchall()}
@@ -78,9 +79,71 @@ def test_catalog_db_open_creates_schema(tmp_path):
         "metrics_counters",
         "metrics_latency_samples",
         "rate_limit_buckets",
+        "reindex_jobs",
     } <= names
     version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
-    assert version == (6,)
+    assert version == (7,)
+    db.close()
+
+
+def test_catalog_reindex_jobs_are_durable_and_single_flight(tmp_path):
+    path = _catalog_db(tmp_path)
+    db = CatalogDB()
+    db.open(path)
+    source = {
+        "backend_type": "faiss",
+        "backend_config": {},
+        "embedder_type": "sbert",
+        "embed_model": "old",
+        "embedder_config": {},
+    }
+    target = {**source, "embed_model": "new"}
+
+    created = db.create_reindex_job(
+        "job-1",
+        "acme",
+        "documents",
+        source,
+        target,
+    )
+    assert created["status"] == "queued"
+    with pytest.raises(ReindexJobConflictError):
+        db.create_reindex_job(
+            "job-2",
+            "acme",
+            "documents",
+            source,
+            target,
+        )
+    assert db.update_reindex_job(
+        "job-1",
+        expected_statuses=("queued",),
+        status="running",
+        total_chunks=3,
+        completed_chunks=1,
+        set_started=True,
+    )
+    db.interrupt_reindex_jobs()
+    db.close()
+
+    db.open(path)
+    interrupted = db.get_reindex_job("job-1")
+    assert interrupted is not None
+    assert interrupted["status"] == "paused"
+    assert interrupted["completed_chunks"] == 1
+    assert db.update_reindex_job(
+        "job-1",
+        expected_statuses=("paused",),
+        status="cancelled",
+        set_finished=True,
+    )
+    assert db.create_reindex_job(
+        "job-2",
+        "acme",
+        "documents",
+        source,
+        target,
+    )["status"] == "queued"
     db.close()
 
 
@@ -156,6 +219,29 @@ def test_catalog_db_migrates_rate_limit_table_from_version_five(
         "SELECT name FROM sqlite_master "
         "WHERE type='table' AND name='rate_limit_buckets'"
     ).fetchone() == ("rate_limit_buckets",)
+    db.close()
+
+
+def test_catalog_db_migrates_reindex_jobs_from_version_six(
+    monkeypatch,
+    tmp_path,
+):
+    path = _catalog_db(tmp_path)
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 6)
+    db = CatalogDB()
+    db.open(path)
+    db.register_collection("acme", "documents")
+    db.close()
+
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 7)
+    db.open(path)
+
+    assert db.list_collections("acme") == ["documents"]
+    assert db._schema_version(db._require_rconn()) == 7
+    assert db._require_rconn().execute(
+        "SELECT name FROM sqlite_master "
+        "WHERE type='table' AND name='reindex_jobs'"
+    ).fetchone() == ("reindex_jobs",)
     db.close()
 
 
@@ -508,17 +594,20 @@ def test_catalog_db_applies_forward_migration(monkeypatch, tmp_path):
     db.register_collection("acme", "documents")
     db.close()
 
-    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 7)
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 8)
     monkeypatch.setattr(
         metadb,
         "_CATALOG_MIGRATIONS",
-        {7: ["CREATE TABLE preview_migration_probe (value TEXT)"]},
+        {
+            **metadb._CATALOG_MIGRATIONS,
+            8: ["CREATE TABLE preview_migration_probe (value TEXT)"],
+        },
     )
 
     db.open(db_path)
 
     assert db.list_collections("acme") == ["documents"]
-    assert db._schema_version(db._require_rconn()) == 7
+    assert db._schema_version(db._require_rconn()) == 8
     assert db._require_rconn().execute(
         "SELECT name FROM sqlite_master "
         "WHERE type='table' AND name='preview_migration_probe'"
@@ -532,11 +621,14 @@ def test_catalog_migration_serializes_across_connections(monkeypatch, tmp_path):
     db.open(db_path)
     db.close()
 
-    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 7)
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 8)
     monkeypatch.setattr(
         metadb,
         "_CATALOG_MIGRATIONS",
-        {7: ["CREATE TABLE preview_migration_probe (value TEXT)"]},
+        {
+            **metadb._CATALOG_MIGRATIONS,
+            8: ["CREATE TABLE preview_migration_probe (value TEXT)"],
+        },
     )
     start = threading.Barrier(2)
     errors: list[Exception] = []
@@ -560,7 +652,7 @@ def test_catalog_migration_serializes_across_connections(monkeypatch, tmp_path):
     assert not errors
     assert all(not thread.is_alive() for thread in threads)
     with sqlite3.connect(db_path) as conn:
-        assert CatalogDB._schema_version(conn) == 7
+        assert CatalogDB._schema_version(conn) == 8
 
 
 def test_catalog_db_rolls_back_failed_migration(monkeypatch, tmp_path):
@@ -569,12 +661,13 @@ def test_catalog_db_rolls_back_failed_migration(monkeypatch, tmp_path):
     db.open(db_path)
     db.close()
 
-    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 7)
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 8)
     monkeypatch.setattr(
         metadb,
         "_CATALOG_MIGRATIONS",
         {
-            7: [
+            **metadb._CATALOG_MIGRATIONS,
+            8: [
                 "CREATE TABLE preview_migration_probe (value TEXT)",
                 "INVALID SQL",
             ]
@@ -585,7 +678,7 @@ def test_catalog_db_rolls_back_failed_migration(monkeypatch, tmp_path):
         db.open(db_path)
 
     with sqlite3.connect(db_path) as conn:
-        assert CatalogDB._schema_version(conn) == 6
+        assert CatalogDB._schema_version(conn) == 7
         assert conn.execute(
             "SELECT name FROM sqlite_master "
             "WHERE type='table' AND name='preview_migration_probe'"
@@ -599,7 +692,7 @@ def test_catalog_db_rejects_newer_schema_version(tmp_path):
     with db._writer() as conn, conn:
         conn.execute(
             "INSERT INTO schema_migrations (version, applied_at) "
-            "VALUES (7, 'future')"
+            "VALUES (8, 'future')"
         )
     db.close()
 

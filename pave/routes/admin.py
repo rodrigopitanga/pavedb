@@ -22,22 +22,29 @@ from pave.schemas import (
     ListTenantsResponse,
     MoveCollectionBody,
     MoveCollectionResponse,
+    ReindexCollectionBody,
+    ReindexJobResponse,
     ResetMetricsResponse,
     RestoreArchiveResponse,
     RestoreCollectionArchiveResponse,
 )
 from pave.service import (
     ServiceError,
+    cancel_reindex_job as svc_cancel_reindex_job,
     dump_collection_archive as svc_dump_collection_archive,
     dump_archive as svc_dump_archive,
     get_query_log_entry_scoped as svc_get_query_log_entry_scoped,
+    get_reindex_job as svc_get_reindex_job,
     list_embedders as svc_list_embedders,
     list_tenants as svc_list_tenants,
     move_collection as svc_move_collection,
+    pause_reindex_job as svc_pause_reindex_job,
     replay_query_scoped as svc_replay_query_scoped,
     resolve_query_home as svc_resolve_query_home,
     restore_collection_archive as svc_restore_collection_archive,
     restore_archive as svc_restore_archive,
+    resume_reindex_job as svc_resume_reindex_job,
+    start_collection_reindex as svc_start_collection_reindex,
 )
 from pave.routes._deps import current_store
 from pave.stores.base import BaseStore
@@ -441,6 +448,187 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
                 request_id=rid,
             )
         return trace(result, request, request_id=rid)
+
+    def reindex_response(result, request: Request, rid: str | None):
+        if result.get("ok"):
+            return trace(result, request, request_id=rid)
+        status_map = {
+            "not_found": 404,
+            "conflict": 409,
+            "invalid": 400,
+            "unavailable": 503,
+            "failed": 500,
+        }
+        error_type = result.get("error_type", "failed")
+        return error(
+            status_map.get(error_type, 500),
+            result.get("code", "reindex_failed"),
+            result.get("error", "reindex operation failed"),
+            request=request,
+            request_id=rid,
+        )
+
+    @router.post(
+        "/admin/collections/{tenant}/{name}/reindex",
+        status_code=202,
+        summary="Reindex a collection",
+        description=(
+            "Starts an interruptible, resumable vector rebuild against a new "
+            "embedder specification; requires the admin key."
+        ),
+        response_model=ReindexJobResponse,
+        responses=resp(400, 401, 403, 404, 409, 500, 503),
+        tags=["Instance Admin"],
+    )
+    @ops_event("start_collection_reindex", coll="name", request_id="rid")
+    def start_collection_reindex(
+        request: Request,
+        tenant: str,
+        name: str,
+        body: ReindexCollectionBody,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+    ):
+        if not ctx.is_admin:
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
+        result = svc_start_collection_reindex(
+            store,
+            tenant,
+            name,
+            embedder_type=body.embedder_type,
+            embed_model=body.embed_model,
+            embedder_config=body.embedder_config,
+        )
+        return reindex_response(result, request, rid)
+
+    @router.get(
+        "/admin/reindex/{job_id}",
+        summary="Get reindex job status",
+        description="Returns durable reindex progress; requires the admin key.",
+        response_model=ReindexJobResponse,
+        responses=resp(401, 403, 404, 500),
+        tags=["Instance Admin"],
+    )
+    @ops_event("get_reindex_job", coll=None, request_id="rid")
+    def get_reindex_job(
+        request: Request,
+        job_id: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+    ):
+        if not ctx.is_admin:
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
+        return reindex_response(svc_get_reindex_job(store, job_id), request, rid)
+
+    @router.post(
+        "/admin/reindex/{job_id}/pause",
+        summary="Pause a reindex job",
+        description=(
+            "Requests a pause after the current persisted batch; requires the "
+            "admin key."
+        ),
+        response_model=ReindexJobResponse,
+        responses=resp(401, 403, 404, 409, 500),
+        tags=["Instance Admin"],
+    )
+    @ops_event("pause_reindex_job", coll=None, request_id="rid")
+    def pause_reindex_job(
+        request: Request,
+        job_id: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+    ):
+        if not ctx.is_admin:
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
+        return reindex_response(
+            svc_pause_reindex_job(store, job_id),
+            request,
+            rid,
+        )
+
+    @router.post(
+        "/admin/reindex/{job_id}/resume",
+        summary="Resume a reindex job",
+        description="Resumes from persisted batches; requires the admin key.",
+        response_model=ReindexJobResponse,
+        responses=resp(401, 403, 404, 409, 500),
+        tags=["Instance Admin"],
+    )
+    @ops_event("resume_reindex_job", coll=None, request_id="rid")
+    def resume_reindex_job(
+        request: Request,
+        job_id: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+    ):
+        if not ctx.is_admin:
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
+        return reindex_response(
+            svc_resume_reindex_job(store, job_id),
+            request,
+            rid,
+        )
+
+    @router.delete(
+        "/admin/reindex/{job_id}",
+        summary="Cancel a reindex job",
+        description=(
+            "Discards staged vectors without changing the live index; requires "
+            "the admin key."
+        ),
+        response_model=ReindexJobResponse,
+        responses=resp(401, 403, 404, 409, 500),
+        tags=["Instance Admin"],
+    )
+    @ops_event("cancel_reindex_job", coll=None, request_id="rid")
+    def cancel_reindex_job(
+        request: Request,
+        job_id: str,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+    ):
+        if not ctx.is_admin:
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
+        return reindex_response(
+            svc_cancel_reindex_job(store, job_id),
+            request,
+            rid,
+        )
 
     @router.get(
         "/admin/queries/{query_id}",
