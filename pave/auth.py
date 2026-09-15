@@ -16,6 +16,7 @@ import tempfile
 # typing imports removed
 from fastapi import HTTPException, Depends, Security, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from starlette.concurrency import run_in_threadpool
 from .config import get_cfg, get_logger
 
 bearer = HTTPBearer(auto_error=False)
@@ -254,6 +255,43 @@ def _tenant_limit_exception(
     )
 
 
+def _tenant_window_limit_exception(
+    *,
+    tenant: str,
+    limit: int,
+    window_seconds: int,
+    retry_after: int,
+    path: str,
+    request_id: str | None,
+) -> HTTPException:
+    log.warning(
+        "tenant request capped by moving-window rate limit tenant=%s "
+        "limit=%s window_seconds=%s path=%s request_id=%s",
+        tenant,
+        limit,
+        window_seconds,
+        path,
+        request_id,
+    )
+    return HTTPException(
+        status_code=429,
+        detail={
+            "code": "tenant_rate_limited",
+            "error": (
+                f"tenant request capped by moving-window rate limit for "
+                f"tenant {tenant} (limit={limit}, "
+                f"window_seconds={window_seconds})"
+            ),
+        },
+        headers={
+            "Retry-After": str(retry_after),
+            "X-RateLimit-Limit": str(limit),
+            "X-RateLimit-Remaining": "0",
+            "X-RateLimit-Window": str(window_seconds),
+        },
+    )
+
+
 class ConcurrencySlot:
     """One held concurrency slot, released exactly once from any thread.
 
@@ -298,7 +336,7 @@ async def tenant_rate_limit(
     response: Response,
     ctx: AuthContext = Depends(authorize_tenant),
 ):
-    """Per-tenant concurrent cap. Admin and unconfigured tenants bypass."""
+    """Per-tenant request-rate and concurrent caps; admins bypass both."""
     if ctx.is_admin or ctx.tenant is None:
         yield ctx
         return
@@ -312,7 +350,7 @@ async def tenant_limit_gate(
     response: Response,
     tenant: str | None,
 ):
-    """Apply per-tenant concurrent caps outside auth-bound dependencies."""
+    """Apply per-tenant request caps outside auth-bound dependencies."""
     if tenant is None:
         yield
         return
@@ -323,15 +361,40 @@ async def tenant_limit_gate(
     # turned the request cap off still wants the share to work.
     request.state.capped_tenant = tenant
 
-    max_c = request.app.state.tenant_limits.get(
-        tenant, request.app.state.tenant_default_limit
+    state = request.app.state
+    rate_limits = state.tenant_rate_limits.get(
+        tenant,
+        state.tenant_default_rate_limits,
     )
+    window_limited = any(limit > 0 for limit in rate_limits.values())
+    if window_limited:
+        decision = await run_in_threadpool(
+            state.tenant_rate_limiter,
+            tenant,
+            "global",
+            rate_limits,
+            now=state.tenant_rate_clock(),
+        )
+        if not decision.allowed:
+            raise _tenant_window_limit_exception(
+                tenant=tenant,
+                limit=int(decision.limit or 0),
+                window_seconds=int(decision.window_seconds or 0),
+                retry_after=int(decision.retry_after or 1),
+                path=request.url.path,
+                request_id=getattr(request.state, "request_id", None),
+            )
+        response.headers["X-RateLimit-Limit"] = str(decision.limit)
+        response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
+        response.headers["X-RateLimit-Window"] = str(decision.window_seconds)
+
+    max_c = state.tenant_limits.get(tenant, state.tenant_default_limit)
     if max_c <= 0:
         yield
         return
 
-    active = request.app.state.tenant_active
-    lock = request.app.state.tenant_lock
+    active = state.tenant_active
+    lock = state.tenant_lock
     # Under the lock: a detached search thread releases its slot from the
     # pool, so the check and the increment can no longer assume the event
     # loop serializes every writer.
@@ -343,7 +406,7 @@ async def tenant_limit_gate(
     if not admitted:
         source = (
             "tenant-scoped cap"
-            if tenant in request.app.state.tenant_limits
+            if tenant in state.tenant_limits
             else "instance-scoped tenant cap"
         )
         raise _tenant_limit_exception(
@@ -364,8 +427,9 @@ async def tenant_limit_gate(
     # thread) can keep the tenant's slot until it really finishes.
     request.state.tenant_slot = slot
     remaining = max(0, max_c - (current + 1))
-    response.headers["X-RateLimit-Limit"] = str(max_c)
-    response.headers["X-RateLimit-Remaining"] = str(remaining)
+    if not window_limited:
+        response.headers["X-RateLimit-Limit"] = str(max_c)
+        response.headers["X-RateLimit-Remaining"] = str(remaining)
     try:
         yield
     finally:

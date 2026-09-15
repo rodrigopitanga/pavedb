@@ -50,6 +50,7 @@ from pave.metadb import (
     ChunkLimitError,
     CollectionConfigRecoveryError,
     CollectionDB,
+    RateLimitDecision,
     UnsupportedSchemaVersionError,
     validate_collection_config,
 )
@@ -1090,6 +1091,22 @@ class LocalStore:
         """Collection-count cap. Enforced only on explicit create, never on
         catalog bootstrap, rename, or archive restore."""
         return self._tenant_limit(tenant, "max_collections")
+
+    def charge_rate_limit(
+        self,
+        tenant: str,
+        operation: str,
+        limits: dict[int, int],
+        *,
+        now: float | None = None,
+    ) -> RateLimitDecision:
+        """Charge persistent request-rate windows in the global catalog."""
+        return self._ensure_catalog().charge_rate_limit(
+            tenant,
+            operation,
+            limits,
+            now=now,
+        )
 
     def _collection_config_for_load(
         self,

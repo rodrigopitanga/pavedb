@@ -322,6 +322,20 @@ unresponsive provider can hold a worker slot.
 - Env var: `PAVEDB_TENANTS__DEFAULT_MAX_CONCURRENT`
 - Description: Default per-tenant concurrent request cap; 0 disables the cap.
 
+### `tenants.default_max_rpm`
+
+- Default: `0`
+- Env var: `PAVEDB_TENANTS__DEFAULT_MAX_RPM`
+- Description: Default moving-window request limit per tenant and minute; 0 disables the
+  limit. Per-tenant max_rpm in tenants.yml overrides it.
+
+### `tenants.default_max_rph`
+
+- Default: `0`
+- Env var: `PAVEDB_TENANTS__DEFAULT_MAX_RPH`
+- Description: Default moving-window request limit per tenant and hour; 0 disables the
+  limit. Per-tenant max_rph in tenants.yml overrides it.
+
 ### `tenants.default_max_collections`
 
 - Default: `0`

@@ -196,6 +196,16 @@
       "description": "Default per-tenant concurrent request cap; 0 disables the cap."
     },
     {
+      "key": "tenants.default_max_rpm",
+      "default": 0,
+      "description": "Default moving-window request limit per tenant and minute; 0 disables the limit. Per-tenant max_rpm in tenants.yml overrides it."
+    },
+    {
+      "key": "tenants.default_max_rph",
+      "default": 0,
+      "description": "Default moving-window request limit per tenant and hour; 0 disables the limit. Per-tenant max_rph in tenants.yml overrides it."
+    },
+    {
       "key": "tenants.default_max_collections",
       "default": 0,
       "description": "Default per-tenant collection-count limit enforced at creation; 0 disables the cap. Per-tenant max_collections in tenants.yml overrides it."

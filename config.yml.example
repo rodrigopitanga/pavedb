@@ -338,6 +338,16 @@ tenants:
   # Env: PAVEDB_TENANTS__DEFAULT_MAX_CONCURRENT
   default_max_concurrent: 42
 
+  # Default moving-window request limit per tenant and minute; 0 disables the limit.
+  # Per-tenant max_rpm in tenants.yml overrides it.
+  # Env: PAVEDB_TENANTS__DEFAULT_MAX_RPM
+  default_max_rpm: 0
+
+  # Default moving-window request limit per tenant and hour; 0 disables the limit.
+  # Per-tenant max_rph in tenants.yml overrides it.
+  # Env: PAVEDB_TENANTS__DEFAULT_MAX_RPH
+  default_max_rph: 0
+
   # Default per-tenant collection-count limit enforced at creation; 0 disables the cap.
   # Per-tenant max_collections in tenants.yml overrides it.
   # Env: PAVEDB_TENANTS__DEFAULT_MAX_COLLECTIONS

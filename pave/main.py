@@ -493,6 +493,8 @@ def build_app(cfg) -> FastAPI:
         data_dir=str(cfg.get("data_dir")),
         embedder=LazyEmbedder(get_embedder),
     )
+    app.state.tenant_rate_limiter = app.state.store.charge_rate_limit
+    app.state.tenant_rate_clock = time.time
     # The shared corpus used to be conjured by the first include_common
     # search. Read paths no longer create collections (B33), so the operator's
     # configured corpus is brought into existence here instead.
@@ -574,7 +576,7 @@ def build_app(cfg) -> FastAPI:
     # read-modify-write genuinely races without this.
     app.state.ingest_lock = threading.Lock()
 
-    # Per-tenant concurrency limits
+    # Per-tenant concurrency and moving-window request-rate limits.
     _tenants_cfg = cfg.get("tenants") or {}
     _raw_def = (
         _tenants_cfg.get("default_max_concurrent")
@@ -585,13 +587,40 @@ def build_app(cfg) -> FastAPI:
     app.state.tenant_limits = {}
     app.state.tenant_active = {}
     app.state.tenant_lock = threading.Lock()
+    app.state.tenant_default_rate_limits = {
+        60: int(
+            _tenants_cfg.get("default_max_rpm", 0)
+            if isinstance(_tenants_cfg, dict)
+            else 0
+        ),
+        3600: int(
+            _tenants_cfg.get("default_max_rph", 0)
+            if isinstance(_tenants_cfg, dict)
+            else 0
+        ),
+    }
+    app.state.tenant_rate_limits = {}
     for _t, _tcfg in (_tenants_cfg.items() if isinstance(_tenants_cfg, dict) else []):
-        if _t == "default_max_concurrent" or not isinstance(_tcfg, dict):
+        if not isinstance(_tcfg, dict):
             continue
         _lim = _tcfg.get("max_concurrent")
         if _lim is not None:
             app.state.tenant_limits[_t] = int(_lim)
             app.state.tenant_active[_t] = 0
+        _rpm = _tcfg.get("max_rpm")
+        _rph = _tcfg.get("max_rph")
+        app.state.tenant_rate_limits[_t] = {
+            60: (
+                int(_rpm)
+                if _rpm is not None
+                else app.state.tenant_default_rate_limits[60]
+            ),
+            3600: (
+                int(_rph)
+                if _rph is not None
+                else app.state.tenant_default_rate_limits[3600]
+            ),
+        }
 
     ops_log.configure(cfg.get("log.ops_log"))
 

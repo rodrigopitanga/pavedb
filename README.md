@@ -64,8 +64,8 @@ debugging — and available the same way from the CLI, the REST API, or any clie
   up, replay it, and inspect the exact chunk that matched.
 - **Multi-tenant by default** — tenant/collection namespacing is built in, not bolted
   on (and transparent when you just don't need it). Tenants carry their own API keys,
-  concurrency caps, and hard collection and chunk quotas, so a single instance can
-  safely serve a shared plan.
+  persistent per-minute and per-hour request limits, concurrency caps, and hard
+  collection and chunk quotas, so a single instance can safely serve a shared plan.
 - **Embed it, script it, or serve it** — use the Python SDK, the Elixir or
   TypeScript client, drive the CLI, or call the HTTP server from any
   environment. Same ops, same provenance.
@@ -292,9 +292,9 @@ resolve in order of precedence: the `PAVEDB_*` environment scheme (`PAVEDB_SERVE
 point at an explicit file. For alternate instances, `pavecli init /path/to/instance` and
 target it with `pavesrv --home=/path/to/instance` (or
 `pavecli --home /path/to/instance <command> ...`). See `config.yml.example` for every
-setting. Per-tenant secrets and limits — API keys, concurrency caps, and hard
-collection/chunk quotas — live in a `tenants.yml` sidecar, so one instance can run a
-shared multi-tenant plan with no extra infrastructure.
+setting. Per-tenant secrets and limits — API keys, moving-window request rates,
+concurrency caps, and hard collection/chunk quotas — live in a `tenants.yml` sidecar,
+so one instance can run a shared multi-tenant plan with no extra infrastructure.
 
 ### Logging
 

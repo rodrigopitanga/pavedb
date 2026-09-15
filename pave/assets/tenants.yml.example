@@ -7,14 +7,15 @@
 #     acme: change-me
 #     umbrella: change-me
 
-# Per-tenant concurrency overrides.
-# Omit a tenant entry to fall back to tenants.default_max_concurrent in config.yml.
+# Per-tenant request limits.
+# Omit a setting to fall back to its tenants.default_* value in config.yml.
 # 0 = unlimited for that tenant.
-# Moving-window limits (max_rpm, max_rph) will be added here after SQLite lands.
 #
 # tenants:
 #   acme:
 #     max_concurrent: 5   # overrides global default for acme; 0 = unlimited
+#     max_rpm: 120        # moving-window requests per minute
+#     max_rph: 5000       # moving-window requests per hour
 #     max_collections: 10 # collection-count cap; overrides
 #                         # tenants.default_max_collections; 0 = unlimited
 #     max_chunks_per_collection: 100000 # indexed-chunk cap per collection;

@@ -93,7 +93,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-25 | ~~Dev vs prod config defaults~~ | 🔧 | Safe defaults — code defaults are prod-safe (`auth.mode=none` refuses to boot outside dev); dev overlay lives in the `make serve` env | v1.0 |
 | P1-26 | ~~Config reference + CI doc check~~ | 🧩 | Config clarity | v1.0 |
 | P1-27 | ~~Admin key auto-generate + persist~~ | 🧩 | Secure bootstrap | v1.1 |
-| P1-28 | Moving-window rate limiting per tenant | 🔧 | req/min, req/hour — needs `rate_limit_buckets` table (Phase 3); rides SQLite Phase 3 with P2-39 | v1.2 |
+| P1-28 | ~~Moving-window rate limiting per tenant~~ | 🔧 | req/min, req/hour — persistent `rate_limit_buckets` state in the catalog | v1.2 |
 | P1-29 | ~~VectorBackend protocol~~ | 🔧 | Initial backend seam for store split | v0.5.9 |
 | P1-29b | ~~Clean protocol + Faiss path~~ | 🔧 | Finish FAISS cutover | v0.5.9 |
 | P1-29c | ~~CollectionDB k/v pre-filter~~ | 🔧 | First pushdown stage | v0.5.9 |
@@ -592,9 +592,8 @@ lands where it has more impact during post-contract hardening.
   verdict (P2-45).
 - Structured log retention: rolling window + purge via
   `operation_log` table (SQLite Phase 3); powers P2-13 (P2-39).
-- Moving-window per-tenant rate limiting (req/min, req/hour) via
-  `rate_limit_buckets` table; rides SQLite Phase 3 with P2-39
-  (P1-28).
+- ~~Moving-window per-tenant rate limiting (req/min, req/hour) via
+  persistent catalog `rate_limit_buckets` state (P1-28).~~
 
 ### PaveDB v1.3 — Reach
 

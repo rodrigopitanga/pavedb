@@ -593,7 +593,8 @@ IdP public key); no new table needed for it. See ROADMAP P3-17.
 and for each tenant entry INSERT OR IGNORE into `tenant_profiles`, populating
 `max_concurrent` from `tenants.<name>.max_concurrent` and the global default
 from `tenants.default_max_concurrent`. The `rate_limit_buckets` table (below)
-is the target for moving-window rate limiting seeded from `tenants.max_rpm`.
+persists moving-window rate limiting configured by per-tenant `max_rpm` and
+`max_rph` values.
 
 **Seed logic:** on first boot after Phase 3 migration, for each tenant in
 `tenants.yml`:
@@ -602,7 +603,7 @@ is the target for moving-window rate limiting seeded from `tenants.max_rpm`.
 
 After seeding, `tenants.yml` is only read for limits/profile fallback until
 those migrate to `tenant_profiles`. Per-tenant limits defined in `tenants.yml`
-today (`max_req_per_min`, `max_collections`, etc.) seed `tenant_profiles` by
+today (`max_rpm`, `max_rph`, `max_collections`, etc.) seed `tenant_profiles` by
 the same logic.
 
 **`api_keys` table:**
@@ -642,7 +643,8 @@ CREATE TABLE IF NOT EXISTS tenant_profiles (
     max_collections INTEGER,
     max_storage_mb  INTEGER,
     max_concurrent  INTEGER,   -- per-tenant concurrent request cap (0 = unlimited)
-    max_req_per_min INTEGER,
+    max_rpm         INTEGER,
+    max_rph         INTEGER,
     tier            TEXT,
     meta_json       TEXT   -- operator metadata: description, tags, cost-center, etc.
 );
@@ -653,12 +655,17 @@ CREATE TABLE IF NOT EXISTS tenant_profiles (
 ```sql
 CREATE TABLE IF NOT EXISTS rate_limit_buckets (
     tenant      TEXT NOT NULL,
-    operation   TEXT NOT NULL,   -- 'search', 'ingest', 'global'
+    operation   TEXT NOT NULL,   -- '<operation>:<window-seconds>'
     window_start TEXT NOT NULL,  -- ISO8601 truncated to window
     count        INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (tenant, operation, window_start)
 );
 ```
+
+P1-28 uses a sliding-counter approximation: the current bucket plus the
+previous bucket weighted by the portion of the current window that remains.
+Minute and hour admission are charged atomically, and expired buckets are
+removed during admission.
 
 **Aggregate metrics** — doc/chunk counts by collection for `/metrics` and admin
 endpoints. Runtime counter persistence is defined in

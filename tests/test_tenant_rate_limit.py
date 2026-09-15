@@ -3,6 +3,21 @@
 
 from fastapi.testclient import TestClient
 
+from pave.config import get_cfg
+from pave.main import build_app
+
+
+def test_build_app_loads_default_and_tenant_rate_limits():
+    cfg = get_cfg()
+    cfg.set("tenants.default_max_rpm", 100)
+    cfg.set("tenants.default_max_rph", 1000)
+    cfg.set("tenants.acme.max_rpm", 10)
+
+    configured = build_app(cfg)
+
+    assert configured.state.tenant_default_rate_limits == {60: 100, 3600: 1000}
+    assert configured.state.tenant_rate_limits["acme"] == {60: 10, 3600: 1000}
+
 
 def test_tenant_rate_limited_returns_429(app, monkeypatch):
     """Tenant at its concurrent limit gets 429 tenant_rate_limited."""
@@ -134,3 +149,59 @@ def test_unconfigured_tenant_no_default_unlimited(app, monkeypatch):
     )
     # Rate limit must NOT fire; any other status code is acceptable.
     assert r.status_code != 429
+
+
+def test_moving_window_request_limit_returns_429(app, monkeypatch):
+    cfg = app.state.cfg
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", None)
+    cfg.set("auth.api_keys", {"acme": "acmetoken"})
+    monkeypatch.setitem(app.state.tenant_rate_limits, "acme", {60: 2, 3600: 0})
+    monkeypatch.setattr(app.state, "tenant_rate_clock", lambda: 120.0)
+
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer acmetoken"}
+    first = client.get("/v1/collections/acme", headers=headers)
+    second = client.get("/v1/collections/acme", headers=headers)
+    denied = client.get("/v1/collections/acme", headers=headers)
+
+    assert first.status_code != 429
+    assert first.headers["X-RateLimit-Remaining"] == "1"
+    assert second.status_code != 429
+    assert second.headers["X-RateLimit-Remaining"] == "0"
+    assert denied.status_code == 429
+    assert denied.json()["code"] == "tenant_rate_limited"
+    assert denied.headers["X-RateLimit-Limit"] == "2"
+    assert denied.headers["X-RateLimit-Window"] == "60"
+    assert denied.headers["Retry-After"] == "60"
+
+
+def test_moving_window_limits_are_isolated_by_tenant(app, monkeypatch):
+    cfg = app.state.cfg
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", None)
+    cfg.set(
+        "auth.api_keys",
+        {"acme": "acmetoken", "other": "othertoken"},
+    )
+    monkeypatch.setattr(app.state, "tenant_default_rate_limits", {60: 1, 3600: 0})
+    monkeypatch.setattr(app.state, "tenant_rate_clock", lambda: 120.0)
+
+    client = TestClient(app)
+    acme = {"Authorization": "Bearer acmetoken"}
+    other = {"Authorization": "Bearer othertoken"}
+    assert client.get("/v1/collections/acme", headers=acme).status_code != 429
+    assert client.get("/v1/collections/acme", headers=acme).status_code == 429
+    assert client.get("/v1/collections/other", headers=other).status_code != 429
+
+
+def test_admin_bypasses_moving_window_request_limit(app, monkeypatch):
+    monkeypatch.setattr(app.state, "tenant_default_rate_limits", {60: 1, 3600: 1})
+    monkeypatch.setattr(app.state, "tenant_rate_clock", lambda: 120.0)
+
+    client = TestClient(app)
+    first = client.get("/v1/collections/public")
+    second = client.get("/v1/collections/public")
+
+    assert first.status_code != 429
+    assert second.status_code != 429

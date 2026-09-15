@@ -10,9 +10,10 @@ Two stores live here:
   query log. Uses a read/write connection split (both
   `check_same_thread=False`) serialized by separate locks.
 - `CatalogDB`: global SQLite catalog mapping tenants/collections to
-  their configured embedder spec and display label. Source of truth
-  for collection listings; bootstraps itself from the data
-  directory layout on first open.
+  their configured embedder spec and display label, plus persistent
+  operational counters such as request-rate buckets. Source of truth for
+  collection listings; bootstraps itself from the data directory layout on
+  first open.
 
 Both stores enable WAL mode and run their own schema migrations.
 The store layer (`pave.stores.local`) opens them; nothing else
@@ -22,10 +23,12 @@ touches their connection state.
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 import threading
 import time
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone as tz
 from pathlib import Path
 from typing import Any, Iterator
@@ -57,12 +60,33 @@ class ChunkLimitError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class RateLimitDecision:
+    allowed: bool
+    limit: int | None = None
+    remaining: int | None = None
+    retry_after: int | None = None
+    window_seconds: int | None = None
+
+
 _COLLECTION_BASELINE_SCHEMA_VERSION = 6
 _CATALOG_BASELINE_SCHEMA_VERSION = 5
 _COLLECTION_SCHEMA_VERSION = 6
-_CATALOG_SCHEMA_VERSION = 5
+_CATALOG_SCHEMA_VERSION = 6
 _COLLECTION_MIGRATIONS: dict[int, list[str]] = {}
-_CATALOG_MIGRATIONS: dict[int, list[str]] = {}
+_CATALOG_MIGRATIONS: dict[int, list[str]] = {
+    6: [
+        """
+        CREATE TABLE IF NOT EXISTS rate_limit_buckets (
+            tenant       TEXT NOT NULL,
+            operation    TEXT NOT NULL,
+            window_start TEXT NOT NULL,
+            count        INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (tenant, operation, window_start)
+        )
+        """,
+    ],
+}
 COLLECTION_CONFIG_FILENAME = "collection.json"
 COLLECTION_CONFIG_FIELDS = (
     "backend_type",
@@ -1361,6 +1385,177 @@ class CatalogDB:
         except Exception:
             return {}
         return loaded if isinstance(loaded, dict) else {}
+
+    @staticmethod
+    def _rate_bucket_start(timestamp: float, window_seconds: int) -> int:
+        return int(timestamp // window_seconds) * window_seconds
+
+    @staticmethod
+    def _rate_bucket_key(timestamp: int) -> str:
+        return datetime.fromtimestamp(timestamp, tz.utc).isoformat(
+            timespec="seconds"
+        )
+
+    @staticmethod
+    def _rate_retry_after(
+        *,
+        current: int,
+        previous: int,
+        limit: int,
+        elapsed: float,
+        window_seconds: int,
+    ) -> int:
+        remaining_window = window_seconds - elapsed
+        if previous > 0 and current < limit:
+            target_weight = (limit - current) / previous
+            wait = remaining_window - (target_weight * window_seconds)
+            return max(1, math.ceil(wait + 1e-9))
+        # A full current bucket begins decaying at the next boundary.
+        return max(1, math.ceil(remaining_window))
+
+    def charge_rate_limit(
+        self,
+        tenant: str,
+        operation: str,
+        limits: dict[int, int],
+        *,
+        now: float | None = None,
+    ) -> RateLimitDecision:
+        """Atomically charge one request against moving time windows.
+
+        Each configured window uses the current and previous fixed SQLite
+        buckets. The previous bucket is weighted by the fraction of the
+        current window that remains, which avoids the boundary burst allowed
+        by a plain fixed-window counter while keeping persistent state small.
+        A rejected request is not charged against any window.
+        """
+        enabled = sorted(
+            (int(window), int(limit))
+            for window, limit in limits.items()
+            if int(window) > 0 and int(limit) > 0
+        )
+        if not enabled:
+            return RateLimitDecision(allowed=True)
+
+        timestamp = time.time() if now is None else float(now)
+        if not math.isfinite(timestamp):
+            raise ValueError("rate-limit timestamp must be finite")
+
+        states: list[dict[str, int | float | str]] = []
+        with self._writer() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                for window_seconds, limit in enabled:
+                    bucket_operation = f"{operation}:{window_seconds}"
+                    start = self._rate_bucket_start(timestamp, window_seconds)
+                    previous_start = start - window_seconds
+                    start_key = self._rate_bucket_key(start)
+                    previous_key = self._rate_bucket_key(previous_start)
+                    conn.execute(
+                        "DELETE FROM rate_limit_buckets "
+                        "WHERE tenant=? AND operation=? AND window_start<?",
+                        (tenant, bucket_operation, previous_key),
+                    )
+                    rows = dict(
+                        conn.execute(
+                            "SELECT window_start, count "
+                            "FROM rate_limit_buckets "
+                            "WHERE tenant=? AND operation=? "
+                            "AND window_start IN (?, ?)",
+                            (
+                                tenant,
+                                bucket_operation,
+                                previous_key,
+                                start_key,
+                            ),
+                        ).fetchall()
+                    )
+                    current = int(rows.get(start_key, 0))
+                    previous = int(rows.get(previous_key, 0))
+                    elapsed = timestamp - start
+                    weighted = current + previous * (
+                        (window_seconds - elapsed) / window_seconds
+                    )
+                    remaining = max(
+                        0,
+                        math.floor(limit - (weighted + 1)),
+                    )
+                    states.append(
+                        {
+                            "window": window_seconds,
+                            "limit": limit,
+                            "operation": bucket_operation,
+                            "start": start_key,
+                            "current": current,
+                            "previous": previous,
+                            "elapsed": elapsed,
+                            "weighted": weighted,
+                            "remaining": remaining,
+                        }
+                    )
+
+                rejected = [
+                    state
+                    for state in states
+                    if float(state["weighted"]) >= int(state["limit"])
+                ]
+                if rejected:
+                    decisions = [
+                        (
+                            self._rate_retry_after(
+                                current=int(state["current"]),
+                                previous=int(state["previous"]),
+                                limit=int(state["limit"]),
+                                elapsed=float(state["elapsed"]),
+                                window_seconds=int(state["window"]),
+                            ),
+                            state,
+                        )
+                        for state in rejected
+                    ]
+                    retry_after, binding = max(
+                        decisions,
+                        key=lambda item: item[0],
+                    )
+                    conn.rollback()
+                    return RateLimitDecision(
+                        allowed=False,
+                        limit=int(binding["limit"]),
+                        remaining=0,
+                        retry_after=retry_after,
+                        window_seconds=int(binding["window"]),
+                    )
+
+                for state in states:
+                    conn.execute(
+                        """
+                        INSERT INTO rate_limit_buckets (
+                            tenant, operation, window_start, count
+                        ) VALUES (?, ?, ?, 1)
+                        ON CONFLICT(tenant, operation, window_start) DO UPDATE
+                        SET count=rate_limit_buckets.count + 1
+                        """,
+                        (tenant, state["operation"], state["start"]),
+                    )
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+
+        binding = min(
+            states,
+            key=lambda state: (
+                int(state["remaining"]) / int(state["limit"]),
+                int(state["window"]),
+            ),
+        )
+        return RateLimitDecision(
+            allowed=True,
+            limit=int(binding["limit"]),
+            remaining=int(binding["remaining"]),
+            retry_after=0,
+            window_seconds=int(binding["window"]),
+        )
 
     def metrics_generation(self) -> str:
         with self._reader() as conn:

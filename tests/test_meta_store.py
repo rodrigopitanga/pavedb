@@ -65,7 +65,8 @@ def test_catalog_db_open_creates_schema(tmp_path):
         "SELECT name FROM sqlite_master WHERE type='table' "
         "AND name IN ("
         "'schema_migrations', 'collections', 'query_home', "
-        "'metrics_state', 'metrics_counters', 'metrics_latency_samples'"
+        "'metrics_state', 'metrics_counters', 'metrics_latency_samples', "
+        "'rate_limit_buckets'"
         ")"
     )
     names = {row[0] for row in cur.fetchall()}
@@ -76,9 +77,85 @@ def test_catalog_db_open_creates_schema(tmp_path):
         "metrics_state",
         "metrics_counters",
         "metrics_latency_samples",
+        "rate_limit_buckets",
     } <= names
     version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
-    assert version == (5,)
+    assert version == (6,)
+    db.close()
+
+
+def test_catalog_rate_limit_persists_and_smooths_window_boundary(tmp_path):
+    path = _catalog_db(tmp_path)
+    db = CatalogDB()
+    db.open(path)
+
+    first = db.charge_rate_limit("acme", "global", {60: 2}, now=120.0)
+    second = db.charge_rate_limit("acme", "global", {60: 2}, now=120.0)
+    assert first.allowed is True
+    assert first.remaining == 1
+    assert second.allowed is True
+    assert second.remaining == 0
+    db.close()
+
+    db.open(path)
+    assert db.charge_rate_limit(
+        "acme", "global", {60: 2}, now=120.0
+    ).allowed is False
+    boundary = db.charge_rate_limit(
+        "acme", "global", {60: 2}, now=180.0
+    )
+    assert boundary.allowed is False
+    assert boundary.retry_after == 1
+    assert db.charge_rate_limit(
+        "acme", "global", {60: 2}, now=181.0
+    ).allowed is True
+    db.close()
+
+
+def test_catalog_rate_limit_charges_enabled_windows_atomically(tmp_path):
+    db = CatalogDB()
+    db.open(_catalog_db(tmp_path))
+
+    assert db.charge_rate_limit(
+        "acme", "global", {60: 5, 3600: 1}, now=120.0
+    ).allowed is True
+    denied = db.charge_rate_limit(
+        "acme", "global", {60: 5, 3600: 1}, now=120.0
+    )
+
+    assert denied.allowed is False
+    assert denied.limit == 1
+    assert denied.window_seconds == 3600
+    conn = db._conn
+    assert conn is not None
+    counts = conn.execute(
+        "SELECT operation, count FROM rate_limit_buckets "
+        "WHERE tenant='acme' ORDER BY operation"
+    ).fetchall()
+    assert counts == [("global:3600", 1), ("global:60", 1)]
+    db.close()
+
+
+def test_catalog_db_migrates_rate_limit_table_from_version_five(
+    monkeypatch,
+    tmp_path,
+):
+    path = _catalog_db(tmp_path)
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 5)
+    db = CatalogDB()
+    db.open(path)
+    db.register_collection("acme", "documents")
+    db.close()
+
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 6)
+    db.open(path)
+
+    assert db.list_collections("acme") == ["documents"]
+    assert db._schema_version(db._require_rconn()) == 6
+    assert db._require_rconn().execute(
+        "SELECT name FROM sqlite_master "
+        "WHERE type='table' AND name='rate_limit_buckets'"
+    ).fetchone() == ("rate_limit_buckets",)
     db.close()
 
 
@@ -431,17 +508,17 @@ def test_catalog_db_applies_forward_migration(monkeypatch, tmp_path):
     db.register_collection("acme", "documents")
     db.close()
 
-    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 6)
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 7)
     monkeypatch.setattr(
         metadb,
         "_CATALOG_MIGRATIONS",
-        {6: ["CREATE TABLE preview_migration_probe (value TEXT)"]},
+        {7: ["CREATE TABLE preview_migration_probe (value TEXT)"]},
     )
 
     db.open(db_path)
 
     assert db.list_collections("acme") == ["documents"]
-    assert db._schema_version(db._require_rconn()) == 6
+    assert db._schema_version(db._require_rconn()) == 7
     assert db._require_rconn().execute(
         "SELECT name FROM sqlite_master "
         "WHERE type='table' AND name='preview_migration_probe'"
@@ -455,11 +532,11 @@ def test_catalog_migration_serializes_across_connections(monkeypatch, tmp_path):
     db.open(db_path)
     db.close()
 
-    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 6)
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 7)
     monkeypatch.setattr(
         metadb,
         "_CATALOG_MIGRATIONS",
-        {6: ["CREATE TABLE preview_migration_probe (value TEXT)"]},
+        {7: ["CREATE TABLE preview_migration_probe (value TEXT)"]},
     )
     start = threading.Barrier(2)
     errors: list[Exception] = []
@@ -483,7 +560,7 @@ def test_catalog_migration_serializes_across_connections(monkeypatch, tmp_path):
     assert not errors
     assert all(not thread.is_alive() for thread in threads)
     with sqlite3.connect(db_path) as conn:
-        assert CatalogDB._schema_version(conn) == 6
+        assert CatalogDB._schema_version(conn) == 7
 
 
 def test_catalog_db_rolls_back_failed_migration(monkeypatch, tmp_path):
@@ -492,12 +569,12 @@ def test_catalog_db_rolls_back_failed_migration(monkeypatch, tmp_path):
     db.open(db_path)
     db.close()
 
-    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 6)
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 7)
     monkeypatch.setattr(
         metadb,
         "_CATALOG_MIGRATIONS",
         {
-            6: [
+            7: [
                 "CREATE TABLE preview_migration_probe (value TEXT)",
                 "INVALID SQL",
             ]
@@ -508,7 +585,7 @@ def test_catalog_db_rolls_back_failed_migration(monkeypatch, tmp_path):
         db.open(db_path)
 
     with sqlite3.connect(db_path) as conn:
-        assert CatalogDB._schema_version(conn) == 5
+        assert CatalogDB._schema_version(conn) == 6
         assert conn.execute(
             "SELECT name FROM sqlite_master "
             "WHERE type='table' AND name='preview_migration_probe'"
@@ -522,7 +599,7 @@ def test_catalog_db_rejects_newer_schema_version(tmp_path):
     with db._writer() as conn, conn:
         conn.execute(
             "INSERT INTO schema_migrations (version, applied_at) "
-            "VALUES (6, 'future')"
+            "VALUES (7, 'future')"
         )
     db.close()
 
