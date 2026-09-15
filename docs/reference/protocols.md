@@ -18,8 +18,9 @@ on these seams staying stable across minor versions.
 
 ## Scope
 
-In scope: the `Embedder` and `VectorBackend` protocols, their method
-semantics, and the convention for registering a new embedder type.
+In scope: the `Embedder` and `VectorBackend` protocols, additive backend
+capabilities, their method semantics, and the convention for registering a new
+embedder type.
 
 Out of scope: every layer above the seams — `BaseStore` / `LocalStore`,
 `CollectionDB`, the catalog, `service.py`, and factory internals. Those
@@ -102,6 +103,28 @@ Implementations:
 |---|---|---|
 | `FaissBackend` | `pave/backends/faiss.py` | Default; persistent `IndexIDMap2` over `IndexFlatIP`. |
 
+### Optional filtered-search capability
+
+`VectorBackend` remains frozen. A backend may separately implement the
+runtime-checkable `FilteredSearchBackend` capability:
+
+```python
+class FilteredSearchBackend(Protocol):
+    def search_filtered(
+        self,
+        vector: NDArray[np.float32],
+        k: int,
+        allowed_rids: Collection[str],
+    ) -> list[SearchHit]: ...
+```
+
+`search_filtered` has the same query, score, descending-score ranking, and
+top-k semantics as `VectorBackend.search`, but considers only IDs in
+`allowed_rids`.
+Unknown IDs are ignored. Implementations must consume the allowed set without
+building a request-local index. Stores probe this capability at runtime and
+preserve the vector-first fallback for backends that do not implement it.
+
 ## Embedder authoring convention
 
 Adding an embedder type `<type>` means dropping a module into
@@ -139,6 +162,7 @@ written into the collection catalog.
 | Tier | Meaning | Examples |
 |---|---|---|
 | **Frozen** | Signature + semantics locked at v1.0. A breaking change is a v2.0 event. | `Embedder.encode`, `Embedder.dim`, `VectorBackend.search` / `add` / `delete` / `initialize` / `flush` / `close`, `EmbedderUnavailableError` |
+| **Capability** | Optional structural protocol; callers must probe support and keep a correct fallback. | `FilteredSearchBackend.search_filtered` |
 | **Stable** | Will not break existing callers, but may gain optional keyword arguments (with defaults) at a minor version. | `build_embedder` overrides; backend constructor kwargs |
 | **Internal** | Not part of the contract. Authors must not depend on these. | `BaseStore` / `LocalStore`, `CollectionDB`, `service.py`, factory internals (`_embedder_module`, `resolve_embedder_spec`, …), backend private attrs |
 

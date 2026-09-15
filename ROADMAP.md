@@ -136,7 +136,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-67 | ~~Elixir public API parity~~ | 🔧 | Cover the current user-facing `/v1` surface plus a basic `/health` connection check; defer `/admin`, `/metrics`, and `/embedders`. | v1.0 |
 | P1-68 | ~~Task-oriented engine guides~~ | 🔧 | Hand-written, low-boilerplate quickstart and usage guides shipped in the PaveDB source distribution, complementing the generated reference (P1-46) with narrative task-oriented docs rather than auto-generated dumps. | v1.1 |
 | P1-70 | ~~SQLite chunk-text index and content filters~~ | 🧱 | Make chunk text queryable through native FTS5 for contains/phrase/prefix filters and lexical candidates; prerequisite for P1-72 | v1.2 |
-| P1-71 | Backend-aware filtered vector search | 🧱 | Let SQLite-selected record IDs constrain vector search instead of relying on repeated vector-first overfetch; depends on P1-35 | v1.3 |
+| P1-71 | ~~Backend-aware filtered vector search~~ | 🧱 | Let SQLite-selected record IDs constrain vector search instead of relying on repeated vector-first overfetch; depends on P1-35 | v1.3 |
 | P1-72 | Hybrid lexical/vector retrieval | 🧱 | Fuse independent FAISS and SQLite FTS5 candidate lists; depends on P1-70 | v1.2 |
 | P1-73 | ~~Preview SQLite compatibility baseline~~ | 🔧 | Transactional forward migrations from v0.9.5; reject downgrades and pre-baseline schemas | v0.9.5 |
 | P1-74 | ~~Sbert embedder options: `trust_remote_code`, task prefixes (space keys), `runtime=remote` (TEI)~~ | 🔧 | Unlocks custom-architecture local models and GPU offload with an unchanged `vector_space_key`; additive config, frozen protocol untouched. | v1.1 |
@@ -609,8 +609,8 @@ lands where it has more impact during post-contract hardening.
 
 ### PaveDB v1.3 — Reach
 
-- Backend-aware filtered vector search using SQLite-selected record IDs;
-  depends on P1-35 (P1-71).
+- ~~Backend-aware filtered vector search using SQLite-selected record IDs;
+  depends on P1-35 (P1-71).~~
 - JavaScript/TypeScript client: typed, bootstrapped from OpenAPI
   spec, published to npm. Covers web frontends and Node.js backends
   (P2-33).
@@ -819,20 +819,19 @@ embeddings), design model hot-swap via a `/admin/reload` endpoint.
 The equivalent of spatial indexing for geo queries: pushing filters into
 the SQLite pre-filter instead of post-filtering in Python.
 
-**Current state:** `CollectionDB.filter_by_meta()` handles exact-match
-candidate reduction after FAISS search. Wildcards, comparisons, and
-negation remain in the canonical Python post-filter
-(`matches_filters()`). The legacy `_split_filters()` was removed in
-P1-37.
+**Current state:** `CollectionDB.filter_by_meta()` selects exact-match
+candidates before vector search when the backend implements the optional
+filtered-search capability. Wildcards, comparisons, and negation retain
+canonical Python evaluation (`matches_filters()`). The legacy
+`_split_filters()` was removed in P1-37.
 
-**Why it matters:** SQL filtering can avoid hydrating metadata for
-rejected vector candidates, but it does not reduce FAISS work while
-the pipeline remains vector-first. Narrow filters still trigger
-repeated overfetch.
+**Why it matters:** SQL-selected IDs now constrain FAISS work for selective
+filters instead of repeatedly expanding a vector-first candidate window.
+Backends without the capability keep that correct fallback.
 
-**Action:** P1-35 proves capability-based SQL filtering against
-canonical semantics in CI. P1-71 later lets SQLite-selected IDs
-constrain vector search itself. See PLAN-HYBRID-SEARCH.
+**Action:** P1-35 proves capability-based SQL filtering against canonical
+semantics in CI. P1-71 lets SQLite-selected IDs constrain vector search
+itself. See PLAN-HYBRID-SEARCH.
 
 ### 5. Graceful degradation under overload
 

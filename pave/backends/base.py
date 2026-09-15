@@ -11,9 +11,11 @@ semantics, ID stability, persistence guarantees — lives in
 
 from __future__ import annotations
 
+from collections.abc import Collection
+from typing import Protocol, runtime_checkable
+
 import numpy as np
 from numpy.typing import NDArray
-from typing import Protocol
 
 
 SearchHit = tuple[str, float]
@@ -43,3 +45,20 @@ class VectorBackend(Protocol):
     def flush(self) -> None: ...
 
     def close(self) -> None: ...
+
+
+@runtime_checkable
+class FilteredSearchBackend(Protocol):
+    """Optional backend capability for an allowed-record search.
+
+    This stays separate from the frozen ``VectorBackend`` contract. Backends
+    opt in when they can score only the supplied record IDs without building
+    a request-local index.
+    """
+
+    def search_filtered(
+        self,
+        vector: NDArray[np.float32],
+        k: int,
+        allowed_rids: Collection[str],
+    ) -> list[SearchHit]: ...

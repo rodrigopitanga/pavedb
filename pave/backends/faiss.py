@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Collection
 from pathlib import Path
 
 import faiss
@@ -42,6 +43,7 @@ class FaissBackend:
         self._index = faiss.IndexIDMap2(faiss.IndexFlatIP(self._dimension))
         self._rid_to_id: dict[str, int] = {}
         self._id_to_rid: dict[int, str] = {}
+        self._id_to_position: dict[int, int] = {}
         self._next_id = 0
         self._dirty = False
         self._discarded = False
@@ -93,8 +95,18 @@ class FaissBackend:
         self._index = loaded
         self._rid_to_id = rid_to_id
         self._id_to_rid = id_to_rid
+        self._rebuild_positions()
         self._next_id = next_id
         self._dirty = False
+
+    def _rebuild_positions(self) -> None:
+        """Refresh external FAISS ID to flat-index row positions."""
+        self._id_to_position = {
+            int(iid): position
+            for position, iid in enumerate(
+                faiss.vector_to_array(self._index.id_map)
+            )
+        }
 
     def add(self, rids: list[str], vectors: NDArray[np.float32]) -> None:
         if not rids:
@@ -129,8 +141,11 @@ class FaissBackend:
             self._id_to_rid[iid] = rid
             int_ids.append(iid)
 
+        first_position = int(self._index.ntotal)
         ids = np.array(int_ids, dtype=np.int64)
         self._index.add_with_ids(normed, ids)
+        for offset, iid in enumerate(int_ids):
+            self._id_to_position[iid] = first_position + offset
         self._dirty = True
         self._discarded = False
 
@@ -157,6 +172,69 @@ class FaissBackend:
                 continue
             out.append((rid, float(score)))
         return out
+
+    def search_filtered(
+        self,
+        vector: NDArray[np.float32],
+        k: int,
+        allowed_rids: Collection[str],
+    ) -> list[SearchHit]:
+        """Search only vectors whose record IDs are allowed.
+
+        ``IndexIDMap2`` retains the stable external-ID mapping for rows in its
+        flat index. Scoring only the selected rows keeps work proportional to
+        the SQLite selection and avoids rebuilding a temporary FAISS index per
+        request. The flat inner-product index is exact, so this produces the
+        same cosine scores as ``search`` for the selected records.
+        """
+        limit = int(k)
+        if limit <= 0 or self._index.ntotal == 0 or not allowed_rids:
+            return []
+
+        q = np.asarray(vector, dtype=np.float32).reshape(1, -1).copy()
+        faiss.normalize_L2(q)
+        query = q[0]
+
+        selected: list[tuple[str, int]] = []
+        for rid in sorted({str(value) for value in allowed_rids}):
+            iid = self._rid_to_id.get(rid)
+            if iid is None:
+                continue
+            position = self._id_to_position.get(iid)
+            if position is not None:
+                selected.append((rid, position))
+
+        if not selected:
+            return []
+
+        flat = faiss.downcast_index(self._index.index)
+        vectors = faiss.rev_swig_ptr(
+            flat.get_xb(),
+            int(flat.ntotal) * self._dimension,
+        ).reshape(int(flat.ntotal), self._dimension)
+
+        # Bound the temporary matrix while keeping score computation in NumPy
+        # rather than crossing the Python/FAISS boundary once per record.
+        hits: list[SearchHit] = []
+        batch_size = 4096
+        for offset in range(0, len(selected), batch_size):
+            batch = selected[offset : offset + batch_size]
+            positions = np.asarray(
+                [position for _rid, position in batch],
+                dtype=np.intp,
+            )
+            scores = vectors[positions] @ query
+            hits.extend(
+                (rid, float(score))
+                for (rid, _position), score in zip(
+                    batch,
+                    scores,
+                    strict=False,
+                )
+            )
+
+        hits.sort(key=lambda hit: (-hit[1], hit[0]))
+        return hits[:limit]
 
     def count(self) -> int:
         """Return the number of vectors currently indexed."""
@@ -197,6 +275,7 @@ class FaissBackend:
 
         if int_ids:
             self._index.remove_ids(np.array(int_ids, dtype=np.int64))
+            self._rebuild_positions()
             self._dirty = True
             self._discarded = False
 

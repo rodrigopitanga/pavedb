@@ -7,6 +7,7 @@ import faiss
 import numpy as np
 import pytest
 
+from pave.backends import FilteredSearchBackend
 from pave.backends.faiss import FaissBackend
 
 
@@ -16,6 +17,7 @@ def _v(*rows: list[float]) -> np.ndarray:
 
 def test_search_empty_index_returns_empty(tmp_path):
     backend = FaissBackend(4, storage_dir=tmp_path / "idx")
+    assert isinstance(backend, FilteredSearchBackend)
     hits = backend.search(_v([1, 0, 0, 0])[0], 5)
     assert hits == []
 
@@ -30,6 +32,40 @@ def test_add_search_delete_roundtrip(tmp_path):
     backend.delete(["r1"])
     hits_after = backend.search(_v([1, 0, 0, 0])[0], 5)
     assert [rid for rid, _ in hits_after] == ["r2"]
+    filtered_after = backend.search_filtered(
+        _v([1, 0, 0, 0])[0],
+        5,
+        {"r2"},
+    )
+    assert [rid for rid, _ in filtered_after] == ["r2"]
+
+
+def test_filtered_search_scores_only_allowed_rids(tmp_path):
+    backend = FaissBackend(4, storage_dir=tmp_path / "idx")
+    backend.add(
+        ["r1", "r2", "r3"],
+        _v([1, 0, 0, 0], [0.8, 0.2, 0, 0], [0, 1, 0, 0]),
+    )
+
+    hits = backend.search_filtered(
+        _v([1, 0, 0, 0])[0],
+        2,
+        {"r2", "r3", "missing"},
+    )
+
+    assert [rid for rid, _ in hits] == ["r2", "r3"]
+    assert all(rid != "r1" for rid, _ in hits)
+    regular_scores = dict(backend.search(_v([1, 0, 0, 0])[0], 3))
+    assert [score for _rid, score in hits] == pytest.approx(
+        [regular_scores["r2"], regular_scores["r3"]]
+    )
+
+
+def test_filtered_search_empty_selection_returns_empty(tmp_path):
+    backend = FaissBackend(4, storage_dir=tmp_path / "idx")
+    backend.add(["r1"], _v([1, 0, 0, 0]))
+
+    assert backend.search_filtered(_v([1, 0, 0, 0])[0], 5, set()) == []
 
 
 def test_add_reindex_keeps_unique_rids(tmp_path):
@@ -68,6 +104,12 @@ def test_flush_and_initialize_restore_index_state(tmp_path):
 
     hits = b2.search(_v([1, 0, 0, 0])[0], 10)
     assert [rid for rid, _ in hits] == ["r1", "r2"]
+    filtered = b2.search_filtered(
+        _v([1, 0, 0, 0])[0],
+        10,
+        {"r2"},
+    )
+    assert [rid for rid, _ in filtered] == ["r2"]
 
     b2.add(["r3"], _v([0, 0, 1, 0]))
     hits2 = b2.search(_v([0, 0, 1, 0])[0], 10)

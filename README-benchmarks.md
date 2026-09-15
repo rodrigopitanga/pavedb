@@ -69,6 +69,26 @@ failing. Timed queries are not retried.
 
 ---
 
+## filtered_search.py
+
+Compares the vector-first expanding-window fallback with P1-71 backend-aware
+filtered search across several allowed-ID selectivities:
+
+```bash
+PYTHONPATH=. python benchmarks/filtered_search.py
+
+# smaller local smoke run
+PYTHONPATH=. python benchmarks/filtered_search.py \
+  --count 5000 --dimension 64 --queries 10 \
+  --selectivities 0.001,0.01,0.1
+```
+
+The report includes overfetch count, estimated vector-score work, p50/p95
+latency, and peak traced Python/NumPy allocation for both paths. It also checks
+that every measured query returns the same ordered IDs.
+
+---
+
 ## stress.py
 
 Fires random concurrent operations (collection create/delete, document ingest/delete,

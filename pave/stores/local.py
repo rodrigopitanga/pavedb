@@ -3806,6 +3806,23 @@ class LocalStore:
                 normed_filters[safe_key] = [vals]
         requires_expansion = bool(normed_filters or content_filter)
 
+        def _has_metadata_prefilter() -> bool:
+            """Whether SQLite can narrow at least one metadata key."""
+            skip_prefixes = ("!", ">=", "<=", ">", "<")
+            for values in normed_filters.values():
+                has_exact = False
+                mixed_semantics = False
+                for value in values:
+                    if not isinstance(value, str):
+                        continue
+                    if "*" in value or value.startswith(skip_prefixes):
+                        mixed_semantics = True
+                        break
+                    has_exact = True
+                if has_exact and not mixed_semantics:
+                    return True
+            return False
+
         def _backend_count(backend: FaissBackend) -> int | None:
             count = getattr(backend, "count", None)
             if callable(count):
@@ -3843,90 +3860,174 @@ class LocalStore:
             kept: list[tuple[str, float]] = []
             exact_hits: set[str] = set()
 
-            while True:
+            filtered_search = getattr(backend, "search_filtered", None)
+            # Exact-token boost is defined over the vector-first fetch window.
+            # Keep that path unchanged so enabling a backend capability cannot
+            # change its reranking population.
+            can_prefilter = (
+                callable(filtered_search)
+                and not query_tokens
+                and (bool(content_filter) or _has_metadata_prefilter())
+            )
+
+            if can_prefilter:
+                # Select a SQL-safe superset first. Metadata is hydrated from
+                # the same read transaction as its SQL filter, then canonical
+                # Python semantics remove any unsupported-filter survivors.
                 t0 = _perf()
-                raw = backend.search(q_vec, limit)
-                search_ms += _ms_since(t0)
-                raw_count = len(raw)
-
-                if query_tokens:
-                    t0 = _perf()
-                    raw, exact_hits = self._apply_exact_token_boost(
-                        tenant, collection, raw, query_tokens, boost_weight,
-                    )
-                    boost_ms += _ms_since(t0)
-
-                candidate_rids = [rid for rid, _score in raw if rid]
-
+                selected_rids = list(col_db.get_chunk_rids())
                 if content_filter:
-                    t0 = _perf()
                     content_rids = col_db.filter_by_content(
-                        candidate_rids,
+                        selected_rids,
                         content_filter,
                     )
-                    filter_push_ms += _ms_since(t0)
-                    raw = [
-                        (rid, score)
-                        for rid, score in raw
-                        if rid in content_rids
+                    selected_rids = [
+                        rid for rid in selected_rids if rid in content_rids
                     ]
-                    candidate_rids = [rid for rid, _score in raw if rid]
+                filter_push_ms += _ms_since(t0)
 
                 if normed_filters:
                     surviving, meta_batch, meta_timing = (
                         col_db.filter_meta_batch(
-                            candidate_rids,
+                            selected_rids,
                             normed_filters,
                         )
                     )
-                    raw = [
-                        (rid, score)
-                        for rid, score in raw
-                        if rid in surviving
+                    selected_rids = [
+                        rid for rid in selected_rids if rid in surviving
                     ]
-                    candidate_rids = [rid for rid, _score in raw if rid]
                     filter_push_ms += meta_timing["filter_ms"]
                     hydrate_meta_ms += meta_timing["hydrate_ms"]
+                    log.debug(f"SEARCH-FILTER-POST: {normed_filters}")
                 else:
                     t0 = _perf()
-                    meta_batch = self._read_meta_batch_safe(
-                        tenant,
-                        collection,
-                        candidate_rids,
-                    )
+                    meta_batch = col_db.get_meta_batch(selected_rids)
                     hydrate_meta_ms += _ms_since(t0)
 
-                kept = []
-                if normed_filters:
-                    log.debug(f"SEARCH-FILTER-POST: {normed_filters}")
                 t0 = _perf()
-                for rid, score in raw:
-                    if not rid:
-                        continue
-                    rid_meta = meta_batch.get(rid, {})
-                    if matches_filters(rid_meta, normed_filters):
-                        kept.append((rid, score))
-                        if len(kept) >= kk:
-                            break
+                allowed_rids = {
+                    rid
+                    for rid in selected_rids
+                    if matches_filters(
+                        meta_batch.get(rid, {}),
+                        normed_filters,
+                    )
+                }
                 filter_post_ms += _ms_since(t0)
 
-                if not requires_expansion or len(kept) >= kk:
-                    break
-                exhausted_by_total = total is not None and limit >= total
-                exhausted_by_result = raw_count < limit
-                if exhausted_by_total or exhausted_by_result:
-                    break
-
-                next_limit = max(limit * 2, limit + kk)
-                if total is not None:
-                    next_limit = min(next_limit, total)
-                if next_limit <= limit:
-                    break
-                log.debug(
-                    f"SEARCH-FILTER-EXPAND: hits={len(kept)} "
-                    f"k={kk} fetch_k={limit}->{next_limit}"
+                # Keep the normal FAISS path when every indexed record is
+                # eligible. Otherwise the optional capability scores only the
+                # selected IDs. Canonical filtering is already complete, so
+                # the backend only needs to return k records.
+                use_filtered = (
+                    total is None or len(allowed_rids) != total
                 )
-                limit = next_limit
+                vector_limit = min(len(allowed_rids), kk)
+                if vector_limit > 0:
+                    t0 = _perf()
+                    if use_filtered:
+                        raw = filtered_search(
+                            q_vec,
+                            vector_limit,
+                            allowed_rids,
+                        )
+                    else:
+                        raw = backend.search(q_vec, vector_limit)
+                    search_ms += _ms_since(t0)
+
+                kept = raw[:kk]
+                log.debug(
+                    "SEARCH-FILTER-PREFILTER: eligible=%s indexed=%s "
+                    "backend_filtered=%s",
+                    len(allowed_rids),
+                    total,
+                    use_filtered,
+                )
+            else:
+                while True:
+                    t0 = _perf()
+                    raw = backend.search(q_vec, limit)
+                    search_ms += _ms_since(t0)
+                    raw_count = len(raw)
+
+                    if query_tokens:
+                        t0 = _perf()
+                        raw, exact_hits = self._apply_exact_token_boost(
+                            tenant, collection, raw, query_tokens, boost_weight,
+                        )
+                        boost_ms += _ms_since(t0)
+
+                    candidate_rids = [rid for rid, _score in raw if rid]
+
+                    if content_filter:
+                        t0 = _perf()
+                        content_rids = col_db.filter_by_content(
+                            candidate_rids,
+                            content_filter,
+                        )
+                        filter_push_ms += _ms_since(t0)
+                        raw = [
+                            (rid, score)
+                            for rid, score in raw
+                            if rid in content_rids
+                        ]
+                        candidate_rids = [rid for rid, _score in raw if rid]
+
+                    if normed_filters:
+                        surviving, meta_batch, meta_timing = (
+                            col_db.filter_meta_batch(
+                                candidate_rids,
+                                normed_filters,
+                            )
+                        )
+                        raw = [
+                            (rid, score)
+                            for rid, score in raw
+                            if rid in surviving
+                        ]
+                        candidate_rids = [rid for rid, _score in raw if rid]
+                        filter_push_ms += meta_timing["filter_ms"]
+                        hydrate_meta_ms += meta_timing["hydrate_ms"]
+                    else:
+                        t0 = _perf()
+                        meta_batch = self._read_meta_batch_safe(
+                            tenant,
+                            collection,
+                            candidate_rids,
+                        )
+                        hydrate_meta_ms += _ms_since(t0)
+
+                    kept = []
+                    if normed_filters:
+                        log.debug(f"SEARCH-FILTER-POST: {normed_filters}")
+                    t0 = _perf()
+                    for rid, score in raw:
+                        if not rid:
+                            continue
+                        rid_meta = meta_batch.get(rid, {})
+                        if matches_filters(rid_meta, normed_filters):
+                            kept.append((rid, score))
+                            if len(kept) >= kk:
+                                break
+                    filter_post_ms += _ms_since(t0)
+
+                    if not requires_expansion or len(kept) >= kk:
+                        break
+                    exhausted_by_total = total is not None and limit >= total
+                    exhausted_by_result = raw_count < limit
+                    if exhausted_by_total or exhausted_by_result:
+                        break
+
+                    next_limit = max(limit * 2, limit + kk)
+                    if total is not None:
+                        next_limit = min(next_limit, total)
+                    if next_limit <= limit:
+                        break
+                    log.debug(
+                        f"SEARCH-FILTER-EXPAND: hits={len(kept)} "
+                        f"k={kk} fetch_k={limit}->{next_limit}"
+                    )
+                    limit = next_limit
 
             out: list[SearchResult] = []
             t0 = _perf()

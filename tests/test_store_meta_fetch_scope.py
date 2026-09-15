@@ -4,6 +4,7 @@
 from typing import Any
 
 import numpy as np
+import pytest
 
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
@@ -226,6 +227,11 @@ def test_filtered_search_expands_candidate_window_until_match(temp_data_dir):
     backend = store._emb[(tenant, collection)]
     seen_limits: list[int] = []
     original_search = backend.search
+    original_search_filtered = backend.search_filtered
+
+    # Backends without the optional capability retain the vector-first
+    # expansion path.
+    backend.search_filtered = None  # type: ignore[method-assign]
 
     def _spy_search(vector, limit):
         seen_limits.append(limit)
@@ -244,3 +250,95 @@ def test_filtered_search_expands_candidate_window_until_match(temp_data_dir):
     assert [hit.id for hit in hits] == ["target::r0"]
     assert seen_limits[0] == 50
     assert max(seen_limits) > 50
+    backend.search_filtered = original_search_filtered  # type: ignore[method-assign]
+
+
+def test_filtered_search_constrains_vector_work_to_sql_selection(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), _RankedEmbedder())
+    tenant, collection = "tenant", "meta_scope_backend_filter"
+    store.index_records(
+        tenant,
+        collection,
+        "other",
+        [
+            (f"r{i}", "near payload", {"shape": "other"})
+            for i in range(60)
+        ],
+    )
+    store.index_records(
+        tenant,
+        collection,
+        "target",
+        [("r0", "target payload", {"shape": "target"})],
+    )
+
+    backend = store._emb[(tenant, collection)]
+    seen: list[tuple[int, set[str]]] = []
+    normal_search_calls = 0
+    original_search = backend.search
+    original_search_filtered = backend.search_filtered
+
+    def _spy_search(vector, limit):
+        nonlocal normal_search_calls
+        normal_search_calls += 1
+        return original_search(vector, limit)
+
+    def _spy_search_filtered(vector, limit, allowed_rids):
+        seen.append((limit, set(allowed_rids)))
+        return original_search_filtered(vector, limit, allowed_rids)
+
+    backend.search = _spy_search  # type: ignore[method-assign]
+    backend.search_filtered = _spy_search_filtered  # type: ignore[method-assign]
+
+    hits = store.search(
+        tenant,
+        collection,
+        "needle query",
+        k=1,
+        filters={"shape": "target"},
+    )
+
+    assert [hit.id for hit in hits] == ["target::r0"]
+    assert seen == [(1, {"target::r0"})]
+    assert normal_search_calls == 0
+
+
+def test_backend_filtered_search_matches_vector_first_fallback(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    tenant, collection = "tenant", "meta_scope_backend_parity"
+    store.index_records(
+        tenant,
+        collection,
+        "doc",
+        [
+            ("r1", "alpha one", {"lang": "en"}),
+            ("r2", "alpha two", {"lang": "pt"}),
+            ("r3", "alpha three", {"lang": "pt"}),
+            ("r4", "alpha four", {"lang": "pt"}),
+        ],
+    )
+
+    accelerated = store.search(
+        tenant,
+        collection,
+        "alpha",
+        k=1,
+        filters={"lang": "en"},
+    )
+
+    backend = store._emb[(tenant, collection)]
+    original_search_filtered = backend.search_filtered
+    backend.search_filtered = None  # type: ignore[method-assign]
+    fallback = store.search(
+        tenant,
+        collection,
+        "alpha",
+        k=1,
+        filters={"lang": "en"},
+    )
+    backend.search_filtered = original_search_filtered  # type: ignore[method-assign]
+
+    assert [hit.id for hit in accelerated] == [hit.id for hit in fallback]
+    assert [hit.score for hit in accelerated] == pytest.approx(
+        [hit.score for hit in fallback]
+    )

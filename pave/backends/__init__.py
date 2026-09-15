@@ -10,15 +10,16 @@ storage directory. It knows nothing about embedders, tenants, or
 metadata filters — those are upstream concerns owned by the store.
 
 `VectorBackend` is the frozen v1.0 seam (see
-`docs/reference/protocols.md`); `FaissBackend` is the in-tree
-implementation.
+`docs/reference/protocols.md`); `FilteredSearchBackend` is an optional
+capability; `FaissBackend` is the in-tree implementation.
 """
 
-from .base import SearchHit, VectorBackend
+from .base import FilteredSearchBackend, SearchHit, VectorBackend
 from .faiss import FaissBackend
 
 __all__ = [
     "FaissBackend",
+    "FilteredSearchBackend",
     "SearchHit",
     "VectorBackend",
 ]
