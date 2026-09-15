@@ -242,7 +242,7 @@ Substantial features are specified under `docs/design/` before implementation.
 | [`docs/design/PLAN-METRICS-PERSISTENCE.md`](docs/design/PLAN-METRICS-PERSISTENCE.md) | P1-50 | Worker-safe metrics |
 | [`docs/design/PLAN-STORE.md`](docs/design/PLAN-STORE.md) | P1-29/P1-29b/P1-29c/P1-31/P1-32 | Store split; P1-30 superseded by P1-29b |
 | [`docs/design/PLAN-OBSERVABILITY.md`](docs/design/PLAN-OBSERVABILITY.md) | P0-03, P1-11/14/17/23/40/41/42/43/44/45/48, P2-23/28/40/41/45 | Inspectability surface — request correlation, timing, query log, replay, chunk inspector, execution-context stamp |
-| [`docs/design/PLAN-DOCS.md`](docs/design/PLAN-DOCS.md) | P1-46 / P1-47 / P1-53 | Distribution documentation and site-input contract |
+| [`docs/design/PLAN-DOCS.md`](docs/design/PLAN-DOCS.md) | P1-46 / P1-47 / P1-53 / P1-62 / P1-66 | Distribution documentation and site-input contract |
 | [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md) | P1-62 / P1-66 | SDK Python API reference and runnable book examples |
 | [`docs/design/PLAN-EMBEDDER-WORKERS.md`](docs/design/PLAN-EMBEDDER-WORKERS.md) | P1-61 | General embedder worker pools |
 | [`docs/PLAN-REINDEX.md`](docs/PLAN-REINDEX.md) | P1-55 | Durable per-collection vector rebuild jobs |

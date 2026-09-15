@@ -1,7 +1,7 @@
 <!-- (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-# Distribution Documentation Plan (P1-46 / P1-47 / P1-53 / P1-62)
+# Distribution Documentation Plan (P1-46 / P1-47 / P1-53 / P1-62 / P1-66)
 
 PaveDB 1.0 delivers one documentation set through three explicit owners:
 
@@ -34,8 +34,10 @@ supported contract by shipping:
 
 1. complete distribution documentation;
 2. the generated Python API reference;
-3. tested canonical examples; and
-4. the rendered `/docs/` site.
+3. the rendered `/docs/` site.
+
+P1-66 extends that boundary for v1.1 with tested canonical Python and Elixir
+examples. It does not move their ownership into the PaveDB engine package.
 
 ## Ownership
 
@@ -78,14 +80,14 @@ The SDK sdist must contain:
 - `README.md` and `LICENSE`;
 - generated `PYTHON_API.md`;
 - `examples/README.md`;
-- tested programs under `examples/book/` and other public example groups; and
+- tested, numbered programs directly under `examples/`; and
 - the small, license-clean data required by those examples.
 
 The SDK wheel contains code, types, license metadata, and runtime package data.
 Top-level documentation and book examples remain sdist-only. Do not install
 examples that depend on checkout-relative files.
 
-P1-62 defines generation and example migration in
+P1-62 defines reference generation and P1-66 defines example migration in
 [`PLAN-EXAMPLES.md`](PLAN-EXAMPLES.md).
 
 ## Generation
@@ -155,11 +157,17 @@ content into a production build.
 
 ## Acceptance
 
-P1-46, P1-47, and P1-62 are complete together when:
+The P1-46, P1-47, and P1-62 documentation boundary is complete when:
 
 1. both sdists contain their declared documentation;
 2. both wheels contain no accidental prose/example payload;
-3. all generated references are current;
-4. the canonical examples pass from a fresh checkout/environment;
-5. the book points substantial Python examples at tagged SDK paths; and
-6. `https://pavedb.org/docs/` renders those exact released sources.
+3. all generated references are current; and
+4. `https://pavedb.org/docs/` renders those exact released sources.
+
+P1-66 adds the runnable-example boundary when:
+
+1. the canonical Python and Elixir examples pass from a fresh
+   checkout/environment;
+2. their built distributions contain exactly the declared example payload;
+   and
+3. the book points substantial examples at tagged client paths.
