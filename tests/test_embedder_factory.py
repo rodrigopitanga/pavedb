@@ -36,6 +36,7 @@ def _registry_cfg(
     store="faiss",
     config=None,
     instances=None,
+    routing="first",
 ):
     active_config = {"runtime": runtime}
     if config:
@@ -50,6 +51,7 @@ def _registry_cfg(
                     "config": active_config,
                 },
             },
+            "embedder.routing.policy": routing,
             "vector_store.type": store,
         }
     )
@@ -491,6 +493,138 @@ def test_default_selector_accepts_user_defined_instance_key():
         "frontier-affordable",
         "frontier-backup",
     ]
+
+
+def _compatible_openai_registry(*, routing="first"):
+    return _registry_cfg(
+        default="frontier-a",
+        routing=routing,
+        instances={
+            "frontier-a": {
+                "type": "openai",
+                "model": "text-embedding-3-small",
+                "weight": 2,
+                "config": {"dim": 1536, "base_url": "http://a/v1"},
+            },
+            "frontier-b": {
+                "type": "openai",
+                "model": "text-embedding-3-small",
+                "weight": 1,
+                "config": {"dim": 1536, "base_url": "http://b/v1"},
+            },
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "selector",
+    (
+        "frontier-a",
+        "openai",
+        "openai:text-embedding-3-small",
+        "openai:text-embedding-3-small:dim=1536",
+    ),
+)
+def test_embedder_selector_shorthand_resolves_configured_vector_space(selector):
+    factory = _reload_factory()
+
+    spec = factory.resolve_embedder_spec(
+        _compatible_openai_registry(),
+        selector=selector,
+    )
+
+    assert factory.persistable_embedder_spec(spec) == {
+        "embedder_type": "openai",
+        "embed_model": "text-embedding-3-small",
+        "embedder_config": {"dim": 1536},
+    }
+
+
+def test_embedder_selector_shorthand_is_exclusive_with_detailed_fields():
+    factory = _reload_factory()
+
+    with pytest.raises(ValueError, match="cannot be combined"):
+        factory.resolve_embedder_spec(
+            _compatible_openai_registry(),
+            selector="frontier-a",
+            model="text-embedding-3-small",
+        )
+
+
+@pytest.mark.parametrize(
+    ("policy", "indexes", "urls"),
+    (
+        ("first", (0, 1), ("http://a/v1", "http://a/v1")),
+        (
+            "round_robin",
+            (0, 1, 2),
+            ("http://a/v1", "http://b/v1", "http://a/v1"),
+        ),
+        (
+            "weighted",
+            (0, 1, 2, 3),
+            (
+                "http://a/v1",
+                "http://a/v1",
+                "http://b/v1",
+                "http://a/v1",
+            ),
+        ),
+    ),
+)
+def test_runtime_routing_policy_selects_compatible_instances(
+    policy,
+    indexes,
+    urls,
+):
+    factory = _reload_factory()
+    cfg = _compatible_openai_registry(routing=policy)
+    persisted = factory.persistable_embedder_spec(
+        factory.resolve_embedder_spec(cfg, selector="frontier-a")
+    )
+
+    selected = [
+        factory.runtime_embedder_specs_for_vector(
+            cfg,
+            persisted,
+            route_index=index,
+        )[0]["embedder_config"]["base_url"]
+        for index in indexes
+    ]
+
+    assert selected == list(urls)
+
+
+def test_failover_policy_returns_every_compatible_instance_in_order():
+    factory = _reload_factory()
+    cfg = _compatible_openai_registry(routing="failover")
+    persisted = factory.persistable_embedder_spec(
+        factory.resolve_embedder_spec(cfg, selector="frontier-a")
+    )
+
+    candidates = factory.runtime_embedder_specs_for_vector(cfg, persisted)
+
+    assert [
+        candidate["embedder_config"]["base_url"] for candidate in candidates
+    ] == ["http://a/v1", "http://b/v1"]
+
+
+def test_embedder_instance_weight_must_be_positive_integer():
+    factory = _reload_factory()
+    cfg = _compatible_openai_registry()
+    cfg._values["embedder.instances"]["frontier-a"]["weight"] = 0
+
+    with pytest.raises(factory.EmbedderRegistryError, match="positive integer"):
+        factory.embedder_instances(cfg)
+
+
+def test_embedder_routing_policy_rejects_unknown_value():
+    factory = _reload_factory()
+
+    with pytest.raises(factory.EmbedderRegistryError, match="must be one of"):
+        factory.embedder_routing_policy(
+            _compatible_openai_registry(routing="random")
+        )
 
 
 def test_default_selector_ambiguous_hint_logs_useful_error(caplog):

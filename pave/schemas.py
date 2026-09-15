@@ -327,6 +327,15 @@ class CreateCollectionOptionsBody(BaseModel):
         description="Human-friendly label for the collection.",
         examples=["Books"],
     )
+    embedder: str | None = Field(
+        default=None,
+        description=(
+            "Configured embedder selector shorthand: instance key, type, "
+            "type:model, or full vector-space key. Cannot be combined with "
+            "the detailed embedder fields."
+        ),
+        examples=["native"],
+    )
     embedder_type: str | None = Field(
         default=None,
         description="Embedding backend to use for this collection.",
@@ -342,6 +351,19 @@ class CreateCollectionOptionsBody(BaseModel):
         description="Extra embedding options.",
         examples=[{"device": "cpu"}],
     )
+
+    @model_validator(mode="after")
+    def keep_embedder_selector_exclusive(self) -> "CreateCollectionOptionsBody":
+        if self.embedder is not None and (
+            self.embedder_type is not None
+            or self.embed_model is not None
+            or self.embedder_config is not None
+        ):
+            raise ValueError(
+                "embedder cannot be combined with embedder_type, "
+                "embed_model, or embedder_config"
+            )
+        return self
 
 
 class UpdateCollectionBody(BaseModel):

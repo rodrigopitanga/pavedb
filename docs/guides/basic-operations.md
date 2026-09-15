@@ -15,12 +15,15 @@ local Python client using that directory first.
 ## Create a collection
 
 ```bash
-pavecli create-collection demo books
+pavecli create-collection demo books --embedder native
 ```
 
-The collection is pinned to an embedder at creation. Take the default unless
-you have a reason; changing your mind later means a new collection, because
-vectors from two models cannot share an index.
+`--embedder` accepts a configured instance key, type, `type:model`, or full
+vector-space key; omit it to take `embedder.default`. The collection persists
+the selected vector-space identity, not an operational instance pin. When
+several instances produce that space, `embedder.routing.policy` chooses among
+them. Changing vector space later requires reindexing because vectors from two
+models cannot share an index.
 
 ## Ingest
 

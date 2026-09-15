@@ -104,8 +104,8 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         status_code=201,
         summary="Create a collection",
         description=(
-            "Optionally sets the display name and embedding model; returns "
-            "201."
+            "Optionally sets the display name and selects an embedder by "
+            "shorthand or detailed fields; returns 201."
         ),
         response_model=CreateCollectionResponse,
         responses=resp(400, 401, 403, 429, 500, 503),
@@ -126,6 +126,7 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
             tenant,
             name,
             display_name=body.display_name if body else None,
+            embedder=body.embedder if body else None,
             embedder_type=body.embedder_type if body else None,
             embed_model=body.embed_model if body else None,
             embedder_config=body.embedder_config if body else None,

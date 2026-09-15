@@ -167,23 +167,13 @@ def _validate_metadata(value: Metadata | None) -> Metadata:
     return value
 
 
-def _resolve_global_embedder_config() -> tuple[str, str]:
-    try:
-        spec = resolve_embedder_spec(get_cfg())
-    except ValueError as exc:
-        raise ServiceError(
-            "invalid_embedder_config",
-            str(exc),
-        ) from exc
-    return str(spec["embedder_type"]), str(spec["embed_model"])
-
-
 def create_collection(
     store,
     tenant: str,
     name: str | None,
     *,
     display_name: str | None = None,
+    embedder: str | None = None,
     embedder_type: str | None = None,
     embed_model: str | None = None,
     embedder_config: EmbedderConfig | None = None,
@@ -194,13 +184,18 @@ def create_collection(
             display_name,
             resolved_name,
         )
+        create_options: dict[str, Any] = {
+            "embedder_type": embedder_type,
+            "embed_model": embed_model,
+            "embedder_config": embedder_config,
+            "display_name": resolved_display_name,
+        }
+        if embedder is not None:
+            create_options["embedder"] = embedder
         created = store.create_collection(
             tenant,
             resolved_name,
-            embedder_type=embedder_type,
-            embed_model=embed_model,
-            embedder_config=embedder_config,
-            display_name=resolved_display_name,
+            **create_options,
         )
         if isinstance(created, dict):
             resolved_type = str(created.get("embedder_type") or "")
@@ -210,10 +205,16 @@ def create_collection(
                 created.get("display_name") or resolved_display_name
             )
         else:
-            global_type, global_model = _resolve_global_embedder_config()
-            resolved_type = str(embedder_type or global_type).strip().lower()
-            resolved_model = str(embed_model or global_model).strip()
-            resolved_config = dict(embedder_config or {})
+            resolved = resolve_embedder_spec(
+                get_cfg(),
+                selector=embedder,
+                embedder_type=embedder_type,
+                model=embed_model,
+                embedder_config=embedder_config,
+            )
+            resolved_type = str(resolved["embedder_type"])
+            resolved_model = str(resolved["embed_model"])
+            resolved_config = dict(resolved.get("embedder_config") or {})
             returned_display = resolved_display_name
         m_inc("collections_created_total", 1.0)
         return {

@@ -124,6 +124,15 @@ embedder:
   # Env: PAVEDB_EMBEDDER__DEFAULT
   # default: null
 
+  routing:
+
+    # How each collection load chooses among configured instances in the same vector
+    # space. First uses config order; round_robin rotates; weighted rotates by each
+    # instance weight; failover tries in order until one initializes. Routing is
+    # runtime-only and is never persisted in collection catalog state.
+    # Env: PAVEDB_EMBEDDER__ROUTING__POLICY
+    policy: 'first'
+
   # Warm the default embedder at server startup before the first query. Null uses the
   # startup policy: enabled outside dev, disabled in dev.
   # Env: PAVEDB_EMBEDDER__WARMUP_DEFAULT
@@ -141,6 +150,11 @@ embedder:
       # Default sentence-transformers model for the native instance.
       # Env: PAVEDB_EMBEDDER__INSTANCES__NATIVE__MODEL
       model: 'sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2'
+
+      # Positive routing weight for the native instance when embedder.routing.policy is
+      # weighted. Custom instances accept the same sibling field.
+      # Env: PAVEDB_EMBEDDER__INSTANCES__NATIVE__WEIGHT
+      weight: 1
 
       config:
 

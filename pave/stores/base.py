@@ -95,6 +95,7 @@ class BaseStore(Protocol):
         tenant: str,
         name: str,
         *,
+        embedder: str | None = None,
         embedder_type: str | None = None,
         embed_model: str | None = None,
         embedder_config: EmbedderConfig | None = None,

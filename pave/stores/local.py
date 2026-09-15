@@ -7,8 +7,8 @@
 deployments. It owns the data directory layout
 (`{data_dir}/{tenant}/{collection}/{meta.db, index/, chunks/}`),
 the per-collection read/write lock lattice, the catalog
-(`pave.metadb.CatalogDB`) bootstrap pass, and the embedder
-instance cache keyed by `vector_space_key`.
+(`pave.metadb.CatalogDB`) bootstrap pass, and the runtime embedder cache.
+Collections persist a vector-space identity; instance routing stays in config.
 
 See `docs/reference/protocols.md` for the frozen v1.0 contract on
 the embedder and vector-backend seams this store composes.
@@ -269,9 +269,9 @@ class LocalStore:
     a FAISS index, and chunk-text sidecars. Collection lifecycle and
     document writes acquire a per-collection write lock; reads take
     a shared read lock and pin cached handles against concurrent
-    writers. The embedder instance cache is keyed by
-    `vector_space_key` so collections that share a spec share the
-    runtime model.
+    writers. The embedder cache is keyed by runtime spec, while compatible
+    collection vector spaces are assigned according to the configured routing
+    policy.
     """
     def __init__(
         self,
@@ -288,6 +288,8 @@ class LocalStore:
         self._emb: OrderedDict[tuple[str, str], FaissBackend] = OrderedDict()
         self._collection_embedders: dict[tuple[str, str], Embedder] = {}
         self._embedder_cache: OrderedDict[Any, Embedder] = OrderedDict()
+        self._embedder_route_offsets: dict[str, int] = {}
+        self._embedder_route_guard = Lock()
         self._dbs: OrderedDict[tuple[str, str], CollectionDB] = OrderedDict()
         self._collection_cache_max = self._positive_config_int(
             "cache.collection_max",
@@ -332,11 +334,14 @@ class LocalStore:
             ),
         )
         default_resolution = embedder_factory_mod.resolve_default_embedder()
+        routing_policy = embedder_factory_mod.embedder_routing_policy()
         log.info(
-            "Default embedder resolved selector=%s vector_key=%s instances=%s",
+            "Default embedder resolved selector=%s vector_key=%s "
+            "instances=%s routing=%s",
             default_resolution.selector,
             default_resolution.vector_key,
             ",".join(instance.key for instance in default_resolution.instances),
+            routing_policy,
         )
         default_key = embedder_factory_mod.embedder_cache_key(
             default_resolution.instances[0].spec
@@ -893,6 +898,7 @@ class LocalStore:
     def _resolve_collection_config(
         self,
         *,
+        embedder: str | None = None,
         embedder_type: str | None = None,
         embed_model: str | None = None,
         embedder_config: EmbedderConfig | None = None,
@@ -901,6 +907,7 @@ class LocalStore:
         backend_type = str(cfg.get("vector_store.type")).lower()
         embedder_spec = embedder_factory_mod.resolve_embedder_spec(
             cfg,
+            selector=embedder,
             embedder_type=embedder_type,
             model=embed_model,
             embedder_config=embedder_config,
@@ -1147,30 +1154,61 @@ class LocalStore:
 
     def _get_embedder_for_config(self, cfg: CollectionConfig) -> Embedder:
         try:
-            runtime = embedder_factory_mod.runtime_embedder_spec_for_vector(
+            policy = embedder_factory_mod.embedder_routing_policy(get_cfg())
+            route_index = 0
+            if policy in {"round_robin", "weighted"}:
+                vector_key = embedder_factory_mod.vector_space_key(cfg)
+                with self._embedder_route_guard:
+                    route_index = self._embedder_route_offsets.get(vector_key, 0)
+                    self._embedder_route_offsets[vector_key] = route_index + 1
+            runtimes = embedder_factory_mod.runtime_embedder_specs_for_vector(
                 get_cfg(),
                 cfg,
-            )
-            key = embedder_factory_mod.embedder_cache_key(runtime)
-            embedder = self._embedder_cache.get(key)
-            if embedder is not None:
-                self._touch_cache_entry(self._embedder_cache, key)
-                return embedder
-            embedder = self._embedder_factory(
-                str(runtime["embedder_type"]),
-                str(runtime["embed_model"]),
-                dict(runtime.get("embedder_config") or {}),
+                route_index=route_index,
             )
         except EmbedderUnavailableError:
             raise
         except Exception as exc:
             raise EmbedderUnavailableError(
                 f"embedder {cfg.get('embedder_type')!s}:"
-                f"{cfg.get('embed_model')!s} could not be initialised: "
+                f"{cfg.get('embed_model')!s} could not be routed: "
                 f"{exc}"
             ) from exc
-        self._embedder_cache[key] = embedder
-        return embedder
+
+        last_error: Exception | None = None
+        for runtime in runtimes:
+            key = embedder_factory_mod.embedder_cache_key(runtime)
+            embedder = self._embedder_cache.get(key)
+            try:
+                if embedder is None:
+                    embedder = self._embedder_factory(
+                        str(runtime["embedder_type"]),
+                        str(runtime["embed_model"]),
+                        dict(runtime.get("embedder_config") or {}),
+                    )
+                    self._embedder_cache[key] = embedder
+                else:
+                    self._touch_cache_entry(self._embedder_cache, key)
+                if policy == "failover" and len(runtimes) > 1:
+                    int(embedder.dim)
+                return embedder
+            except Exception as exc:
+                last_error = exc
+                if embedder is not None:
+                    self._drop_cached_embedder(embedder)
+                if policy != "failover" or len(runtimes) == 1:
+                    if isinstance(exc, EmbedderUnavailableError):
+                        raise
+                    raise EmbedderUnavailableError(
+                        f"embedder {cfg.get('embedder_type')!s}:"
+                        f"{cfg.get('embed_model')!s} could not be "
+                        f"initialised: {exc}"
+                    ) from exc
+
+        raise EmbedderUnavailableError(
+            f"all compatible embedder instances failed for "
+            f"{embedder_factory_mod.vector_space_key(cfg)}: {last_error}"
+        ) from last_error
 
     def _drop_cached_embedder(self, embedder: Embedder) -> None:
         for key, cached in list(self._embedder_cache.items()):
@@ -1570,18 +1608,21 @@ class LocalStore:
         tenant: str,
         name: str,
         *,
+        embedder: str | None = None,
         embedder_type: str | None = None,
         embed_model: str | None = None,
         embedder_config: EmbedderConfig | None = None,
         display_name: str | None = None,
     ) -> CollectionInfo:
         requested = self._resolve_collection_config(
+            embedder=embedder,
             embedder_type=embedder_type,
             embed_model=embed_model,
             embedder_config=embedder_config,
         )
         explicit = (
-            embedder_type is not None
+            embedder is not None
+            or embedder_type is not None
             or embed_model is not None
             or embedder_config is not None
         )
@@ -1596,9 +1637,7 @@ class LocalStore:
                     )
                 )
                 is_new = stored is None
-                if stored is None:
-                    self._validate_embedder_for_config(requested)
-                else:
+                if stored is not None:
                     existing = self._effective_collection_config(stored)
                     if (
                         explicit

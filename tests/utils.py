@@ -75,6 +75,7 @@ class DummyStore:
     def _collection_config(
         self,
         *,
+        embedder: str | None = None,
         embedder_type: str | None = None,
         embed_model: str | None = None,
         embedder_config: dict[str, Any] | None = None,
@@ -86,6 +87,7 @@ class DummyStore:
 
         spec = resolve_embedder_spec(
             get_cfg(),
+            selector=embedder,
             embedder_type=embedder_type,
             model=embed_model,
             embedder_config=embedder_config,
@@ -102,6 +104,7 @@ class DummyStore:
         tenant: str,
         name: str,
         *,
+        embedder: str | None = None,
         embedder_type: str | None = None,
         embed_model: str | None = None,
         embedder_config: dict[str, Any] | None = None,
@@ -110,6 +113,7 @@ class DummyStore:
         self._load_or_init(tenant, name)
         self._save(tenant, name)
         cfg = self._collection_config(
+            embedder=embedder,
             embedder_type=embedder_type,
             embed_model=embed_model,
             embedder_config=embedder_config,
@@ -504,6 +508,7 @@ class SpyStore:
         tenant: str,
         name: str,
         *,
+        embedder: str | None = None,
         embedder_type: str | None = None,
         embed_model: str | None = None,
         embedder_config: dict[str, Any] | None = None,
@@ -513,6 +518,7 @@ class SpyStore:
         return self.impl.create_collection(
             tenant,
             name,
+            embedder=embedder,
             embedder_type=embedder_type,
             embed_model=embed_model,
             embedder_config=embedder_config,

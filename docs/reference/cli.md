@@ -136,6 +136,7 @@ Create a collection, optionally with display and embedder configuration.
 
 ```bash
 pavecli create-collection [-h] [--display-name DISPLAY_NAME]
+                                 [--embedder EMBEDDER]
                                  [--embedder-type EMBEDDER_TYPE]
                                  [--embed-model EMBED_MODEL]
                                  [--embedder-config EMBEDDER_CONFIG]
@@ -154,6 +155,8 @@ pavecli create-collection demo books --display-name "Books"
 - `collection` (required): Collection slug: lowercase letters, digits, and hyphens; must
   start with a letter or digit; max 63 chars
 - `--display-name` (optional): Human-readable collection label
+- `--embedder` (optional): Configured embedder selector: instance key, type, type:model,
+  or full vector-space key
 - `--embedder-type` (optional): Embedder type, such as sbert, openai, or ollama
 - `--embed-model` (optional): Embedding model name
 - `--embedder-config` (optional): JSON object with embedder-specific config

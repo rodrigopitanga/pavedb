@@ -108,6 +108,45 @@ def test_create_collection_accepts_different_embedder_type_and_config(client):
     assert data["embedder_config"] == {"dim": 1024}
 
 
+def test_create_collection_accepts_embedder_selector_shorthand(client):
+    _set_openai_instance("frontier", dim=1024, base_url="http://one/v1")
+
+    response = client.post(
+        "/v1/collections/acme/selected",
+        json={"embedder": "frontier"},
+    )
+
+    assert response.status_code == 201
+    data = response.json()
+    assert data["embedder_type"] == "openai"
+    assert data["embed_model"] == "bge-m3"
+    assert data["embedder_config"] == {"dim": 1024}
+    detail = client.get("/v1/collections/acme/selected/detail").json()
+    assert detail["vector_space_key"] == "openai:bge-m3:dim=1024"
+    assert "frontier" not in str(detail)
+
+
+def test_create_collection_rejects_mixed_embedder_selector_fields(client):
+    response = client.post(
+        "/v1/collections/acme/mixed",
+        json={"embedder": "native", "embedder_type": "sbert"},
+    )
+
+    assert response.status_code == 422
+
+
+def test_create_collection_rejects_unknown_embedder_selector(client):
+    response = client.post(
+        "/v1/collections/acme/unknown-selector",
+        json={"embedder": "missing"},
+    )
+
+    assert response.status_code == 400
+    data = response.json()
+    assert data["code"] == "invalid_embedder_config"
+    assert "did not match any configured instance" in data["error"]
+
+
 def test_create_collection_rejects_unknown_embedder_config_key(client):
     r = client.post(
         "/v1/collections/acme/secret-config",
@@ -467,6 +506,57 @@ def test_local_store_logs_configured_embedder_registry(tmp_path, caplog):
         "native/sbert:fake:" in caplog.text
         and "frontier-affordable/openai:bge-m3:dim=1536" in caplog.text
     )
+
+
+def test_local_store_round_robins_compatible_instances(tmp_path):
+    cfg = get_cfg()
+    cfg.set("embedder.routing.policy", "round_robin")
+    _set_openai_instance("openai-a", dim=8, base_url="http://a/v1")
+    _set_openai_instance("openai-b", dim=8, base_url="http://b/v1")
+    created: list[str] = []
+
+    def make_embedder(_embedder_type, _embed_model, embedder_config):
+        created.append(str(embedder_config["base_url"]))
+        return FakeEmbedder(dim=8)
+
+    store = LocalStore(
+        str(tmp_path),
+        FakeEmbedder(),
+        embedder_factory=make_embedder,
+    )
+
+    first = store.create_collection("acme", "first", embedder="openai-a")
+    second = store.create_collection("acme", "second", embedder="openai-a")
+
+    assert created == ["http://a/v1", "http://b/v1"]
+    assert first["embedder_config"] == {"dim": 8}
+    assert second["embedder_config"] == {"dim": 8}
+
+
+def test_local_store_failover_tries_next_compatible_instance(tmp_path):
+    cfg = get_cfg()
+    cfg.set("embedder.routing.policy", "failover")
+    _set_openai_instance("openai-a", dim=8, base_url="http://a/v1")
+    _set_openai_instance("openai-b", dim=8, base_url="http://b/v1")
+    attempts: list[str] = []
+
+    def make_embedder(_embedder_type, _embed_model, embedder_config):
+        base_url = str(embedder_config["base_url"])
+        attempts.append(base_url)
+        if base_url == "http://a/v1":
+            raise RuntimeError("primary unavailable")
+        return FakeEmbedder(dim=8)
+
+    store = LocalStore(
+        str(tmp_path),
+        FakeEmbedder(),
+        embedder_factory=make_embedder,
+    )
+
+    created = store.create_collection("acme", "docs", embedder="openai-a")
+
+    assert attempts == ["http://a/v1", "http://b/v1"]
+    assert created["embedder_config"] == {"dim": 8}
 
 
 def test_local_store_uses_collection_embedder_specs(tmp_path):

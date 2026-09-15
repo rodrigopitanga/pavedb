@@ -47,13 +47,14 @@ class EmbedderSpec(TypedDict):
 class EmbedderInstance:
     """Configured embedder instance from `embedder.instances`.
 
-    `key` is the operator-facing name; `vector_key` is the
-    deterministic vector-space identifier; `spec` is the persistable
-    shape used by collections that adopt this instance.
+    `key` is the operator-facing name; `vector_key` is the deterministic
+    vector-space identifier; `spec` contains the runtime settings; `weight`
+    participates only in operational routing.
     """
     key: str
     spec: EmbedderSpec
     vector_key: str
+    weight: int
 
 
 @dataclass(frozen=True)
@@ -62,7 +63,7 @@ class DefaultEmbedderResolution:
 
     `selector` echoes the configured selector (or `None`); `vector_key`
     is the resolved vector space; `instances` is the ordered list of
-    configured instances that match (first one wins for routing).
+    configured instances that share the selected vector space.
     """
     selector: str | None
     vector_key: str
@@ -71,6 +72,9 @@ class DefaultEmbedderResolution:
 
 class EmbedderRegistryError(ValueError):
     """Raised when configured embedder instances cannot be resolved."""
+
+
+_ROUTING_POLICIES = frozenset({"first", "round_robin", "weighted", "failover"})
 
 
 # The embedder modules this package ships. `embedder_type` is tenant-supplied
@@ -296,10 +300,16 @@ def _instance_from_config(key: str, raw: Mapping[str, Any]) -> EmbedderInstance:
             )
         if api_key:
             spec["api_key"] = api_key
+    weight = raw.get("weight", 1)
+    if isinstance(weight, bool) or not isinstance(weight, int) or weight < 1:
+        raise _registry_error(
+            f"embedder.instances.{key}.weight must be a positive integer"
+        )
     return EmbedderInstance(
         key=key,
         spec=spec,
         vector_key=vector_space_key(spec),
+        weight=weight,
     )
 
 
@@ -317,6 +327,18 @@ def embedder_instances(cfg: Config | None = None) -> tuple[EmbedderInstance, ...
         _instance_from_config(str(key), raw)
         for key, raw in raw_instances.items()
     )
+
+
+def embedder_routing_policy(cfg: Config | None = None) -> str:
+    """Return the configured compatible-instance routing policy."""
+    cfg = cfg or get_cfg()
+    policy = str(cfg.get("embedder.routing.policy") or "first").strip().lower()
+    if policy not in _ROUTING_POLICIES:
+        raise _registry_error(
+            "embedder.routing.policy must be one of: "
+            + ", ".join(sorted(_ROUTING_POLICIES))
+        )
+    return policy
 
 
 def _selector_matches(selector: str, instance: EmbedderInstance) -> bool:
@@ -351,9 +373,14 @@ def _instance_for_selector(
     cfg: Config,
     selector: str,
 ) -> EmbedderInstance | None:
+    by_key = {
+        instance.key: instance for instance in _configured_instances(cfg)
+    }
+    if selector in by_key:
+        return by_key[selector]
     matched = [
-        instance for instance in _configured_instances(cfg)
-        if selector == instance.key or _selector_matches(selector, instance)
+        instance for instance in by_key.values()
+        if _selector_matches(selector, instance)
     ]
     if not matched:
         return None
@@ -442,25 +469,50 @@ def _deny_execution_grant(etype: str, config: dict[str, Any]) -> None:
     config["trust_remote_code"] = False
 
 
-def runtime_embedder_spec_for_vector(
+def runtime_embedder_specs_for_vector(
     cfg: Config,
     spec: Mapping[str, Any],
-) -> EmbedderSpec:
+    *,
+    route_index: int = 0,
+) -> tuple[EmbedderSpec, ...]:
+    """Return runtime candidates in the order selected by routing policy.
+
+    Collection catalog state identifies only the vector space. Compatible
+    runtime instances and their routing weights remain operator config.
+    """
     etype = str(spec.get("embedder_type") or "")
     if _is_modelless(etype):
         # Self-sufficient: the vector space is fully defined by embedder_config
         # (identity reads `dim` from it), so there is no configured instance to
         # match — the spec is its own runtime spec.
-        return {
-            "embedder_type": etype,
-            "embed_model": str(spec.get("embed_model") or ""),
-            "embedder_config": dict(spec.get("embedder_config") or {}),
-        }
+        return (
+            {
+                "embedder_type": etype,
+                "embed_model": str(spec.get("embed_model") or ""),
+                "embedder_config": dict(spec.get("embedder_config") or {}),
+            },
+        )
     vector_key = vector_space_key(spec)
     instances = embedder_instances(cfg)
-    for instance in instances:
-        if instance.vector_key == vector_key:
-            return instance.spec
+    compatible = tuple(
+        instance for instance in instances
+        if instance.vector_key == vector_key
+    )
+    if compatible:
+        policy = embedder_routing_policy(cfg)
+        if policy == "first":
+            return (compatible[0].spec,)
+        if policy == "round_robin":
+            return (compatible[route_index % len(compatible)].spec,)
+        if policy == "weighted":
+            total_weight = sum(instance.weight for instance in compatible)
+            offset = route_index % total_weight
+            for instance in compatible:
+                if offset < instance.weight:
+                    return (instance.spec,)
+                offset -= instance.weight
+            raise AssertionError("weighted embedder route did not resolve")
+        return tuple(instance.spec for instance in compatible)
     same_type = [
         instance for instance in instances
         if str(instance.spec["embedder_type"]) == etype
@@ -473,11 +525,13 @@ def runtime_embedder_spec_for_vector(
         instance_model = str(same_type[0].spec.get("embed_model") or "").strip()
         if instance_model != str(spec.get("embed_model") or "").strip():
             _deny_execution_grant(etype, runtime_config)
-        return {
-            "embedder_type": etype,
-            "embed_model": str(spec.get("embed_model") or ""),
-            "embedder_config": runtime_config,
-        }
+        return (
+            {
+                "embedder_type": etype,
+                "embed_model": str(spec.get("embed_model") or ""),
+                "embedder_config": runtime_config,
+            },
+        )
     if len(same_type) > 1:
         raise EmbedderUnavailableError(
             f"no configured embedder instance exactly matches vector space "
@@ -486,24 +540,65 @@ def runtime_embedder_spec_for_vector(
         )
     op_config = dict(spec.get("embedder_config") or {})
     if op_config != _space_config(spec):
-        return {
-            "embedder_type": str(spec.get("embedder_type") or ""),
-            "embed_model": str(spec.get("embed_model") or ""),
-            "embedder_config": op_config,
-        }
+        return (
+            {
+                "embedder_type": str(spec.get("embedder_type") or ""),
+                "embed_model": str(spec.get("embed_model") or ""),
+                "embedder_config": op_config,
+            },
+        )
     raise EmbedderUnavailableError(
         f"no configured embedder instance can encode vector space {vector_key}"
     )
 
 
+def runtime_embedder_spec_for_vector(
+    cfg: Config,
+    spec: Mapping[str, Any],
+) -> EmbedderSpec:
+    """Return the first runtime candidate (legacy single-route helper)."""
+    return runtime_embedder_specs_for_vector(cfg, spec)[0]
+
+
 def resolve_embedder_spec(
     cfg: Config | None = None,
     *,
+    selector: str | None = None,
     embedder_type: str | None = None,
     model: str | None = None,
     embedder_config: Mapping[str, Any] | None = None,
 ) -> EmbedderSpec:
     cfg = cfg or get_cfg()
+    if selector is not None:
+        if (
+            embedder_type is not None
+            or model is not None
+            or embedder_config is not None
+        ):
+            raise ValueError(
+                "embedder selector cannot be combined with embedder_type, "
+                "embed_model, or embedder_config"
+            )
+        normalized_selector = str(selector).strip()
+        if not normalized_selector:
+            raise ValueError("embedder selector must not be empty")
+        matched = _instance_for_selector(cfg, normalized_selector)
+        if matched is None:
+            raise ValueError(
+                f"embedder selector {normalized_selector!r} did not match any "
+                f"configured instance. Available instances: "
+                f"{_format_instances(embedder_instances(cfg))}"
+            )
+        return {
+            "embedder_type": matched.spec["embedder_type"],
+            "embed_model": matched.spec["embed_model"],
+            "embedder_config": dict(matched.spec.get("embedder_config") or {}),
+            **(
+                {"api_key": matched.spec["api_key"]}
+                if "api_key" in matched.spec
+                else {}
+            ),
+        }
     if embedder_type is None and model is None and embedder_config is None:
         return resolve_default_embedder(cfg).instances[0].spec
 

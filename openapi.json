@@ -682,6 +682,21 @@
             ],
             "title": "Embed Model"
           },
+          "embedder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Configured embedder selector shorthand: instance key, type, type:model, or full vector-space key. Cannot be combined with the detailed embedder fields.",
+            "examples": [
+              "native"
+            ],
+            "title": "Embedder"
+          },
           "embedder_config": {
             "anyOf": [
               {
@@ -6295,7 +6310,7 @@
         ]
       },
       "post": {
-        "description": "Optionally sets the display name and embedding model; returns 201.",
+        "description": "Optionally sets the display name and selects an embedder by shorthand or detailed fields; returns 201.",
         "operationId": "create_collection_v1_collections__tenant___name__post",
         "parameters": [
           {

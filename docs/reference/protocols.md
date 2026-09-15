@@ -124,6 +124,11 @@ Identity split: `vector_space_key` derives from
 resolved config. A per-instance `api_key` is carried alongside the spec
 and never participates in vector-space identity.
 
+When several configured instances have the same `vector_space_key`,
+`embedder.routing.policy` selects the runtime on collection load. Instance
+order, routing weight, and the selected runtime are operational state; none is
+written into the collection catalog.
+
 `OllamaEmbedder` is the reference example of a thin module added this way.
 
 ## Stability tiers

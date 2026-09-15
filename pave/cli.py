@@ -217,6 +217,7 @@ def cmd_create(args):
         args.tenant,
         args.collection,
         display_name=args.display_name,
+        embedder=args.embedder,
         embedder_type=args.embedder_type,
         embed_model=args.embed_model,
         embedder_config=embedder_config,
@@ -589,6 +590,13 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p_create.add_argument("--display-name", help="Human-readable collection label")
+    p_create.add_argument(
+        "--embedder",
+        help=(
+            "Configured embedder selector: instance key, type, type:model, "
+            "or full vector-space key"
+        ),
+    )
     p_create.add_argument(
         "--embedder-type",
         help="Embedder type, such as sbert, openai, or ollama",

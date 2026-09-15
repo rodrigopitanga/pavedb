@@ -127,7 +127,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-57 | ~~Typing policy + SDK-ready type vocabulary~~ | 🧩 | Boundary-focused typing rules, named internal JSON vocabulary, and lighter test annotations without duplicating API/client schemas | v1.0 |
 | P1-58 | ~~Embedder instance registry core~~ | 🧩 | Registry-shaped config with keyed instances, `embedder.default` as instance/type/type:model/vector-key selector, useful CRITICAL failures for missing or ambiguous defaults, deterministic first compatible runtime instance, and catalog persistence limited to vector-space identity. Depends on P1-32 (done) | v1.0 |
 | P1-59 | ~~Admin embedder inventory endpoint~~ | 🧩 | v1.0 slice: admin-only `GET /v1/admin/embedders` and tenant-scoped `GET /v1/embedders/{tenant}` surface configured instance keys, vector-space keys, types, models, and default resolution. No credentials, no readiness probe. Mirrored by `Client.embedders()` and `pavecli list-embedders`. v1.6 expansion: readiness probe + credential-ref identity per P2-49. Per-tenant embedder assignment stays a post-1.0 direction once tenant profiles (P2-26) land. Builds on P1-58. | v1.0 / v1.6 |
-| P1-60 | Embedder selection shorthand + routing policy | 🧱 | Collection create accepts an `embedder` selector shorthand; compatible instance routing grows from deterministic first configured to explicit policy (`first`, `round_robin`, weighted/failover). Any pinning is operational config, not catalog state. | v1.7 |
+| P1-60 | ~~Embedder selection shorthand + routing policy~~ | 🧱 | Collection create accepts an `embedder` selector shorthand; compatible instance routing grows from deterministic first configured to explicit policy (`first`, `round_robin`, weighted/failover). Any pinning is operational config, not catalog state. | v1.7 |
 | P1-61 | General embedder worker pools | 🧱 | Extend the SBERT worker-pool idea across all embedders with bounded concurrency as the default behavior where safe. Worker counts stay operational config and never enter vector-space identity. See [`docs/design/PLAN-EMBEDDER-WORKERS.md`](docs/design/PLAN-EMBEDDER-WORKERS.md). | v1.2 |
 | P1-62 | ~~Python API reference~~ | 🔧 | `pavedb-sdk` generates a drift-checked public API reference shipped in its sdist. Runnable examples split to P1-66. See [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md). | v1.0 |
 | P1-63 | ~~VectorDBBench adapter~~ | 🔧 | Standard benchmark adapter over BYOV HTTP raw-vector ingest/search, with flat FAISS recall baseline and no PaveDB runtime dependency on VectorDBBench. External adapter (separate repo/fork), not in-repo. Depends on P1-64 (BYOV raw-vector round trip). | v1.0 |
@@ -667,7 +667,7 @@ lands where it has more impact during post-contract hardening.
 
 ### PaveDB v1.7 — Maturity
 
-- Embedder selector shorthand and routing policies (P1-60).
+- ~~Embedder selector shorthand and routing policies (P1-60).~~
 - Document versioning, rebuild tooling (P2-14).
 - Collection migration tooling: detect version mismatches,
   provide upgrade path across PaveDB/FAISS version changes

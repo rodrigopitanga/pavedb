@@ -143,6 +143,15 @@ unresponsive provider can hold a worker slot.
   type:model, or full vector key. Required when more than one embedder instance is
   configured.
 
+### `embedder.routing.policy`
+
+- Default: `"first"`
+- Env var: `PAVEDB_EMBEDDER__ROUTING__POLICY`
+- Description: How each collection load chooses among configured instances in the same
+  vector space. First uses config order; round_robin rotates; weighted rotates by each
+  instance weight; failover tries in order until one initializes. Routing is
+  runtime-only and is never persisted in collection catalog state.
+
 ### `embedder.warmup_default`
 
 - Default: `null`
@@ -162,6 +171,13 @@ unresponsive provider can hold a worker slot.
 - Default: `"sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"`
 - Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__MODEL`
 - Description: Default sentence-transformers model for the native instance.
+
+### `embedder.instances.native.weight`
+
+- Default: `1`
+- Env var: `PAVEDB_EMBEDDER__INSTANCES__NATIVE__WEIGHT`
+- Description: Positive routing weight for the native instance when
+  embedder.routing.policy is weighted. Custom instances accept the same sibling field.
 
 ### `embedder.instances.native.config.runtime`
 
