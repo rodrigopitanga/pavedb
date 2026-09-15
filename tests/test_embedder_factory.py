@@ -12,6 +12,7 @@ import pytest
 
 import pave.embedders.factory as factory_mod
 import pave.embedders.openai as openai_mod
+from pave.embedders.worker_pool import ThreadEmbedderPool
 
 _DEFAULT_SBERT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 
@@ -91,6 +92,26 @@ def test_lazy_embedder_defers_factory_until_used():
     assert emb.dim == 3
     assert emb.encode(["a"]) == ["a"]
     assert calls["factory"] == 1
+
+
+def test_lazy_embedder_forwards_optional_queries_and_close():
+    calls: list[tuple[str, list[str]]] = []
+
+    class FakeEmbedder:
+        def encode(self, texts: list[str]):
+            calls.append(("encode", texts))
+
+        def encode_queries(self, texts: list[str]):
+            calls.append(("query", texts))
+
+        def close(self):
+            calls.append(("close", []))
+
+    emb = factory_mod.LazyEmbedder(FakeEmbedder)
+    emb.encode_queries(["q"])
+    emb.close()
+
+    assert calls == [("query", ["q"]), ("close", [])]
 
 
 def _patch_sbert_class(monkeypatch, fake_cls):
@@ -252,6 +273,11 @@ def test_factory_passes_explicit_openai_spec(monkeypatch):
     class FakeOpenAI:
         def __init__(self, **kwargs):
             seen.update(kwargs)
+            self._dim = kwargs["dim"]
+
+        @property
+        def dim(self):
+            return self._dim
 
     _patch_openai_class(monkeypatch, FakeOpenAI)
 
@@ -267,16 +293,19 @@ def test_factory_passes_explicit_openai_spec(monkeypatch):
         },
     )
 
-    factory.get_embedder(
+    embedder = factory.get_embedder(
         cfg,
         embedder_type="openai",
         model="bge-m3",
         embedder_config={
             "dim": 1024,
             "base_url": "http://localhost:11434/v1",
+            "workers": 2,
         },
     )
 
+    assert isinstance(embedder, ThreadEmbedderPool)
+    assert embedder.workers == 2
     assert seen == {
         "model": "bge-m3",
         "batch_size": None,
@@ -337,6 +366,21 @@ def test_embedder_space_key_includes_openai_vector_shape():
     )
 
     assert first != second
+
+
+def test_embedder_space_key_ignores_openai_worker_count():
+    factory = _reload_factory()
+    base = {
+        "embedder_type": "openai",
+        "embed_model": "bge-m3",
+        "embedder_config": {"dim": 1024, "workers": 1},
+    }
+    scaled = {
+        **base,
+        "embedder_config": {"dim": 1024, "workers": 8},
+    }
+
+    assert factory.embedder_space_key(base) == factory.embedder_space_key(scaled)
 
 
 def test_resolve_openai_spec_requires_dim():
@@ -708,6 +752,7 @@ def test_persistable_embedder_spec_strips_operational_config():
                 "dim": 768,
                 "base_url": "http://operator-box/v1",
                 "batch_size": 32,
+                "workers": 8,
             },
         }
     )
@@ -1010,7 +1055,7 @@ def test_configured_openai_model_still_uses_environment_key(monkeypatch):
         embedder_config={"dim": 1536},
     )
 
-    assert embedder.client.api_key == "operator-env-key"
+    assert embedder._embedders[0].client.api_key == "operator-env-key"
 
 
 def test_openai_client_bounds_the_total_call_budget(monkeypatch):

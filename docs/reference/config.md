@@ -135,6 +135,11 @@ OpenAI-compatible instances (`openai`, `ollama`) accept
 SDK retries included (default 60). It bounds how long an
 unresponsive provider can hold a worker slot.
 
+They also accept `workers`: the per-instance concurrent-call
+bound. `auto` (the default) uses at most four clone-safe HTTP
+clients. Worker count is runtime-only and never changes a
+collection's vector-space identity.
+
 ### `embedder.default`
 
 - Default: `null`

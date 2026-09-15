@@ -10,6 +10,7 @@ import pytest
 import pave.embedders.factory as factory_mod
 import pave.embedders.ollama as ollama_mod
 from pave.embedders import EmbedderUnavailableError
+from pave.embedders.worker_pool import ThreadEmbedderPool
 
 
 class _DummyCFG:
@@ -22,7 +23,7 @@ class _DummyCFG:
 
 def test_ollama_schema_matches_openai_shape():
     assert ollama_mod.CONFIG_KEYS == (
-        "dim", "base_url", "batch_size", "timeout_s",
+        "dim", "base_url", "batch_size", "timeout_s", "workers",
     )
     assert ollama_mod.SPACE_KEYS == ("dim",)
 
@@ -62,6 +63,11 @@ def test_ollama_dispatched_via_convention(monkeypatch):
     class FakeOpenAI:
         def __init__(self, **kwargs):
             seen.update(kwargs)
+            self._dim = kwargs["dim"]
+
+        @property
+        def dim(self):
+            return self._dim
 
     monkeypatch.setattr(ollama_mod, "OllamaEmbedder", FakeOpenAI, raising=True)
     monkeypatch.setattr(ollama_mod, "_probe_daemon", lambda _url: None)
@@ -85,7 +91,8 @@ def test_ollama_dispatched_via_convention(monkeypatch):
         embedder_type="ollama",
     )
 
-    assert isinstance(emb, FakeOpenAI)
+    assert isinstance(emb, ThreadEmbedderPool)
+    assert isinstance(emb._embedders[0], FakeOpenAI)
     assert seen["model"] == "nomic-embed-text"
     assert seen["base_url"] == "http://x/v1"
     assert seen["dim"] == 1024
@@ -101,6 +108,11 @@ def test_ollama_instance_api_key_overrides_dummy(monkeypatch):
     class FakeOpenAI:
         def __init__(self, **kwargs):
             seen.update(kwargs)
+            self._dim = kwargs["dim"]
+
+        @property
+        def dim(self):
+            return self._dim
 
     monkeypatch.setattr(ollama_mod, "OllamaEmbedder", FakeOpenAI, raising=True)
     monkeypatch.setattr(ollama_mod, "_probe_daemon", lambda _url: None)

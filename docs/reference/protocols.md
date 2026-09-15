@@ -116,6 +116,9 @@ exports:
 - `CONFIG_KEYS: tuple[str, ...]` — every config key the type accepts.
 - `SPACE_KEYS: tuple[str, ...]` — the subset of `CONFIG_KEYS` that changes
   the vector space (e.g. `dim`).
+- Optional `CLONE_SAFE: bool` — opt into the factory's bounded thread-worker
+  pool. Clone-safe modules accept the operational `workers` config key; it
+  must not appear in `SPACE_KEYS`.
 - Optional `validate_spec(resolved_config: dict) -> dict` for normalizing
   or rejecting config before construction.
 

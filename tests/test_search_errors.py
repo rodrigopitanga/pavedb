@@ -37,7 +37,11 @@ def test_search_encode_failure_returns_503(client, app, monkeypatch):
     def fail_encode(_texts):
         raise RuntimeError("embedder offline")
 
+    # An offline embedder cannot serve either surface. The query path uses
+    # encode_queries (the worker pool routes it separately from encode), so
+    # patching only encode no longer reaches the query encode.
     monkeypatch.setattr(embedder, "encode", fail_encode)
+    monkeypatch.setattr(embedder, "encode_queries", fail_encode, raising=False)
     response = client.post(
         "/v1/collections/acme/encode-failure-search/search",
         json={"q": "hello", "k": 1},

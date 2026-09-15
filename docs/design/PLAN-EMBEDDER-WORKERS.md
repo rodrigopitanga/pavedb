@@ -52,7 +52,8 @@ None of these keys should enter `SPACE_KEYS`.
 ## Implementation Notes
 
 1. Promote the SBERT process-pool selection logic into a reusable wrapper.
-2. Let each embedder module declare whether it is safe to clone instances.
+2. Let each embedder module declare `CLONE_SAFE` so the factory knows whether
+   it may construct multiple instances.
 3. For local SBERT, keep process workers to isolate PyTorch/OpenMP runtime
    conflicts.
 4. For OpenAI-compatible and Ollama embedders, use thread workers with shared

@@ -21,6 +21,9 @@ SPACE_KEYS: tuple[str, ...] = ("dim",)
 # Identity owns no model; the vector space is pinned by `dim` alone. Signals
 # the factory to skip the "no model configured" requirement for this type.
 MODELLESS: bool = True
+# A passthrough owns no blocking provider resource, so pooling only adds
+# contention without protecting anything.
+CLONE_SAFE: bool = False
 
 
 def validate_spec(resolved_config: dict) -> dict:

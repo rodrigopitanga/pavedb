@@ -21,6 +21,7 @@ from threading import Lock
 from typing import Any, Iterable, NotRequired, TypedDict
 
 from .base import Embedder, EmbedderConfig, EmbedderUnavailableError
+from .worker_pool import ThreadEmbedderPool, resolve_worker_count
 from ..config import Config, get_cfg
 
 log = logging.getLogger(__name__)
@@ -155,6 +156,19 @@ class LazyEmbedder:
 
     def encode(self, texts: list[str]):
         return self._get().encode(texts)
+
+    def encode_queries(self, texts: list[str]):
+        """Forward the optional query-side capability when available."""
+        embedder = self._get()
+        encode = getattr(embedder, "encode_queries", None)
+        return encode(texts) if callable(encode) else embedder.encode(texts)
+
+    def close(self) -> None:
+        """Release a constructed embedder without forcing lazy creation."""
+        embedder = self._embedder
+        close = getattr(embedder, "close", None)
+        if callable(close):
+            close()
 
 
 def resolve_setting(
@@ -733,9 +747,37 @@ def get_embedder(
         raise RuntimeError(
             f"pave.embedders.{etype} does not expose build_embedder(cfg, ...)"
         )
-    return build(
-        cfg,
-        model=spec["embed_model"],
-        embedder_config=spec.get("embedder_config") or {},
-        api_key=spec.get("api_key"),
+    model_name = spec["embed_model"]
+    runtime_config = dict(spec.get("embedder_config") or {})
+    api_key = spec.get("api_key")
+
+    def build_one() -> Embedder:
+        return build(
+            cfg,
+            model=model_name,
+            embedder_config=dict(runtime_config),
+            api_key=api_key,
+        )
+
+    clone_safe = bool(getattr(mod, "CLONE_SAFE", False))
+    workers = None
+    if clone_safe:
+        workers = resolve_worker_count(
+            resolve_setting(
+                cfg,
+                etype,
+                "workers",
+                runtime_config,
+                "auto",
+            )
+        )
+    embedder = build_one()
+    if not clone_safe:
+        return embedder
+
+    assert workers is not None
+    return ThreadEmbedderPool(
+        build_one,
+        workers=workers,
+        initial_embedder=embedder,
     )

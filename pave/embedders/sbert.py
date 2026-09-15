@@ -35,6 +35,9 @@ CONFIG_KEYS: tuple[str, ...] = (
 # vector-space identity; runtime/device/endpoint/trust_remote_code are
 # execution details and are not.
 SPACE_KEYS: tuple[str, ...] = ("query_prefix", "passage_prefix")
+# Local SBERT concurrency is process-isolated by ProcessSbertEmbedder. Cloning
+# in-process models would duplicate large weights and native runtimes.
+CLONE_SAFE: bool = False
 
 
 def _prefix(texts: list[str], prefix: str | None) -> list[str]:

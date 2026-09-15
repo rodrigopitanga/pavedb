@@ -18,8 +18,17 @@ from ..config import get_cfg
 from ..metrics import inc_labeled
 
 
-CONFIG_KEYS: tuple[str, ...] = ("dim", "base_url", "batch_size", "timeout_s")
+CONFIG_KEYS: tuple[str, ...] = (
+    "dim",
+    "base_url",
+    "batch_size",
+    "timeout_s",
+    "workers",
+)
 SPACE_KEYS: tuple[str, ...] = ("dim",)
+# HTTP clients are cheap to clone, and one client per slot prevents concurrent
+# mutation inside a provider SDK from escaping the shared worker bound.
+CLONE_SAFE: bool = True
 
 # Total wall-clock budget for one embeddings call, retries included.
 _DEFAULT_TIMEOUT_S = 60.0
@@ -173,3 +182,9 @@ class OpenAIEmbedder:
             float(len(texts)),
         )
         return np.array([d.embedding for d in res.data], dtype=np.float32)
+
+    def close(self) -> None:
+        """Release the SDK client's underlying HTTP resources."""
+        close = getattr(self.client, "close", None)
+        if callable(close):
+            close()

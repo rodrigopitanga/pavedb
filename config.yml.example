@@ -225,6 +225,9 @@ embedder:
     # request, SDK retries included (default 60). It bounds how long an
     # unresponsive provider can hold a worker slot; raise it for slow
     # local daemons that load a model on first use.
+    # 'workers' bounds concurrent calls per instance; 'auto' (the default)
+    # uses at most four clone-safe HTTP clients. Worker count is runtime-only
+    # and never changes collection vector-space identity.
     #
     # local-small:
     #   type: 'ollama'
@@ -232,6 +235,7 @@ embedder:
     #   config:
     #     dim: 768
     #     base_url: 'http://localhost:11434/v1'
+    #     workers: 'auto'
     #
     # local-complex:
     #   type: 'ollama'
@@ -247,6 +251,7 @@ embedder:
     #   config:
     #     dim: 1536
     #     batch_size: 256
+    #     workers: 'auto'
     #     # base_url: '${PAVEDB_OPENAI_BASE_URL}'
     #
     # frontier-secondary:

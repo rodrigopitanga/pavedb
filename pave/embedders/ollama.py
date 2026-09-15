@@ -18,8 +18,15 @@ from .base import EmbedderUnavailableError
 from .openai import _DEFAULT_TIMEOUT_S, OpenAIEmbedder
 
 
-CONFIG_KEYS: tuple[str, ...] = ("dim", "base_url", "batch_size", "timeout_s")
+CONFIG_KEYS: tuple[str, ...] = (
+    "dim",
+    "base_url",
+    "batch_size",
+    "timeout_s",
+    "workers",
+)
 SPACE_KEYS: tuple[str, ...] = ("dim",)
+CLONE_SAFE: bool = True
 
 _DEFAULT_BASE_URL = "http://localhost:11434/v1"
 _DEFAULT_MODEL = "nomic-embed-text"

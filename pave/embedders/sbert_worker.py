@@ -25,6 +25,7 @@ from numpy.typing import NDArray
 from ..config import get_cfg
 from ..metrics import inc_labeled
 from ._device import resolve_device
+from .worker_pool import resolve_worker_count
 
 _STARTUP_TIMEOUT_S = 300.0
 _REQUEST_TIMEOUT_S = 300.0
@@ -111,13 +112,14 @@ def _worker_main(
 
 
 def _resolve_worker_count(raw_workers: object) -> int:
-    if raw_workers is None:
-        raw_workers = "auto"
-    value = str(raw_workers).strip().lower()
-    if value in {"", "auto"}:
-        cpus = os.cpu_count() or 1
-        return max(1, min(_MAX_AUTO_WORKERS, cpus // 2 or 1))
-    return max(1, int(raw_workers))
+    # Native workers each load the full model and native thread pools, so use
+    # half the available CPUs and retain the tighter SBERT-specific cap.
+    return resolve_worker_count(
+        raw_workers,
+        max_auto_workers=_MAX_AUTO_WORKERS,
+        auto_cpu_divisor=2,
+        available_cpus=os.cpu_count(),
+    )
 
 
 class ProcessSbertEmbedder:
