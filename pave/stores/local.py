@@ -71,6 +71,7 @@ from pave.stores.base import (
     QueryHomeEntry,
     QueryLogEntry,
     Record,
+    SearchMode,
     SearchOutput,
     SearchResult,
 )
@@ -104,12 +105,47 @@ _REINDEX_BATCH_SIZE = 32
 # stemming/normalization beyond casefolding -- the boost is a narrow nudge
 # inside the vector candidate window, not a lexical search engine.
 _EXACT_TOKEN_RE = re.compile(r"\w+")
+_RRF_K = 60
 
 
 def _tokenize_exact(text: str | None) -> frozenset[str]:
     if not text:
         return frozenset()
     return frozenset(m.group(0).casefold() for m in _EXACT_TOKEN_RE.finditer(text))
+
+
+def _reciprocal_rank_fusion(
+    vector: list[tuple[str, float]],
+    lexical: list[tuple[str, float]],
+) -> list[tuple[str, float, int | None, int | None]]:
+    """Fuse independent result ranks without mixing their raw score scales."""
+    vector_ranks: dict[str, int] = {}
+    lexical_ranks: dict[str, int] = {}
+    for rank, (rid, _score) in enumerate(vector, start=1):
+        if rid:
+            vector_ranks.setdefault(rid, rank)
+    for rank, (rid, _score) in enumerate(lexical, start=1):
+        if rid:
+            lexical_ranks.setdefault(rid, rank)
+
+    fused: list[tuple[str, float, int | None, int | None]] = []
+    for rid in vector_ranks.keys() | lexical_ranks.keys():
+        vector_rank = vector_ranks.get(rid)
+        lexical_rank = lexical_ranks.get(rid)
+        score = sum(
+            1.0 / (_RRF_K + rank)
+            for rank in (vector_rank, lexical_rank)
+            if rank is not None
+        )
+        fused.append((rid, score, vector_rank, lexical_rank))
+    fused.sort(
+        key=lambda item: (
+            -item[1],
+            item[2] if item[2] is not None else float("inf"),
+            item[0],
+        )
+    )
+    return fused
 
 
 def _assert_writable_rid(rid: str) -> None:
@@ -798,7 +834,7 @@ class LocalStore:
                             "query_log": {
                                 "query_id", "tenant", "collection", "actor",
                                 "query_text", "k", "filters_json", "include_common",
-                                "content_filter_json",
+                                "content_filter_json", "mode",
                                 "common_tenant", "common_collection", "result_ids_json",
                                 "result_count", "latency_ms", "timing_json",
                                 "request_id", "replay_of", "executed_at",
@@ -2894,6 +2930,7 @@ class LocalStore:
         k: int,
         filters: FilterSpec | None = None,
         content_filter: ContentFilterSpec | None = None,
+        mode: SearchMode = "vector",
         include_common: bool = False,
         common_tenant: str | None = None,
         common_collection: str | None = None,
@@ -2916,6 +2953,7 @@ class LocalStore:
                 k=k,
                 filters=filters,
                 content_filter=content_filter,
+                mode=mode,
                 include_common=include_common,
                 common_tenant=common_tenant,
                 common_collection=common_collection,
@@ -3767,6 +3805,7 @@ class LocalStore:
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: FilterSpec | None = None,
                *, content_filter: ContentFilterSpec | None = None,
+               mode: SearchMode = "vector",
                query_vector: list[float] | None = None) -> SearchOutput:
         """
         Queries the FAISS backend for top-k and keeps overfetch inside the
@@ -3777,12 +3816,16 @@ class LocalStore:
         take the write side, so same-collection searches can overlap without
         racing cache close or data-dir replacement.
         """
+        if mode not in {"vector", "hybrid"}:
+            raise ValueError(f"unsupported search mode: {mode!r}")
+        if mode == "hybrid" and query_vector is not None:
+            raise ValueError("hybrid search requires a text query")
         _fspec_str = "N/A" if filters is None else json.dumps(dict(filters))
         _content_str = (
             "N/A" if content_filter is None else json.dumps(content_filter)
         )
         log.debug(f"SEARCH-IN: tenant> {tenant} coll> {collection} query> {query} \
-                  k> {k} filters> {_fspec_str} content> {_content_str}")
+                  k> {k} mode> {mode} filters> {_fspec_str} content> {_content_str}")
         _perf = _time.perf_counter
 
         def _ms_since(t0: float) -> float:
@@ -3793,7 +3836,11 @@ class LocalStore:
         fetch_k = max(50, kk * 5)
         boost_weight = float(get_cfg().get("search.exact_token_boost_weight"))
         query_tokens: frozenset[str] = frozenset()
-        if get_cfg().get("search.exact_token_boost") and boost_weight > 0:
+        if (
+            mode == "vector"
+            and get_cfg().get("search.exact_token_boost")
+            and boost_weight > 0
+        ):
             query_tokens = _tokenize_exact(query)
         normed_filters: dict[str, list[Any]] = {}
         for key, vals in (filters or {}).items():
@@ -3854,11 +3901,14 @@ class LocalStore:
             hydrate_meta_ms = 0.0
             filter_post_ms = 0.0
             boost_ms = 0.0
+            vector_search_ms = 0.0
+            lexical_search_ms = 0.0
             raw: list[tuple[str, float]] = []
             candidate_rids: list[str] = []
             meta_batch: dict[str, Metadata] = {}
             kept: list[tuple[str, float]] = []
             exact_hits: set[str] = set()
+            hybrid_ranks: dict[str, tuple[int | None, int | None]] = {}
 
             filtered_search = getattr(backend, "search_filtered", None)
             # Exact-token boost is defined over the vector-first fetch window.
@@ -3870,7 +3920,68 @@ class LocalStore:
                 and (bool(content_filter) or _has_metadata_prefilter())
             )
 
-            if can_prefilter:
+            if mode == "hybrid":
+                t0 = _perf()
+                vector = backend.search(q_vec, limit)
+                vector_search_ms = _ms_since(t0)
+
+                t0 = _perf()
+                lexical = col_db.lexical_candidates(query, fetch_k)
+                lexical_search_ms = _ms_since(t0)
+                search_ms = vector_search_ms + lexical_search_ms
+
+                fused = _reciprocal_rank_fusion(vector, lexical)
+                hybrid_ranks = {
+                    rid: (vector_rank, lexical_rank)
+                    for rid, _score, vector_rank, lexical_rank in fused
+                }
+                candidate_rids = [
+                    rid
+                    for rid, _score, _vector_rank, _lexical_rank in fused
+                ]
+
+                if content_filter:
+                    t0 = _perf()
+                    content_rids = col_db.filter_by_content(
+                        candidate_rids,
+                        content_filter,
+                    )
+                    filter_push_ms += _ms_since(t0)
+                    candidate_rids = [
+                        rid for rid in candidate_rids if rid in content_rids
+                    ]
+
+                if normed_filters:
+                    surviving, meta_batch, meta_timing = (
+                        col_db.filter_meta_batch(
+                            candidate_rids,
+                            normed_filters,
+                        )
+                    )
+                    candidate_rids = [
+                        rid for rid in candidate_rids if rid in surviving
+                    ]
+                    filter_push_ms += meta_timing["filter_ms"]
+                    hydrate_meta_ms += meta_timing["hydrate_ms"]
+                    log.debug(f"SEARCH-FILTER-POST: {normed_filters}")
+                else:
+                    t0 = _perf()
+                    meta_batch = col_db.get_meta_batch(candidate_rids)
+                    hydrate_meta_ms += _ms_since(t0)
+
+                candidate_set = set(candidate_rids)
+                t0 = _perf()
+                kept = [
+                    (rid, score)
+                    for rid, score, _vector_rank, _lexical_rank in fused
+                    if rid in candidate_set
+                    and matches_filters(
+                        meta_batch.get(rid, {}),
+                        normed_filters,
+                    )
+                ][:kk]
+                filter_post_ms += _ms_since(t0)
+            elif can_prefilter:
                 # Select a SQL-safe superset first. Metadata is hydrated from
                 # the same read transaction as its SQL filter, then canonical
                 # Python semantics remove any unsupported-filter survivors.
@@ -4045,27 +4156,33 @@ class LocalStore:
                         query, score, filters, rid_meta,
                         content_filter=content_filter,
                         exact_token_hit=rid in exact_hits,
+                        vector_rank=hybrid_ranks.get(rid, (None, None))[0],
+                        lexical_rank=hybrid_ranks.get(rid, (None, None))[1],
                     ),
                 ))
             hydrate_text_ms = _ms_since(t0)
             _hits = [(r.id, round(r.score, 3)) for r in out[:3]]
             _sfx = " ..." if len(out) > 3 else ""
             log.debug(f"SEARCH-OUT: {len(out)} hits {_hits}{_sfx}")
-            return SearchOutput(
-                matches=out,
-                timing={
-                    "embed_ms": embed_ms,
-                    "search_ms": round(search_ms, 2),
-                    "filter_ms": round(filter_push_ms + filter_post_ms, 2),
-                    # Exact-token boost reads chunk text inside the fetch
-                    # loop, same SQLite work as hydration -- folded into
-                    # hydrate_ms so the timing contract stays 4 fields
-                    # whether or not P1-07 is enabled.
-                    "hydrate_ms": round(
-                        hydrate_meta_ms + hydrate_text_ms + boost_ms, 2
-                    ),
-                },
-            )
+            timing = {
+                "embed_ms": embed_ms,
+                "search_ms": round(search_ms, 2),
+                "filter_ms": round(filter_push_ms + filter_post_ms, 2),
+                # Exact-token boost reads chunk text inside the fetch loop,
+                # same SQLite work as hydration -- folded into hydrate_ms so
+                # vector mode keeps its established four-field contract.
+                "hydrate_ms": round(
+                    hydrate_meta_ms + hydrate_text_ms + boost_ms, 2
+                ),
+            }
+            if mode == "hybrid":
+                timing.update(
+                    {
+                        "vector_search_ms": round(vector_search_ms, 2),
+                        "lexical_search_ms": round(lexical_search_ms, 2),
+                    }
+                )
+            return SearchOutput(matches=out, timing=timing)
 
         key = (tenant, collection)
         collection_path = self._base_path(tenant, collection)
@@ -4144,14 +4261,22 @@ class LocalStore:
                         raise ValueError(
                             f"collection '{collection}' does not exist"
                         )
+                    timing = {
+                        "embed_ms": 0.0,
+                        "search_ms": 0.0,
+                        "filter_ms": 0.0,
+                        "hydrate_ms": 0.0,
+                    }
+                    if mode == "hybrid":
+                        timing.update(
+                            {
+                                "vector_search_ms": 0.0,
+                                "lexical_search_ms": 0.0,
+                            }
+                        )
                     return SearchOutput(
                         matches=[],
-                        timing={
-                            "embed_ms": 0.0,
-                            "search_ms": 0.0,
-                            "filter_ms": 0.0,
-                            "hydrate_ms": 0.0,
-                        },
+                        timing=timing,
                     )
                 self._load_or_init(tenant, collection)
             # The collection may have been deleted between initialization and
@@ -4208,13 +4333,20 @@ class LocalStore:
                             meta: Metadata | None,
                             *,
                             content_filter: ContentFilterSpec | None = None,
-                            exact_token_hit: bool = False) -> str:
+                            exact_token_hit: bool = False,
+                            vector_rank: int | None = None,
+                            lexical_rank: int | None = None) -> str:
         """Build a human-readable explanation of why a result matched."""
         parts = []
 
         # Similarity component
-        pct = int(score * 100)
-        if query:
+        if vector_rank is not None or lexical_rank is not None:
+            if vector_rank is not None:
+                parts.append(f"vector rank {vector_rank}")
+            if lexical_rank is not None:
+                parts.append(f"lexical rank {lexical_rank}")
+        elif query:
+            pct = int(score * 100)
             parts.append(f"semantic similarity {pct}%")
         if exact_token_hit:
             parts.append("exact token match")
@@ -4402,7 +4534,7 @@ class LocalStore:
                     "query_log": {
                         "query_id", "tenant", "collection", "actor",
                         "query_text", "k", "filters_json", "include_common",
-                        "content_filter_json",
+                        "content_filter_json", "mode",
                         "common_tenant", "common_collection", "result_ids_json",
                         "result_count", "latency_ms", "timing_json",
                         "request_id", "replay_of", "executed_at",

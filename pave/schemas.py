@@ -91,7 +91,7 @@ class SearchTiming(BaseModel):
         examples=[1.2],
     )
     search_ms: float = Field(
-        description="Time spent finding nearest matches.",
+        description="Time spent generating ranked candidates.",
         examples=[8.4],
     )
     filter_ms: float = Field(
@@ -101,6 +101,16 @@ class SearchTiming(BaseModel):
     hydrate_ms: float = Field(
         description="Time spent loading snippet text and metadata.",
         examples=[2.1],
+    )
+    vector_search_ms: float | None = Field(
+        default=None,
+        description="Vector candidate-generation time for hybrid search.",
+        examples=[1.4],
+    )
+    lexical_search_ms: float | None = Field(
+        default=None,
+        description="FTS5 candidate-generation time for hybrid search.",
+        examples=[0.7],
     )
 
 
@@ -125,7 +135,7 @@ class SearchResponse(OkResponse):
 
 
 class ContentFilter(BaseModel):
-    """One additive chunk-text predicate for a vector search."""
+    """One additive chunk-text predicate for a search."""
     op: Literal["exact", "phrase", "prefix", "contains"] = Field(
         description="Text matching operation.",
         examples=["phrase"],
@@ -175,6 +185,14 @@ class SearchBody(BaseModel):
         ),
         examples=[{"op": "phrase", "value": "captain nemo"}],
     )
+    mode: Literal["vector", "hybrid"] = Field(
+        default="vector",
+        description=(
+            "Candidate generation mode. Hybrid fuses independent vector and "
+            "lexical rankings and requires a text query."
+        ),
+        examples=["hybrid"],
+    )
     include_common: bool = Field(
         default=False,
         description=(
@@ -200,6 +218,8 @@ class SearchBody(BaseModel):
             raise ValueError(
                 "Provide exactly one of 'q' (text query) or 'v' (vector query)."
             )
+        if self.mode == "hybrid" and self.q is None:
+            raise ValueError("Hybrid search requires a text query in 'q'.")
         return self
 
 
@@ -223,6 +243,11 @@ class QueryLogEntry(BaseModel):
         default=None,
         description="Chunk-text predicate applied to the search.",
         examples=[{"op": "prefix", "value": "captain ne"}],
+    )
+    mode: Literal["vector", "hybrid"] = Field(
+        default="vector",
+        description="Candidate generation mode used by the search.",
+        examples=["hybrid"],
     )
     include_common: bool = Field(
         default=False,

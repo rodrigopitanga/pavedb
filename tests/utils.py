@@ -361,6 +361,7 @@ class DummyStore:
     def search(self, tenant: str, collection: str, text: str, k: int = 5,
                filters: dict[str, Any] | None = None,
                *, content_filter: dict[str, str] | None = None,
+               mode: str = "vector",
                query_vector=None) -> SearchOutput:
         cat = os.path.join(self._dir(tenant, collection), "catalog.json")
         if not os.path.isfile(cat):
@@ -386,6 +387,7 @@ class DummyStore:
         k: int,
         filters: dict[str, Any] | None = None,
         content_filter: dict[str, str] | None = None,
+        mode: str = "vector",
         include_common: bool = False,
         common_tenant: str | None = None,
         common_collection: str | None = None,
@@ -703,11 +705,14 @@ class SpyStore:
     def search(self, tenant: str, collection: str, text: str, k: int = 5,
                filters: dict[str, Any] | None = None,
                *, content_filter: dict[str, str] | None = None,
+               mode: str = "vector",
                query_vector=None) -> SearchOutput:
         self.calls.append(("search", tenant, collection, text, k, filters))
         extra = {"query_vector": query_vector} if query_vector is not None else {}
         if content_filter is not None:
             extra["content_filter"] = content_filter
+        if mode != "vector":
+            extra["mode"] = mode
         return self.impl.search(tenant, collection, text, k, filters, **extra)
 
     def log_query(
@@ -721,6 +726,7 @@ class SpyStore:
         k: int,
         filters: dict[str, Any] | None = None,
         content_filter: dict[str, str] | None = None,
+        mode: str = "vector",
         include_common: bool = False,
         common_tenant: str | None = None,
         common_collection: str | None = None,
@@ -743,6 +749,7 @@ class SpyStore:
                     "k": k,
                     "filters": filters,
                     "content_filter": content_filter,
+                    "mode": mode,
                     "include_common": include_common,
                     "common_tenant": common_tenant,
                     "common_collection": common_collection,
@@ -764,6 +771,7 @@ class SpyStore:
             k=k,
             filters=filters,
             content_filter=content_filter,
+            mode=mode,
             include_common=include_common,
             common_tenant=common_tenant,
             common_collection=common_collection,

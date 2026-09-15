@@ -244,13 +244,13 @@ pavecli ingest-text demo books "Captain Nemo" --docid note-1
 
 ## `search`
 
-Run semantic search over a collection and print the response envelope.
+Run ranked search over a collection and print the response envelope.
 
 ### Usage
 
 ```bash
-pavecli search [-h] [-k K] [--include-common] [--filters FILTERS]
-                      [--content-filter CONTENT_FILTER]
+pavecli search [-h] [-k K] [--mode {vector,hybrid}] [--include-common]
+                      [--filters FILTERS] [--content-filter CONTENT_FILTER]
                       tenant collection query
 ```
 
@@ -266,6 +266,8 @@ pavecli search demo books "captain nemo" -k 3
 - `collection` (required): Collection name
 - `query` (required): Natural-language search query
 - `-k` (optional): Number of matches to return (default: 5)
+- `--mode` (optional): Candidate generation mode (choices: vector, hybrid; default:
+  vector)
 - `--include-common` (optional): Include configured common collection results
 - `--filters` (optional): JSON object, e.g. {"docid":"DOC-1"}
 - `--content-filter` (optional): JSON object with op exact, phrase, prefix, or

@@ -52,6 +52,9 @@ python benchmarks/search_latency.py --url http://localhost:8086
 # match `make bench-latency` defaults
 python benchmarks/search_latency.py --url http://localhost:8086 \
   --queries 1200 --concurrency 42
+
+# compare hybrid retrieval with the default vector run
+python benchmarks/search_latency.py --url http://localhost:8086 --mode hybrid
 ```
 
 ### Options
@@ -59,6 +62,7 @@ python benchmarks/search_latency.py --url http://localhost:8086 \
 * `--url` - PaveDB base URL (default: http://localhost:8086)
 * `--queries` - Number of queries to run (default: 100)
 * `--concurrency` - Concurrent requests (default: 10)
+* `--mode` - Candidate generation mode: `vector` or `hybrid` (default: vector)
 * `--debug` - Print stack traces for setup failures
 
 ### Output

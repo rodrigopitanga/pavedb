@@ -80,7 +80,7 @@ class RateLimitDecision:
 
 _COLLECTION_BASELINE_SCHEMA_VERSION = 6
 _CATALOG_BASELINE_SCHEMA_VERSION = 5
-_COLLECTION_SCHEMA_VERSION = 7
+_COLLECTION_SCHEMA_VERSION = 8
 _CATALOG_SCHEMA_VERSION = 7
 _COLLECTION_MIGRATIONS: dict[int, list[str]] = {
     7: [
@@ -142,6 +142,10 @@ _COLLECTION_MIGRATIONS: dict[int, list[str]] = {
         # indexed here, so the migration leaves both indexes consistent.
         "INSERT INTO chunk_text_fts(chunk_text_fts) VALUES ('rebuild')",
         "INSERT INTO chunk_text_trigram(chunk_text_trigram) VALUES ('rebuild')",
+    ],
+    8: [
+        "ALTER TABLE query_log ADD COLUMN mode TEXT NOT NULL DEFAULT 'vector' "
+        "CHECK (mode IN ('vector', 'hybrid'))",
     ],
 }
 _CATALOG_MIGRATIONS: dict[int, list[str]] = {
@@ -955,6 +959,7 @@ class CollectionDB:
         k: int,
         filters: dict[str, Any] | None = None,
         content_filter: dict[str, str] | None = None,
+        mode: str = "vector",
         include_common: bool = False,
         common_tenant: str | None = None,
         common_collection: str | None = None,
@@ -969,11 +974,11 @@ class CollectionDB:
             conn.execute(
                 "INSERT INTO query_log "
                 "(query_id, tenant, collection, actor, query_text, k, "
-                "filters_json, content_filter_json, include_common, "
+                "filters_json, content_filter_json, mode, include_common, "
                 "common_tenant, common_collection, "
                 "result_ids_json, result_count, latency_ms, timing_json, "
                 "request_id, replay_of) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     query_id,
                     tenant,
@@ -983,6 +988,7 @@ class CollectionDB:
                     k,
                     self._dump_json(filters),
                     self._dump_json(content_filter),
+                    mode,
                     1 if include_common else 0,
                     common_tenant,
                     common_collection,
@@ -1004,7 +1010,7 @@ class CollectionDB:
             row = conn.execute(
                 "SELECT query_id, tenant, collection, actor, "
                 "query_text, k, filters_json, content_filter_json, "
-                "include_common, common_tenant, common_collection, "
+                "mode, include_common, common_tenant, common_collection, "
                 "result_ids_json, result_count, latency_ms, timing_json, "
                 "request_id, replay_of, executed_at "
                 "FROM query_log WHERE query_id = ?",
@@ -1021,16 +1027,17 @@ class CollectionDB:
             "k": row[5],
             "filters": self._load_json(row[6]),
             "content_filter": self._load_json(row[7]) if row[7] else None,
-            "include_common": bool(row[8]),
-            "common_tenant": row[9],
-            "common_collection": row[10],
-            "result_ids": json.loads(row[11]) if row[11] else [],
-            "result_count": row[12],
-            "latency_ms": row[13],
-            "timing": self._load_json(row[14]),
-            "request_id": row[15],
-            "replay_of": row[16],
-            "executed_at": row[17],
+            "mode": row[8],
+            "include_common": bool(row[9]),
+            "common_tenant": row[10],
+            "common_collection": row[11],
+            "result_ids": json.loads(row[12]) if row[12] else [],
+            "result_count": row[13],
+            "latency_ms": row[14],
+            "timing": self._load_json(row[15]),
+            "request_id": row[16],
+            "replay_of": row[17],
+            "executed_at": row[18],
         }
 
     def list_query_logs(

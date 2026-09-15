@@ -63,6 +63,7 @@ from pave.stores.base import (
     Metadata,
     MetadataValidationError,
     QueryLogEntry,
+    SearchMode,
 )
 
 log = get_logger()
@@ -82,6 +83,15 @@ def _normalize_content_filter(value: Any) -> ContentFilterSpec | None:
     except Exception as exc:
         raise ServiceError("invalid_content_filter", str(exc)) from exc
     return parsed.model_dump()
+
+
+def _normalize_search_mode(value: Any) -> SearchMode:
+    if value not in {"vector", "hybrid"}:
+        raise ServiceError(
+            "invalid_search_mode",
+            "search mode must be 'vector' or 'hybrid'",
+        )
+    return value
 
 
 # Pure-ish service functions operating on a store adapter
@@ -479,7 +489,11 @@ def cancel_reindex_job(store, job_id: str) -> ServiceResult:
 
 
 def _sum_timing(*timings: dict[str, float]) -> dict[str, float]:
-    keys = ("embed_ms", "search_ms", "filter_ms", "hydrate_ms")
+    base_keys = ("embed_ms", "search_ms", "filter_ms", "hydrate_ms")
+    extra_keys = sorted(
+        set().union(*(timing.keys() for timing in timings)) - set(base_keys)
+    )
+    keys = (*base_keys, *extra_keys)
     return {
         key: round(sum(timing.get(key, 0.0) for timing in timings), 2)
         for key in keys
@@ -1455,6 +1469,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
            common_tenant: str | None = None,
            common_collection: str | None = None,
            *,
+           mode: SearchMode = "vector",
            request_id: str | None = None,
            actor: str,
            _log: bool = True,
@@ -1463,9 +1478,17 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
     m_inc("search_total", 1.0)
     try:
         content_filter = _normalize_content_filter(content_filter)
-        content_search_kw = (
-            {"content_filter": content_filter} if content_filter else {}
-        )
+        mode = _normalize_search_mode(mode)
+        if mode == "hybrid" and q is None:
+            raise ServiceError(
+                "invalid_search_mode",
+                "hybrid search requires a text query",
+            )
+        search_kw: dict[str, Any] = {}
+        if content_filter:
+            search_kw["content_filter"] = content_filter
+        if mode == "hybrid":
+            search_kw["mode"] = mode
         # Unvalidated here, the name reached _load_or_init and auto-created a
         # collection that delete_collection then refused to remove, because it
         # validates the name before checking existence. Safe for the
@@ -1516,7 +1539,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
                 q,
                 max(10, k * 2),
                 filters=filters,
-                **content_search_kw,
+                **search_kw,
             )
             try:
                 common = store.search(
@@ -1525,7 +1548,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
                     q,
                     max(10, k * 2),
                     filters=filters,
-                    **content_search_kw,
+                    **search_kw,
                 )
             except ValueError:
                 # The shared corpus is an enrichment, not a requirement. Now
@@ -1555,7 +1578,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
             result = store.search(tenant, collection, "", k,
                                   filters=filters,
                                   query_vector=v,
-                                  **content_search_kw)
+                                  **search_kw)
             top = result.matches
             timing = result.timing
         else:
@@ -1565,7 +1588,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
                 q,
                 k,
                 filters=filters,
-                **content_search_kw,
+                **search_kw,
             )
             top = result.matches
             timing = result.timing
@@ -1609,6 +1632,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
                     k=k,
                     filters=filters,
                     content_filter=content_filter,
+                    mode=mode,
                     include_common=merge_common,
                     common_tenant=effective_common_tenant,
                     common_collection=effective_common_collection,
@@ -1939,6 +1963,7 @@ def execute_replay(
             replay_k,
             filters=entry.get("filters"),
             content_filter=entry.get("content_filter"),
+            mode=entry.get("mode", "vector"),
             include_common=replay_common,
             common_tenant=replay_common_tenant,
             common_collection=replay_common_collection,
@@ -1962,6 +1987,7 @@ def execute_replay(
                     k=replay_k,
                     filters=entry.get("filters"),
                     content_filter=entry.get("content_filter"),
+                    mode=entry.get("mode", "vector"),
                     include_common=replay_common,
                     common_tenant=replay_common_tenant,
                     common_collection=replay_common_collection,

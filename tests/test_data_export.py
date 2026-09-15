@@ -305,22 +305,32 @@ def test_restore_archive_migrates_preview_baseline(monkeypatch, tmp_path):
     archive_bytes = _archive_bytes(source)
     source.close()
 
-    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 8)
+    # Preview targets one past whatever is current, so this test keeps
+    # working across real schema bumps instead of pinning stale numbers.
+    preview_catalog = metadb._CATALOG_SCHEMA_VERSION + 1
+    preview_collection = metadb._COLLECTION_SCHEMA_VERSION + 1
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", preview_catalog)
     monkeypatch.setattr(
         metadb,
         "_CATALOG_MIGRATIONS",
         {
             **metadb._CATALOG_MIGRATIONS,
-            8: ["CREATE TABLE catalog_preview_probe (value TEXT)"],
+            preview_catalog: [
+                "CREATE TABLE catalog_preview_probe (value TEXT)"
+            ],
         },
     )
-    monkeypatch.setattr(metadb, "_COLLECTION_SCHEMA_VERSION", 8)
+    monkeypatch.setattr(
+        metadb, "_COLLECTION_SCHEMA_VERSION", preview_collection
+    )
     monkeypatch.setattr(
         metadb,
         "_COLLECTION_MIGRATIONS",
         {
             **metadb._COLLECTION_MIGRATIONS,
-            8: ["CREATE TABLE collection_preview_probe (value TEXT)"],
+            preview_collection: [
+                "CREATE TABLE collection_preview_probe (value TEXT)"
+            ],
         },
     )
 
@@ -330,11 +340,14 @@ def test_restore_archive_migrates_preview_baseline(monkeypatch, tmp_path):
 
     assert store.search("acme", "restored", "restore", k=1)[0].id == "doc::0"
     with sqlite3.connect(target / "catalog.db") as catalog:
-        assert CatalogDB._schema_version(catalog) == 8
+        assert CatalogDB._schema_version(catalog) == preview_catalog
     with sqlite3.connect(
         target / "t_acme" / "c_restored" / "meta.db"
     ) as metadata:
-        assert metadb.CollectionDB._schema_version(metadata) == 8
+        assert (
+            metadb.CollectionDB._schema_version(metadata)
+            == preview_collection
+        )
 
 
 @pytest.mark.parametrize(

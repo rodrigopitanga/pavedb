@@ -650,7 +650,7 @@
         "type": "object"
       },
       "ContentFilter": {
-        "description": "One additive chunk-text predicate for a vector search.",
+        "description": "One additive chunk-text predicate for a search.",
         "properties": {
           "op": {
             "description": "Text matching operation.",
@@ -2382,6 +2382,19 @@
             ],
             "title": "Latency Ms"
           },
+          "mode": {
+            "default": "vector",
+            "description": "Candidate generation mode used by the search.",
+            "enum": [
+              "vector",
+              "hybrid"
+            ],
+            "examples": [
+              "hybrid"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
           "query_id": {
             "description": "Id of the logged search.",
             "examples": [
@@ -3216,6 +3229,19 @@
             "title": "K",
             "type": "integer"
           },
+          "mode": {
+            "default": "vector",
+            "description": "Candidate generation mode. Hybrid fuses independent vector and lexical rankings and requires a text query.",
+            "enum": [
+              "vector",
+              "hybrid"
+            ],
+            "examples": [
+              "hybrid"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
           "q": {
             "anyOf": [
               {
@@ -3452,13 +3478,43 @@
             "title": "Hydrate Ms",
             "type": "number"
           },
+          "lexical_search_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "FTS5 candidate-generation time for hybrid search.",
+            "examples": [
+              0.7
+            ],
+            "title": "Lexical Search Ms"
+          },
           "search_ms": {
-            "description": "Time spent finding nearest matches.",
+            "description": "Time spent generating ranked candidates.",
             "examples": [
               8.4
             ],
             "title": "Search Ms",
             "type": "number"
+          },
+          "vector_search_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Vector candidate-generation time for hybrid search.",
+            "examples": [
+              1.4
+            ],
+            "title": "Vector Search Ms"
           }
         },
         "required": [
@@ -7161,6 +7217,20 @@
             }
           },
           {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "vector",
+              "enum": [
+                "vector",
+                "hybrid"
+              ],
+              "title": "Mode",
+              "type": "string"
+            }
+          },
+          {
             "description": "Include configured common collection results when server common search is enabled.",
             "in": "query",
             "name": "include_common",
@@ -7256,7 +7326,7 @@
         ]
       },
       "post": {
-        "description": "Ranked semantic matches with provenance and per-phase timing.",
+        "description": "Ranked retrieval matches with provenance and per-phase timing.",
         "operationId": "search_post_v1_collections__tenant___name__search_post",
         "parameters": [
           {
@@ -7483,6 +7553,20 @@
               "minimum": 1,
               "title": "K",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "mode",
+            "required": false,
+            "schema": {
+              "default": "vector",
+              "enum": [
+                "vector",
+                "hybrid"
+              ],
+              "title": "Mode",
+              "type": "string"
             }
           }
         ],

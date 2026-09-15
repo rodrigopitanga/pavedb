@@ -13,6 +13,7 @@ Options:
     --concurrency C      Concurrent requests (default 10)
     --filtering MODE     none/exact/wildcard/mixed
                          (default: mixed)
+    --mode MODE          vector/hybrid (default: vector)
 
 Indexes sample docs with metadata, fires concurrent
 searches, and reports latency percentiles.
@@ -233,12 +234,13 @@ async def search(
     collection: str,
     query: str,
     filters: dict | None = None,
+    mode: str = "vector",
 ) -> tuple[float, bool | None, str, list[dict]]:
     """Return (latency_ms, ok, detail, hits).
 
     ok=None for 429 (rate-limited).
     """
-    body: dict[str, object] = {"q": query, "k": 5}
+    body: dict[str, object] = {"q": query, "k": 5, "mode": mode}
     if filters:
         body["filters"] = filters
 
@@ -263,6 +265,7 @@ async def run_benchmark(
     debug: bool = False,
     *,
     filtering: str = "mixed",
+    mode: str = "vector",
     summary_line: str | None = None,
     slo_p99_ms: float = 0,
 ) -> list[float] | None:
@@ -278,6 +281,8 @@ async def run_benchmark(
         "search" if filtering == "none"
         else f"search_{filtering}"
     )
+    if mode != "vector":
+        label = f"{mode}_{label}"
 
     async with httpx.AsyncClient(
         base_url=base_url, timeout=30.0, headers=headers
@@ -300,7 +305,7 @@ async def run_benchmark(
         print(f"Indexed {len(SAMPLE_DOCS)} documents.")
         print(
             f"Running {num_queries} queries "
-            f"with concurrency={concurrency}..."
+            f"with concurrency={concurrency} mode={mode}..."
         )
 
         semaphore = asyncio.Semaphore(concurrency)
@@ -311,7 +316,7 @@ async def run_benchmark(
             async with semaphore:
                 return await search(
                     client, tenant, collection,
-                    query, filters=filt,
+                    query, filters=filt, mode=mode,
                 )
 
         query_list = [
@@ -522,6 +527,12 @@ def main():
         help="Filter mode (default: mixed)",
     )
     parser.add_argument(
+        "--mode",
+        choices=["vector", "hybrid"],
+        default="vector",
+        help="Candidate generation mode (default: vector)",
+    )
+    parser.add_argument(
         "--summary-line",
         default=None,
         help="Append pipe-delimited summary to file",
@@ -557,6 +568,7 @@ def main():
         api_key=args.api_key,
         debug=args.debug,
         filtering=args.filtering,
+        mode=args.mode,
         summary_line=args.summary_line,
         slo_p99_ms=args.slo_p99_ms,
     ))

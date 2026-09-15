@@ -295,6 +295,7 @@ def cmd_search(args):
         args.k,
         filters=filters,
         content_filter=content_filter,
+        mode=args.mode,
         include_common=include_common,
         common_tenant=cfg.common_tenant,
         common_collection=cfg.common_collection,
@@ -687,7 +688,7 @@ def build_parser() -> argparse.ArgumentParser:
         "search",
         help="Search a collection.",
         description=(
-            "Run semantic search over a collection and print the response "
+            "Run ranked search over a collection and print the response "
             "envelope."
         ),
         example='pavecli search demo books "captain nemo" -k 3',
@@ -696,6 +697,12 @@ def build_parser() -> argparse.ArgumentParser:
     p_search.add_argument("collection", help="Collection name")
     p_search.add_argument("query", help="Natural-language search query")
     p_search.add_argument("-k", type=int, default=5, help="Number of matches to return")
+    p_search.add_argument(
+        "--mode",
+        choices=("vector", "hybrid"),
+        default="vector",
+        help="Candidate generation mode",
+    )
     p_search.add_argument(
         "--include-common",
         action="store_true",

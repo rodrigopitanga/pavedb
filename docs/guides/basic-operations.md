@@ -42,6 +42,7 @@ The `docid` is yours to choose and is the update key: re-ingesting the same
 
 ```bash
 pavecli search demo books "captain nemo" -k 3
+pavecli search demo books "captain nemo" -k 3 --mode hybrid
 pavecli search demo books "captain" \
   --content-filter '{"op":"phrase","value":"captain nemo"}'
 ```
@@ -52,6 +53,10 @@ not optional metadata you have to enable; it is what a text-backed hit is.
 Content filters are additive to semantic search and metadata filters. `exact`,
 `phrase`, and token `prefix` use SQLite text indexes; `contains` uses the
 trigram index and requires at least three characters.
+
+Vector search is the default. `--mode hybrid` independently retrieves vector
+and SQLite FTS5 candidates, then combines their ranks with reciprocal-rank
+fusion. Hybrid mode requires a text query; raw query vectors remain vector-only.
 
 ## Inspect and replay
 

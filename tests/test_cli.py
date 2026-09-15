@@ -145,6 +145,8 @@ def test_cli_search_accepts_content_filter(cli_query_env, capsys):
             "acme",
             "content-cli",
             "captain",
+            "--mode",
+            "hybrid",
             "--content-filter",
             '{"op":"prefix","value":"captain ne"}',
         ]

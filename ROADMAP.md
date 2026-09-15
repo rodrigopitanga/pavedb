@@ -137,7 +137,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-68 | ~~Task-oriented engine guides~~ | 🔧 | Hand-written, low-boilerplate quickstart and usage guides shipped in the PaveDB source distribution, complementing the generated reference (P1-46) with narrative task-oriented docs rather than auto-generated dumps. | v1.1 |
 | P1-70 | ~~SQLite chunk-text index and content filters~~ | 🧱 | Make chunk text queryable through native FTS5 for contains/phrase/prefix filters and lexical candidates; prerequisite for P1-72 | v1.2 |
 | P1-71 | ~~Backend-aware filtered vector search~~ | 🧱 | Let SQLite-selected record IDs constrain vector search instead of relying on repeated vector-first overfetch; depends on P1-35 | v1.3 |
-| P1-72 | Hybrid lexical/vector retrieval | 🧱 | Fuse independent FAISS and SQLite FTS5 candidate lists; depends on P1-70 | v1.2 |
+| P1-72 | ~~Hybrid lexical/vector retrieval~~ | 🧱 | Fuse independent FAISS and SQLite FTS5 candidate lists; depends on P1-70 | v1.2 |
 | P1-73 | ~~Preview SQLite compatibility baseline~~ | 🔧 | Transactional forward migrations from v0.9.5; reject downgrades and pre-baseline schemas | v0.9.5 |
 | P1-74 | ~~Sbert embedder options: `trust_remote_code`, task prefixes (space keys), `runtime=remote` (TEI)~~ | 🔧 | Unlocks custom-architecture local models and GPU offload with an unchanged `vector_space_key`; additive config, frozen protocol untouched. | v1.1 |
 | P1-75 | ~~Exclusive local data-directory ownership~~ | 🧩 | Fail closed before a second server, local client, or offline CLI opens the same canonical data directory | v0.9.6 |
@@ -591,8 +591,8 @@ lands where it has more impact during post-contract hardening.
   FTS5, and expose contains/phrase/prefix matching (P1-70).~~
 - Honor `meta.priority` boosts during scoring (P2-11).
 - ~~Add exact token boost inside the vector candidate window (P1-07).~~
-- Add hybrid retrieval by fusing independent FAISS and FTS5
-  candidate lists; depends on P1-70 (P1-72).
+- ~~Add hybrid retrieval by fusing independent FAISS and FTS5
+  candidate lists; depends on P1-70 (P1-72).~~
 - Result diff API: compare two search runs — added/removed/reordered
   hits (P2-42).
 - Eval assertion API: define expected results per query, batch run,

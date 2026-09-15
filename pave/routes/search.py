@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import functools
 import json
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
@@ -181,8 +182,9 @@ def build_search_router(
     @router.post(
         "/collections/{tenant}/{name}/search",
         summary="Search a collection",
-        description="Ranked semantic matches with provenance and per-phase timing.",
+        description="Ranked retrieval matches with provenance and per-phase timing.",
         response_model=SearchResponse,
+        response_model_exclude_none=True,
         responses=resp(401, 403, 429, 500, 503),
         tags=["Scoped Search"],
     )
@@ -220,6 +222,7 @@ def build_search_router(
                     if body.content_filter is not None
                     else None
                 ),
+                mode=body.mode,
                 v=body.v,
                 include_common=include_common,
                 common_tenant=cfg.common_tenant,
@@ -239,6 +242,7 @@ def build_search_router(
             "accepted."
         ),
         response_model=SearchResponse,
+        response_model_exclude_none=True,
         responses=resp(401, 403, 429, 500, 503),
         tags=["Scoped Search"],
     )
@@ -258,6 +262,7 @@ def build_search_router(
         name: str,
         q: str = Query(...),
         k: int = Query(5, ge=1, le=MAX_SEARCH_K),
+        mode: Literal["vector", "hybrid"] = Query("vector"),
         include_common: bool = Query(
             False,
             description=(
@@ -279,6 +284,7 @@ def build_search_router(
                 q,
                 k,
                 filters=None,
+                mode=mode,
                 include_common=include_common,
                 common_tenant=cfg.common_tenant,
                 common_collection=cfg.common_collection,
@@ -294,6 +300,7 @@ def build_search_router(
         summary="Search shared collections",
         description="Searches the shared scope; empty when that scope is disabled.",
         response_model=SearchResponse,
+        response_model_exclude_none=True,
         responses=resp(401, 403, 429, 500, 503),
         tags=["Global Search"],
     )
@@ -346,6 +353,7 @@ def build_search_router(
                         if body.content_filter is not None
                         else None
                     ),
+                    mode=body.mode,
                     v=body.v,
                     request_id=rid,
                     actor=actor_of(ctx),
@@ -359,6 +367,7 @@ def build_search_router(
         summary="Search shared collections",
         description="Query-string form of the shared search; filters are not accepted.",
         response_model=SearchResponse,
+        response_model_exclude_none=True,
         responses=resp(401, 403, 429, 500, 503),
         tags=["Global Search"],
     )
@@ -378,6 +387,7 @@ def build_search_router(
         response: Response,
         q: str = Query(...),
         k: int = Query(5, ge=1, le=MAX_SEARCH_K),
+        mode: Literal["vector", "hybrid"] = Query("vector"),
         rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
@@ -407,6 +417,7 @@ def build_search_router(
                     q,
                     k,
                     filters=None,
+                    mode=mode,
                     request_id=rid,
                     actor=actor_of(ctx),
                 ),

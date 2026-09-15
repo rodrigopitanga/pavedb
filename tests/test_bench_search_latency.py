@@ -3,9 +3,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 import sys
 from pathlib import Path
 
+import httpx
 import pytest
 
 sys.path.insert(
@@ -14,6 +17,32 @@ sys.path.insert(
 )
 
 import search_latency  # type: ignore[import-not-found]
+
+
+def test_search_sends_hybrid_mode():
+    seen: dict[str, object] = {}
+
+    async def handler(request):
+        seen.update(json.loads(request.content))
+        return httpx.Response(200, json={"matches": []})
+
+    async def run():
+        async with httpx.AsyncClient(
+            transport=httpx.MockTransport(handler),
+            base_url="http://pavedb.test",
+        ) as client:
+            return await search_latency.search(
+                client,
+                "acme",
+                "docs",
+                "captain nemo",
+                mode="hybrid",
+            )
+
+    _latency, ok, _detail, _hits = asyncio.run(run())
+
+    assert ok is True
+    assert seen["mode"] == "hybrid"
 
 
 def test_latency_slo_violation_returns_message():

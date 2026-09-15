@@ -55,7 +55,13 @@ from pave.service import (
     search as svc_search,
     update_collection as svc_update_collection,
 )
-from pave.stores.base import BaseStore, ContentFilterSpec, FilterSpec, Metadata
+from pave.stores.base import (
+    BaseStore,
+    ContentFilterSpec,
+    FilterSpec,
+    Metadata,
+    SearchMode,
+)
 from pave.stores.local import LocalStore
 
 
@@ -336,6 +342,7 @@ class LocalClient(BaseClient):
         *,
         filters: FilterSpec | None = None,
         content_filter: ContentFilterSpec | None = None,
+        mode: SearchMode = "vector",
         include_common: bool | None = None,
         vector: list[float] | None = None,
     ) -> list[dict]:
@@ -348,6 +355,7 @@ class LocalClient(BaseClient):
             k,
             filters=filters,
             content_filter=content_filter,
+            mode=mode,
             include_common=include_common and bool(cfg.common_enabled),
             common_tenant=cfg.common_tenant,
             common_collection=cfg.common_collection,

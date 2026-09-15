@@ -77,7 +77,7 @@ def test_open_creates_schema(tmp_path):
         "chunk_text_trigram",
     } <= names
     version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
-    assert version == (7,)
+    assert version == (metadb._COLLECTION_SCHEMA_VERSION,)
     db.close()
 
 
@@ -572,13 +572,16 @@ def test_collection_db_migrates_from_preview_baseline(monkeypatch, tmp_path):
     db.upsert_chunks("doc", [("doc::0", None, {})])
     db.close()
 
-    monkeypatch.setattr(metadb, "_COLLECTION_SCHEMA_VERSION", 8)
+    # Preview targets one past whatever is current, so this test keeps
+    # working across real schema bumps instead of pinning stale numbers.
+    preview = metadb._COLLECTION_SCHEMA_VERSION + 1
+    monkeypatch.setattr(metadb, "_COLLECTION_SCHEMA_VERSION", preview)
     monkeypatch.setattr(
         metadb,
         "_COLLECTION_MIGRATIONS",
         {
             **metadb._COLLECTION_MIGRATIONS,
-            8: ["ALTER TABLE documents ADD COLUMN preview_note TEXT"],
+            preview: ["ALTER TABLE documents ADD COLUMN preview_note TEXT"],
         },
     )
 
@@ -588,7 +591,7 @@ def test_collection_db_migrates_from_preview_baseline(monkeypatch, tmp_path):
     db.open(db_path)
 
     assert db.has_doc("doc") is True
-    assert db._schema_version(db._require_rconn()) == 8
+    assert db._schema_version(db._require_rconn()) == preview
     assert "preview_note" in {
         row[1]
         for row in db._require_rconn().execute("PRAGMA table_info(documents)")

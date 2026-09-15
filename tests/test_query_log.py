@@ -67,6 +67,7 @@ def test_collection_db_query_log_roundtrip(tmp_path):
         "op": "phrase",
         "value": "captain nemo",
     }
+    assert entry["mode"] == "vector"
     assert entry["include_common"] is True
     assert entry["common_tenant"] == "global"
     assert entry["common_collection"] == "common"
