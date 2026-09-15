@@ -73,7 +73,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | ID | Task | Effort | Why it matters | Source |
 |---|---|---|---|---|
 | P1-06 | ~~Delete doc by ID~~ | 🧩 | No partial data fixes | v0.5.7 |
-| P1-07 | Hybrid reranking | 🧱 | Exact token boost inside the vector candidate window | v1.2 |
+| P1-07 | ~~Hybrid reranking~~ | 🧱 | Exact token boost inside the vector candidate window | v1.2 |
 | P1-08 | ~~Per-tenant rate limiting~~ |  | Abuse protection | v0.5.8 |
 | P1-09 | ~~Metadata store (SQLite)~~ | 🧱 | ACID + concurrency | v0.5.8 |
 | P1-11 | ~~Global `request_id` echo~~ | 🧩 | Traceability | v0.9 |
@@ -578,7 +578,7 @@ lands where it has more impact during post-contract hardening.
   sidecar text into the collection database, index it with native
   FTS5, and expose contains/phrase/prefix matching (P1-70).
 - Honor `meta.priority` boosts during scoring (P2-11).
-- Add exact token boost inside the vector candidate window (P1-07).
+- ~~Add exact token boost inside the vector candidate window (P1-07).~~
 - Add hybrid retrieval by fusing independent FAISS and FTS5
   candidate lists; depends on P1-70 (P1-72).
 - Result diff API: compare two search runs — added/removed/reordered

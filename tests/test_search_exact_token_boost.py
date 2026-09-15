@@ -1,0 +1,107 @@
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+from pave.config import get_cfg
+from pave.stores.local import LocalStore
+from utils import FakeEmbedder
+
+
+def test_apply_exact_token_boost_reorders_within_window(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    tenant, collection = "acme", "boost_unit"
+    store.create_collection(tenant, collection)
+    store.index_records(
+        tenant,
+        collection,
+        "DOC1",
+        [
+            ("DOC1::chunk_a", "totally unrelated filler text", {}),
+            ("DOC1::chunk_b", "the quick brown fox", {}),
+        ],
+    )
+
+    raw = [("DOC1::chunk_a", 0.9), ("DOC1::chunk_b", 0.5)]
+    boosted, hits = store._apply_exact_token_boost(
+        tenant, collection, raw, frozenset({"fox"}), weight=1.0,
+    )
+
+    assert hits == {"DOC1::chunk_b"}
+    assert [rid for rid, _score in boosted][0] == "DOC1::chunk_b"
+
+
+def test_apply_exact_token_boost_is_noop_without_matches(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    tenant, collection = "acme", "boost_unit_noop"
+    store.create_collection(tenant, collection)
+    store.index_records(
+        tenant,
+        collection,
+        "DOC1",
+        [
+            ("DOC1::chunk_a", "totally unrelated filler text", {}),
+            ("DOC1::chunk_b", "the quick brown fox", {}),
+        ],
+    )
+
+    raw = [("DOC1::chunk_a", 0.9), ("DOC1::chunk_b", 0.5)]
+    boosted, hits = store._apply_exact_token_boost(
+        tenant, collection, raw, frozenset({"absent"}), weight=1.0,
+    )
+
+    assert boosted == raw
+    assert hits == set()
+
+
+def test_search_exact_token_boost_disabled_by_default(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    tenant, collection = "acme", "boost_default"
+    store.create_collection(tenant, collection)
+    store.index_records(
+        tenant, collection, "DOC1",
+        [("DOC1::chunk_0", "quantum entanglement", {})],
+    )
+
+    assert get_cfg().get("search.exact_token_boost") is False
+
+    result = store.search(tenant, collection, "quantum entanglement", k=1)
+
+    assert "exact token match" not in result[0].match_reason
+
+
+def test_search_exact_token_boost_enabled_marks_match_reason(temp_data_dir):
+    get_cfg().set("search.exact_token_boost", True)
+    get_cfg().set("search.exact_token_boost_weight", 0.2)
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    tenant, collection = "acme", "boost_enabled"
+    store.create_collection(tenant, collection)
+    store.index_records(
+        tenant, collection, "DOC1",
+        [("DOC1::chunk_0", "quantum entanglement", {})],
+    )
+
+    get_cfg().set("search.exact_token_boost", False)
+    baseline_score = store.search(
+        tenant, collection, "quantum entanglement", k=1,
+    )[0].score
+
+    get_cfg().set("search.exact_token_boost", True)
+    result = store.search(tenant, collection, "quantum entanglement", k=1)
+
+    assert "exact token match" in result[0].match_reason
+    assert result[0].score > baseline_score
+
+
+def test_search_exact_token_boost_weight_zero_is_noop(temp_data_dir):
+    get_cfg().set("search.exact_token_boost", True)
+    get_cfg().set("search.exact_token_boost_weight", 0)
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    tenant, collection = "acme", "boost_zero_weight"
+    store.create_collection(tenant, collection)
+    store.index_records(
+        tenant, collection, "DOC1",
+        [("DOC1::chunk_0", "quantum entanglement", {})],
+    )
+
+    result = store.search(tenant, collection, "quantum entanglement", k=1)
+
+    assert "exact token match" not in result[0].match_reason

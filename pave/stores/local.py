@@ -18,6 +18,7 @@ from __future__ import annotations
 import errno
 import json
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -85,6 +86,17 @@ _COLLECTION_CACHE_DEFAULT_MAX = 64
 _EMBEDDER_CACHE_DEFAULT_MAX = 32
 _INDEX_DIRTY_FILE = ".pavedb-index-dirty"
 _RESTORE_BACKUP_PREFIX = ".pavedb-restore-backup-"
+
+# P1-07: exact-token boost tokenizer. Word-boundary matching only, no
+# stemming/normalization beyond casefolding -- the boost is a narrow nudge
+# inside the vector candidate window, not a lexical search engine.
+_EXACT_TOKEN_RE = re.compile(r"\w+")
+
+
+def _tokenize_exact(text: str | None) -> frozenset[str]:
+    if not text:
+        return frozenset()
+    return frozenset(m.group(0).casefold() for m in _EXACT_TOKEN_RE.finditer(text))
 
 
 def _assert_writable_rid(rid: str) -> None:
@@ -2769,6 +2781,10 @@ class LocalStore:
         kk = max(1, int(k))
 
         fetch_k = max(50, kk * 5)
+        boost_weight = float(get_cfg().get("search.exact_token_boost_weight"))
+        query_tokens: frozenset[str] = frozenset()
+        if get_cfg().get("search.exact_token_boost") and boost_weight > 0:
+            query_tokens = _tokenize_exact(query)
         normed_filters: dict[str, list[Any]] = {}
         for key, vals in (filters or {}).items():
             safe_key = sanit_field(key)
@@ -2809,16 +2825,26 @@ class LocalStore:
             filter_push_ms = 0.0
             hydrate_meta_ms = 0.0
             filter_post_ms = 0.0
+            boost_ms = 0.0
             raw: list[tuple[str, float]] = []
             candidate_rids: list[str] = []
             meta_batch: dict[str, Metadata] = {}
             kept: list[tuple[str, float]] = []
+            exact_hits: set[str] = set()
 
             while True:
                 t0 = _perf()
                 raw = backend.search(q_vec, limit)
                 search_ms += _ms_since(t0)
                 raw_count = len(raw)
+
+                if query_tokens:
+                    t0 = _perf()
+                    raw, exact_hits = self._apply_exact_token_boost(
+                        tenant, collection, raw, query_tokens, boost_weight,
+                    )
+                    boost_ms += _ms_since(t0)
+
                 candidate_rids = [rid for rid, _score in raw if rid]
 
                 if normed_filters:
@@ -2890,7 +2916,8 @@ class LocalStore:
                     collection=collection,
                     meta=rid_meta,
                     match_reason=self._build_match_reason(
-                        query, score, filters, rid_meta
+                        query, score, filters, rid_meta,
+                        exact_token_hit=rid in exact_hits,
                     ),
                 ))
             hydrate_text_ms = _ms_since(t0)
@@ -2903,7 +2930,13 @@ class LocalStore:
                     "embed_ms": embed_ms,
                     "search_ms": round(search_ms, 2),
                     "filter_ms": round(filter_push_ms + filter_post_ms, 2),
-                    "hydrate_ms": round(hydrate_meta_ms + hydrate_text_ms, 2),
+                    # Exact-token boost reads chunk text inside the fetch
+                    # loop, same sidecar I/O as hydration -- folded into
+                    # hydrate_ms so the timing contract stays 4 fields
+                    # whether or not P1-07 is enabled.
+                    "hydrate_ms": round(
+                        hydrate_meta_ms + hydrate_text_ms + boost_ms, 2
+                    ),
                 },
             )
 
@@ -3007,9 +3040,46 @@ class LocalStore:
             f"collection '{collection}' does not exist"
         )
 
+    def _apply_exact_token_boost(
+        self,
+        tenant: str,
+        collection: str,
+        raw: list[tuple[str, float]],
+        query_tokens: frozenset[str],
+        weight: float,
+    ) -> tuple[list[tuple[str, float]], set[str]]:
+        """Re-rank candidates already inside the vector window (P1-07).
+
+        Boosts a candidate's score by `weight * matched_fraction`, where
+        `matched_fraction` is the share of query tokens found verbatim
+        (casefolded) in the chunk text. This narrows and re-sorts within the
+        existing fetch window; it never adds candidates FAISS did not already
+        return.
+        """
+        boosted: list[tuple[str, float]] = []
+        hits: set[str] = set()
+        for rid, score in raw:
+            if not rid:
+                boosted.append((rid, score))
+                continue
+            chunk_tokens = _tokenize_exact(
+                self._load_chunk_text(tenant, collection, rid)
+            )
+            matched = query_tokens & chunk_tokens
+            if matched:
+                hits.add(rid)
+                boosted.append(
+                    (rid, score + weight * len(matched) / len(query_tokens))
+                )
+            else:
+                boosted.append((rid, score))
+        boosted.sort(key=lambda item: item[1], reverse=True)
+        return boosted, hits
+
     def _build_match_reason(self, query: str, score: float,
                             filters: FilterSpec | None,
-                            meta: Metadata | None) -> str:
+                            meta: Metadata | None,
+                            *, exact_token_hit: bool = False) -> str:
         """Build a human-readable explanation of why a result matched."""
         parts = []
 
@@ -3017,6 +3087,8 @@ class LocalStore:
         pct = int(score * 100)
         if query:
             parts.append(f"semantic similarity {pct}%")
+        if exact_token_hit:
+            parts.append("exact token match")
 
         # Filter matches - show which filter conditions were satisfied
         if filters:
