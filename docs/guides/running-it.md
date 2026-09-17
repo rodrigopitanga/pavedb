@@ -52,6 +52,28 @@ For a running server, use `GET /v1/admin/archive` to download a snapshot and
 `PUT /v1/admin/archive` to restore one. Those routes coordinate with the live
 store; do not run `pavecli dump-archive` or `restore-archive` beside it.
 
+A single collection travels on its own: `GET` on
+`/v1/admin/collections/{tenant}/{name}/archive` downloads it and `POST` on the
+destination's copy of that path restores it, as long as the target runs the same
+PaveDB and schema version and resolves the archived embedder locally.
+
+## Reindex
+
+Rebuilding a collection against another embedding model is an admin job:
+`POST /v1/admin/collections/{tenant}/{name}/reindex` starts it,
+`GET /v1/admin/reindex/{job_id}` reports status and progress, and pause, resume
+and cancel act at persisted batch boundaries. The new index is staged beside the
+live one and swapped in at the end; an interrupted swap is rolled forward or
+back at startup, never left half-installed, and a job interrupted earlier comes
+back paused and resumes from its last persisted batch.
+
+A running job holds its collection for the whole rebuild, not only for the swap.
+Searches, ingests, deletes, a collection archive dump or restore, and a
+whole-instance restore all wait behind it until it commits; other collections
+keep serving. Treat a reindex as a maintenance window for that one collection —
+pausing keeps the staged progress and hands the collection back at the next
+batch boundary.
+
 ## Health
 
 | Endpoint | Checks | Use for |
@@ -83,6 +105,19 @@ timeout. Document uploads get the ingest ceiling; other bodies get the tighter
 `server.max_request_body_mb`. Whole-instance restore checks the admin credential
 before consuming the upload and is exempt from both limits. The handler reads
 the archive into memory, so leave enough headroom for its compressed size.
+
+Request rate is the other ceiling, and it is off by default.
+`tenants.default_max_rpm` and `tenants.default_max_rph` give every tenant a
+moving-window budget per minute and per hour; `0` disables a window, and
+`max_rpm` or `max_rph` under a tenant in the sidecar overrides the default for
+that tenant alone. The counters live in the catalog, so a restart does not hand
+a tenant a fresh budget, and a refused request is not charged against it. A
+tenant over budget gets `429 tenant_rate_limited` with `Retry-After` and
+`X-RateLimit-Limit`, `-Remaining` and `-Window`; requests that pass carry the
+same headers, which is how a client sees what it has left. The per-tenant
+concurrency cap below answers with the same code, so `-Window` is what tells the
+two apart. Admin credentials bypass the budget entirely, so verify a limit with
+a tenant token rather than the admin key.
 
 ## Running a shared instance
 
