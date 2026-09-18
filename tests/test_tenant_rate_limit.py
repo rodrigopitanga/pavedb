@@ -205,3 +205,29 @@ def test_admin_bypasses_moving_window_request_limit(app, monkeypatch):
 
     assert first.status_code != 429
     assert second.status_code != 429
+
+
+def test_concurrency_refusal_does_not_charge_moving_window(app, monkeypatch):
+    """A 429 on the concurrent cap spends nothing from the rpm/rph budget."""
+    cfg = app.state.cfg
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", None)
+    cfg.set("auth.api_keys", {"acme": "acmetoken"})
+    monkeypatch.setitem(app.state.tenant_rate_limits, "acme", {60: 2, 3600: 0})
+    monkeypatch.setattr(app.state, "tenant_rate_clock", lambda: 120.0)
+    monkeypatch.setitem(app.state.tenant_limits, "acme", 1)
+    monkeypatch.setitem(app.state.tenant_active, "acme", 1)
+
+    client = TestClient(app)
+    headers = {"Authorization": "Bearer acmetoken"}
+    refused = client.get("/v1/collections/acme", headers=headers)
+    assert refused.status_code == 429
+    assert refused.json()["code"] == "tenant_rate_limited"
+
+    monkeypatch.setitem(app.state.tenant_active, "acme", 0)
+    first = client.get("/v1/collections/acme", headers=headers)
+    second = client.get("/v1/collections/acme", headers=headers)
+    assert first.status_code != 429
+    assert first.headers["X-RateLimit-Remaining"] == "1"
+    assert second.status_code != 429
+    assert second.headers["X-RateLimit-Remaining"] == "0"

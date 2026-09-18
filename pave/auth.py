@@ -349,8 +349,15 @@ async def tenant_limit_gate(
     request: Request,
     response: Response,
     tenant: str | None,
+    *,
+    charge_request_rate: bool = True,
 ):
-    """Apply per-tenant request caps outside auth-bound dependencies."""
+    """Apply per-tenant request caps outside auth-bound dependencies.
+
+    ``charge_request_rate=False`` keeps the concurrency cap but leaves the
+    moving-window budget alone, for a caller that borrows a tenant's capacity
+    without spending that tenant's request quota.
+    """
     if tenant is None:
         yield
         return
@@ -362,9 +369,17 @@ async def tenant_limit_gate(
     request.state.capped_tenant = tenant
 
     state = request.app.state
-    rate_limits = state.tenant_rate_limits.get(
-        tenant,
-        state.tenant_default_rate_limits,
+    # Order matters: the concurrent slot is reversible, the moving-window
+    # charge is not, so a request refused on concurrency never spends quota.
+    slot = _take_tenant_slot(request, response, state, tenant)
+
+    rate_limits = (
+        state.tenant_rate_limits.get(
+            tenant,
+            state.tenant_default_rate_limits,
+        )
+        if charge_request_rate
+        else {}
     )
     window_limited = any(limit > 0 for limit in rate_limits.values())
     if window_limited:
@@ -376,6 +391,8 @@ async def tenant_limit_gate(
             now=state.tenant_rate_clock(),
         )
         if not decision.allowed:
+            if slot is not None:
+                slot.release()
             raise _tenant_window_limit_exception(
                 tenant=tenant,
                 limit=int(decision.limit or 0),
@@ -388,10 +405,23 @@ async def tenant_limit_gate(
         response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
         response.headers["X-RateLimit-Window"] = str(decision.window_seconds)
 
+    try:
+        yield
+    finally:
+        if slot is not None and not slot.detached:
+            slot.release()
+
+
+def _take_tenant_slot(
+    request: Request,
+    response: Response,
+    state,
+    tenant: str,
+) -> ConcurrencySlot | None:
+    """Take the tenant's concurrent slot, or raise 429; None when uncapped."""
     max_c = state.tenant_limits.get(tenant, state.tenant_default_limit)
     if max_c <= 0:
-        yield
-        return
+        return None
 
     active = state.tenant_active
     lock = state.tenant_lock
@@ -427,14 +457,10 @@ async def tenant_limit_gate(
     # thread) can keep the tenant's slot until it really finishes.
     request.state.tenant_slot = slot
     remaining = max(0, max_c - (current + 1))
-    if not window_limited:
-        response.headers["X-RateLimit-Limit"] = str(max_c)
-        response.headers["X-RateLimit-Remaining"] = str(remaining)
-    try:
-        yield
-    finally:
-        if not slot.detached:
-            slot.release()
+    # The moving-window headers overwrite these when that limit applies.
+    response.headers["X-RateLimit-Limit"] = str(max_c)
+    response.headers["X-RateLimit-Remaining"] = str(remaining)
+    return slot
 
 
 # --- Startup security policy -------------------------------------------------

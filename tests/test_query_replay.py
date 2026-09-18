@@ -358,6 +358,37 @@ def test_admin_replay_honours_owner_tenant_rate_limit(app, cfg, monkeypatch):
     assert r.headers.get("Retry-After") == "1"
 
 
+def test_admin_replay_does_not_spend_owner_moving_window_budget(
+    app,
+    cfg,
+    monkeypatch,
+):
+    """An admin replay borrows the slot but never the tenant's rpm budget."""
+    open_client = TestClient(app)
+    collection = "adminwindowreplay"
+    qid = _seed_query(open_client, "acme", collection)
+
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", "adminkey")
+    cfg.set("auth.api_keys", {"other": "otherkey"})
+    monkeypatch.setitem(app.state.tenant_rate_limits, "acme", {60: 1, 3600: 0})
+    monkeypatch.setattr(app.state, "tenant_rate_clock", lambda: 120.0)
+
+    c = TestClient(app)
+    headers = {"Authorization": "Bearer adminkey"}
+    first = c.post(f"/v1/admin/queries/{qid}/replay", headers=headers)
+    second = c.post(f"/v1/admin/queries/{qid}/replay", headers=headers)
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert "X-RateLimit-Window" not in first.headers
+    # The tenant still owns its whole budget: one request of one is left.
+    charged = app.state.tenant_rate_limiter(
+        "acme", "global", {60: 1}, now=120.0
+    )
+    assert charged.allowed is True
+
+
 def test_replay_drops_common_scope_after_revocation(client, app, cfg):
     """A stored common target must not outlive the common_enabled switch."""
     local_collection = "replaystalelocal"

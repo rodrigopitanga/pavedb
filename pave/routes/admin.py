@@ -724,7 +724,17 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
                 request_id=rid,
             )
         tenant, collection = home
-        async with tenant_limit_gate(request, response, tenant):
+        # The replay really runs on the owner tenant's search capacity, so it
+        # still takes that tenant's concurrency slot. Its moving-window budget
+        # is a plan quota instead, and admin credentials bypass that
+        # everywhere else, so an operator diagnosing a throttled tenant is
+        # neither locked out by nor charged against it.
+        async with tenant_limit_gate(
+            request,
+            response,
+            tenant,
+            charge_request_rate=False,
+        ):
             return await do_search(
                 functools.partial(
                     svc_replay_query_scoped,
