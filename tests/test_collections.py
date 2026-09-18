@@ -682,3 +682,31 @@ def test_embedder_unavailable_on_create(tmp_path):
     assert result["code"] == "embedder_unavailable"
     assert store.list_collections("acme") == []
     assert not (tmp_path / "t_acme" / "c_broken").exists()
+
+
+def test_create_collection_reports_vector_space_config_for_opaque_store():
+    """A store outside the CollectionInfo shape must not widen the response.
+
+    The service falls back to resolving the spec itself, and that spec is the
+    runtime one: it carries operational settings such as `base_url` that never
+    belong in a collection's embedder_config.
+    """
+    _set_openai_instance("openai-secret", dim=1024, base_url="http://internal/v1")
+
+    class _OpaqueStore:
+        def create_collection(self, tenant, name, **kwargs):
+            return None
+
+    from pave.service import create_collection as svc_create_collection
+
+    result = svc_create_collection(
+        _OpaqueStore(),
+        "acme",
+        "opaque",
+        embedder="openai-secret",
+    )
+
+    assert result["ok"] is True
+    assert result["embedder_type"] == "openai"
+    assert result["embed_model"] == "bge-m3"
+    assert result["embedder_config"] == {"dim": 1024}

@@ -40,6 +40,7 @@ from pave.embedders.base import EmbedderConfig
 from pave.embedders.factory import (
     embedder_instances,
     embedder_space_key,
+    persistable_embedder_spec,
     resolve_default_embedder,
     resolve_embedder_spec,
 )
@@ -225,16 +226,23 @@ def create_collection(
                 created.get("display_name") or resolved_display_name
             )
         else:
-            resolved = resolve_embedder_spec(
-                get_cfg(),
-                selector=embedder,
-                embedder_type=embedder_type,
-                model=embed_model,
-                embedder_config=embedder_config,
+            # Stores that answer with something other than a CollectionInfo
+            # still owe the caller the collection's vector-space identity, the
+            # same shape the dict branch reports. Resolution yields the runtime
+            # spec, so strip the operational settings (base_url, device,
+            # timeout) that never belong in a collection's embedder_config.
+            resolved = persistable_embedder_spec(
+                resolve_embedder_spec(
+                    get_cfg(),
+                    selector=embedder,
+                    embedder_type=embedder_type,
+                    model=embed_model,
+                    embedder_config=embedder_config,
+                )
             )
-            resolved_type = str(resolved["embedder_type"])
-            resolved_model = str(resolved["embed_model"])
-            resolved_config = dict(resolved.get("embedder_config") or {})
+            resolved_type = resolved["embedder_type"]
+            resolved_model = resolved["embed_model"]
+            resolved_config = dict(resolved["embedder_config"])
             returned_display = resolved_display_name
         m_inc("collections_created_total", 1.0)
         return {
