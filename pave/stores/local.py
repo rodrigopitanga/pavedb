@@ -3834,14 +3834,20 @@ class LocalStore:
         kk = max(1, int(k))
 
         fetch_k = max(50, kk * 5)
-        boost_weight = float(get_cfg().get("search.exact_token_boost_weight"))
+        boost_weight = 0.0
         query_tokens: frozenset[str] = frozenset()
-        if (
-            mode == "vector"
-            and get_cfg().get("search.exact_token_boost")
-            and boost_weight > 0
-        ):
-            query_tokens = _tokenize_exact(query)
+        if mode == "vector" and get_cfg().get("search.exact_token_boost"):
+            # A null or non-numeric weight must not take every search down
+            # with it -- read it behind the toggle and treat a bad value as
+            # the documented "0 disables the boost".
+            try:
+                boost_weight = float(
+                    get_cfg().get("search.exact_token_boost_weight")
+                )
+            except (TypeError, ValueError):
+                boost_weight = 0.0
+            if boost_weight > 0:
+                query_tokens = _tokenize_exact(query)
         normed_filters: dict[str, list[Any]] = {}
         for key, vals in (filters or {}).items():
             safe_key = sanit_field(key)
@@ -3907,7 +3913,10 @@ class LocalStore:
             candidate_rids: list[str] = []
             meta_batch: dict[str, Metadata] = {}
             kept: list[tuple[str, float]] = []
-            exact_hits: set[str] = set()
+            # rid -> similarity before the exact-token boost, for the
+            # candidates it lifted. Empty unless P1-07 is enabled.
+            exact_hits: dict[str, float] = {}
+            exact_chunk_tokens: dict[str, frozenset[str]] = {}
             hybrid_ranks: dict[str, tuple[int | None, int | None]] = {}
 
             filtered_search = getattr(backend, "search_filtered", None)
@@ -4065,6 +4074,7 @@ class LocalStore:
                         t0 = _perf()
                         raw, exact_hits = self._apply_exact_token_boost(
                             tenant, collection, raw, query_tokens, boost_weight,
+                            token_cache=exact_chunk_tokens,
                         )
                         boost_ms += _ms_since(t0)
 
@@ -4153,7 +4163,10 @@ class LocalStore:
                     collection=collection,
                     meta=rid_meta,
                     match_reason=self._build_match_reason(
-                        query, score, filters, rid_meta,
+                        # The boost is named on its own below; folding it
+                        # into the percentage would report a lexical nudge
+                        # as similarity, and can read past 100%.
+                        query, exact_hits.get(rid, score), filters, rid_meta,
                         content_filter=content_filter,
                         exact_token_hit=rid in exact_hits,
                         vector_rank=hybrid_ranks.get(rid, (None, None))[0],
@@ -4299,7 +4312,8 @@ class LocalStore:
         raw: list[tuple[str, float]],
         query_tokens: frozenset[str],
         weight: float,
-    ) -> tuple[list[tuple[str, float]], set[str]]:
+        token_cache: dict[str, frozenset[str]] | None = None,
+    ) -> tuple[list[tuple[str, float]], dict[str, float]]:
         """Re-rank candidates already inside the vector window (P1-07).
 
         Boosts a candidate's score by `weight * matched_fraction`, where
@@ -4307,26 +4321,35 @@ class LocalStore:
         (casefolded) in the chunk text. This narrows and re-sorts within the
         existing fetch window; it never adds candidates FAISS did not already
         return.
+
+        Returns the re-sorted window plus, for every boosted candidate, the
+        score it carried before the boost. `token_cache` holds chunk tokens
+        across the filter-expansion rounds of a single search, so a
+        candidate's text is read once however far the window grows.
         """
+        cache = {} if token_cache is None else token_cache
         boosted: list[tuple[str, float]] = []
-        hits: set[str] = set()
+        pre_boost: dict[str, float] = {}
         for rid, score in raw:
             if not rid:
                 boosted.append((rid, score))
                 continue
-            chunk_tokens = _tokenize_exact(
-                self._load_chunk_text(tenant, collection, rid)
-            )
+            chunk_tokens = cache.get(rid)
+            if chunk_tokens is None:
+                chunk_tokens = _tokenize_exact(
+                    self._load_chunk_text(tenant, collection, rid)
+                )
+                cache[rid] = chunk_tokens
             matched = query_tokens & chunk_tokens
             if matched:
-                hits.add(rid)
+                pre_boost[rid] = score
                 boosted.append(
                     (rid, score + weight * len(matched) / len(query_tokens))
                 )
             else:
                 boosted.append((rid, score))
         boosted.sort(key=lambda item: item[1], reverse=True)
-        return boosted, hits
+        return boosted, pre_boost
 
     def _build_match_reason(self, query: str, score: float,
                             filters: FilterSpec | None,
@@ -4336,7 +4359,11 @@ class LocalStore:
                             exact_token_hit: bool = False,
                             vector_rank: int | None = None,
                             lexical_rank: int | None = None) -> str:
-        """Build a human-readable explanation of why a result matched."""
+        """Build a human-readable explanation of why a result matched.
+
+        `score` is the similarity the index reported: callers pass the
+        pre-boost value so the reported percentage stays a similarity.
+        """
         parts = []
 
         # Similarity component

@@ -154,8 +154,8 @@ collection's vector-space identity.
 - Env var: `PAVEDB_EMBEDDER__ROUTING__POLICY`
 - Description: How each collection load chooses among configured instances in the same
   vector space. First uses config order; round_robin rotates; weighted rotates by each
-  instance weight; failover tries in order until one initializes. Routing is
-  runtime-only and is never persisted in collection catalog state.
+  instance weight; failover tries in order until one initializes. Routing is runtime-
+  only and is never persisted in collection catalog state.
 
 ### `embedder.warmup_default`
 
@@ -309,9 +309,10 @@ collection's vector-space identity.
 - Default: `false`
 - Env var: `PAVEDB_SEARCH__EXACT_TOKEN_BOOST`
 - Description: Re-rank candidates already inside the vector fetch window by exact query-
-  token overlap with chunk text (P1-07). Off by default: it reads chunk text for the
-  whole fetch window (up to max(50, 5*k) chunks), not just the returned k, so enabling
-  it trades extra per-search database I/O for better lexical precision.
+  token overlap with chunk text (P1-07). Off by default: it reads SQLite chunk text for
+  every candidate in the fetch window (max(50, 5*k) chunks, and more when metadata or
+  content filters make the window expand), not just the returned k, so enabling it
+  trades extra per-search database I/O for better lexical precision.
 
 ### `search.exact_token_boost_weight`
 
@@ -319,7 +320,8 @@ collection's vector-space identity.
 - Env var: `PAVEDB_SEARCH__EXACT_TOKEN_BOOST_WEIGHT`
 - Description: Maximum score added when search.exact_token_boost is enabled and every
   query token matches a chunk verbatim (casefolded); scaled by the fraction of query
-  tokens matched. 0 disables the boost even if search.exact_token_boost is true.
+  tokens matched. 0, a negative number, or a non-numeric value disables the boost even
+  if search.exact_token_boost is true.
 
 ## Text Preprocessing
 

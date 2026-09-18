@@ -183,12 +183,12 @@
     {
       "key": "search.exact_token_boost",
       "default": false,
-      "description": "Re-rank candidates already inside the vector fetch window by exact query-token overlap with chunk text (P1-07). Off by default: it reads SQLite chunk text for the whole fetch window (up to max(50, 5*k) chunks), not just the returned k, so enabling it trades extra per-search database I/O for better lexical precision."
+      "description": "Re-rank candidates already inside the vector fetch window by exact query-token overlap with chunk text (P1-07). Off by default: it reads SQLite chunk text for every candidate in the fetch window (max(50, 5*k) chunks, and more when metadata or content filters make the window expand), not just the returned k, so enabling it trades extra per-search database I/O for better lexical precision."
     },
     {
       "key": "search.exact_token_boost_weight",
       "default": 0.1,
-      "description": "Maximum score added when search.exact_token_boost is enabled and every query token matches a chunk verbatim (casefolded); scaled by the fraction of query tokens matched. 0 disables the boost even if search.exact_token_boost is true."
+      "description": "Maximum score added when search.exact_token_boost is enabled and every query token matches a chunk verbatim (casefolded); scaled by the fraction of query tokens matched. 0, a negative number, or a non-numeric value disables the boost even if search.exact_token_boost is true."
     },
     {
       "key": "preprocess.txt_chunk_size",

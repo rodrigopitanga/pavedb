@@ -319,15 +319,17 @@ search:
   timeout_ms: 30000
 
   # Re-rank candidates already inside the vector fetch window by exact query-token
-  # overlap with chunk text (P1-07). Off by default: it reads SQLite chunk text for the
-  # whole fetch window (up to max(50, 5*k) chunks), not just the returned k, so enabling
-  # it trades extra per-search database I/O for better lexical precision.
+  # overlap with chunk text (P1-07). Off by default: it reads SQLite chunk text for
+  # every candidate in the fetch window (max(50, 5*k) chunks, and more when metadata or
+  # content filters make the window expand), not just the returned k, so enabling it
+  # trades extra per-search database I/O for better lexical precision.
   # Env: PAVEDB_SEARCH__EXACT_TOKEN_BOOST
   exact_token_boost: false
 
   # Maximum score added when search.exact_token_boost is enabled and every query token
   # matches a chunk verbatim (casefolded); scaled by the fraction of query tokens
-  # matched. 0 disables the boost even if search.exact_token_boost is true.
+  # matched. 0, a negative number, or a non-numeric value disables the boost even if
+  # search.exact_token_boost is true.
   # Env: PAVEDB_SEARCH__EXACT_TOKEN_BOOST_WEIGHT
   exact_token_boost_weight: 0.1
 
@@ -362,8 +364,8 @@ tenants:
   # Env: PAVEDB_TENANTS__DEFAULT_MAX_RPM
   default_max_rpm: 0
 
-  # Default moving-window request limit per tenant and hour; 0 disables the limit.
-  # Per-tenant max_rph in tenants.yml overrides it.
+  # Default moving-window request limit per tenant and hour; 0 disables the limit. Per-
+  # tenant max_rph in tenants.yml overrides it.
   # Env: PAVEDB_TENANTS__DEFAULT_MAX_RPH
   default_max_rph: 0
 
