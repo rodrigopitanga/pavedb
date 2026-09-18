@@ -2454,6 +2454,8 @@ class CatalogDB:
         embed_model: str,
         embed_config: dict[str, Any],
         created_at: str | None,
+        pavedb_version: str | None,
+        collection_schema_version: int | None,
         query_homes: list[tuple[str, str]],
     ) -> None:
         """Replace one catalog row and its query-home index atomically."""
@@ -2473,8 +2475,10 @@ class CatalogDB:
                     embedder_type,
                     embed_model,
                     embed_config_json,
-                    created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    created_at,
+                    pavedb_version,
+                    collection_schema_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(tenant, name) DO UPDATE SET
                     display_name=excluded.display_name,
                     meta_json=excluded.meta_json,
@@ -2483,7 +2487,9 @@ class CatalogDB:
                     embedder_type=excluded.embedder_type,
                     embed_model=excluded.embed_model,
                     embed_config_json=excluded.embed_config_json,
-                    created_at=excluded.created_at
+                    created_at=excluded.created_at,
+                    pavedb_version=excluded.pavedb_version,
+                    collection_schema_version=excluded.collection_schema_version
                 """,
                 (
                     tenant,
@@ -2496,6 +2502,8 @@ class CatalogDB:
                     embed_model,
                     self._dump_json(embed_config),
                     restored_at,
+                    pavedb_version,
+                    collection_schema_version,
                 ),
             )
             conn.execute(

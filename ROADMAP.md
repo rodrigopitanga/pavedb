@@ -157,7 +157,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-22 | Usage stats to mothership |  | Capacity planning | v1.4 |
 | P2-23 | ~~Chunk inspector + collection browser~~ | 🔧 | List chunks, get chunk by ID, browse doc→chunk tree | v0.9 |
 | P2-24 | Delete by ID list / by query | 🧩 | Bulk ops, DX | v1.6 |
-| P2-25 | ~~Collection version tagging~~ | 🧩 | Delivered in three parts: live collections gained schema-version tagging with loud incompatible-read failures in the v0.9.5 migration baseline (P1-73); the catalog stamps `pavedb_version`/`collection_schema_version` on every new collection and the collection detail response reports them; archives carry enforced `pavedb_version`/`schema_version` tags in the P1-54 manifest. Cross-version restore remains P3-37. | v1.0 |
+| P2-25 | ~~Collection version tagging~~ | 🧩 | Delivered in three parts: live collections gained schema-version tagging with loud incompatible-read failures in the v0.9.5 migration baseline (P1-73); the catalog stamps `pavedb_version`/`collection_schema_version` on every new or restored collection and the collection detail response reports them; archives carry enforced `pavedb_version`/`schema_version` tags in the P1-54 manifest. Cross-version restore remains P3-37. | v1.0 |
 | P2-26 | Tenant profiles + templates | 🧱 | Quota governance, tiers | v1.6 |
 | P2-28 | ~~Structured log emission~~ | 🧩 | JSON lines per operation with request_id, tenant, latency | v0.5.8 |
 | P2-29 | ~~Public cross-language retrieval fixtures~~ | 🧩 | Recall validation | v0.5.9 |
@@ -482,9 +482,10 @@ latency on every search/ingest/delete.~~
   and local embedder resolution before rollback-safe replacement;
   cover mixed-embedder round trips (P1-65).~~
 - ~~Collection version tagging for safe archive restore — covered by
-  the v0.9.5 schema-version baseline (P1-73) plus the archive
-  manifest's enforced `pavedb_version`/`schema_version` tags
-  (P1-54) (P2-25).~~
+  the v0.9.5 schema-version baseline (P1-73), the catalog's
+  `pavedb_version`/`collection_schema_version` stamp on new and
+  restored collections, and the archive manifest's enforced
+  `pavedb_version`/`schema_version` tags (P1-54) (P2-25).~~
 - ~~Per-collection archive (dump + same-version restore): admin
   endpoints carrying `manifest.json` + `meta.db` + FAISS index +
   sidecars. Embedder spec validated locally before restore touches

@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from pave.config import get_cfg
+from pave.metadb import COLLECTION_SCHEMA_VERSION
 from pave.stores.local import LocalStore
 from pave.version import VERSION
 from utils import FakeEmbedder
@@ -115,6 +116,30 @@ def test_collection_archive_restore_replaces_only_target(tmp_path):
         content_filter={"op": "contains", "value": "Nemo sub"},
     )[0].id == "verne::0"
     assert destination.get_document("other", "keep", "sentinel") is not None
+
+
+def test_collection_archive_restore_tags_the_destination_row(tmp_path):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.index_records(
+        "acme", "books", "verne", [("0", "Captain Nemo", {})]
+    )
+    archive_bytes = _archive_bytes(source, "acme", "books")
+
+    destination = LocalStore(str(tmp_path / "destination"), FakeEmbedder())
+    destination.index_records(
+        "acme", "books", "sentinel", [("0", "replace me", {})]
+    )
+
+    destination.restore_collection_archive("acme", "books", archive_bytes)
+    destination.restore_collection_archive("imported", "library", archive_bytes)
+
+    # Restore is same-version only, so a collection that travelled reports
+    # the tags a locally created one reports instead of reading as a row
+    # that predates them (P2-25).
+    for tenant, name in (("acme", "books"), ("imported", "library")):
+        detail = destination.get_collection_detail(tenant, name)
+        assert detail["pavedb_version"] == VERSION
+        assert detail["schema_version"] == COLLECTION_SCHEMA_VERSION
 
 
 def test_collection_archive_rejects_version_before_replacement(tmp_path):

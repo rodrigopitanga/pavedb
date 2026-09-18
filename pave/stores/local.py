@@ -5218,6 +5218,13 @@ class LocalStore:
                             embed_model=config["embed_model"],
                             embed_config=config["embedder_config"],
                             created_at=collection_meta.get("created_at"),
+                            # Preflight already proved both tags match
+                            # this instance, so the restored row carries
+                            # them instead of reading as untagged (P2-25).
+                            pavedb_version=manifest["pavedb_version"],
+                            collection_schema_version=manifest[
+                                "schema_version"
+                            ],
                             query_homes=query_homes,
                         ),
                     )
