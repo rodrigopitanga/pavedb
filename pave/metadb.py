@@ -1872,6 +1872,73 @@ class CatalogDB:
                 "WHERE status='cancelling'"
             )
 
+    def purge_reindex_jobs_for_collection(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> list[str]:
+        """Drop a deleted collection's reindex jobs, returning their ids.
+
+        Job rows are per-collection catalog state: left behind, an
+        unfinished one keeps holding the collection's single active-job
+        slot, so a collection recreated under the same slug can never
+        start a reindex again.
+        """
+        with self._writer() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                rows = conn.execute(
+                    "SELECT job_id FROM reindex_jobs "
+                    "WHERE tenant=? AND collection=?",
+                    (tenant, collection),
+                ).fetchall()
+                conn.execute(
+                    "DELETE FROM reindex_jobs WHERE tenant=? AND collection=?",
+                    (tenant, collection),
+                )
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+        return [str(row[0]) for row in rows]
+
+    def move_reindex_jobs_for_collection(
+        self,
+        tenant: str,
+        old: str,
+        new: str,
+    ) -> list[str]:
+        """Carry reindex jobs to a renamed collection.
+
+        A rename keeps the chunk corpus and the vector-space config, so a
+        paused job stays valid under the new slug. Returns the ids of any
+        destination rows dropped first: the caller has already established
+        that `new` has no collection, so a job row there is stale state
+        that would otherwise collide with the active-job index.
+        """
+        with self._writer() as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                rows = conn.execute(
+                    "SELECT job_id FROM reindex_jobs "
+                    "WHERE tenant=? AND collection=?",
+                    (tenant, new),
+                ).fetchall()
+                conn.execute(
+                    "DELETE FROM reindex_jobs WHERE tenant=? AND collection=?",
+                    (tenant, new),
+                )
+                conn.execute(
+                    "UPDATE reindex_jobs SET collection=? "
+                    "WHERE tenant=? AND collection=?",
+                    (new, tenant, old),
+                )
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+        return [str(row[0]) for row in rows]
+
     @staticmethod
     def _rate_bucket_start(timestamp: float, window_seconds: int) -> int:
         return int(timestamp // window_seconds) * window_seconds

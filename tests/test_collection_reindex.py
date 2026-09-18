@@ -3,8 +3,12 @@
 
 from __future__ import annotations
 
+import shutil
 import threading
 import time
+from pathlib import Path
+
+import pytest
 
 import pave.stores.local as local_store_mod
 from pave.stores.local import LocalStore
@@ -19,6 +23,57 @@ def _wait_for_job(get_job, *statuses: str) -> dict:
             return job
         time.sleep(0.01)
     raise AssertionError(f"reindex job did not reach {statuses}: {get_job()}")
+
+
+def _store_with_paused_job(
+    temp_data_dir,
+    monkeypatch,
+    collection: str,
+) -> tuple[LocalStore, str]:
+    """Build a store whose collection carries one paused reindex job."""
+    entered = threading.Event()
+    release = threading.Event()
+
+    class BlockingEmbedder(FakeEmbedder):
+        def encode(self, texts):
+            entered.set()
+            if not release.wait(timeout=5):
+                raise RuntimeError("test embedder was not released")
+            return super().encode(texts)
+
+    target = BlockingEmbedder()
+
+    def factory(_etype, model, _config):
+        return target if model == "fake-v2" else FakeEmbedder()
+
+    monkeypatch.setattr(local_store_mod, "_REINDEX_BATCH_SIZE", 1)
+    store = LocalStore(
+        str(temp_data_dir),
+        FakeEmbedder(),
+        embedder_factory=factory,
+    )
+    store.create_collection("acme", collection)
+    store.index_records(
+        "acme",
+        collection,
+        "doc",
+        [
+            ("0", "first passage", {}),
+            ("1", "second passage", {}),
+        ],
+    )
+    job_id = store.start_reindex(
+        "acme",
+        collection,
+        embed_model="fake-v2",
+    )["job_id"]
+    assert entered.wait(timeout=2)
+    store.pause_reindex(job_id)
+    # Let the blocked batch finish so the job settles at a persisted
+    # boundary; later encodes in the test run unblocked.
+    release.set()
+    _wait_for_job(lambda: store.get_reindex_job(job_id), "paused")
+    return store, job_id
 
 
 def test_admin_reindex_rebuilds_vectors_and_updates_collection(client):
@@ -147,3 +202,87 @@ def test_reindex_job_pauses_and_resumes_after_store_restart(
     assert config is not None
     assert config["embed_model"] == "fake-v2"
     assert len(second.search("acme", "resumable", "passage", k=2)) == 2
+
+
+def test_delete_collection_clears_its_reindex_jobs(
+    temp_data_dir,
+    monkeypatch,
+):
+    store, job_id = _store_with_paused_job(temp_data_dir, monkeypatch, "doomed")
+    job_dir = store._reindex_job_dir(job_id)
+    assert job_dir.is_dir()
+
+    store.delete_collection("acme", "doomed")
+
+    with pytest.raises(FileNotFoundError):
+        store.get_reindex_job(job_id)
+    assert not job_dir.exists()
+
+    # The freed active-job slot is what makes the collection usable again:
+    # a leftover unfinished job would reject this with a conflict.
+    store.create_collection("acme", "doomed")
+    store.index_records(
+        "acme",
+        "doomed",
+        "doc",
+        [("0", "first passage", {})],
+    )
+    revived = store.start_reindex("acme", "doomed", embed_model="fake-v2")
+    assert revived["job_id"] != job_id
+    finished = _wait_for_job(
+        lambda: store.get_reindex_job(revived["job_id"]),
+        "succeeded",
+        "failed",
+    )
+    assert finished["status"] == "succeeded", finished
+
+
+def test_move_collection_carries_its_reindex_job(temp_data_dir, monkeypatch):
+    store, job_id = _store_with_paused_job(temp_data_dir, monkeypatch, "before")
+
+    store.move_collection("acme", "before", "after")
+
+    assert store.get_reindex_job(job_id)["collection"] == "after"
+    store.resume_reindex(job_id)
+    finished = _wait_for_job(
+        lambda: store.get_reindex_job(job_id),
+        "succeeded",
+        "failed",
+    )
+
+    assert finished["status"] == "succeeded", finished
+    assert finished["completed_chunks"] == 2
+    config = store.get_collection_config("acme", "after")
+    assert config is not None
+    assert config["embed_model"] == "fake-v2"
+
+
+def test_restore_collection_archive_clears_reindex_jobs(
+    temp_data_dir,
+    monkeypatch,
+):
+    store, job_id = _store_with_paused_job(
+        temp_data_dir,
+        monkeypatch,
+        "archived",
+    )
+    job_dir = store._reindex_job_dir(job_id)
+    archive_path, tmp_dir = store.dump_collection_archive("acme", "archived")
+    try:
+        archive_bytes = Path(archive_path).read_bytes()
+    finally:
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    store.restore_collection_archive("acme", "archived", archive_bytes)
+
+    with pytest.raises(FileNotFoundError):
+        store.get_reindex_job(job_id)
+    assert not job_dir.exists()
+    revived = store.start_reindex("acme", "archived", embed_model="fake-v2")
+    finished = _wait_for_job(
+        lambda: store.get_reindex_job(revived["job_id"]),
+        "succeeded",
+        "failed",
+    )
+    assert finished["status"] == "succeeded", finished

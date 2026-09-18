@@ -1776,6 +1776,16 @@ class LocalStore:
                     collection,
                 ),
             )
+            purged = self._with_catalog_retry(
+                "purge_reindex_jobs_for_collection",
+                lambda catalog: catalog.purge_reindex_jobs_for_collection(
+                    tenant,
+                    collection,
+                ),
+            )
+            for job_id in purged:
+                with suppress(Exception):
+                    self._cleanup_reindex_job_dir(job_id)
 
     def update_collection(
         self,
@@ -1880,6 +1890,17 @@ class LocalStore:
                     new_name,
                 ),
             )
+            orphaned = self._with_catalog_retry(
+                "move_reindex_jobs_for_collection",
+                lambda catalog: catalog.move_reindex_jobs_for_collection(
+                    tenant,
+                    old_name,
+                    new_name,
+                ),
+            )
+            for job_id in orphaned:
+                with suppress(Exception):
+                    self._cleanup_reindex_job_dir(job_id)
 
     def _reindex_job_dir(self, job_id: str) -> Path:
         try:
@@ -5193,6 +5214,19 @@ class LocalStore:
                     staged,
                     publish,
                 )
+                # The archive replaces the corpus this collection's
+                # reindex jobs were built against, so their staged vectors
+                # and progress no longer describe anything on disk.
+                replaced = self._with_catalog_retry(
+                    "purge_reindex_jobs_for_collection",
+                    lambda catalog: catalog.purge_reindex_jobs_for_collection(
+                        tenant,
+                        collection,
+                    ),
+                )
+                for job_id in replaced:
+                    with suppress(Exception):
+                        self._cleanup_reindex_job_dir(job_id)
                 with self._catalog_metrics_lock:
                     self._catalog_metrics_cache = None
                 with self._chunk_drift_metrics_lock:

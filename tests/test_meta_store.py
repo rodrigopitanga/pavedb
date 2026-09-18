@@ -171,6 +171,53 @@ def test_catalog_reindex_jobs_are_durable_and_single_flight(tmp_path):
     db.close()
 
 
+def test_catalog_reindex_jobs_follow_collection_lifecycle(tmp_path):
+    path = _catalog_db(tmp_path)
+    db = CatalogDB()
+    db.open(path)
+    source = {
+        "backend_type": "faiss",
+        "backend_config": {},
+        "embedder_type": "sbert",
+        "embed_model": "old",
+        "embedder_config": {},
+    }
+    target = {**source, "embed_model": "new"}
+    db.create_reindex_job("job-1", "acme", "moved", source, target)
+    db.create_reindex_job("job-2", "acme", "dropped", source, target)
+    db.create_reindex_job("job-3", "acme", "stale", source, target)
+
+    # A rename keeps the job; a destination row can only be stale state,
+    # so it is dropped rather than left to collide with the active index.
+    assert db.move_reindex_jobs_for_collection(
+        "acme", "moved", "stale",
+    ) == ["job-3"]
+    carried = db.get_reindex_job("job-1")
+    assert carried is not None
+    assert carried["collection"] == "stale"
+    assert carried["status"] == "queued"
+    assert db.get_reindex_job("job-3") is None
+
+    # A delete drops the job and frees the collection's active-job slot.
+    assert db.purge_reindex_jobs_for_collection(
+        "acme", "dropped",
+    ) == ["job-2"]
+    assert db.get_reindex_job("job-2") is None
+    assert db.purge_reindex_jobs_for_collection("acme", "dropped") == []
+    assert db.create_reindex_job(
+        "job-4",
+        "acme",
+        "dropped",
+        source,
+        target,
+    )["status"] == "queued"
+    assert {job["job_id"] for job in db.list_reindex_jobs()} == {
+        "job-1",
+        "job-4",
+    }
+    db.close()
+
+
 def test_catalog_rate_limit_persists_and_smooths_window_boundary(tmp_path):
     path = _catalog_db(tmp_path)
     db = CatalogDB()

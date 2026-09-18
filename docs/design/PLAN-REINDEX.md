@@ -56,6 +56,12 @@ through the independent catalog lock. Completion swaps the staged index under
 the collection lock, updates `collection.json` and the catalog, reloads the
 target embedder/backend, then removes the rollback copy.
 
+Job rows are per-collection catalog state and follow the collection. A rename
+carries them to the new slug; deleting the collection, or restoring an archive
+over it, drops them and their staged indexes. Otherwise an unfinished job would
+keep holding the collection's single active-job slot against a corpus that no
+longer exists.
+
 ## Not in scope
 
 - Reconstructing text for BYOV chunks that intentionally store `NULL` text.
