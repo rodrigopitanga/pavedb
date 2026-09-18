@@ -35,6 +35,7 @@ from pave.service import (
     delete_collection as svc_delete_collection,
     delete_document as svc_delete_document,
     dump_archive as svc_dump_archive,
+    dump_collection_archive as svc_dump_collection_archive,
     get_chunk as svc_get_chunk,
     get_chunk_content as svc_get_chunk_content,
     get_collection_detail as svc_get_collection_detail,
@@ -52,6 +53,7 @@ from pave.service import (
     move_collection as svc_move_collection,
     replay_query_scoped as svc_replay_query_scoped,
     restore_archive as svc_restore_archive,
+    restore_collection_archive as svc_restore_collection_archive,
     search as svc_search,
     update_collection as svc_update_collection,
 )
@@ -273,6 +275,32 @@ class LocalClient(BaseClient):
 
     def _restore_archive(self, archive_bytes: bytes) -> dict:
         result = self._call(svc_restore_archive, archive_bytes)
+        return _unwrap(result)
+
+    def _dump_collection_archive(
+        self,
+        tenant: str,
+        name: str,
+        path: str | os.PathLike[str] | None = None,
+    ) -> str:
+        self._ensure_open()
+        try:
+            archive_path, _source = svc_dump_collection_archive(
+                self._store, tenant, name, path
+            )
+        except ServiceError as exc:
+            raise _translate_service_error(exc) from exc
+        return archive_path
+
+    def _restore_collection_archive(
+        self,
+        tenant: str,
+        name: str,
+        archive_bytes: bytes,
+    ) -> dict:
+        result = self._call(
+            svc_restore_collection_archive, tenant, name, archive_bytes
+        )
         return _unwrap(result)
 
     def _ingest(

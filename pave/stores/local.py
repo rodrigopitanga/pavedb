@@ -49,6 +49,7 @@ import pave.embedders.factory as embedder_factory_mod
 from pave.filters import lookup_meta, matches_filters, sanit_field, sanit_meta_dict
 from pave.metadb import (
     COLLECTION_CONFIG_FILENAME,
+    COLLECTION_SCHEMA_VERSION,
     CatalogDB,
     ChunkLimitError,
     CollectionConfigRecoveryError,
@@ -853,6 +854,9 @@ class LocalStore:
                             str(row[0])
                             for row in conn.execute("SELECT rid FROM chunks")
                         }
+                        collection_schema_version = CollectionDB._schema_version(
+                            conn
+                        )
                     metadata.checkpoint_wal()
                 except Exception:
                     raise ValueError(
@@ -887,6 +891,11 @@ class LocalStore:
                         embedder_type=sidecar["embedder_type"],
                         embed_model=sidecar["embed_model"],
                         embed_config=sidecar["embedder_config"],
+                        # Recovered from an orphaned collection dir with no
+                        # catalog row; the collection's own meta.db knows its
+                        # schema version, but not the PaveDB build that wrote
+                        # it, so pavedb_version stays unset (P2-25).
+                        collection_schema_version=collection_schema_version,
                     )
                     config = sidecar
                 elif catalog_config != sidecar:
@@ -1135,6 +1144,8 @@ class LocalStore:
                 embedder_type=resolved["embedder_type"],
                 embed_model=resolved["embed_model"],
                 embed_config=resolved["embedder_config"],
+                pavedb_version=VERSION,
+                collection_schema_version=COLLECTION_SCHEMA_VERSION,
                 max_collections=max_collections,
             ),
         )
@@ -2888,6 +2899,8 @@ class LocalStore:
                 }
             ),
             "created_at": cfg.get("created_at"),
+            "pavedb_version": cfg.get("pavedb_version"),
+            "schema_version": cfg.get("collection_schema_version"),
             "doc_count": doc_count,
             "chunk_count": chunk_count,
         }

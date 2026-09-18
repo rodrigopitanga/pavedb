@@ -106,7 +106,7 @@ def test_catalog_db_open_creates_schema(tmp_path):
         "reindex_jobs",
     } <= names
     version = conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
-    assert version == (7,)
+    assert version == (8,)
     db.close()
 
 
@@ -278,7 +278,12 @@ def test_catalog_db_migrates_rate_limit_table_from_version_five(
     monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 5)
     db = CatalogDB()
     db.open(path)
-    db.register_collection("acme", "documents")
+    # Seeded with raw SQL: register_collection() writes the version tags
+    # (P2-25) that this pinned-older catalog schema has not gained yet.
+    with db._writer() as conn, conn:
+        conn.execute(
+            "INSERT INTO collections (tenant, name) VALUES ('acme', 'documents')"
+        )
     db.close()
 
     monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 6)
@@ -301,7 +306,12 @@ def test_catalog_db_migrates_reindex_jobs_from_version_six(
     monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 6)
     db = CatalogDB()
     db.open(path)
-    db.register_collection("acme", "documents")
+    # Seeded with raw SQL: register_collection() writes the version tags
+    # (P2-25) that this pinned-older catalog schema has not gained yet.
+    with db._writer() as conn, conn:
+        conn.execute(
+            "INSERT INTO collections (tenant, name) VALUES ('acme', 'documents')"
+        )
     db.close()
 
     monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 7)
@@ -313,6 +323,35 @@ def test_catalog_db_migrates_reindex_jobs_from_version_six(
         "SELECT name FROM sqlite_master "
         "WHERE type='table' AND name='reindex_jobs'"
     ).fetchone() == ("reindex_jobs",)
+    db.close()
+
+
+def test_catalog_db_migrates_version_tags_from_version_seven(
+    monkeypatch,
+    tmp_path,
+):
+    path = _catalog_db(tmp_path)
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 7)
+    db = CatalogDB()
+    db.open(path)
+    # Seeded with raw SQL: register_collection() writes the version tags
+    # (P2-25) that this pinned-older catalog schema has not gained yet.
+    with db._writer() as conn, conn:
+        conn.execute(
+            "INSERT INTO collections (tenant, name) VALUES ('acme', 'documents')"
+        )
+    db.close()
+
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 8)
+    db.open(path)
+
+    assert db.list_collections("acme") == ["documents"]
+    assert db._schema_version(db._require_rconn()) == 8
+    config = db.get_collection_config("acme", "documents")
+    assert config is not None
+    # Rows that predate the tag read back unset rather than guessed (P2-25).
+    assert config["pavedb_version"] is None
+    assert config["collection_schema_version"] is None
     db.close()
 
 
@@ -671,20 +710,20 @@ def test_catalog_db_applies_forward_migration(monkeypatch, tmp_path):
     db.register_collection("acme", "documents")
     db.close()
 
-    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 8)
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 9)
     monkeypatch.setattr(
         metadb,
         "_CATALOG_MIGRATIONS",
         {
             **metadb._CATALOG_MIGRATIONS,
-            8: ["CREATE TABLE preview_migration_probe (value TEXT)"],
+            9: ["CREATE TABLE preview_migration_probe (value TEXT)"],
         },
     )
 
     db.open(db_path)
 
     assert db.list_collections("acme") == ["documents"]
-    assert db._schema_version(db._require_rconn()) == 8
+    assert db._schema_version(db._require_rconn()) == 9
     assert db._require_rconn().execute(
         "SELECT name FROM sqlite_master "
         "WHERE type='table' AND name='preview_migration_probe'"
@@ -698,13 +737,13 @@ def test_catalog_migration_serializes_across_connections(monkeypatch, tmp_path):
     db.open(db_path)
     db.close()
 
-    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 8)
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 9)
     monkeypatch.setattr(
         metadb,
         "_CATALOG_MIGRATIONS",
         {
             **metadb._CATALOG_MIGRATIONS,
-            8: ["CREATE TABLE preview_migration_probe (value TEXT)"],
+            9: ["CREATE TABLE preview_migration_probe (value TEXT)"],
         },
     )
     start = threading.Barrier(2)
@@ -729,7 +768,7 @@ def test_catalog_migration_serializes_across_connections(monkeypatch, tmp_path):
     assert not errors
     assert all(not thread.is_alive() for thread in threads)
     with sqlite3.connect(db_path) as conn:
-        assert CatalogDB._schema_version(conn) == 8
+        assert CatalogDB._schema_version(conn) == 9
 
 
 def test_catalog_db_rolls_back_failed_migration(monkeypatch, tmp_path):
@@ -738,16 +777,16 @@ def test_catalog_db_rolls_back_failed_migration(monkeypatch, tmp_path):
     db.open(db_path)
     db.close()
 
-    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 8)
+    monkeypatch.setattr(metadb, "_CATALOG_SCHEMA_VERSION", 9)
     monkeypatch.setattr(
         metadb,
         "_CATALOG_MIGRATIONS",
         {
             **metadb._CATALOG_MIGRATIONS,
-            8: [
+            9: [
                 "CREATE TABLE preview_migration_probe (value TEXT)",
                 "INVALID SQL",
-            ]
+            ],
         },
     )
 
@@ -755,7 +794,7 @@ def test_catalog_db_rolls_back_failed_migration(monkeypatch, tmp_path):
         db.open(db_path)
 
     with sqlite3.connect(db_path) as conn:
-        assert CatalogDB._schema_version(conn) == 7
+        assert CatalogDB._schema_version(conn) == 8
         assert conn.execute(
             "SELECT name FROM sqlite_master "
             "WHERE type='table' AND name='preview_migration_probe'"
@@ -769,7 +808,7 @@ def test_catalog_db_rejects_newer_schema_version(tmp_path):
     with db._writer() as conn, conn:
         conn.execute(
             "INSERT INTO schema_migrations (version, applied_at) "
-            "VALUES (8, 'future')"
+            "VALUES (9, 'future')"
         )
     db.close()
 

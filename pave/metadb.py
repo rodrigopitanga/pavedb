@@ -81,7 +81,11 @@ class RateLimitDecision:
 _COLLECTION_BASELINE_SCHEMA_VERSION = 6
 _CATALOG_BASELINE_SCHEMA_VERSION = 5
 _COLLECTION_SCHEMA_VERSION = 8
-_CATALOG_SCHEMA_VERSION = 7
+_CATALOG_SCHEMA_VERSION = 8
+# Public alias: the collection schema version a freshly created collection is
+# tagged with (P2-25); callers outside this module use this, not the
+# underscore-prefixed constant.
+COLLECTION_SCHEMA_VERSION = _COLLECTION_SCHEMA_VERSION
 _COLLECTION_MIGRATIONS: dict[int, list[str]] = {
     7: [
         "ALTER TABLE chunks ADD COLUMN text TEXT",
@@ -202,6 +206,10 @@ _CATALOG_MIGRATIONS: dict[int, list[str]] = {
                 'cancelling', 'failed'
             )
         """,
+    ],
+    8: [
+        "ALTER TABLE collections ADD COLUMN pavedb_version TEXT",
+        "ALTER TABLE collections ADD COLUMN collection_schema_version INTEGER",
     ],
 }
 COLLECTION_CONFIG_FILENAME = "collection.json"
@@ -2332,6 +2340,11 @@ class CatalogDB:
                             config.get("embedder_type"),
                             config.get("embed_model"),
                             self._dump_json(config.get("embedder_config")),
+                            # Discovered from an existing data dir; the
+                            # creation-time version is unknown, so tagging
+                            # (P2-25) leaves it unset rather than guessing.
+                            None,
+                            None,
                         )
                     )
                 conn.executemany(
@@ -2345,8 +2358,10 @@ class CatalogDB:
                         backend_config_json,
                         embedder_type,
                         embed_model,
-                        embed_config_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        embed_config_json,
+                        pavedb_version,
+                        collection_schema_version
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     payload_rows,
                 )
@@ -2373,6 +2388,8 @@ class CatalogDB:
         embedder_type: str | None = None,
         embed_model: str | None = None,
         embed_config: dict[str, Any] | None = None,
+        pavedb_version: str | None = None,
+        collection_schema_version: int | None = None,
         max_collections: int = 0,
     ) -> None:
         with self._writer() as conn, conn:
@@ -2404,8 +2421,10 @@ class CatalogDB:
                     backend_config_json,
                     embedder_type,
                     embed_model,
-                    embed_config_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    embed_config_json,
+                    pavedb_version,
+                    collection_schema_version
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     tenant,
@@ -2417,6 +2436,8 @@ class CatalogDB:
                     embedder_type,
                     embed_model,
                     self._dump_json(embed_config),
+                    pavedb_version,
+                    collection_schema_version,
                 ),
             )
 
@@ -2752,7 +2773,9 @@ class CatalogDB:
                     embedder_type,
                     embed_model,
                     embed_config_json,
-                    created_at
+                    created_at,
+                    pavedb_version,
+                    collection_schema_version
                 FROM collections
                 WHERE tenant=? AND name=?
                 """,
@@ -2770,6 +2793,8 @@ class CatalogDB:
                 "embed_model": row[5],
                 "embedder_config": self._load_json(row[6]),
                 "created_at": row[7],
+                "pavedb_version": row[8],
+                "collection_schema_version": row[9],
             }
 
     def collection_count(self) -> int:

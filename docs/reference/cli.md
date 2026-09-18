@@ -76,6 +76,8 @@ There is NO WARRANTY, to the extent permitted by law.
 | `delete-document` | Delete a document by ID. |
 | `dump-archive` | Export the instance data archive. |
 | `restore-archive` | Restore an instance data archive. |
+| `dump-collection-archive` | Export one collection as a portable archive. |
+| `restore-collection-archive` | Restore a collection from a portable archive. |
 | `reset-metrics` | Reset persisted metrics. |
 | `list-tenants` | List tenants with cataloged collections. |
 | `list-embedders` | List configured embedder instances. |
@@ -270,8 +272,8 @@ pavecli search demo books "captain nemo" -k 3
   vector)
 - `--include-common` (optional): Include configured common collection results
 - `--filters` (optional): JSON object, e.g. {"docid":"DOC-1"}
-- `--content-filter` (optional): JSON object with op exact, phrase, prefix, or
-  contains and a non-empty value
+- `--content-filter` (optional): JSON object with op exact, phrase, prefix, or contains
+  and a non-empty value
 
 ## `list-queries`
 
@@ -573,6 +575,51 @@ pavecli restore-archive pavedb-data.zip
 
 ### Arguments And Options
 
+- `file` (required): Archive zip file path
+
+## `dump-collection-archive`
+
+Offline only; stop the server first. Writes one collection as a portable archive.
+
+### Usage
+
+```bash
+pavecli dump-collection-archive [-h] [--output OUTPUT]
+                                       tenant collection
+```
+
+### Example
+
+```bash
+pavecli dump-collection-archive demo books --output books.zip
+```
+
+### Arguments And Options
+
+- `tenant` (required): Tenant namespace
+- `collection` (required): Collection name
+- `--output` (optional): Destination ZIP file path
+
+## `restore-collection-archive`
+
+Offline only; stop the server first. Replaces a collection from a same-version archive.
+
+### Usage
+
+```bash
+pavecli restore-collection-archive [-h] tenant collection file
+```
+
+### Example
+
+```bash
+pavecli restore-collection-archive demo books books.zip
+```
+
+### Arguments And Options
+
+- `tenant` (required): Tenant namespace
+- `collection` (required): Destination collection name
 - `file` (required): Archive zip file path
 
 ## `reset-metrics`

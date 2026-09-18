@@ -11,11 +11,13 @@ from pave.config import get_cfg
 from pave.metadb import (
     CatalogDB,
     COLLECTION_CONFIG_FIELDS,
+    COLLECTION_SCHEMA_VERSION,
     CollectionConfigRecoveryError,
     CollectionDB,
 )
 from pave.service import update_collection
 from pave.stores.local import LocalStore
+from pave.version import VERSION as PAVEDB_VERSION
 from utils import FakeEmbedder
 
 
@@ -174,6 +176,8 @@ def test_get_collection_detail_empty_collection(client):
     assert data["embedder_type"] == "sbert"
     assert data["embed_model"] == "fake"
     assert data["created_at"].endswith("Z")
+    assert data["pavedb_version"] == PAVEDB_VERSION
+    assert data["schema_version"] == COLLECTION_SCHEMA_VERSION
     assert data["doc_count"] == 0
     assert data["chunk_count"] == 0
 

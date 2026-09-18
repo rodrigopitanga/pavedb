@@ -723,8 +723,25 @@ ALTER TABLE collections ADD COLUMN schema_version    INTEGER;
 ALTER TABLE collections ADD COLUMN created_at        TEXT;
 ```
 
-`created_at` is already tracked for catalog rows. PaveDB and schema
-version columns remain future governance work.
+`created_at` is already tracked for catalog rows. Collection version
+tagging (P2-25) is targeted for v1.0 with per-collection archive
+(P1-54), ahead of the remaining governance work. The SQL above is
+historical design context; final fields must use current PaveDB
+naming and the existing schema migration mechanism.
+
+### Collection archive (P1-54, v1.0)
+
+P1-54 depends on collection version tagging (P2-25). Admin-only dump and
+same-version restore carry a versioned manifest, embedder spec, schema
+version, metadata, FAISS index, and sidecars. Validate local embedder
+resolution before restore touches disk. Cross-version restore remains P3-37.
+
+This is the supported portability API for playground-to-local use and
+managed migration. Freeze archive contents and authorization before client
+implementation; deliver CLI, Python local/HTTP parity, and versioned
+API/usage references with this item. Acceptance includes a runnable
+collection round trip, preserved unrelated collections, and rejection of
+incompatible archives.
 
 ### Document versioning
 

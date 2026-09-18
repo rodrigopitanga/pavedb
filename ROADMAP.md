@@ -157,7 +157,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-22 | Usage stats to mothership |  | Capacity planning | v1.4 |
 | P2-23 | ~~Chunk inspector + collection browser~~ | 🔧 | List chunks, get chunk by ID, browse doc→chunk tree | v0.9 |
 | P2-24 | Delete by ID list / by query | 🧩 | Bulk ops, DX | v1.6 |
-| P2-25 | ~~Collection version tagging~~ | 🧩 | Delivered in two parts: live collections gained schema-version tagging with loud incompatible-read failures in the v0.9.5 migration baseline (P1-73); archives carry enforced `pavedb_version`/`schema_version` tags in the P1-54 manifest. The catalog version columns in PLAN-SQLITE are historical design context; cross-version restore remains P3-37. | v1.0 |
+| P2-25 | ~~Collection version tagging~~ | 🧩 | Delivered in three parts: live collections gained schema-version tagging with loud incompatible-read failures in the v0.9.5 migration baseline (P1-73); the catalog stamps `pavedb_version`/`collection_schema_version` on every new collection and the collection detail response reports them; archives carry enforced `pavedb_version`/`schema_version` tags in the P1-54 manifest. Cross-version restore remains P3-37. | v1.0 |
 | P2-26 | Tenant profiles + templates | 🧱 | Quota governance, tiers | v1.6 |
 | P2-28 | ~~Structured log emission~~ | 🧩 | JSON lines per operation with request_id, tenant, latency | v0.5.8 |
 | P2-29 | ~~Public cross-language retrieval fixtures~~ | 🧩 | Recall validation | v0.5.9 |
@@ -238,7 +238,7 @@ Substantial features are specified under `docs/design/` before implementation.
 |---|---|---|
 | [`docs/design/PLAN-OPS-LOG.md`](docs/design/PLAN-OPS-LOG.md) | P2-28 | Structured log emission — ops JSON stream |
 | [`docs/design/PLAN-CLIENT.md`](docs/design/PLAN-CLIENT.md) | P1-15 / P1-24 / P1-75 / P2-32 | Local and HTTP clients, local ownership, and remote CLI evaluation |
-| [`docs/design/PLAN-SQLITE.md`](docs/design/PLAN-SQLITE.md) | P1-09 / P1-33 / P1-73 | Internal SQLite metadata, global catalog, and preview migrations |
+| [`docs/design/PLAN-SQLITE.md`](docs/design/PLAN-SQLITE.md) | P1-09 / P1-33 / P1-54 / P1-73 / P2-25 | SQLite metadata, catalog, migrations, and collection portability |
 | [`docs/design/PLAN-METRICS-PERSISTENCE.md`](docs/design/PLAN-METRICS-PERSISTENCE.md) | P1-50 | Worker-safe metrics |
 | [`docs/design/PLAN-STORE.md`](docs/design/PLAN-STORE.md) | P1-29/P1-29b/P1-29c/P1-31/P1-32 | Store split; P1-30 superseded by P1-29b |
 | [`docs/design/PLAN-OBSERVABILITY.md`](docs/design/PLAN-OBSERVABILITY.md) | P0-03, P1-11/14/17/23/40/41/42/43/44/45/48, P2-23/28/40/41/45 | Inspectability surface — request correlation, timing, query log, replay, chunk inspector, execution-context stamp |

@@ -11,7 +11,9 @@ from pave.stores.local import LocalStore
 from pave.service import (
     create_collection as svc_create_collection,
     dump_archive as svc_dump_archive,
+    dump_collection_archive as svc_dump_collection_archive,
     restore_archive as svc_restore_archive,
+    restore_collection_archive as svc_restore_collection_archive,
     delete_collection as svc_delete_collection,
     move_collection as svc_move_collection,
     update_collection as svc_update_collection,
@@ -417,6 +419,21 @@ def cmd_dump_archive(args):
 def cmd_restore_archive(args):
     content = _read(args.file)
     return svc_restore_archive(_get_store(), content)
+
+def cmd_dump_collection_archive(args):
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    default_name = f"pavedb-collection-{args.tenant}-{args.collection}-{stamp}.zip"
+    output = args.output or default_name
+    archive_path, _ = svc_dump_collection_archive(
+        _get_store(), args.tenant, args.collection, output
+    )
+    return {"ok": True, "archive": archive_path}
+
+def cmd_restore_collection_archive(args):
+    content = _read(args.file)
+    return svc_restore_collection_archive(
+        _get_store(), args.tenant, args.collection, content
+    )
 
 def cmd_reset_metrics(args):
     return metrics.reset(_get_store())
@@ -913,6 +930,40 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_restore.add_argument("file", help="Archive zip file path")
     p_restore.set_defaults(func=cmd_restore_archive)
+
+    p_dump_coll = _command(
+        sub,
+        "dump-collection-archive",
+        help="Export one collection as a portable archive.",
+        description=(
+            "Offline only; stop the server first. Writes one collection "
+            "as a portable archive."
+        ),
+        example=(
+            "pavecli dump-collection-archive demo books --output books.zip"
+        ),
+    )
+    p_dump_coll.add_argument("tenant", help="Tenant namespace")
+    p_dump_coll.add_argument("collection", help="Collection name")
+    p_dump_coll.add_argument("--output", help="Destination ZIP file path")
+    p_dump_coll.set_defaults(func=cmd_dump_collection_archive)
+
+    p_restore_coll = _command(
+        sub,
+        "restore-collection-archive",
+        help="Restore a collection from a portable archive.",
+        description=(
+            "Offline only; stop the server first. Replaces a collection "
+            "from a same-version archive."
+        ),
+        example="pavecli restore-collection-archive demo books books.zip",
+    )
+    p_restore_coll.add_argument("tenant", help="Tenant namespace")
+    p_restore_coll.add_argument(
+        "collection", help="Destination collection name"
+    )
+    p_restore_coll.add_argument("file", help="Archive zip file path")
+    p_restore_coll.set_defaults(func=cmd_restore_collection_archive)
 
     p_reset_metrics = _command(
         sub,

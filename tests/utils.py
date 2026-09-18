@@ -492,7 +492,33 @@ class DummyStore:
         collection: str,
         output_path: str | os.PathLike[str] | None = None,
     ) -> tuple[str, str | None]:
-        raise NotImplementedError
+        import tempfile
+        import zipfile
+        from pathlib import Path
+
+        source_dir = Path(self._dir(tenant, collection)).resolve()
+        if not source_dir.is_dir():
+            raise FileNotFoundError(
+                f"collection not found: {tenant}/{collection}"
+            )
+        if output_path is None:
+            tmp_dir = Path(tempfile.mkdtemp(prefix="dummy-collection-export_"))
+            archive_path = tmp_dir / "pavedb-collection.zip"
+            tmp_dir_str = str(tmp_dir)
+        else:
+            archive_path = Path(output_path).resolve()
+            archive_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_dir_str = None
+        with zipfile.ZipFile(archive_path, "w") as zf:
+            for root, _dirs, files in os.walk(source_dir):
+                root_path = Path(root)
+                for filename in files:
+                    file_path = root_path / filename
+                    zf.write(
+                        file_path,
+                        file_path.relative_to(source_dir).as_posix(),
+                    )
+        return str(archive_path), tmp_dir_str
 
     def restore_collection_archive(
         self,
@@ -500,7 +526,14 @@ class DummyStore:
         collection: str,
         archive_bytes: bytes,
     ) -> None:
-        raise NotImplementedError
+        import io
+        import zipfile
+        from pathlib import Path
+
+        dest_dir = Path(self._dir(tenant, collection)).resolve()
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(io.BytesIO(archive_bytes), "r") as zf:
+            zf.extractall(dest_dir)
 
 
 class SpyStore:

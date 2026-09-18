@@ -538,6 +538,21 @@
             "title": "Ok",
             "type": "boolean"
           },
+          "pavedb_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "PaveDB version that created the collection; unset for collections that predate this tag (P2-25).",
+            "examples": [
+              "0.9.6"
+            ],
+            "title": "Pavedb Version"
+          },
           "request_id": {
             "anyOf": [
               {
@@ -552,6 +567,21 @@
               "req-5f3a-b812"
             ],
             "title": "Request Id"
+          },
+          "schema_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Per-collection metadata schema version at creation time; unset for collections that predate this tag (P2-25).",
+            "examples": [
+              8
+            ],
+            "title": "Schema Version"
           },
           "tenant": {
             "description": "Tenant that owns the collection.",

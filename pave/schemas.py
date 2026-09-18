@@ -665,6 +665,18 @@ class CollectionDetailResponse(OkResponse):
         description="When the collection was created (ISO 8601).",
         examples=["2026-03-07T12:00:00Z"],
     )
+    pavedb_version: str | None = Field(
+        default=None,
+        description="PaveDB version that created the collection; unset for "
+        "collections that predate this tag (P2-25).",
+        examples=["0.9.6"],
+    )
+    schema_version: int | None = Field(
+        default=None,
+        description="Per-collection metadata schema version at creation time; "
+        "unset for collections that predate this tag (P2-25).",
+        examples=[8],
+    )
     doc_count: int = Field(description="Number of documents.", examples=[3])
     chunk_count: int = Field(description="Number of chunks.", examples=[128])
 

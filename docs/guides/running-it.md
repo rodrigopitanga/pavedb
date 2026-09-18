@@ -56,6 +56,9 @@ A single collection travels on its own: `GET` on
 `/v1/admin/collections/{tenant}/{name}/archive` downloads it and `POST` on the
 destination's copy of that path restores it, as long as the target runs the same
 PaveDB and schema version and resolves the archived embedder locally.
+`pavecli dump-collection-archive` and `pavecli restore-collection-archive` do
+the same offline, under the same version rule and the same stopped-server
+requirement as `dump-archive`.
 
 ## Reindex
 
