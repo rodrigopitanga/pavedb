@@ -63,6 +63,8 @@ trigram index and requires at least three characters.
 Vector search is the default. `--mode hybrid` independently retrieves vector
 and SQLite FTS5 candidates, then combines their ranks with reciprocal-rank
 fusion. Hybrid mode requires a text query; raw query vectors remain vector-only.
+For vector mode, `search.exact_token_boost` nudges hits whose text contains the
+query's exact tokens within the candidate window — a lighter lever than hybrid.
 
 ## Inspect and replay
 
