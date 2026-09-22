@@ -61,7 +61,9 @@ debugging — and available the same way from the CLI, the REST API, or any clie
   traceability are built into every response.
 - **Inspect and replay text queries** — with query logging enabled (the
   default), each text search keeps its params, timing, and results. Pull it back
-  up, replay it, and inspect the exact chunk that matched.
+  up, replay it, and inspect the exact chunk that matched. Replaying after the
+  corpus changes and comparing against the preserved log is how you observe
+  retrieval drift — changed results are evidence, not a defect.
 - **Multi-tenant by default** — tenant/collection namespacing is built in, not bolted
   on (and transparent when you just don't need it). Tenants carry their own API keys,
   persistent per-minute and per-hour request limits, concurrency caps, and hard

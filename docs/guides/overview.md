@@ -3,7 +3,8 @@
 
 # PaveDB in one page
 
-PaveDB is an inspectable retrieval database. You hand it files, it chunks,
+PaveDB is the inspectable retrieval database: small enough to embed,
+complete enough to operate. You hand it files, it chunks,
 embeds and indexes them, and it answers semantic queries with the exact snippet
 that matched and where it came from. By default, text searches keep their query
 record and replay trail as well as their source provenance.
