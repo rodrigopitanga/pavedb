@@ -425,8 +425,17 @@ def build_app(cfg) -> FastAPI:
     enforce_policy(cfg)
     log = get_logger()
 
-    def _resp(*codes: int) -> dict[int, dict[str, type[ErrorResponse]]]:
-        return {code: {"model": ErrorResponse} for code in codes}
+    def _resp(*codes: int) -> dict[int, dict[str, object]]:
+        # Python 3.13 renamed the 413 phrase ("Request Entity Too Large" ->
+        # "Content Too Large"); pin it so openapi.json is interpreter-stable.
+        return {
+            code: (
+                {"model": ErrorResponse, "description": "Content Too Large"}
+                if code == 413
+                else {"model": ErrorResponse}
+            )
+            for code in codes
+        }
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):

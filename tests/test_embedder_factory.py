@@ -1082,3 +1082,100 @@ def test_openai_client_bounds_the_total_call_budget(monkeypatch):
     attempts = openai_mod._MAX_RETRIES + 1
     assert captured["max_retries"] == openai_mod._MAX_RETRIES
     assert captured["timeout"] * attempts == 30.0, captured
+
+
+def test_priorityeration_selector_resolves_named_compatible_instance():
+    factory = _reload_factory()
+    cfg = _compatible_openai_registry()
+    persisted = factory.persistable_embedder_spec(
+        factory.resolve_embedder_spec(cfg, selector="frontier-a")
+    )
+
+    spec = factory.runtime_embedder_spec_for_selector(
+        cfg, persisted, "frontier-b",
+    )
+
+    assert spec["embedder_config"]["base_url"] == "http://b/v1"
+
+
+def test_priorityeration_selector_unknown_instance_fails():
+    factory = _reload_factory()
+    cfg = _compatible_openai_registry()
+    persisted = factory.persistable_embedder_spec(
+        factory.resolve_embedder_spec(cfg, selector="frontier-a")
+    )
+
+    with pytest.raises(
+        factory.EmbedderRegistryError, match="did not match",
+    ):
+        factory.runtime_embedder_spec_for_selector(cfg, persisted, "nope")
+
+
+def test_priorityeration_selector_rejects_other_vector_space():
+    factory = _reload_factory()
+    cfg = _compatible_openai_registry()
+    cfg._values["embedder.instances"]["elsewhere"] = {
+        "type": "openai",
+        "model": "text-embedding-3-large",
+        "config": {"dim": 3072, "base_url": "http://c/v1"},
+    }
+    persisted = factory.persistable_embedder_spec(
+        factory.resolve_embedder_spec(cfg, selector="frontier-a")
+    )
+
+    with pytest.raises(
+        factory.EmbedderRegistryError, match="vector space",
+    ):
+        factory.runtime_embedder_spec_for_selector(cfg, persisted, "elsewhere")
+
+
+def test_priority_preference_applies_only_when_compatible():
+    factory = _reload_factory()
+    cfg = _compatible_openai_registry()
+    cfg._values["embedder.instances"]["elsewhere"] = {
+        "type": "openai",
+        "model": "text-embedding-3-large",
+        "config": {"dim": 3072, "base_url": "http://c/v1"},
+    }
+    cfg._values["embedder.routing.priority.ingest"] = "frontier-b"
+    cfg._values["embedder.routing.priority.search"] = "elsewhere"
+    persisted = factory.persistable_embedder_spec(
+        factory.resolve_embedder_spec(cfg, selector="frontier-a")
+    )
+
+    # Compatible preference applies; incompatible one silently falls back;
+    # unset and unknown ops resolve to nothing.
+    assert factory.priority_embedder_selector(
+        cfg, persisted, "ingest",
+    ) == "frontier-b"
+    assert factory.priority_embedder_selector(cfg, persisted, "search") is None
+    assert factory.priority_embedder_selector(
+        cfg, persisted, "maintenance",
+    ) is None
+    assert factory.priority_embedder_selector(cfg, persisted, "bogus") is None
+
+
+def test_priority_preference_list_picks_first_compatible_per_family():
+    factory = _reload_factory()
+    cfg = _compatible_openai_registry()
+    cfg._values["embedder.instances"]["elsewhere-gpu"] = {
+        "type": "openai",
+        "model": "text-embedding-3-large",
+        "config": {"dim": 3072, "base_url": "http://c/v1"},
+    }
+    cfg._values["embedder.routing.priority.ingest"] = "elsewhere-gpu, frontier-b"
+    small = factory.persistable_embedder_spec(
+        factory.resolve_embedder_spec(cfg, selector="frontier-a")
+    )
+    large = factory.persistable_embedder_spec(
+        factory.resolve_embedder_spec(cfg, selector="elsewhere-gpu")
+    )
+
+    # Each collection family lands on its own compatible entry.
+    assert factory.priority_embedder_selector(cfg, small, "ingest") == "frontier-b"
+    assert factory.priority_embedder_selector(
+        cfg, large, "ingest",
+    ) == "elsewhere-gpu"
+    # Unknown names in the list are skipped, not fatal.
+    cfg._values["embedder.routing.priority.ingest"] = ["ghost", "frontier-b"]
+    assert factory.priority_embedder_selector(cfg, small, "ingest") == "frontier-b"

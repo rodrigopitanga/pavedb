@@ -155,6 +155,15 @@ When several configured instances have the same `vector_space_key`,
 order, routing weight, and the selected runtime are operational state; none is
 written into the collection catalog.
 
+One finer selection layers on top of the policy:
+`embedder.routing.priority.{ingest,search,maintenance}` names the instance
+the OPERATOR prefers for that operation class — which instance executes
+an embed is never a caller choice. The preference applies only when the
+named instance shares the collection's vector space, and falls back to
+policy routing when it does not (or when the preferred instance cannot
+serve), so one server-wide map cannot break collections in other spaces.
+Nothing is persisted in collection catalog state.
+
 `OllamaEmbedder` is the reference example of a thin module added this way.
 
 ## Stability tiers

@@ -1208,7 +1208,34 @@ class LocalStore:
             )
         return cfg
 
-    def _get_embedder_for_config(self, cfg: CollectionConfig) -> Embedder:
+    def _get_embedder_for_config(
+        self,
+        cfg: CollectionConfig,
+        *,
+        selector: str | None = None,
+    ) -> Embedder:
+        if selector is not None:
+            # Per-operation override: the caller named a configured instance
+            # (validated against this collection's vector space by the
+            # factory). One candidate, no failover probe — a bad selector
+            # must fail loudly, not silently route elsewhere.
+            runtime = embedder_factory_mod.runtime_embedder_spec_for_selector(
+                get_cfg(),
+                cfg,
+                selector,
+            )
+            key = embedder_factory_mod.embedder_cache_key(runtime)
+            embedder = self._embedder_cache.get(key)
+            if embedder is None:
+                embedder = self._embedder_factory(
+                    str(runtime["embedder_type"]),
+                    str(runtime["embed_model"]),
+                    dict(runtime.get("embedder_config") or {}),
+                )
+                self._embedder_cache[key] = embedder
+            else:
+                self._touch_cache_entry(self._embedder_cache, key)
+            return embedder
         try:
             policy = embedder_factory_mod.embedder_routing_policy(get_cfg())
             route_index = 0
@@ -2342,7 +2369,19 @@ class LocalStore:
                 if self._reindex_stop_requested(job_id):
                     return
 
-                target_embedder = self._get_embedder_for_config(target)
+                maintenance_selector = None
+                if get_cfg().get("embedder.routing.priority.maintenance"):
+                    maintenance_selector = (
+                        embedder_factory_mod.priority_embedder_selector(
+                            get_cfg(),
+                            target,
+                            "maintenance",
+                        )
+                    )
+                target_embedder = self._get_embedder_for_config(
+                    target,
+                    selector=maintenance_selector,
+                )
                 target_dim = self._embedder_dim_for_config(
                     target,
                     target_embedder,
@@ -3611,6 +3650,7 @@ class LocalStore:
         doc_meta: Metadata | None = None,
         *,
         vectors=None,
+        embedder_selector: str | None = None,
     ) -> IndexResult:
         """
         Ingests records as (rid, text, meta). Guarantees non-null text, coerces
@@ -3619,14 +3659,27 @@ class LocalStore:
         BYOV: when ``vectors`` is given (one raw vector per record) the embed
         step is skipped and SQLite stores NULL text; the vectors go straight
         to the backend and hydration returns no text for those records.
+
+        ``embedder_selector`` names the configured instance that executes
+        the embed (same vector space, enforced by the factory) — a batch
+        can run on a GPU instance while serving stays on the default.
         """
         byov = vectors is not None
         chunk_count = 0
         purged = 0
         key = (tenant, collection)
+        sel_space: str | None = None
         with self._collection_write_lock(tenant, collection):
             self._load_or_init(tenant, collection)
             embedder = self._collection_embedders[key]
+        bound_embedder = embedder
+        if embedder_selector is not None and not byov:
+            sel_cfg = self._collection_config_for_load(tenant, collection)
+            embedder = self._get_embedder_for_config(
+                sel_cfg,
+                selector=embedder_selector,
+            )
+            sel_space = embedder_factory_mod.vector_space_key(sel_cfg)
 
         rids_to_add, texts_to_encode, chunk_rows, safe_doc_meta = (
             self._prepare_index_records_locked(
@@ -3639,11 +3692,20 @@ class LocalStore:
         )
         if byov:
             vectors = np.asarray(vectors, dtype=np.float32)
+        elif not rids_to_add:
+            vectors = None
         else:
-            vectors = (
-                self._encode_embedder(embedder, texts_to_encode)
-                if rids_to_add else None
-            )
+            try:
+                vectors = self._encode_embedder(embedder, texts_to_encode)
+            except EmbedderUnavailableError:
+                # Per-op preference: fall back to the collection's routed
+                # binding when the preferred instance cannot serve.
+                if embedder is bound_embedder:
+                    raise
+                self._drop_cached_embedder(embedder)
+                embedder = bound_embedder
+                sel_space = None
+                vectors = self._encode_embedder(embedder, texts_to_encode)
 
         with self._collection_write_lock(tenant, collection):
             self._load_or_init(tenant, collection)
@@ -3677,7 +3739,27 @@ class LocalStore:
 
             self._mark_index_dirty(tenant, collection)
             if not byov:
-                if current_embedder is not embedder:
+                if embedder_selector is not None and sel_space is not None:
+                    # Selector mode: the vectors stay valid while the
+                    # collection's vector space is unchanged (the selector
+                    # embedder was validated against it). A delete+recreate
+                    # into another space re-resolves the selector — which
+                    # raises if it no longer fits — and re-encodes.
+                    now_cfg = self._collection_config_for_load(
+                        tenant,
+                        collection,
+                    )
+                    now_space = embedder_factory_mod.vector_space_key(now_cfg)
+                    if now_space != sel_space:
+                        embedder = self._get_embedder_for_config(
+                            now_cfg,
+                            selector=embedder_selector,
+                        )
+                        vectors = self._encode_embedder(
+                            embedder,
+                            texts_to_encode,
+                        )
+                elif current_embedder is not embedder:
                     vectors = self._encode_embedder(
                         current_embedder,
                         texts_to_encode,
@@ -3840,7 +3922,8 @@ class LocalStore:
                filters: FilterSpec | None = None,
                *, content_filter: ContentFilterSpec | None = None,
                mode: SearchMode = "vector",
-               query_vector: list[float] | None = None) -> SearchOutput:
+               query_vector: list[float] | None = None,
+               embedder_selector: str | None = None) -> SearchOutput:
         """
         Queries the FAISS backend for top-k and keeps overfetch inside the
         store.
@@ -4259,13 +4342,44 @@ class LocalStore:
                 q_vec = np.asarray(query_vector, dtype=np.float32)
                 embed_ms = 0.0
             else:
+                # Per-operation selector: encode with the caller-named
+                # instance (same vector space, enforced by the factory).
+                # The query cache keys by embedder object, so cached
+                # vectors never cross executors. The swap guard below
+                # still compares the COLLECTION binding — a re-created
+                # collection retries, re-resolving the selector.
+                encode_embedder = embedder
+                if embedder_selector is not None:
+                    sel_cfg = self._collection_config_for_load(
+                        tenant,
+                        collection,
+                    )
+                    encode_embedder = self._get_embedder_for_config(
+                        sel_cfg,
+                        selector=embedder_selector,
+                    )
                 t0 = _perf()
-                q_vec, query_cache_hit = self._encode_query_cached(
-                    tenant,
-                    collection,
-                    embedder,
-                    query,
-                )
+                try:
+                    q_vec, query_cache_hit = self._encode_query_cached(
+                        tenant,
+                        collection,
+                        encode_embedder,
+                        query,
+                    )
+                except EmbedderUnavailableError:
+                    # The priority preference is exactly that: when its
+                    # instance cannot serve, the collection's own routed
+                    # binding answers instead of failing the search.
+                    if encode_embedder is embedder:
+                        raise
+                    self._drop_cached_embedder(encode_embedder)
+                    encode_embedder = embedder
+                    q_vec, query_cache_hit = self._encode_query_cached(
+                        tenant,
+                        collection,
+                        encode_embedder,
+                        query,
+                    )
                 embed_ms = 0.0 if query_cache_hit else _ms_since(t0)
 
             with self._collection_read_lock(tenant, collection):

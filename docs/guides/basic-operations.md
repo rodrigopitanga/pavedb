@@ -22,8 +22,14 @@ pavecli create-collection demo books --embedder native
 vector-space key; omit it to take `embedder.default`. The collection persists
 the selected vector-space identity, not an operational instance pin. When
 several instances produce that space, `embedder.routing.policy` chooses among
-them. Changing vector space later requires reindexing because vectors from two
-models cannot share an index.
+them, and `embedder.routing.priority.<op>` refines the choice per operation
+class (`ingest`, `search`, `maintenance`): an ordered list of instance names
+where the first one in the collection's vector space runs that operation — so
+a batch ingest or a reindex lands on a GPU instance while interactive search
+stays on the default. Unknown or incompatible names are skipped and an
+unavailable preferred instance falls back, so one server-wide map never
+breaks collections in other spaces. Changing vector space later requires
+reindexing because vectors from two models cannot share an index.
 
 ## Ingest
 

@@ -86,6 +86,21 @@
       "description": "How each collection load chooses among configured instances in the same vector space. First uses config order; round_robin rotates; weighted rotates by each instance weight; failover tries in order until one initializes. Routing is runtime-only and is never persisted in collection catalog state."
     },
     {
+      "key": "embedder.routing.priority.ingest",
+      "default": null,
+      "description": "Operator preference: one or more configured embedder instances (comma-separated or a list) tried in order for this operation class (ingest); the first instance sharing the collection's vector space runs it — one entry per model family. Nothing compatible, or the preferred instance unable to serve, falls back to embedder.routing.policy. Never a caller choice."
+    },
+    {
+      "key": "embedder.routing.priority.search",
+      "default": null,
+      "description": "Operator preference: one or more configured embedder instances (comma-separated or a list) tried in order for this operation class (search); the first instance sharing the collection's vector space runs it — one entry per model family. Nothing compatible, or the preferred instance unable to serve, falls back to embedder.routing.policy. Never a caller choice."
+    },
+    {
+      "key": "embedder.routing.priority.maintenance",
+      "default": null,
+      "description": "Operator preference: one or more configured embedder instances (comma-separated or a list) tried in order for this operation class (maintenance); the first instance sharing the collection's vector space runs it — one entry per model family. Nothing compatible, or the preferred instance unable to serve, falls back to embedder.routing.policy. Never a caller choice."
+    },
+    {
       "key": "embedder.warmup_default",
       "default": null,
       "description": "Warm the default embedder at server startup before the first query. Null uses the startup policy: enabled outside dev, disabled in dev."

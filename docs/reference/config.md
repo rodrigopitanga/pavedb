@@ -157,6 +157,36 @@ collection's vector-space identity.
   instance weight; failover tries in order until one initializes. Routing is runtime-
   only and is never persisted in collection catalog state.
 
+### `embedder.routing.priority.ingest`
+
+- Default: `null`
+- Env var: `PAVEDB_EMBEDDER__ROUTING__PRIORITY__INGEST`
+- Description: Operator preference: one or more configured embedder instances (comma-
+  separated or a list) tried in order for this operation class (ingest); the first
+  instance sharing the collection's vector space runs it — one entry per model family.
+  Nothing compatible, or the preferred instance unable to serve, falls back to
+  embedder.routing.policy. Never a caller choice.
+
+### `embedder.routing.priority.search`
+
+- Default: `null`
+- Env var: `PAVEDB_EMBEDDER__ROUTING__PRIORITY__SEARCH`
+- Description: Operator preference: one or more configured embedder instances (comma-
+  separated or a list) tried in order for this operation class (search); the first
+  instance sharing the collection's vector space runs it — one entry per model family.
+  Nothing compatible, or the preferred instance unable to serve, falls back to
+  embedder.routing.policy. Never a caller choice.
+
+### `embedder.routing.priority.maintenance`
+
+- Default: `null`
+- Env var: `PAVEDB_EMBEDDER__ROUTING__PRIORITY__MAINTENANCE`
+- Description: Operator preference: one or more configured embedder instances (comma-
+  separated or a list) tried in order for this operation class (maintenance); the first
+  instance sharing the collection's vector space runs it — one entry per model family.
+  Nothing compatible, or the preferred instance unable to serve, falls back to
+  embedder.routing.policy. Never a caller choice.
+
 ### `embedder.warmup_default`
 
 - Default: `null`

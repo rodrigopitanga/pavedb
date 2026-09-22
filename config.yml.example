@@ -133,6 +133,32 @@ embedder:
     # Env: PAVEDB_EMBEDDER__ROUTING__POLICY
     policy: 'first'
 
+    priority:
+
+      # Operator preference: one or more configured embedder instances (comma-separated
+      # or a list) tried in order for this operation class (ingest); the first instance
+      # sharing the collection's vector space runs it — one entry per model family.
+      # Nothing compatible, or the preferred instance unable to serve, falls back to
+      # embedder.routing.policy. Never a caller choice.
+      # Env: PAVEDB_EMBEDDER__ROUTING__PRIORITY__INGEST
+      # ingest: null
+
+      # Operator preference: one or more configured embedder instances (comma-separated
+      # or a list) tried in order for this operation class (search); the first instance
+      # sharing the collection's vector space runs it — one entry per model family.
+      # Nothing compatible, or the preferred instance unable to serve, falls back to
+      # embedder.routing.policy. Never a caller choice.
+      # Env: PAVEDB_EMBEDDER__ROUTING__PRIORITY__SEARCH
+      # search: null
+
+      # Operator preference: one or more configured embedder instances (comma-separated
+      # or a list) tried in order for this operation class (maintenance); the first
+      # instance sharing the collection's vector space runs it — one entry per model
+      # family. Nothing compatible, or the preferred instance unable to serve, falls
+      # back to embedder.routing.policy. Never a caller choice.
+      # Env: PAVEDB_EMBEDDER__ROUTING__PRIORITY__MAINTENANCE
+      # maintenance: null
+
   # Warm the default embedder at server startup before the first query. Null uses the
   # startup policy: enabled outside dev, disabled in dev.
   # Env: PAVEDB_EMBEDDER__WARMUP_DEFAULT

@@ -40,6 +40,7 @@ from pave.embedders.base import EmbedderConfig
 from pave.embedders.factory import (
     embedder_instances,
     embedder_space_key,
+    priority_embedder_selector,
     persistable_embedder_spec,
     resolve_default_embedder,
     resolve_embedder_spec,
@@ -943,7 +944,18 @@ def _index_records_result(
     vectors=None,
 ) -> ServiceResult:
     """Shared tail for ingest paths: index records, metrics, log, envelope."""
-    extra = {"vectors": vectors} if vectors is not None else {}
+    extra: dict[str, Any] = {}
+    if vectors is not None:
+        extra["vectors"] = vectors
+    # Which instance embeds this ingest is the OPERATOR's priority
+    # preference (compatibility-gated in the factory); never a caller
+    # choice.
+    if get_cfg().get("embedder.routing.priority.ingest"):
+        coll_cfg = _coll_cfg(store, tenant, collection)
+        if coll_cfg:
+            embedder = priority_embedder_selector(get_cfg(), coll_cfg, "ingest")
+            if embedder is not None:
+                extra["embedder_selector"] = embedder
     result = store.index_records(
         tenant,
         collection,
@@ -1010,7 +1022,8 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
                 }
             stage = "index_records"
             return _index_records_result(
-                store, tenant, collection, baseid, records, doc_meta, _t0, "ingest"
+                store, tenant, collection, baseid, records, doc_meta, _t0,
+                "ingest",
             )
         except ServiceError:
             raise
@@ -1497,6 +1510,24 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
             search_kw["content_filter"] = content_filter
         if mode == "hybrid":
             search_kw["mode"] = mode
+        # Which instance embeds the query is the OPERATOR's decision:
+        # the priority preference (compatibility-gated, falling back to
+        # policy routing). Never caller-supplied. Applies to THIS
+        # collection only; the common collection keeps policy routing.
+        selector = None
+        if (
+            q is not None
+            and get_cfg().get("embedder.routing.priority.search")
+        ):
+            coll_cfg = _coll_cfg(store, tenant, collection)
+            if coll_cfg:
+                selector = priority_embedder_selector(
+                    get_cfg(), coll_cfg, "search",
+                )
+        primary_kw = (
+            {**search_kw, "embedder_selector": selector}
+            if selector is not None else search_kw
+        )
         # Unvalidated here, the name reached _load_or_init and auto-created a
         # collection that delete_collection then refused to remove, because it
         # validates the name before checking existence. Safe for the
@@ -1547,7 +1578,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
                 q,
                 max(10, k * 2),
                 filters=filters,
-                **search_kw,
+                **primary_kw,
             )
             try:
                 common = store.search(
@@ -1596,7 +1627,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
                 q,
                 k,
                 filters=filters,
-                **search_kw,
+                **primary_kw,
             )
             top = result.matches
             timing = result.timing

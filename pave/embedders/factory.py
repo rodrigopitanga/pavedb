@@ -466,6 +466,85 @@ def resolve_default_embedder(
     )
 
 
+def runtime_embedder_spec_for_selector(
+    cfg: Config,
+    collection_cfg: Mapping[str, Any],
+    selector: str,
+) -> EmbedderSpec:
+    """Resolve a caller-named instance for one operation on a collection.
+
+    Per-operation selection picks WHICH configured runtime executes the
+    call; it can never change WHAT the collection is. The named instance
+    must live in the collection's exact vector space, so a selector only
+    moves work between geometrically identical executors (a batch ingest
+    on a GPU instance, serving on a CPU one). Instances are operator
+    config — a tenant chooses among them, never an arbitrary endpoint.
+    """
+    name = str(selector).strip()
+    if not name:
+        raise _registry_error("embedder selector must not be empty")
+    instance = _instance_for_selector(cfg, name)
+    if instance is None:
+        raise _registry_error(
+            f"embedder selector {name!r} did not match any configured "
+            "instance. Available instances: "
+            f"{_format_instances(embedder_instances(cfg))}"
+        )
+    expected = vector_space_key(collection_cfg)
+    if instance.vector_key != expected:
+        raise _registry_error(
+            f"embedder selector {name!r} resolves to vector space "
+            f"{instance.vector_key}, but the collection lives in "
+            f"{expected}; priorityeration selection cannot change a "
+            "collection's vector space."
+        )
+    return instance.spec
+
+
+_PRIORITY_CLASSES = frozenset({"ingest", "search", "maintenance"})
+
+
+def priority_embedder_selector(
+    cfg: Config,
+    collection_cfg: Mapping[str, Any],
+    op: str,
+) -> str | None:
+    """Operator preference: which instance runs this operation class.
+
+    Reads `embedder.routing.priority.<op>` — one or more instance names
+    (list or comma-separated), tried in order; the first one living in
+    the collection's vector space wins. A server-wide preference, never
+    a caller choice: nothing compatible in the list means policy routing
+    applies, so one global map cannot break collections in other spaces.
+    """
+    if op not in _PRIORITY_CLASSES:
+        return None
+    raw = cfg.get(f"embedder.routing.priority.{op}")
+    if raw is None:
+        return None
+    # One entry per vector-space family: a list (YAML) or comma-separated
+    # string (env) is tried in order and the first instance living in the
+    # collection's vector space wins — so one map serves GPU ingest for
+    # several unrelated model families at once.
+    if isinstance(raw, (list, tuple)):
+        names = [str(item).strip() for item in raw]
+    else:
+        names = [part.strip() for part in str(raw).split(",")]
+    expected = vector_space_key(collection_cfg)
+    for name in names:
+        if name == "":
+            continue
+        try:
+            instance = _instance_for_selector(cfg, name)
+        except ValueError:
+            continue
+        if instance is None:
+            continue
+        if instance.vector_key == expected:
+            return name
+    return None
+
+
 def _deny_execution_grant(etype: str, config: dict[str, Any]) -> None:
     """Withhold the operator's execution grant from a model they never named.
 
