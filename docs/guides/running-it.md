@@ -154,6 +154,17 @@ the share below `tenants.default_max_concurrent` and it is the one you will
 see; a `429` means the tenant is over its own request budget, before the pool
 was ever consulted.
 
+Collection archives and reindex jobs are whole-collection operations, so
+they carry the same two dials with tighter defaults: `archive.max_concurrent`
+(2) / `archive.max_concurrent_per_tenant` (1) and `reindex.max_concurrent`
+(1) / `reindex.max_concurrent_per_tenant` (1) bound simultaneous work, and
+`tenants.default_max_archives_per_day` / `tenants.default_max_reindex_per_month`
+(both 0 = unlimited, per-tenant overrides as usual) charge the same
+persistent rate windows the request budget uses — one counter engine, one
+number-resolution path, whatever the window length. A refused operation
+answers `503 <op>_capacity` (concurrency) or `429 <op>_rate_limited`
+(window), and never spends the window when refused on concurrency.
+
 A shared instance without these means one tenant can consume the disk, the
 index memory, and the pools that every other tenant depends on.
 

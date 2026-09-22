@@ -119,9 +119,10 @@ class BodySizeLimitMiddleware:
     arbitrary payload. The guard therefore has to sit ahead of routing, which
     rules out a dependency and any route-level check.
 
-    Multipart document uploads spool to a temporary file, so they get the
-    ingest ceiling. Archive restore has its own authenticated, exempt path;
-    every other body gets the tighter `server.max_request_body_mb` ceiling.
+    Multipart document uploads and tenant collection-archive restores spool
+    to a temporary file, so they get the ingest ceiling. Admin archive
+    restore has its own authenticated, exempt path; every other body gets
+    the tighter `server.max_request_body_mb` ceiling.
     """
 
     def __init__(self, app) -> None:
@@ -133,7 +134,16 @@ class BodySizeLimitMiddleware:
         # caller's, so granting the larger ceiling from it let any request
         # claim multipart and buy the ingest limit on a JSON endpoint, where
         # the body is parsed into memory rather than spooled to disk.
-        return path.endswith("/documents")
+        if path.endswith("/documents"):
+            return True
+        # POST /v1/collections/{tenant}/{name}/archive: a tenant restore is
+        # unauthenticated at this layer, so it is bounded, but by the upload
+        # ceiling rather than the in-memory JSON one.
+        return (
+            path.startswith("/v1/collections/")
+            and path.endswith("/archive")
+            and len(path.split("/")) == 6
+        )
 
     @staticmethod
     def _restores_archive(scope) -> bool:

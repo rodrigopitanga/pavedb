@@ -541,6 +541,12 @@ class SpyStore:
         self.impl = impl
         self.calls: list[tuple] = []
 
+    def charge_operation_window(self, tenant, op, field, window_seconds):
+        self.calls.append(("charge_operation_window", tenant, op, field))
+        return self.impl.charge_operation_window(
+            tenant, op, field, window_seconds,
+        )
+
     def create_collection(
         self,
         tenant: str,

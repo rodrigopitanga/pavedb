@@ -1185,6 +1185,25 @@ class LocalStore:
             now=now,
         )
 
+    def charge_operation_window(
+        self,
+        tenant: str,
+        op: str,
+        field: str,
+        window_seconds: int,
+    ):
+        """Charge one use of an expensive op against its tenant window.
+
+        The cap comes from the one number-resolution path
+        (`tenants.<name>.<field>` override, else `tenants.default_<field>`,
+        0 = unlimited → None); the charge goes through the one persistent
+        rate engine. Returns the decision, or None when unlimited.
+        """
+        cap = self._tenant_limit(tenant, field)
+        if cap <= 0:
+            return None
+        return self.charge_rate_limit(tenant, op, {window_seconds: cap})
+
     def _collection_config_for_load(
         self,
         tenant: str,

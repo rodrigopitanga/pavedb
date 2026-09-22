@@ -124,6 +124,7 @@ def test_openapi_split_covers_all_v1_paths(client):
     assert data_tags == [
         "Documents",
         "Chunk Inspection",
+        "Collection Portability",
         "Collection Catalog",
     ]
     assert data_desc["Documents"] == (
@@ -131,6 +132,9 @@ def test_openapi_split_covers_all_v1_paths(client):
     )
     assert data_desc["Chunk Inspection"] == (
         "Inspect extracted chunks and their stored content."
+    )
+    assert data_desc["Collection Portability"] == (
+        "Archive, restore, and reindex your collections."
     )
     assert data_desc["Collection Catalog"] == (
         "Create, review, update, and retire collections."

@@ -97,6 +97,30 @@ pavecli delete-document demo books book-1
 pavecli delete-collection demo books
 ```
 
+## Archive and reindex your collection
+
+Your collection is yours to take or rebuild — with your tenant key, no admin
+needed:
+
+```bash
+# download a portable zip of one collection (manifest + data)
+curl -H "Authorization: Bearer $KEY" -o books.zip \
+  "$PAVEDB_URL/v1/collections/demo/books/archive"
+
+# restore it — same PaveDB version, any instance, your tenant
+curl -H "Authorization: Bearer $KEY" -F file=@books.zip \
+  "$PAVEDB_URL/v1/collections/demo/books/archive"
+
+# rebuild into another embedder space (resumable job; poll or cancel by id)
+curl -H "Authorization: Bearer $KEY" -H 'Content-Type: application/json' \
+  -d '{"embedder_type":"sbert","embed_model":"all-MiniLM-L6-v2"}' \
+  "$PAVEDB_URL/v1/collections/demo/books/reindex"
+```
+
+The embedder rules are the same as create, and which configured instance
+executes the re-embedding is the operator's routing decision. Both operations
+are bounded per tenant on shared instances; see the running-it guide.
+
 ## Where this goes next
 
 - Every command, flag and output shape — [`cli.md`](../reference/cli.md)

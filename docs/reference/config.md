@@ -68,6 +68,34 @@ replace dots with double underscores, so `auth.mode` becomes
 - Description: Max runtime embedder instances in the hot cache; active collections stay
   pinned.
 
+### `archive.max_concurrent`
+
+- Default: `2`
+- Env var: `PAVEDB_ARCHIVE__MAX_CONCURRENT`
+- Description: Collection archive dumps/restores running at once on this instance; 0
+  disables the bound. Archives read or rebuild a whole collection, so the default stays
+  small.
+
+### `archive.max_concurrent_per_tenant`
+
+- Default: `1`
+- Env var: `PAVEDB_ARCHIVE__MAX_CONCURRENT_PER_TENANT`
+- Description: Collection archive operations one tenant may run at once; 0 disables the
+  bound.
+
+### `reindex.max_concurrent`
+
+- Default: `1`
+- Env var: `PAVEDB_REINDEX__MAX_CONCURRENT`
+- Description: Reindex jobs running at once on this instance; 0 disables the bound. A
+  reindex re-embeds a whole collection.
+
+### `reindex.max_concurrent_per_tenant`
+
+- Default: `1`
+- Env var: `PAVEDB_REINDEX__MAX_CONCURRENT_PER_TENANT`
+- Description: Reindex jobs one tenant may run at once; 0 disables the bound.
+
 ## Authentication
 
 ### `auth.mode`
@@ -402,6 +430,22 @@ collection's vector-space identity.
 - Env var: `PAVEDB_TENANTS__DEFAULT_MAX_CHUNKS_PER_COLLECTION`
 - Description: Default cap on indexed chunks per collection enforced at ingest; 0
   disables the cap. Per-tenant max_chunks_per_collection in tenants.yml overrides it.
+
+### `tenants.default_max_archives_per_day`
+
+- Default: `0`
+- Env var: `PAVEDB_TENANTS__DEFAULT_MAX_ARCHIVES_PER_DAY`
+- Description: Collection archive operations (dump or restore) a tenant may start per
+  day; 0 = unlimited. Override per tenant as tenants.<name>.max_archives_per_day.
+  Charged on the persistent per-operation rate window.
+
+### `tenants.default_max_reindex_per_month`
+
+- Default: `0`
+- Env var: `PAVEDB_TENANTS__DEFAULT_MAX_REINDEX_PER_MONTH`
+- Description: Reindex jobs a tenant may start per 30 days; 0 = unlimited. Override per
+  tenant as tenants.<name>.max_reindex_per_month. Charged on the persistent per-
+  operation rate window.
 
 ## Server
 

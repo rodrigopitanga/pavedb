@@ -46,7 +46,11 @@ from pave.service import (
     resume_reindex_job as svc_resume_reindex_job,
     start_collection_reindex as svc_start_collection_reindex,
 )
-from pave.routes._deps import current_store
+from pave.routes._deps import (
+    archive_restore_error,
+    current_store,
+    reindex_response as _reindex_response,
+)
 from pave.stores.base import BaseStore
 
 
@@ -278,30 +282,8 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
                 content,
             )
             return trace(out, request, request_id=rid)
-        except ServiceError as exc:
-            return error(
-                400,
-                exc.code,
-                exc.message,
-                request=request,
-                request_id=rid,
-            )
-        except ValueError as exc:
-            return error(
-                400,
-                "collection_archive_invalid",
-                str(exc),
-                request=request,
-                request_id=rid,
-            )
         except Exception as exc:
-            return error(
-                500,
-                "collection_archive_restore_failed",
-                f"failed to restore collection archive: {exc}",
-                request=request,
-                request_id=rid,
-            )
+            return archive_restore_error(exc, request, rid, error=error)
 
     @router.delete(
         "/admin/metrics",
@@ -449,24 +431,9 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
             )
         return trace(result, request, request_id=rid)
 
-    def reindex_response(result, request: Request, rid: str | None):
-        if result.get("ok"):
-            return trace(result, request, request_id=rid)
-        status_map = {
-            "not_found": 404,
-            "conflict": 409,
-            "invalid": 400,
-            "unavailable": 503,
-            "failed": 500,
-        }
-        error_type = result.get("error_type", "failed")
-        return error(
-            status_map.get(error_type, 500),
-            result.get("code", "reindex_failed"),
-            result.get("error", "reindex operation failed"),
-            request=request,
-            request_id=rid,
-        )
+    reindex_response = functools.partial(
+        _reindex_response, error=error, trace=trace,
+    )
 
     @router.post(
         "/admin/collections/{tenant}/{name}/reindex",

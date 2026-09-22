@@ -195,3 +195,23 @@ def test_multipart_header_cannot_buy_the_upload_limit(client, cfg):
     )
     assert r.status_code == 413, r.status_code
     assert r.json()["code"] == "request_too_large"
+
+
+def test_tenant_collection_archive_restore_gets_the_ingest_ceiling(guarded):
+    headers = {"Authorization": "Bearer test-key"}
+    within = b"not a zip" + b"z" * (1536 * 1024)
+    r = guarded.post(
+        "/v1/collections/acme/books/archive",
+        files={"file": ("backup.zip", within, "application/zip")},
+        headers=headers,
+    )
+    # Above the 1 MB JSON cap, below the 2 MB ingest cap: reaches the handler.
+    assert r.status_code == 400, r.text
+    assert r.json()["code"] == "collection_archive_invalid"
+
+    r = guarded.post(
+        "/v1/collections/acme/books/archive",
+        files={"file": ("backup.zip", b"z" * (4 * 1024 * 1024), "application/zip")},
+    )
+    assert r.status_code == 413
+    assert r.json()["code"] == "request_too_large"

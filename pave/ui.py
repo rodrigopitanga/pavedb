@@ -41,6 +41,10 @@ _UI_TAGS = {
         "name": "Chunk Inspection",
         "description": "Inspect extracted chunks and their stored content.",
     },
+    "Collection Portability": {
+        "name": "Collection Portability",
+        "description": "Archive, restore, and reindex your collections.",
+    },
     "Collection Catalog": {
         "name": "Collection Catalog",
         "description": "Create, review, update, and retire collections.",
@@ -273,6 +277,19 @@ def attach_ui(app: FastAPI):
                 ("post", "/v1/collections/{tenant}/{name}"): 4,
                 ("patch", "/v1/collections/{tenant}/{name}"): 5,
                 ("delete", "/v1/collections/{tenant}/{name}"): 6,
+            },
+            "Collection Portability": {
+                ("get", "/v1/collections/{tenant}/{name}/archive"): 0,
+                ("post", "/v1/collections/{tenant}/{name}/archive"): 1,
+                ("post", "/v1/collections/{tenant}/{name}/reindex"): 2,
+                (
+                    "get",
+                    "/v1/collections/{tenant}/{name}/reindex/{job_id}",
+                ): 3,
+                (
+                    "delete",
+                    "/v1/collections/{tenant}/{name}/reindex/{job_id}",
+                ): 4,
             },
             "Instance Admin": {
                 ("get", "/v1/admin/archive"): 0,
