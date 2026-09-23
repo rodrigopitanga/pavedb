@@ -136,6 +136,14 @@ pytest:
       - junit.xml
       - .pytest_cache
     expire_in: 1 week
+  # Without rules this defaulted to branch/tag pipelines only, so it never ran
+  # on merge-request pipelines: every MR merged on bench alone while the suite
+  # was red on the push pipeline, unread. Gate the MR and the default branch,
+  # exactly like bench, so a red suite blocks the merge.
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_COMMIT_TAG'
 
 # Release gate for the published architecture. The images have been arm64
 # since the runner moved (ROADMAP C7) and nothing tested that: pytest runs
