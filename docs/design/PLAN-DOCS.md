@@ -26,7 +26,39 @@ PatchVec title exceptions remain exact. Four-component correction tags publish
 the existing package and CPU image only, without announcement files or Release
 objects.
 
-## Release boundary
+## v1.0 adoption documentation (P3-54)
+
+Selected 2026-09-20. Extend the existing overview, running-it, and
+basic-operations guides; add a page only when the existing guide cannot hold
+the task clearly. Keep product sources here and executable Python in the SDK.
+
+- Explain embedded, HTTP, and managed operation through the same engine.
+  State one supported local owner per data directory and distinguish larger
+  instances or multiple isolated workloads from a distributed query/index.
+- Provide an actionable production checklist: authentication, persistent data,
+  resource limits, health/readiness, metrics, query-log retention, backup and
+  restore, with commands and configuration from the supported release.
+- Document committed collection export/import and same-version restore as
+  available in the release accompanying the new copy. Distinguish collection
+  portability from whole-instance backups and show the retained contents.
+- Teach inspection through query, ranked hits, source/chunk, stored query
+  record, corpus change, replay, and comparison against the original log.
+  Changed results make retrieval drift visible; identical historical results
+  are not the goal. Explain the configured log-retention window and which
+  recorded fields remain available after the source changes.
+- Link the SDK's full query-replay example (SDK roadmap P1) from the guides.
+  Compare result IDs/ranks, scores within the same vector space, and recorded
+  provenance. Do not require a new drift service or historical snapshot engine.
+- Align product descriptions across release-owned README/package/image
+  metadata with inspectable retrieval and embedded/HTTP operation; preserve
+  discoverable semantic-search/vector-database terms and measured claim limits.
+
+Acceptance: the guides and example agree on the named release, commands and
+links work, the production checklist is usable, and the published site renders
+these sources through the existing pinned-sdist pipeline. This is queued
+documentation work, not a new runtime feature or a release already performed.
+
+## Original documentation release boundary
 
 The v0.9.3 release freezes the current runtime after one hardening/review
 cycle. It does not add this documentation delivery. PaveDB 1.0 then locks the

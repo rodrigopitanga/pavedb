@@ -133,6 +133,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-63 | ~~VectorDBBench adapter~~ | 🔧 | Standard benchmark adapter over BYOV HTTP raw-vector ingest/search, with flat FAISS recall baseline and no PaveDB runtime dependency on VectorDBBench. External adapter (separate repo/fork), not in-repo. Depends on P1-64 (BYOV raw-vector round trip). | v1.0 |
 | P1-64 | ~~Bring-your-own-vector (BYOV) raw-vector mode~~ | 🔧 | Additive raw-vector ingest/search mirroring Chroma. New `identity` embedder (`encode(x)→x`, dim from `embedder_config`); raw-vector schema fields `vector`/`v` paired with `text`/`q` (exactly-one). Embedding collections stay permissive (text or raw vector); identity collections are vector-only. No new endpoints; FAISS backend unchanged. Serves pre-computed-embedding users and unblocks P1-63. | v1.0 |
 | P1-65 | ~~Instance archive/restore integrity~~ | 🔧 | Preflight catalog, collection sidecars, and configured embedders before rollback-safe whole-instance replacement; verify mixed-embedder round trips. | v1.0 |
+| P1-66 | ~~Runnable book examples~~ | 🔧 | The Python SDK and Elixir client own tested, numbered top-level examples extracted from the book; CI verifies runnable programs and distribution boundaries. Landed as numbered `examples/` in `pavedb-sdk` and `pavedb-client-elixir`. See [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md). | v1.1 |
 | P1-67 | ~~Elixir public API parity~~ | 🔧 | Cover the current user-facing `/v1` surface plus a basic `/health` connection check; defer `/admin`, `/metrics`, and `/embedders`. | v1.0 |
 | P1-68 | ~~Task-oriented engine guides~~ | 🔧 | Hand-written, low-boilerplate quickstart and usage guides shipped in the PaveDB source distribution, complementing the generated reference (P1-46) with narrative task-oriented docs rather than auto-generated dumps. | v1.1 |
 | P1-70 | ~~SQLite chunk-text index and content filters~~ | 🧱 | Make chunk text queryable through native FTS5 for contains/phrase/prefix filters and lexical candidates; prerequisite for P1-72 | v1.0 |
@@ -141,7 +142,6 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-73 | ~~Preview SQLite compatibility baseline~~ | 🔧 | Transactional forward migrations from v0.9.5; reject downgrades and pre-baseline schemas | v0.9.5 |
 | P1-74 | ~~Sbert embedder options: `trust_remote_code`, task prefixes (space keys), `runtime=remote` (TEI)~~ | 🔧 | Unlocks custom-architecture local models and GPU offload with an unchanged `vector_space_key`; additive config, frozen protocol untouched. | v1.1 |
 | P1-75 | ~~Exclusive local data-directory ownership~~ | 🧩 | Fail closed before a second server, local client, or offline CLI opens the same canonical data directory | v0.9.6 |
-| P1-66 | Runnable book examples | 🔧 | The Python SDK and Elixir client own tested, numbered top-level examples extracted from the book; CI verifies runnable programs and distribution boundaries. Delivery happens in `pavedb-sdk` and `pavedb-client-elixir` — the engine repo carries no build work for this task; tracked here for the v1.1 milestone. See [`docs/design/PLAN-EXAMPLES.md`](docs/design/PLAN-EXAMPLES.md). | v1.1 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -187,6 +187,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-53 | Optional FAISS IVF index | 🧱 | IVF plus explicit optimize. | v1.8 |
 | P2-54 | ~~Chunk limit / collection~~ | 🧩 | Billing-hard row cap for shared plans; with P2-20 bounds tenant growth | v0.9.5 |
 | P2-55 | Cross-tenant read grants per collection | 🔧 | An owner tenant grants search on one of its collections to named tenants, turning tenant↔collection into n:n for reads. Generalizes the single shared-corpus pair (`common_tenant`/`common_collection`) into a grant table, reusing the existing merge path and its embedder-compatibility check. Read-only by design: the owner keeps every write, because cross-tenant writes would move quota accounting, catalog ownership and query-log attribution. Replay resolves grants from live state, never from the logged query | v1.2 |
+| P2-56 | Bound archive-dump disk materialization (collection + instance) | 🔧 | P1-54 follow-up covering both dump paths: the per-collection dump and the whole-instance `GET /v1/admin/archive` materialize the full zip on disk and serve it via `FileResponse`, so concurrent dumps are capped only by free disk in a multi-tenant deployment. Remedy is an open design choice: stream the archive or bound concurrent materializations. Both endpoints are admin-key gated, which is why this defers to v1.5 while the attacker-supplied restore-side disk risk (B89) gates 1.0 | v1.5 |
 
 ### P3 — Scale and long-term
 
@@ -222,6 +223,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-51 | ~~`make docker-check`: alive test against prebuilt Docker image~~ | 🧩 | v0.5.9 |
 | P3-52 | ~~`make build-check`: install from local wheel in temp venv, alive test~~ | 🧩 | v0.5.9 |
 | P3-53 | Micro-batch concurrent query embeddings | 🧱 | v1.8 |
+| P3-54 | Deployment, operations, and replay documentation update | 🧩 | v1.0 |
 
 P1-53e includes a checked-in `openapi.json` snapshot plus a
 `docs-ref-openapi` dump and drift check, mirroring P1-53b's CLI gate.
@@ -234,8 +236,11 @@ current spec is complete as of P1-53a.
 
 Substantial features are specified under `docs/design/` before implementation.
 
+[docs-refresh]: docs/design/PLAN-DOCS.md#v10-adoption-documentation-p3-54
+
 | File | Plan ID | Feature |
 |---|---|---|
+| [Docs refresh][docs-refresh] | P3-54 | Deployment, operations, replay |
 | [`docs/design/PLAN-OPS-LOG.md`](docs/design/PLAN-OPS-LOG.md) | P2-28 | Structured log emission — ops JSON stream |
 | [`docs/design/PLAN-CLIENT.md`](docs/design/PLAN-CLIENT.md) | P1-15 / P1-24 / P1-75 / P2-32 | Local and HTTP clients, local ownership, and remote CLI evaluation |
 | [`docs/design/PLAN-SQLITE.md`](docs/design/PLAN-SQLITE.md) | P1-09 / P1-33 / P1-54 / P1-73 / P2-25 | SQLite metadata, catalog, migrations, and collection portability |
@@ -491,6 +496,8 @@ latency on every search/ingest/delete.~~
   sidecars. Embedder spec validated locally before restore touches
   disk. Cross-version restore waits on P3-37 migration tooling
   (P1-54).~~
+- Deployment and production guidance, collection portability, and query-log
+  comparison after replay; link the full Python SDK example (P3-54).
 - ~~Dev vs prod config defaults: code defaults are prod-safe, the dev
   convenience overlay lives in the Makefile/env, enforced by
   `enforce_policy` fail-fast (P1-25).~~
@@ -550,8 +557,8 @@ lands where it has more impact during post-contract hardening.
 
 - Exact flat cosine, inner-product, and L2 metrics selected per collection;
   the VectorDBBench adapter expands beyond its v1.0 cosine cases (P2-51).
-- Runnable book examples owned by the Python SDK and Elixir client
-  distributions (P1-66).
+- ~~Runnable book examples owned by the Python SDK and Elixir client
+  distributions (P1-66).~~
 - ~~Task-oriented quickstart and usage guides in the PaveDB source
   distribution (P1-68).~~
 - ~~Batch ingest endpoint (list of documents in one call) (P1-16).~~
@@ -643,6 +650,9 @@ lands where it has more impact during post-contract hardening.
   into SQL on first boot; SQL becomes source of truth for keys
   and limits thereafter. Lands with tenant admin infra (P2-19)
   as the foundation the v1.6 governance items build on (P2-38).
+- Bound archive-dump disk materialization on both admin dump paths
+  (collection + instance): stream the archive or cap concurrent
+  materializations (P2-56).
 
 ### PaveDB v1.6 — Governance
 
