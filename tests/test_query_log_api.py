@@ -352,3 +352,22 @@ def test_service_search_query_log_disabled_skips_query_log(app, cfg):
     assert result["query_id"] is None
     assert inner.list_query_logs("acme", "nologconfig") == []
     assert not any(call[0] == "log_query" for call in store.calls)
+
+
+def test_shared_scope_search_does_not_log_into_the_shared_tenant(client, cfg):
+    cfg.set("common_enabled", True)
+    cfg.set("common_tenant", "global")
+    cfg.set("common_collection", "common")
+    client.post("/v1/collections/global/common")
+    client.post(
+        "/v1/collections/global/common/documents",
+        files={"file": ("a.txt", b"hello world", "text/plain")},
+        data={"docid": "DOC-1"},
+    )
+
+    assert client.post("/v1/search", json={"q": "secret one"}).status_code == 200
+    assert client.get("/v1/search", params={"q": "secret two"}).status_code == 200
+
+    logs = client.get("/v1/collections/global/common/queries")
+    assert logs.status_code == 200
+    assert logs.json()["count"] == 0

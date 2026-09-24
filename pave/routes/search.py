@@ -357,6 +357,10 @@ def build_search_router(
                     v=body.v,
                     request_id=rid,
                     actor=actor_of(ctx),
+                    # The query log lives in the searched collection; here that is
+                    # the shared tenant's, so logging would hand every caller's query
+                    # text to whoever holds that tenant's key.
+                    _log=False,
                 ),
                 request=request,
                 request_id=rid,
@@ -420,6 +424,10 @@ def build_search_router(
                     mode=mode,
                     request_id=rid,
                     actor=actor_of(ctx),
+                    # The query log lives in the searched collection; here that is
+                    # the shared tenant's, so logging would hand every caller's query
+                    # text to whoever holds that tenant's key.
+                    _log=False,
                 ),
                 request=request,
                 request_id=rid,
