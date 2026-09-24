@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from starlette.background import BackgroundTask
 
 from pave.auth import AuthContext, tenant_rate_limit
+from pave.config import get_logger
 from pave.log import ops_event
 from pave.schemas import (
     CollectionDetailResponse,
@@ -49,6 +50,8 @@ from pave.routes._deps import (
     reindex_response as _reindex_response,
 )
 from pave.stores.base import BaseStore
+
+log = get_logger()
 
 
 def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
@@ -400,11 +403,15 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
                 400, "collection_archive_invalid", str(exc),
                 request=request, request_id=rid,
             )
-        except Exception as exc:
+        except Exception:
             slot.release()
+            log.warning(
+                "collection archive dump failed tenant=%s coll=%s request_id=%s",
+                tenant, name, rid, exc_info=True,
+            )
             return error(
                 500, "collection_archive_dump_failed",
-                f"failed to dump collection archive: {exc}",
+                "failed to dump collection archive",
                 request=request, request_id=rid,
             )
 

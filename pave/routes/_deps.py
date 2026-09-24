@@ -8,9 +8,11 @@ import threading
 from fastapi import Request
 
 from pave.auth import ConcurrencySlot
-from pave.config import get_cfg
+from pave.config import get_cfg, get_logger
 from pave.service import ServiceError
 from pave.stores.base import BaseStore
+
+log = get_logger()
 
 
 def current_store(request: Request) -> BaseStore:
@@ -48,10 +50,13 @@ def archive_restore_error(exc: Exception, request: Request, rid, *, error):
             400, "collection_archive_invalid", str(exc),
             request=request, request_id=rid,
         )
+    log.warning(
+        "collection archive restore failed request_id=%s", rid, exc_info=exc
+    )
     return error(
         500,
         "collection_archive_restore_failed",
-        f"failed to restore collection archive: {exc}",
+        "failed to restore collection archive",
         request=request,
         request_id=rid,
     )

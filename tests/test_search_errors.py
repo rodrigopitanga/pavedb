@@ -15,7 +15,7 @@ def test_search_failure_returns_code(client, app, monkeypatch):
     client.post("/v1/collections/acme/failsearch")
 
     def boom(*args, **kwargs):
-        raise RuntimeError("boom")
+        raise OSError(36, "File name too long", "/srv/pavedb/data/t_acme/c_x")
 
     monkeypatch.setattr(app.state.store, "search", boom, raising=True)
     r = client.post(
@@ -26,6 +26,8 @@ def test_search_failure_returns_code(client, app, monkeypatch):
     data = r.json()
     assert data["ok"] is False
     assert data["code"] == "search_failed"
+    # Unclassified exception text stays in the server log (B59).
+    assert "/srv/pavedb" not in r.text
 
 
 def test_search_encode_failure_returns_503(client, app, monkeypatch):

@@ -96,6 +96,12 @@ def _normalize_search_mode(value: Any) -> SearchMode:
     return value
 
 
+# Client-facing text for failures whose exception text is not meant for the
+# caller: it can carry server paths or library internals. The full exception
+# stays in the server log.
+_INTERNAL_ERROR = "internal error; see the server log for this request"
+
+
 # Pure-ish service functions operating on a store adapter
 class ServiceError(RuntimeError):
     """Hard failure inside a service operation.
@@ -308,7 +314,7 @@ def create_collection(
         return {
             "ok": False,
             "code": "create_collection_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
             "error_type": "failed",
         }
 
@@ -378,7 +384,7 @@ def update_collection(
         return {
             "ok": False,
             "code": "update_collection_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
             "error_type": "failed",
         }
 
@@ -446,7 +452,7 @@ def start_collection_reindex(
         return {
             "ok": False,
             "code": "reindex_failed",
-            "error": str(exc),
+            "error": _INTERNAL_ERROR,
             "error_type": "failed",
         }
 
@@ -476,7 +482,7 @@ def _reindex_job_action(store, job_id: str, action: str) -> ServiceResult:
         return {
             "ok": False,
             "code": "reindex_failed",
-            "error": str(exc),
+            "error": _INTERNAL_ERROR,
             "error_type": "failed",
         }
 
@@ -593,7 +599,7 @@ def delete_collection(store, tenant: str, name: str) -> ServiceResult:
         return {
             "ok": False,
             "code": "delete_collection_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
         }
 
 def move_collection(store, tenant: str,
@@ -671,7 +677,7 @@ def move_collection(store, tenant: str,
         return {
             "ok": False,
             "code": "move_collection_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
             "error_type": "failed",
         }
 
@@ -704,7 +710,7 @@ def delete_document(store, tenant: str, collection: str, docid: str) -> ServiceR
         return {
             "ok": False,
             "code": "delete_document_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
         }
 
 
@@ -741,7 +747,7 @@ def get_document(
         return {
             "ok": False,
             "code": "get_document_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
             "error_type": "failed",
         }
 
@@ -770,7 +776,7 @@ def list_chunks(
         return {
             "ok": False,
             "code": "list_chunks_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
         }
 
 
@@ -802,7 +808,7 @@ def get_chunk(
         return {
             "ok": False,
             "code": "get_chunk_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
             "error_type": "failed",
         }
 
@@ -835,7 +841,7 @@ def get_chunk_content(
         return {
             "ok": False,
             "code": "get_chunk_content_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
             "error_type": "failed",
         }
 
@@ -862,7 +868,7 @@ def list_documents(
         return {
             "ok": False,
             "code": "list_documents_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
         }
 
 
@@ -1062,7 +1068,7 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             return {
                 "ok": False,
                 "code": "ingest_failed",
-                "error": str(e),
+                "error": _INTERNAL_ERROR,
             }
 
 
@@ -1185,7 +1191,7 @@ def ingest_text(
             return {
                 "ok": False,
                 "code": "ingest_failed",
-                "error": str(e),
+                "error": _INTERNAL_ERROR,
             }
 
 
@@ -1428,7 +1434,7 @@ def ingest_documents_batch(
                     "index": result_index,
                     "docid": items[result_index].get("docid"),
                     "code": "ingest_failed",
-                    "error": str(exc),
+                    "error": _INTERNAL_ERROR,
                 }
 
         for result_index, doc, index_result in zip(
@@ -1727,7 +1733,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
             exc,
             exc_info=True,
         )
-        raise ServiceError("search_failed", str(exc)) from exc
+        raise ServiceError("search_failed", _INTERNAL_ERROR) from exc
 
 
 def dump_archive(
@@ -1788,7 +1794,7 @@ def list_tenants(store) -> ServiceResult:
         return {
             "ok": False,
             "code": "list_tenants_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
         }
 
 
@@ -1825,7 +1831,7 @@ def list_embedders(*, tenant: str | None = None) -> ServiceResult:
         return {
             "ok": False,
             "code": "list_embedders_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
         }
 
 
@@ -1846,7 +1852,7 @@ def list_collections(store, tenant: str) -> ServiceResult:
         return {
             "ok": False,
             "code": "list_collections_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
         }
 
 
@@ -1890,10 +1896,11 @@ def get_query_log_entry_scoped(
             return _query_not_found(query_id)
         return {"ok": True, "query": entry}
     except Exception as e:
+        log.warning("get_query_log_entry_scoped failed: %s", e, exc_info=True)
         return {
             "ok": False,
             "code": "query_log_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
         }
 
 
@@ -1913,10 +1920,11 @@ def get_query_log_entry(
             query_id,
         )
     except Exception as e:
+        log.warning("get_query_log_entry failed: %s", e, exc_info=True)
         return {
             "ok": False,
             "code": "query_log_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
         }
 
 
@@ -1937,10 +1945,11 @@ def list_query_logs(
             "count": len(logs),
         }
     except Exception as e:
+        log.warning("list_query_logs failed: %s", e, exc_info=True)
         return {
             "ok": False,
             "code": "list_query_logs_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
         }
 
 
@@ -1966,10 +1975,11 @@ def list_query_homes(
             "count": len(logs),
         }
     except Exception as e:
+        log.warning("list_query_homes failed: %s", e, exc_info=True)
         return {
             "ok": False,
             "code": "list_query_homes_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
         }
 
 
@@ -2055,7 +2065,8 @@ def execute_replay(
     except ServiceError:
         raise
     except Exception as e:
-        raise ServiceError("replay_query_failed", str(e)) from e
+        log.warning("execute_replay failed: %s", e, exc_info=True)
+        raise ServiceError("replay_query_failed", _INTERNAL_ERROR) from e
 
 
 def replay_query_scoped(
@@ -2084,7 +2095,8 @@ def replay_query_scoped(
     except ServiceError:
         raise
     except Exception as e:
-        raise ServiceError("replay_query_failed", str(e)) from e
+        log.warning("replay_query_scoped failed: %s", e, exc_info=True)
+        raise ServiceError("replay_query_failed", _INTERNAL_ERROR) from e
 
 
 def replay_query(
@@ -2113,7 +2125,8 @@ def replay_query(
     except ServiceError:
         raise
     except Exception as e:
-        raise ServiceError("replay_query_failed", str(e)) from e
+        log.warning("replay_query failed: %s", e, exc_info=True)
+        raise ServiceError("replay_query_failed", _INTERNAL_ERROR) from e
 
 
 def get_collection_detail(
@@ -2141,6 +2154,6 @@ def get_collection_detail(
         return {
             "ok": False,
             "code": "get_collection_detail_failed",
-            "error": str(e),
+            "error": _INTERNAL_ERROR,
             "error_type": "failed",
         }

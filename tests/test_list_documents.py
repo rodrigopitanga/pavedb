@@ -66,3 +66,17 @@ def test_list_documents_nonexistent_collection_returns_empty(client):
     assert data["collection"] == "missing-docs"
     assert data["documents"] == []
     assert data["count"] == 0
+
+
+def test_list_documents_failure_hides_exception_text(client, app, monkeypatch):
+    client.post("/v1/collections/acme/listdocs-fail")
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("Legacy catalog.json detected in /srv/pavedb/data")
+
+    monkeypatch.setattr(app.state.store, "list_documents", boom)
+    r = client.get("/v1/collections/acme/listdocs-fail/documents")
+
+    assert r.status_code == 500
+    assert r.json()["code"] == "list_documents_failed"
+    assert "/srv/pavedb" not in r.text
