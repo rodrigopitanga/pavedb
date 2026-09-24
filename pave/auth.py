@@ -141,7 +141,8 @@ def actor_of(ctx: AuthContext) -> str:
         return "admin"
     if ctx.tenant:
         return f"tenant:{ctx.tenant}"
-    return "admin"
+    # Never credit an unidentified caller with admin in the audit trail.
+    return "unknown"
 
 def _raise_401():
     raise HTTPException(

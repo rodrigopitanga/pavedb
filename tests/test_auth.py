@@ -280,3 +280,12 @@ def test_padded_api_key_is_rejected():
     })
     with pytest.raises(RuntimeError, match="whitespace"):
         enforce_policy(cfg)
+
+
+@pytest.mark.parametrize("tenant", [None, ""])
+def test_actor_of_never_labels_an_unidentified_caller_admin(tenant):
+    from pave.auth import AuthContext, actor_of
+
+    assert actor_of(AuthContext(tenant=tenant, is_admin=False)) == "unknown"
+    assert actor_of(AuthContext(tenant=None, is_admin=True)) == "admin"
+    assert actor_of(AuthContext(tenant="acme", is_admin=False)) == "tenant:acme"
