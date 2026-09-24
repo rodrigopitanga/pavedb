@@ -123,17 +123,23 @@ def closing_keys(text: str) -> set[str]:
     return keys
 
 
-def subject_key(text: str) -> str:
-    """The primary issue key of a commit: a trailing ``(KEY)`` in the SUBJECT
+def subject_keys(text: str) -> set[str]:
+    """The issue keys a commit fixes: a trailing ``(KEY)`` in the SUBJECT
     line. That is the repo convention (``[fix] ... (R3-77)``); a key merely
     referenced mid-body does not count as "this commit fixes it", which avoids
     the over-close the ``Closes:`` gate was added to prevent without requiring a
     trailer nobody writes. (Leading ``KEY:`` is the issue-title format, not a
     commit format, so it is intentionally not matched here.)
+
+    One key per commit is the convention; a list (``(B41, B42)``) is accepted
+    so a commit that had to fix several still closes them all. ``(refs ...)``
+    only references, so it never matches.
     """
     subject = (text or "").splitlines()[0] if text else ""
-    trail = re.search(rf"\(({_KEY_BODY})\)\s*$", subject)
-    return trail.group(1) if trail else ""
+    trail = re.search(
+        rf"\(((?:{_KEY_BODY})(?:,\s*(?:{_KEY_BODY}))*)\)\s*$", subject
+    )
+    return set(re.split(r",\s*", trail.group(1))) if trail else set()
 
 
 def local_commit_texts() -> dict[str, str]:
@@ -263,6 +269,35 @@ def add_note(gl: GitLab, issue_iid: int, body: str, marker: str) -> None:
 def commit_url(sha: str) -> str:
     base = os.environ.get("CI_PROJECT_URL", "")
     return f"{base}/-/commit/{sha}" if base else sha
+
+
+def closed_by_marker(key: str) -> str:
+    return f"<!-- flowlexi-issue-sync: {key}:closed-by -->"
+
+
+def add_closed_by(gl: GitLab, issue_iid: int, key: str, sha: str) -> None:
+    """One ``Closed by:`` note per issue, so an issue maps back to its fix."""
+    add_note(
+        gl,
+        issue_iid,
+        f"Closed by: [`{sha[:8]}`]({commit_url(sha)})",
+        closed_by_marker(key),
+    )
+
+
+def has_closed_by(gl: GitLab, issue_iid: int, key: str) -> bool:
+    """A ``Closed by:`` note, or the reconcile ``Fixed on`` note that already
+    names the fixing commit."""
+    path = f"/projects/{gl.project_id}/issues/{issue_iid}/notes"
+    for note in gl.paged(path):
+        body = str(note.get("body") or "")
+        if (
+            closed_by_marker(key) in body
+            or body.startswith("Closed by:")
+            or body.startswith("Fixed on `")
+        ):
+            return True
+    return False
 
 
 def clean_cell(cell: str) -> str:
@@ -551,8 +586,7 @@ def main_subject_fixes(default_branch: str) -> dict[str, tuple[str, str]]:
         if "\x00" not in line:
             continue
         sha, subject = line.split("\x00", 1)
-        key = subject_key(subject)
-        if key:
+        for key in subject_keys(subject):
             fixes.setdefault(key, (sha, subject))  # newest wins
     return fixes
 
@@ -566,11 +600,32 @@ def reconcile(gl: GitLab, issues: dict[str, dict[str, object]], default_branch: 
     """
     fixes = main_subject_fixes(default_branch)
     closed: list[str] = []
+    unmapped: list[str] = []
     for key, issue in issues.items():
-        if issue.get("state") == "closed" or key not in fixes:
+        issue_iid = int(issue["iid"])
+        if issue.get("state") == "closed":
+            # Backfill: every closed issue names what closed it -- the fix
+            # commit when one is on the default branch, else the closer.
+            # ponytail: one note lookup per closed issue per scheduled run;
+            # cache "already has closed-by" if the issue count grows.
+            if has_closed_by(gl, issue_iid, key):
+                continue
+            if key in fixes:
+                add_closed_by(gl, issue_iid, key, fixes[key][0])
+                continue
+            closer = (issue.get("closed_by") or {}).get("username") or "unknown"
+            add_note(
+                gl,
+                issue_iid,
+                f"Closed by: @{closer}, with no fix commit on "
+                f"`{default_branch}` naming {key}.",
+                closed_by_marker(key),
+            )
+            unmapped.append(key)
+            continue
+        if key not in fixes:
             continue
         sha, subject = fixes[key]
-        issue_iid = int(issue["iid"])
         marker = f"<!-- flowlexi-issue-sync: {key}:reconcile:{sha} -->"
         body = (
             f"Fixed on `{default_branch}` by {sha[:12]} — {subject}.\n\n"
@@ -578,6 +633,7 @@ def reconcile(gl: GitLab, issues: dict[str, dict[str, object]], default_branch: 
             f"run did not process this commit."
         )
         add_note(gl, issue_iid, body, marker)
+        add_closed_by(gl, issue_iid, key, sha)
         gl.request(
             "PUT",
             f"/projects/{gl.project_id}/issues/{issue_iid}",
@@ -585,15 +641,22 @@ def reconcile(gl: GitLab, issues: dict[str, dict[str, object]], default_branch: 
         )
         closed.append(key)
     print("Reconcile closed: " + (", ".join(sorted(closed)) if closed else "nothing"))
+    if unmapped:
+        print(
+            "Closed without a fix commit on the default branch: "
+            + ", ".join(sorted(unmapped))
+        )
     return 0
 
 
 def selfcheck() -> int:
-    assert subject_key("[cli] Reject non-object --filters early (R3-26)") == "R3-26"
-    assert subject_key("mentions R2-68 midway, fixes (R3-77)") == "R3-77"
-    assert subject_key("R3-26: something") == ""  # leading form is issue-title, not commit
-    assert subject_key("[fix] no key here") == ""
-    assert subject_key("[fix] archive (B15)\n\nbody (R9-99)") == "B15"
+    assert subject_keys("[cli] Reject non-object --filters early (R3-26)") == {"R3-26"}
+    assert subject_keys("mentions R2-68 midway, fixes (R3-77)") == {"R3-77"}
+    assert subject_keys("R3-26: something") == set()  # issue-title form, not commit
+    assert subject_keys("[fix] no key here") == set()
+    assert subject_keys("[fix] archive (B15)\n\nbody (R9-99)") == {"B15"}
+    assert subject_keys("[fix] slots (B54, B55, B56)") == {"B54", "B55", "B56"}
+    assert subject_keys("[api] archive (refs P1-54, P1-55)") == set()
     assert closing_keys("subj\n\nbody\n\nCloses: B15") == {"B15"}
     assert closing_keys("subj\n\nno trailer") == set()
     print("selfcheck ok")
@@ -627,7 +690,7 @@ def sync(*, reconcile_requested: bool = False) -> int:
 
     for sha, text in commit_refs.items():
         closes = closing_keys(text)
-        subject = subject_key(text)
+        subject = subject_keys(text)
         for key in sorted(public_keys(text)):
             issue = issues.get(key)
             if not issue:
@@ -650,8 +713,9 @@ def sync(*, reconcile_requested: bool = False) -> int:
             # convention) or an explicit `Closes:` trailer does. Restores the
             # auto-close that the 2026-08-01 trailer-only gate silently broke,
             # without closing on incidental body mentions.
-            close_it = key == subject or key in closes
+            close_it = key in subject or key in closes
             if on_default and close_it and issue.get("state") != "closed":
+                add_closed_by(gl, issue_iid, key, sha)
                 gl.request(
                     "PUT",
                     f"/projects/{gl.project_id}/issues/{issue_iid}",
