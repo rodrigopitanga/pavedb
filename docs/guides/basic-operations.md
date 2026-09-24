@@ -66,7 +66,7 @@ Three ranking modes:
 - `vector` ranks by vector similarity alone.
 - `boost` adds a nudge inside the vector candidates for hits whose text
   contains the query's tokens: `search.boost_weight` times the fraction of
-  tokens matched, reported as `exact tokens m/n`.
+  tokens matched.
 - `hybrid` retrieves vector and full-text candidates independently and fuses
   their ranks with reciprocal-rank fusion.
 
@@ -76,6 +76,12 @@ A collection picks its default at creation (`create-collection
 `hybrid` need a text query; a raw query vector always ranks as `vector`. The
 operator decides which modes the instance serves (`search.modes`); asking for
 one it does not serve answers `400 search_mode_disabled`.
+
+Each hit's `match_reason` shows how its score was made, so the number is
+never opaque: `vector: cosine 0.834`, `boost: cosine 0.712 + 0.067 for exact
+tokens 2/3`, or `hybrid: vector rank 2 (cosine 0.812) + lexical rank 5, each
+1/(60+rank)`. Cosine scores compare across collections sharing a vector
+space; hybrid scores only rank hits within one response.
 
 ## Inspect and replay
 

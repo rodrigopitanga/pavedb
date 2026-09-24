@@ -159,15 +159,12 @@ def test_multilingual_cross_language(multilingual_store):
 
 
 def test_match_reason_semantic_only(store):
-    """Search without filters should show semantic similarity in match_reason."""
+    """A vector hit's reason is the cosine its score is."""
     s, tenant, coll = store
     res = s.search(tenant, coll, "foo bar", 5)
     assert len(res) > 0
     for r in res:
-        assert r.match_reason
-        assert "semantic similarity" in r.match_reason
-        # Should include percentage
-        assert "%" in r.match_reason
+        assert r.match_reason == f"vector: cosine {r.score:.3f}"
 
 
 def test_match_reason_with_filters(store):
@@ -177,8 +174,7 @@ def test_match_reason_with_filters(store):
     res = s.search(tenant, coll, "alpha", 5, filters=f)
     assert len(res) > 0
     r = res[0]
-    assert r.match_reason
-    assert "semantic similarity" in r.match_reason
+    assert r.match_reason.startswith(f"vector: cosine {r.score:.3f}; ")
     assert "filters:" in r.match_reason
     assert "name=foobar" in r.match_reason
 

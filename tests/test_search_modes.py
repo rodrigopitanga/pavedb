@@ -264,3 +264,29 @@ def test_http_mode_round_trip(client, cfg):
         "/v1/collections/acme/modes/search",
         json={"q": "quick fox", "mode": "vector"},
     ).json()["mode"] == "vector"
+
+
+def test_boost_reason_adds_up_to_the_score(temp_data_dir):
+    import re
+
+    store = _store(temp_data_dir, "reason", search_mode="boost")
+
+    for hit in store.search("acme", "reason", "quick fox", k=2):
+        found = re.match(
+            r"boost: cosine (-?[\d.]+) \+ ([\d.]+) for exact tokens (\d)/2$",
+            hit.match_reason,
+        )
+        assert found, hit.match_reason
+        cosine, added = float(found[1]), float(found[2])
+        assert cosine + added == pytest.approx(hit.score, abs=2e-3)
+        assert added == pytest.approx(0.1 * int(found[3]) / 2, abs=1e-3)
+
+
+def test_raw_vector_hits_explain_their_cosine(temp_data_dir):
+    store = _store(temp_data_dir, "byov-reason")
+    vector = [0.0] * store._collection_embedders[("acme", "byov-reason")].dim
+    vector[0] = 1.0
+
+    hit = store.search("acme", "byov-reason", "", k=1, query_vector=vector)[0]
+
+    assert hit.match_reason == f"vector: cosine {hit.score:.3f}"

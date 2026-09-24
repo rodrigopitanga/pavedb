@@ -79,8 +79,14 @@ class SearchResult(BaseModel):
         examples=[{"docid": "verne-20k", "page": 12, "offset": 21000}],
     )
     match_reason: str = Field(
-        description="Why this result matched.",
-        examples=["semantic"],
+        description=(
+            "How the score was made, prefixed by the mode that ranked the "
+            "hit. vector: the cosine. boost: cosine plus the boost for the "
+            "exact tokens matched. hybrid: the vector and lexical ranks, "
+            "each contributing 1/(60+rank). Matched metadata filters and "
+            "content filters follow after '; '."
+        ),
+        examples=["boost: cosine 0.712 + 0.067 for exact tokens 2/3"],
     )
 
 

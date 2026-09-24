@@ -88,9 +88,13 @@ def test_hybrid_search_fuses_independent_candidate_lists(
         "DOC::lexical",
     ]
     assert result[0].score == pytest.approx(2 / 62)
-    assert result[0].match_reason.startswith("vector rank 2; lexical rank 2")
-    assert result[1].match_reason.startswith("vector rank 1")
-    assert result[2].match_reason.startswith("lexical rank 1")
+    # The reason names every rank the fused score sums over.
+    assert result[0].match_reason.startswith("hybrid: vector rank 2 (cosine ")
+    assert "+ lexical rank 2, each 1/(60+rank)" in result[0].match_reason
+    assert result[1].match_reason.startswith("hybrid: vector rank 1 (cosine ")
+    assert result[2].match_reason.startswith(
+        "hybrid: lexical rank 1, each 1/(60+rank)"
+    )
     assert limits == {"vector": 3, "lexical": 50}
     assert result.timing["search_ms"] == pytest.approx(
         result.timing["vector_search_ms"]

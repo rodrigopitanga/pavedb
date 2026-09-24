@@ -3527,9 +3527,9 @@
             "type": "string"
           },
           "match_reason": {
-            "description": "Why this result matched.",
+            "description": "How the score was made, prefixed by the mode that ranked the hit. vector: the cosine. boost: cosine plus the boost for the exact tokens matched. hybrid: the vector and lexical ranks, each contributing 1/(60+rank). Matched metadata filters and content filters follow after '; '.",
             "examples": [
-              "semantic"
+              "boost: cosine 0.712 + 0.067 for exact tokens 2/3"
             ],
             "title": "Match Reason",
             "type": "string"

@@ -4253,6 +4253,7 @@ class LocalStore:
             exact_hits: dict[str, tuple[float, int]] = {}
             token_counts: dict[str, int] = {}
             hybrid_ranks: dict[str, tuple[int | None, int | None]] = {}
+            vector_cosines: dict[str, float] = {}
 
             filtered_search = getattr(backend, "search_filtered", None)
             # Exact-token boost is defined over the vector-first fetch window.
@@ -4279,6 +4280,7 @@ class LocalStore:
                     rid: (vector_rank, lexical_rank)
                     for rid, _score, vector_rank, lexical_rank in fused
                 }
+                vector_cosines = dict(vector)
                 candidate_rids = [
                     rid
                     for rid, _score, _vector_rank, _lexical_rank in fused
@@ -4498,21 +4500,20 @@ class LocalStore:
                     collection=collection,
                     meta=rid_meta,
                     match_reason=self._build_match_reason(
-                        # The boost is named on its own below; folding it
-                        # into the percentage would report a lexical nudge
-                        # as similarity, and can read past 100%.
-                        query, exact_hits.get(rid, (score, 0))[0], filters,
+                        mode,
+                        score,
+                        filters,
                         rid_meta,
                         content_filter=content_filter,
-                        # Boost reports its count on every hit, 0 included,
-                        # so the reason always names the mode that ranked it.
-                        exact_tokens=(
-                            (exact_hits.get(rid, (score, 0))[1],
-                             len(query_tokens))
-                            if mode == "boost" else None
+                        cosine=(
+                            vector_cosines.get(rid) if mode == "hybrid"
+                            else exact_hits.get(rid, (score, 0))[0]
                         ),
-                        vector_rank=hybrid_ranks.get(rid, (None, None))[0],
-                        lexical_rank=hybrid_ranks.get(rid, (None, None))[1],
+                        tokens=(
+                            exact_hits.get(rid, (score, 0))[1],
+                            len(query_tokens),
+                        ),
+                        ranks=hybrid_ranks.get(rid, (None, None)),
                     ),
                 ))
             hydrate_text_ms = _ms_since(t0)
@@ -4714,47 +4715,55 @@ class LocalStore:
         boosted.sort(key=lambda item: item[1], reverse=True)
         return boosted, hits
 
-    def _build_match_reason(self, query: str, score: float,
-                            filters: FilterSpec | None,
-                            meta: Metadata | None,
-                            *,
-                            content_filter: ContentFilterSpec | None = None,
-                            exact_tokens: tuple[int, int] | None = None,
-                            vector_rank: int | None = None,
-                            lexical_rank: int | None = None) -> str:
-        """Build a human-readable explanation of why a result matched.
+    @staticmethod
+    def _build_match_reason(
+        mode: SearchMode,
+        score: float,
+        filters: FilterSpec | None,
+        meta: Metadata | None,
+        *,
+        content_filter: ContentFilterSpec | None = None,
+        cosine: float | None = None,
+        tokens: tuple[int, int] = (0, 0),
+        ranks: tuple[int | None, int | None] = (None, None),
+    ) -> str:
+        """Explain a hit so its reported `score` can be rebuilt from it.
 
-        `score` is the similarity the index reported: callers pass the
-        pre-boost value so the reported percentage stays a similarity.
+        vector: the score is the cosine. boost: cosine plus the boost for the
+        exact tokens matched. hybrid: the sum of 1/(k+rank) over the vector
+        and lexical ranks the hit holds.
         """
-        parts = []
-
-        # Similarity component
-        if vector_rank is not None or lexical_rank is not None:
+        if mode == "hybrid":
+            vector_rank, lexical_rank = ranks
+            terms = []
             if vector_rank is not None:
-                parts.append(f"vector rank {vector_rank}")
+                terms.append(f"vector rank {vector_rank} (cosine {cosine:.3f})")
             if lexical_rank is not None:
-                parts.append(f"lexical rank {lexical_rank}")
-        elif query:
-            pct = int(score * 100)
-            parts.append(f"semantic similarity {pct}%")
-        if exact_tokens is not None:
-            parts.append(f"exact tokens {exact_tokens[0]}/{exact_tokens[1]}")
+                terms.append(f"lexical rank {lexical_rank}")
+            parts = [
+                f"hybrid: {' + '.join(terms)}, each 1/({_RRF_K}+rank)"
+            ]
+        elif mode == "boost":
+            matched, total = tokens
+            parts = [
+                f"boost: cosine {cosine:.3f} + {score - cosine:.3f} "
+                f"for exact tokens {matched}/{total}"
+            ]
+        else:
+            parts = [f"vector: cosine {score:.3f}"]
 
-        # Filter matches - show which filter conditions were satisfied
         if filters:
-            filter_parts = []
-            for key, vals in filters.items():
-                meta_val = lookup_meta(meta, key)
-                if meta_val is not None:
-                    # Show the actual value that matched
-                    filter_parts.append(f"{key}={meta_val}")
-            if filter_parts:
-                parts.append("filters: " + ", ".join(filter_parts))
+            # Show the values each metadata filter matched on.
+            matched_filters = [
+                f"{key}={value}"
+                for key in filters
+                if (value := lookup_meta(meta, key)) is not None
+            ]
+            if matched_filters:
+                parts.append("filters: " + ", ".join(matched_filters))
         if content_filter:
             parts.append(f"content {content_filter['op']} match")
-
-        return "; ".join(parts) if parts else "matched"
+        return "; ".join(parts)
 
     def _flush_caches(self) -> None:
         with self._state_lock.write_lock():
