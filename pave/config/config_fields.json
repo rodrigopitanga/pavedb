@@ -313,7 +313,7 @@
     {
       "key": "log.ops_log",
       "default": null,
-      "description": "Destination for structured operation logs: null/off, stdout, or a file path."
+      "description": "Destination for structured operation logs: null/off, stdout, or a file path. A new file is created mode 0640 (its directory 0750) because every line names a tenant and collection. PaveDB does not rotate it; rotate externally, e.g. logrotate with copytruncate."
     },
     {
       "key": "log.access_log",

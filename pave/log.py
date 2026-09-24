@@ -38,8 +38,15 @@ def configure(dest: str | None) -> None:
         return
     try:
         path = Path(target).expanduser()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        handle = path.open("a", encoding="utf-8", buffering=1)
+        path.parent.mkdir(mode=0o750, parents=True, exist_ok=True)
+        # The stream names every tenant and collection, so create it
+        # owner/group-only instead of trusting the ambient umask.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o640)
+        handle = os.fdopen(fd, "a", encoding="utf-8", buffering=1)
+        if os.fstat(fd).st_mode & 0o007:
+            LOG.warning(
+                "ops log %s is accessible to other users; chmod o-rwx it", path
+            )
     except OSError as exc:
         LOG.warning("ops log disabled: cannot open %s (%s)", target, exc)
         return

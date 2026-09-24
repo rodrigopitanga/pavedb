@@ -514,7 +514,9 @@ collection's vector-space identity.
 - Default: `null`
 - Env var: `PAVEDB_LOG__OPS_LOG`
 - Description: Destination for structured operation logs: null/off, stdout, or a file
-  path.
+  path. A new file is created mode 0640 (its directory 0750) because every line names a
+  tenant and collection. PaveDB does not rotate it; rotate externally, e.g. logrotate
+  with copytruncate.
 
 ### `log.access_log`
 

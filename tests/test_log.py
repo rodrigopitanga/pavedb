@@ -3,6 +3,7 @@
 
 import asyncio
 import json
+import os
 import pytest
 import pave.log as ops_log
 from pave.auth import AuthContext
@@ -171,3 +172,19 @@ def test_ops_event_infers_actor_from_ctx(capsys):
     assert data["actor"] == "tenant:acme"
     assert data["tenant"] == "acme"
     assert data["collection"] == "docs"
+
+
+def test_configure_file_creates_owner_group_only_file(tmp_path):
+    import stat
+
+    old = os.umask(0o022)
+    try:
+        target = tmp_path / "logs" / "ops.jsonl"
+        ops_log.configure(str(target))
+        ops_log.emit(op="search", tenant="t", collection="c")
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE(target.stat().st_mode) == 0o640
+    assert stat.S_IMODE(target.parent.stat().st_mode) == 0o750
+    line = target.read_text(encoding="utf-8").splitlines()[0]
+    assert json.loads(line)["op"] == "search"
