@@ -211,6 +211,31 @@ def _deep_merge(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
             out[k] = v
     return out
 
+def _merge_env(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
+    """Merge env overrides, whose names arrive lowercased, onto `a`.
+
+    Env paths are case-folded, so a segment matches an existing key
+    case-insensitively; otherwise `..._INSTANCES__MyModel__...` would add a
+    second `mymodel` entry instead of overriding the configured `MyModel`.
+    """
+    out = dict(a)
+    for k, v in (b or {}).items():
+        if k not in out:
+            k = next((key for key in out if str(key).lower() == k), k)
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _merge_env(out[k], v)
+        elif v is not None:
+            out[k] = v
+    return out
+
+def _revoked_api_keys(cfg: dict[str, Any]) -> list[str]:
+    """Tenants whose `auth.api_keys` entry is explicitly null."""
+    auth = cfg.get("auth")
+    keys = auth.get("api_keys") if isinstance(auth, dict) else None
+    if not isinstance(keys, dict):
+        return []
+    return [tenant for tenant, key in keys.items() if key is None]
+
 def _coerce(s: str) -> Any:
     if isinstance(s, str):
         low = s.lower()
@@ -402,7 +427,15 @@ class Config:
         # config.yml then overrides it, and env vars override both.
         merged = _deep_merge(base_cfg, sidecar_cfg)
         merged = _deep_merge(merged, file_cfg)
-        merged = _deep_merge(merged, env_cfg)
+        # A null `auth.api_keys.<tenant>` in config.yml revokes that tenant's
+        # key, including one that only the sidecar supplies; a plain merge
+        # would skip the null and leave the sidecar key live. Env still
+        # overrides the file, so it can set a new key for that tenant.
+        merged_keys = merged.get("auth", {}).get("api_keys")
+        if isinstance(merged_keys, dict):
+            for tenant in _revoked_api_keys(file_cfg):
+                merged_keys.pop(tenant, None)
+        merged = _merge_env(merged, env_cfg)
         for key in _PATH_KEYS:
             parts = key.split(".")
             cur: Any = merged

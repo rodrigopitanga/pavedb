@@ -63,7 +63,7 @@
     {
       "key": "auth.api_keys",
       "default": {},
-      "description": "Map of tenant name to bearer token when auth.mode is static. Tenant names must match ^[a-z0-9][a-z0-9-]{0,62}$ (lowercase ASCII, digits and hyphen) -- the same rule as collection names. Lowercase-only keeps a name from colliding with another under case folding or Unicode normalization on case-insensitive filesystems (APFS, NTFS, SMB), where two such tenants would otherwise share one data directory."
+      "description": "Map of tenant name to bearer token when auth.mode is static. Tenant names must match ^[a-z0-9][a-z0-9-]{0,62}$ (lowercase ASCII, digits and hyphen) -- the same rule as collection names. Lowercase-only keeps a name from colliding with another under case folding or Unicode normalization on case-insensitive filesystems (APFS, NTFS, SMB), where two such tenants would otherwise share one data directory. To revoke a tenant's key, delete its entry from the tenants file, set a new value, or set it to null in config.yml; null also removes a key that only the tenants file supplies. Environment override names are case-folded and match an existing config key case-insensitively."
     },
     {
       "key": "auth.tenants_file",

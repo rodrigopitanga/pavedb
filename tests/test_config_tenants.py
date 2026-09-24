@@ -258,3 +258,54 @@ def test_explicit_native_instance_keeps_native_defaults_with_custom(tmp_path):
         cfg.get("embedder.instances.native.model")
         == "sentence-transformers/custom"
     )
+
+
+def test_null_api_key_in_config_revokes_sidecar_key(monkeypatch, tmp_path):
+    sidecar = tmp_path / "tenants.yml"
+    _write(
+        sidecar,
+        "auth:\n"
+        "  api_keys:\n"
+        "    acme: sidecar-key\n"
+        "    beta: beta-key\n",
+    )
+    config_path = tmp_path / "config.yml"
+    _write(
+        config_path,
+        "auth:\n"
+        "  mode: static\n"
+        f"  tenants_file: {sidecar}\n"
+        "  api_keys:\n"
+        "    acme: null\n",
+    )
+
+    cfg = Config(path=config_path)
+
+    assert cfg.get("auth.api_keys") == {"beta": "beta-key"}
+
+    # Env still overrides the file: it can issue the tenant a new key.
+    monkeypatch.setenv("PAVEDB_AUTH__API_KEYS__ACME", "rotated-key")
+    cfg = Config(path=config_path)
+
+    assert cfg.get("auth.api_keys") == {"acme": "rotated-key", "beta": "beta-key"}
+
+
+def test_env_override_matches_config_key_case_insensitively(
+    monkeypatch, tmp_path
+):
+    config_path = tmp_path / "config.yml"
+    _write(
+        config_path,
+        "embedder:\n"
+        "  instances:\n"
+        "    MyModel:\n"
+        "      type: sbert\n"
+        "      embed_model: old\n",
+    )
+    monkeypatch.setenv("PAVEDB_EMBEDDER__INSTANCES__MyModel__EMBED_MODEL", "new")
+
+    cfg = Config(path=config_path)
+
+    instances = cfg.get("embedder.instances")
+    assert "mymodel" not in instances
+    assert instances["MyModel"]["embed_model"] == "new"
