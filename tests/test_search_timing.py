@@ -45,7 +45,7 @@ def test_search_response_timing_documented_in_openapi(app):
 
 def test_common_search_merge_sums_phase_timing():
     class TimingStore:
-        def search(self, tenant, collection, q, k=5, filters=None):
+        def search(self, tenant, collection, q, k=5, filters=None, mode=None):
             if (tenant, collection) == ("acme", "docs"):
                 return SearchOutput(
                     matches=[
@@ -112,7 +112,7 @@ def test_common_search_merge_sums_phase_timing():
 
 def test_search_log_omits_chunk_text(caplog):
     class TextStore:
-        def search(self, tenant, collection, q, k=5, filters=None):
+        def search(self, tenant, collection, q, k=5, filters=None, mode=None):
             return SearchOutput(
                 matches=[
                     SearchResult(

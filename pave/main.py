@@ -861,6 +861,9 @@ def build_app(cfg) -> FastAPI:
                     "dim_mismatch": 400,
                     "invalid_collection_name": 400,
                     "invalid_content_filter": 400,
+                    "invalid_search_mode": 400,
+                    "search_mode_requires_text": 400,
+                    "search_mode_disabled": 400,
                     "collection_limit_reached": 429,
                 }
                 return _error(

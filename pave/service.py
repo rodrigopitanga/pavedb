@@ -28,7 +28,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 import time as _time
-from pave.config import get_cfg, get_logger
+from pave.config import SEARCH_MODES, get_cfg, get_logger
 from pave.embedders import EmbedderUnavailableError
 from pave.metadb import (
     ChunkLimitError,
@@ -66,6 +66,7 @@ from pave.stores.base import (
     MetadataValidationError,
     QueryLogEntry,
     SearchMode,
+    SearchModeError,
 )
 
 log = get_logger()
@@ -87,11 +88,11 @@ def _normalize_content_filter(value: Any) -> ContentFilterSpec | None:
     return parsed.model_dump()
 
 
-def _normalize_search_mode(value: Any) -> SearchMode:
-    if value not in {"vector", "hybrid"}:
+def _normalize_search_mode(value: Any) -> SearchMode | None:
+    if value is not None and value not in SEARCH_MODES:
         raise ServiceError(
             "invalid_search_mode",
-            "search mode must be 'vector' or 'hybrid'",
+            "search mode must be 'vector', 'boost' or 'hybrid'",
         )
     return value
 
@@ -206,9 +207,11 @@ def create_collection(
     embedder_type: str | None = None,
     embed_model: str | None = None,
     embedder_config: EmbedderConfig | None = None,
+    search_mode: SearchMode | None = None,
 ) -> ServiceResult:
     try:
         resolved_name = _validate_collection_name(name)
+        search_mode = _normalize_search_mode(search_mode)
         resolved_display_name = _normalize_display_name(
             display_name,
             resolved_name,
@@ -221,6 +224,8 @@ def create_collection(
         }
         if embedder is not None:
             create_options["embedder"] = embedder
+        if search_mode is not None:
+            create_options["search_mode"] = search_mode
         created = store.create_collection(
             tenant,
             resolved_name,
@@ -233,6 +238,7 @@ def create_collection(
             returned_display = str(
                 created.get("display_name") or resolved_display_name
             )
+            returned_mode = created.get("search_mode") or "vector"
         else:
             # Stores that answer with something other than a CollectionInfo
             # still owe the caller the collection's vector-space identity, the
@@ -252,6 +258,7 @@ def create_collection(
             resolved_model = resolved["embed_model"]
             resolved_config = dict(resolved["embedder_config"])
             returned_display = resolved_display_name
+            returned_mode = search_mode or "vector"
         m_inc("collections_created_total", 1.0)
         return {
             "ok": True,
@@ -262,6 +269,18 @@ def create_collection(
             "embedder_type": resolved_type,
             "embed_model": resolved_model,
             "embedder_config": resolved_config,
+            "search_mode": returned_mode,
+        }
+    except SearchModeError as e:
+        log.info(
+            "create_collection rejected tenant=%s coll=%s: %s",
+            tenant, name, e,
+        )
+        return {
+            "ok": False,
+            "code": e.code,
+            "error": str(e),
+            "error_type": "invalid",
         }
     except ServiceError as e:
         log.info(
@@ -1502,7 +1521,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
            common_tenant: str | None = None,
            common_collection: str | None = None,
            *,
-           mode: SearchMode = "vector",
+           mode: SearchMode | None = None,
            request_id: str | None = None,
            actor: str,
            _log: bool = True,
@@ -1512,16 +1531,14 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
     try:
         content_filter = _normalize_content_filter(content_filter)
         mode = _normalize_search_mode(mode)
-        if mode == "hybrid" and q is None:
+        if mode not in (None, "vector") and q is None:
             raise ServiceError(
-                "invalid_search_mode",
-                "hybrid search requires a text query",
+                "search_mode_requires_text",
+                f"{mode} search requires a text query",
             )
-        search_kw: dict[str, Any] = {}
+        search_kw: dict[str, Any] = {"mode": mode}
         if content_filter:
             search_kw["content_filter"] = content_filter
-        if mode == "hybrid":
-            search_kw["mode"] = mode
         # Which instance embeds the query is the OPERATOR's decision:
         # the priority preference (compatibility-gated, falling back to
         # policy routing). Never caller-supplied. Applies to THIS
@@ -1593,13 +1610,15 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
                 **primary_kw,
             )
             try:
+                # One ranking per response: the shared corpus is ranked with
+                # the mode the caller's collection resolved to.
                 common = store.search(
                     effective_common_tenant,
                     effective_common_collection,
                     q,
                     max(10, k * 2),
                     filters=filters,
-                    **search_kw,
+                    **{**search_kw, "mode": local.mode},
                 )
             except ValueError:
                 # The shared corpus is an enrichment, not a requirement. Now
@@ -1624,6 +1643,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
             )
             from heapq import nlargest
             top = nlargest(k, matches, key=lambda x: x.score)
+            mode = local.mode
         elif q is None:
             # BYOV: q is None → pass the raw query vector, store skips embed.
             result = store.search(tenant, collection, "", k,
@@ -1632,6 +1652,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
                                   **search_kw)
             top = result.matches
             timing = result.timing
+            mode = result.mode
         else:
             result = store.search(
                 tenant,
@@ -1643,6 +1664,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
             )
             top = result.matches
             timing = result.timing
+            mode = result.mode
         m_inc("matches_total", float(len(top) or 0))
         labels = {"tenant": tenant, "collection": collection}
         if not top:
@@ -1699,6 +1721,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
         return {
             "ok": True,
             "matches": [r.to_dict() for r in top],
+            "mode": mode,
             "latency_ms": latency_ms,
             "timing": timing,
             "request_id": request_id,
@@ -1706,6 +1729,8 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
         }
     except ServiceError:
         raise
+    except SearchModeError as exc:
+        raise ServiceError(exc.code, str(exc)) from exc
     except CollectionLimitError as exc:
         # Binding the quota on the load path means a read can now hit it. It
         # is still a quota answer, not a server fault: 429, like every other
@@ -2065,6 +2090,7 @@ def execute_replay(
             "original_query_id": query_id,
             "replay_query_id": replay_qid,
             "matches": result["matches"],
+            "mode": result["mode"],
             "timing": result.get("timing"),
             "original_result_count": entry.get("result_count", 0),
             "original_latency_ms": entry.get("latency_ms"),

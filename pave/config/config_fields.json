@@ -216,14 +216,14 @@
       "description": "Per-search timeout in milliseconds; 0 disables the timeout."
     },
     {
-      "key": "search.exact_token_boost",
-      "default": false,
-      "description": "Re-rank candidates already inside the vector fetch window by exact query-token overlap with chunk text (P1-07). Off by default: it reads SQLite chunk text for every candidate in the fetch window (max(50, 5*k) chunks, and more when metadata or content filters make the window expand), not just the returned k, so enabling it trades extra per-search database I/O for better lexical precision."
+      "key": "search.modes",
+      "default": ["vector", "boost", "hybrid"],
+      "description": "Search modes this instance serves. vector ranks by vector similarity alone; boost adds an exact-token nudge inside the vector candidate window; hybrid fuses vector and full-text rankings. Must include vector. A collection's default mode and any requested mode must be listed here, or the search answers 400 search_mode_disabled."
     },
     {
-      "key": "search.exact_token_boost_weight",
+      "key": "search.boost_weight",
       "default": 0.1,
-      "description": "Maximum score added when search.exact_token_boost is enabled and every query token matches a chunk verbatim (casefolded); scaled by the fraction of query tokens matched. 0, a negative number, or a non-numeric value disables the boost even if search.exact_token_boost is true."
+      "description": "Largest score the boost mode adds, for a chunk matching every query token; a chunk matching m of n tokens gains weight * m / n. Must be greater than 0 and at most 1."
     },
     {
       "key": "preprocess.txt_chunk_size",

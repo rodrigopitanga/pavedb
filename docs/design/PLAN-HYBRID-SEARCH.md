@@ -168,9 +168,9 @@ and changing it is an operator action outside the corpus-drift story.
 
 A collection's settings live in its own `meta.db`, in a `settings` table
 (collection schema v9), so they travel with collection and instance archives
-with no new catalog column, sidecar field or manifest key. v9 seeds existing
-collections with `search_mode = vector` and rebuilds `query_log` so its mode
-check accepts `boost`.
+with no new catalog column, sidecar field or manifest key. A collection
+without the setting, as every pre-v9 one is, searches as `vector`. v9 also
+rebuilds `query_log` so its mode check accepts `boost`.
 
 ### Simplest-path review (ponytail)
 

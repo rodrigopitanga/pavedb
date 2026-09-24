@@ -223,6 +223,7 @@ def cmd_create(args):
         embedder_type=args.embedder_type,
         embed_model=args.embed_model,
         embedder_config=embedder_config,
+        search_mode=args.search_mode,
     )
 
 def cmd_ingest(args):
@@ -685,6 +686,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--embedder-config",
         help="JSON object with embedder-specific config",
     )
+    p_create.add_argument(
+        "--search-mode",
+        choices=("vector", "boost", "hybrid"),
+        help="Default ranking mode for searches that name none (vector)",
+    )
     p_create.set_defaults(func=cmd_create)
 
     p_ingest = _command(
@@ -768,9 +774,8 @@ def build_parser() -> argparse.ArgumentParser:
     p_search.add_argument("-k", type=int, default=5, help="Number of matches to return")
     p_search.add_argument(
         "--mode",
-        choices=("vector", "hybrid"),
-        default="vector",
-        help="Candidate generation mode",
+        choices=("vector", "boost", "hybrid"),
+        help="Ranking mode; defaults to the collection's search mode",
     )
     p_search.add_argument(
         "--include-common",

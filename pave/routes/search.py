@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import functools
 import json
-from typing import Literal
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 
@@ -17,8 +16,10 @@ from pave.auth import (
     tenant_rate_limit,
 )
 from pave.log import ops_event
+from pave.config import SEARCH_MODES
 from pave.schemas import (
     MAX_SEARCH_K,
+    mode_enum,
     GetQueryLogResponse,
     ListQueryLogsResponse,
     QueryReplayResponse,
@@ -262,7 +263,7 @@ def build_search_router(
         name: str,
         q: str = Query(...),
         k: int = Query(5, ge=1, le=MAX_SEARCH_K),
-        mode: Literal["vector", "hybrid"] = Query("vector"),
+        mode: str | None = Query(None, json_schema_extra=mode_enum),
         include_common: bool = Query(
             False,
             description=(
@@ -337,6 +338,16 @@ def build_search_router(
                 request=request,
                 request_id=rid,
             )
+        if body.mode not in (None, *SEARCH_MODES):
+            # Checked before the disabled-scope shortcut: a bad mode is
+            # refused whether or not the shared scope is on.
+            return error(
+                400,
+                "invalid_search_mode",
+                "search mode must be 'vector', 'boost' or 'hybrid'",
+                request=request,
+                request_id=rid,
+            )
         if not cfg.common_enabled:
             return trace(
                 {
@@ -404,11 +415,21 @@ def build_search_router(
         response: Response,
         q: str = Query(...),
         k: int = Query(5, ge=1, le=MAX_SEARCH_K),
-        mode: Literal["vector", "hybrid"] = Query("vector"),
+        mode: str | None = Query(None, json_schema_extra=mode_enum),
         rid: str | None = Depends(get_rid),
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
+        if mode not in (None, *SEARCH_MODES):
+            # Checked before the disabled-scope shortcut: a bad mode is
+            # refused whether or not the shared scope is on.
+            return error(
+                400,
+                "invalid_search_mode",
+                "search mode must be 'vector', 'boost' or 'hybrid'",
+                request=request,
+                request_id=rid,
+            )
         if not cfg.common_enabled:
             return trace(
                 {

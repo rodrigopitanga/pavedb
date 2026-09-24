@@ -370,7 +370,7 @@ class LocalClient(BaseClient):
         *,
         filters: FilterSpec | None = None,
         content_filter: ContentFilterSpec | None = None,
-        mode: SearchMode = "vector",
+        mode: SearchMode | None = None,
         include_common: bool | None = None,
         vector: list[float] | None = None,
     ) -> list[dict]:

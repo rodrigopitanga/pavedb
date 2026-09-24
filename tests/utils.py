@@ -109,6 +109,7 @@ class DummyStore:
         embed_model: str | None = None,
         embedder_config: dict[str, Any] | None = None,
         display_name: str | None = None,
+        search_mode: str | None = None,
     ) -> dict[str, Any]:
         self._load_or_init(tenant, name)
         self._save(tenant, name)
@@ -119,6 +120,7 @@ class DummyStore:
             embedder_config=embedder_config,
         )
         cfg["display_name"] = display_name
+        cfg["search_mode"] = search_mode or "vector"
         self._collection_configs[(tenant, name)] = cfg
         return cfg
 
@@ -361,11 +363,11 @@ class DummyStore:
     def search(self, tenant: str, collection: str, text: str, k: int = 5,
                filters: dict[str, Any] | None = None,
                *, content_filter: dict[str, str] | None = None,
-               mode: str = "vector",
+               mode: str | None = None,
                query_vector=None) -> SearchOutput:
         cat = os.path.join(self._dir(tenant, collection), "catalog.json")
         if not os.path.isfile(cat):
-            return SearchOutput(matches=[])
+            return SearchOutput(matches=[], mode=mode or "vector")
         data = json.load(open(cat, "r", encoding="utf-8"))
         hits: list[SearchResult] = []
         for docid, ids in data.items():
@@ -374,7 +376,7 @@ class DummyStore:
                     id=cid, score=1.0, text=None, tenant=tenant,
                     collection=collection, meta={"docid": docid},
                     match_reason="matched"))
-        return SearchOutput(matches=hits)
+        return SearchOutput(matches=hits, mode=mode or "vector")
 
     def log_query(
         self,
@@ -559,6 +561,7 @@ class SpyStore:
         embed_model: str | None = None,
         embedder_config: dict[str, Any] | None = None,
         display_name: str | None = None,
+        search_mode: str | None = None,
     ) -> dict[str, Any] | None:
         self.calls.append(("create_collection", tenant, name))
         return self.impl.create_collection(
@@ -569,6 +572,7 @@ class SpyStore:
             embed_model=embed_model,
             embedder_config=embedder_config,
             display_name=display_name,
+            search_mode=search_mode,
         )
 
     def delete_collection(self, tenant: str, collection: str) -> None:
@@ -746,13 +750,13 @@ class SpyStore:
     def search(self, tenant: str, collection: str, text: str, k: int = 5,
                filters: dict[str, Any] | None = None,
                *, content_filter: dict[str, str] | None = None,
-               mode: str = "vector",
+               mode: str | None = None,
                query_vector=None) -> SearchOutput:
         self.calls.append(("search", tenant, collection, text, k, filters))
         extra = {"query_vector": query_vector} if query_vector is not None else {}
         if content_filter is not None:
             extra["content_filter"] = content_filter
-        if mode != "vector":
+        if mode is not None:
             extra["mode"] = mode
         return self.impl.search(tenant, collection, text, k, filters, **extra)
 

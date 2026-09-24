@@ -138,8 +138,8 @@ def test_hybrid_search_rejects_raw_vector(client):
         json={"v": [1.0, 0.0, 0.0, 0.0], "mode": "hybrid"},
     )
 
-    assert response.status_code == 422
-    assert "requires a text query" in response.text
+    assert response.status_code == 400
+    assert response.json()["code"] == "search_mode_requires_text"
 
 
 def test_collection_schema_migrates_logged_search_mode(monkeypatch, tmp_path):

@@ -142,6 +142,7 @@ pavecli create-collection [-h] [--display-name DISPLAY_NAME]
                                  [--embedder-type EMBEDDER_TYPE]
                                  [--embed-model EMBED_MODEL]
                                  [--embedder-config EMBEDDER_CONFIG]
+                                 [--search-mode {vector,boost,hybrid}]
                                  tenant/collection
 ```
 
@@ -162,6 +163,8 @@ pavecli create-collection demo/books --display-name "Books"
 - `--embedder-type` (optional): Embedder type, such as sbert, openai, or ollama
 - `--embed-model` (optional): Embedding model name
 - `--embedder-config` (optional): JSON object with embedder-specific config
+- `--search-mode` (optional): Default ranking mode for searches that name none (vector)
+  (choices: vector, boost, hybrid)
 
 ## `ingest`
 
@@ -248,8 +251,9 @@ Run ranked search over a collection and print the response envelope.
 ### Usage
 
 ```bash
-pavecli search [-h] [-k K] [--mode {vector,hybrid}] [--include-common]
-                      [--filters FILTERS] [--content-filter CONTENT_FILTER]
+pavecli search [-h] [-k K] [--mode {vector,boost,hybrid}]
+                      [--include-common] [--filters FILTERS]
+                      [--content-filter CONTENT_FILTER]
                       tenant/collection query
 ```
 
@@ -264,8 +268,8 @@ pavecli search demo/books "captain nemo" -k 3
 - `tenant/collection` (required): Tenant and collection, e.g. demo/books
 - `query` (required): Natural-language search query
 - `-k` (optional): Number of matches to return (default: 5)
-- `--mode` (optional): Candidate generation mode (choices: vector, hybrid; default:
-  vector)
+- `--mode` (optional): Ranking mode; defaults to the collection's search mode (choices:
+  vector, boost, hybrid)
 - `--include-common` (optional): Include configured common collection results
 - `--filters` (optional): JSON object, e.g. {"docid":"DOC-1"}
 - `--content-filter` (optional): JSON object with op exact, phrase, prefix, or contains

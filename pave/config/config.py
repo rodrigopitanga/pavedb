@@ -359,7 +359,36 @@ def _base_defaults_for(
     return base
 
 
+SEARCH_MODES = ("vector", "boost", "hybrid")
+
+
+def _validate_search(cfg: dict[str, Any]) -> None:
+    search = cfg.get("search")
+    if not isinstance(search, dict):
+        return
+    modes = search.get("modes")
+    if (
+        not isinstance(modes, list)
+        or not set(modes) <= set(SEARCH_MODES)
+        or "vector" not in modes
+    ):
+        raise ValueError(
+            "search.modes must list modes from vector, boost, hybrid and "
+            f"include vector; got {modes!r}"
+        )
+    weight = search.get("boost_weight")
+    if (
+        isinstance(weight, bool)
+        or not isinstance(weight, (int, float))
+        or not 0 < weight <= 1
+    ):
+        raise ValueError(
+            f"search.boost_weight must be > 0 and <= 1; got {weight!r}"
+        )
+
+
 def _validate_config(cfg: dict[str, Any]) -> None:
+    _validate_search(cfg)
     preprocess = cfg.get("preprocess")
     if not isinstance(preprocess, dict):
         return

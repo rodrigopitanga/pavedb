@@ -83,7 +83,7 @@ class RateLimitDecision:
 
 _COLLECTION_BASELINE_SCHEMA_VERSION = 6
 _CATALOG_BASELINE_SCHEMA_VERSION = 5
-_COLLECTION_SCHEMA_VERSION = 8
+_COLLECTION_SCHEMA_VERSION = 9
 _CATALOG_SCHEMA_VERSION = 8
 # Public alias: the collection schema version a freshly created collection is
 # tagged with (P2-25); callers outside this module use this, not the
@@ -154,6 +154,69 @@ _COLLECTION_MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE query_log ADD COLUMN mode TEXT NOT NULL DEFAULT 'vector' "
         "CHECK (mode IN ('vector', 'hybrid'))",
     ],
+    9: [
+        # Per-collection settings chosen at creation (P1-77, P1-78). They
+        # live here rather than in the catalog so both archive kinds carry
+        # them with the collection.
+        """
+        CREATE TABLE settings (
+            key        TEXT PRIMARY KEY,
+            value_json TEXT NOT NULL
+        )
+        """,
+        # SQLite cannot widen a CHECK in place: rebuild query_log so the
+        # logged mode may be 'boost'.
+        """
+        CREATE TABLE query_log_v9 (
+            query_id             TEXT PRIMARY KEY,
+            tenant               TEXT NOT NULL,
+            collection           TEXT NOT NULL,
+            actor                TEXT NOT NULL,
+            query_text           TEXT NOT NULL,
+            k                    INTEGER NOT NULL,
+            filters_json         TEXT,
+            include_common       INTEGER NOT NULL DEFAULT 0,
+            common_tenant        TEXT,
+            common_collection    TEXT,
+            result_ids_json      TEXT,
+            result_count         INTEGER NOT NULL DEFAULT 0,
+            latency_ms           REAL,
+            timing_json          TEXT,
+            request_id           TEXT,
+            replay_of            TEXT,
+            executed_at          TEXT NOT NULL DEFAULT (
+                strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+            ),
+            content_filter_json  TEXT,
+            mode                 TEXT NOT NULL DEFAULT 'vector'
+                CHECK (mode IN ('vector', 'boost', 'hybrid'))
+        )
+        """,
+        """
+        INSERT INTO query_log_v9 (
+            query_id, tenant, collection, actor, query_text, k, filters_json,
+            include_common, common_tenant, common_collection, result_ids_json,
+            result_count, latency_ms, timing_json, request_id, replay_of,
+            executed_at, content_filter_json, mode
+        )
+        SELECT
+            query_id, tenant, collection, actor, query_text, k, filters_json,
+            include_common, common_tenant, common_collection, result_ids_json,
+            result_count, latency_ms, timing_json, request_id, replay_of,
+            executed_at, content_filter_json, mode
+        FROM query_log
+        """,
+        "DROP TABLE query_log",
+        "ALTER TABLE query_log_v9 RENAME TO query_log",
+        """
+        CREATE INDEX IF NOT EXISTS idx_query_log_executed_at
+            ON query_log (executed_at DESC)
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_query_log_replay_of
+            ON query_log (replay_of)
+        """,
+    ],
 }
 _CATALOG_MIGRATIONS: dict[int, list[str]] = {
     6: [
@@ -215,6 +278,18 @@ _CATALOG_MIGRATIONS: dict[int, list[str]] = {
         "ALTER TABLE collections ADD COLUMN collection_schema_version INTEGER",
     ],
 }
+def fts_query_tokens(query: str) -> list[str]:
+    """Split a query into the tokens lexical search and the boost match.
+
+    `\\w+` runs, deduplicated case-insensitively in order; FTS5 decides
+    what each token matches.
+    """
+    tokens: dict[str, str] = {}
+    for match in re.finditer(r"\w+", query or "", flags=re.UNICODE):
+        tokens.setdefault(match.group(0).casefold(), match.group(0))
+    return list(tokens.values())
+
+
 COLLECTION_CONFIG_FILENAME = "collection.json"
 COLLECTION_CONFIG_FIELDS = (
     "backend_type",
@@ -617,6 +692,22 @@ class CollectionDB:
             wconn.close()
         if log_conn is not None:
             log_conn.close()
+
+    def get_setting(self, key: str) -> Any:
+        """Return a collection setting, or None when it is not set."""
+        with self._reader() as conn:
+            row = conn.execute(
+                "SELECT value_json FROM settings WHERE key=?", (key,)
+            ).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def set_setting(self, key: str, value: Any) -> None:
+        with self._writer() as conn, conn:
+            conn.execute(
+                "INSERT INTO settings (key, value_json) VALUES (?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json",
+                (key, json.dumps(value, sort_keys=True)),
+            )
 
     def checkpoint_wal(self) -> None:
         """Make the collection database self-contained for an archive dump."""
@@ -1312,16 +1403,38 @@ class CollectionDB:
                 matches.update(str(row[0]) for row in rows)
         return matches
 
+    def token_match_counts(
+        self,
+        tokens: list[str],
+        rids: list[str],
+    ) -> dict[str, int]:
+        """Count, per rid, how many of `tokens` FTS5 matches in its text."""
+        counts: dict[str, int] = {}
+        if not tokens or not rids:
+            return counts
+        with self._reader() as conn:
+            for token in tokens:
+                for i in range(0, len(rids), 999):
+                    batch = rids[i : i + 999]
+                    placeholders = ",".join(["?"] * len(batch))
+                    rows = conn.execute(
+                        "SELECT c.rid FROM chunk_text_fts "
+                        "JOIN chunks AS c ON c.rowid=chunk_text_fts.rowid "
+                        "WHERE chunk_text_fts MATCH ? "
+                        f"AND c.rid IN ({placeholders})",
+                        [self._fts5_quote(token), *batch],
+                    ).fetchall()
+                    for (rid,) in rows:
+                        counts[str(rid)] = counts.get(str(rid), 0) + 1
+        return counts
+
     def lexical_candidates(
         self,
         query: str,
         limit: int,
     ) -> list[tuple[str, float]]:
         """Return independent FTS5/BM25 candidates for future hybrid search."""
-        tokens = [
-            match.group(0)
-            for match in re.finditer(r"\w+", query, flags=re.UNICODE)
-        ]
+        tokens = fts_query_tokens(query)
         if not tokens or limit <= 0:
             return []
         fts_query = " OR ".join(self._fts5_quote(token) for token in tokens)

@@ -61,11 +61,21 @@ Content filters are additive to semantic search and metadata filters. `exact`,
 `phrase`, and token `prefix` use SQLite text indexes; `contains` uses the
 trigram index and requires at least three characters.
 
-Vector search is the default. `--mode hybrid` independently retrieves vector
-and SQLite FTS5 candidates, then combines their ranks with reciprocal-rank
-fusion. Hybrid mode requires a text query; raw query vectors remain vector-only.
-For vector mode, `search.exact_token_boost` nudges hits whose text contains the
-query's exact tokens within the candidate window — a lighter lever than hybrid.
+Three ranking modes:
+
+- `vector` ranks by vector similarity alone.
+- `boost` adds a nudge inside the vector candidates for hits whose text
+  contains the query's tokens: `search.boost_weight` times the fraction of
+  tokens matched, reported as `exact tokens m/n`.
+- `hybrid` retrieves vector and full-text candidates independently and fuses
+  their ranks with reciprocal-rank fusion.
+
+A collection picks its default at creation (`create-collection
+--search-mode boost`; `vector` if omitted), and a search that names no
+`--mode` uses it. The response's `mode` says which one ran. `boost` and
+`hybrid` need a text query; a raw query vector always ranks as `vector`. The
+operator decides which modes the instance serves (`search.modes`); asking for
+one it does not serve answers `400 search_mode_disabled`.
 
 ## Inspect and replay
 

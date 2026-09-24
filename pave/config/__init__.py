@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from .config import (
     CONFIG_FIELDS,
+    SEARCH_MODES,
     Config,
     ConfigField,
     cfg_bool,
@@ -27,6 +28,7 @@ __all__ = [
     "Config",
     "ConfigField",
     "LOG",
+    "SEARCH_MODES",
     "cfg_bool",
     "get_cfg",
     "get_logger",

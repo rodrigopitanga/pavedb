@@ -366,24 +366,23 @@ collection's vector-space identity.
 - Env var: `PAVEDB_SEARCH__TIMEOUT_MS`
 - Description: Per-search timeout in milliseconds; 0 disables the timeout.
 
-### `search.exact_token_boost`
+### `search.modes`
 
-- Default: `false`
-- Env var: `PAVEDB_SEARCH__EXACT_TOKEN_BOOST`
-- Description: Re-rank candidates already inside the vector fetch window by exact query-
-  token overlap with chunk text (P1-07). Off by default: it reads SQLite chunk text for
-  every candidate in the fetch window (max(50, 5*k) chunks, and more when metadata or
-  content filters make the window expand), not just the returned k, so enabling it
-  trades extra per-search database I/O for better lexical precision.
+- Default: `['vector', 'boost', 'hybrid']`
+- Env var: `PAVEDB_SEARCH__MODES`
+- Description: Search modes this instance serves. vector ranks by vector similarity
+  alone; boost adds an exact-token nudge inside the vector candidate window; hybrid
+  fuses vector and full-text rankings. Must include vector. A collection's default mode
+  and any requested mode must be listed here, or the search answers 400
+  search_mode_disabled.
 
-### `search.exact_token_boost_weight`
+### `search.boost_weight`
 
 - Default: `0.1`
-- Env var: `PAVEDB_SEARCH__EXACT_TOKEN_BOOST_WEIGHT`
-- Description: Maximum score added when search.exact_token_boost is enabled and every
-  query token matches a chunk verbatim (casefolded); scaled by the fraction of query
-  tokens matched. 0, a negative number, or a non-numeric value disables the boost even
-  if search.exact_token_boost is true.
+- Env var: `PAVEDB_SEARCH__BOOST_WEIGHT`
+- Description: Largest score the boost mode adds, for a chunk matching every query
+  token; a chunk matching m of n tokens gains weight * m / n. Must be greater than 0 and
+  at most 1.
 
 ## Text Preprocessing
 

@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 Metadata = dict[str, Any]
 FilterSpec = dict[str, Any]
 ContentFilterSpec = dict[str, str]
-SearchMode = Literal["vector", "hybrid"]
+SearchMode = Literal["vector", "boost", "hybrid"]
 CollectionInfo = dict[str, Any]
 DocumentInfo = dict[str, Any]
 ChunkInfo = dict[str, Any]
@@ -31,6 +31,15 @@ QueryLogEntry = dict[str, Any]
 QueryHomeEntry = dict[str, Any]
 ReindexJobInfo = dict[str, Any]
 Record = tuple[str, str, Metadata]  # (rid, text, meta)
+
+
+class SearchModeError(ValueError):
+    """A search mode the instance does not serve, or that the query cannot
+    use. `code` is the client-facing error code."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
 
 
 class MetadataValidationError(ValueError):
@@ -57,6 +66,9 @@ class SearchOutput:
     """Store-layer search output with matches and optional timing detail."""
     matches: list[SearchResult]
     timing: dict[str, float] = field(default_factory=dict)
+    # The mode that ranked these matches: the request's, or the collection's
+    # default when the request named none.
+    mode: SearchMode = "vector"
 
     def __iter__(self):
         return iter(self.matches)
@@ -102,6 +114,7 @@ class BaseStore(Protocol):
         embed_model: str | None = None,
         embedder_config: EmbedderConfig | None = None,
         display_name: str | None = None,
+        search_mode: SearchMode | None = None,
     ) -> CollectionInfo | None: ...
 
     def delete_collection(self, tenant: str, collection: str) -> None: ...
@@ -204,7 +217,7 @@ class BaseStore(Protocol):
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: FilterSpec | None = None,
                *, content_filter: ContentFilterSpec | None = None,
-               mode: SearchMode = "vector",
+               mode: SearchMode | None = None,
                query_vector: list[float] | None = None) -> SearchOutput:
         """Search for similar documents."""
         ...

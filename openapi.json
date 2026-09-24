@@ -597,6 +597,20 @@
             ],
             "title": "Schema Version"
           },
+          "search_mode": {
+            "default": "vector",
+            "description": "Default ranking mode for searches that name none.",
+            "enum": [
+              "vector",
+              "boost",
+              "hybrid"
+            ],
+            "examples": [
+              "vector"
+            ],
+            "title": "Search Mode",
+            "type": "string"
+          },
           "tenant": {
             "description": "Tenant that owns the collection.",
             "examples": [
@@ -807,6 +821,26 @@
               "sbert"
             ],
             "title": "Embedder Type"
+          },
+          "search_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "vector",
+                  "boost",
+                  "hybrid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Default ranking mode for searches that name none; fixed at creation. Must be a mode the instance serves. Defaults to vector.",
+            "examples": [
+              "boost"
+            ],
+            "title": "Search Mode"
           }
         },
         "title": "CreateCollectionOptionsBody",
@@ -903,6 +937,20 @@
               "req-5f3a-b812"
             ],
             "title": "Request Id"
+          },
+          "search_mode": {
+            "default": "vector",
+            "description": "Default ranking mode for searches that name none.",
+            "enum": [
+              "vector",
+              "boost",
+              "hybrid"
+            ],
+            "examples": [
+              "vector"
+            ],
+            "title": "Search Mode",
+            "type": "string"
           },
           "tenant": {
             "description": "Tenant that owns the collection.",
@@ -2428,9 +2476,10 @@
           },
           "mode": {
             "default": "vector",
-            "description": "Candidate generation mode used by the search.",
+            "description": "Ranking mode the search ran with.",
             "enum": [
               "vector",
+              "boost",
               "hybrid"
             ],
             "examples": [
@@ -2674,6 +2723,26 @@
             },
             "title": "Matches",
             "type": "array"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "vector",
+                  "boost",
+                  "hybrid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mode the replay ran with: the one the original logged.",
+            "examples": [
+              "vector"
+            ],
+            "title": "Mode"
           },
           "ok": {
             "const": true,
@@ -3274,17 +3343,24 @@
             "type": "integer"
           },
           "mode": {
-            "default": "vector",
-            "description": "Candidate generation mode. Hybrid fuses independent vector and lexical rankings and requires a text query.",
-            "enum": [
-              "vector",
-              "hybrid"
+            "anyOf": [
+              {
+                "enum": [
+                  "vector",
+                  "boost",
+                  "hybrid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
+            "description": "Ranking mode; omit for the collection's default. vector ranks by similarity; boost adds an exact-token nudge within the vector candidates; hybrid fuses vector and full-text rankings. boost and hybrid require a text query.",
             "examples": [
               "hybrid"
             ],
-            "title": "Mode",
-            "type": "string"
+            "title": "Mode"
           },
           "q": {
             "anyOf": [
@@ -3352,6 +3428,26 @@
             },
             "title": "Matches",
             "type": "array"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "vector",
+                  "boost",
+                  "hybrid"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Mode that ranked the matches: the requested one, or the collection's default. Scores are cosine similarity for vector and boost, reciprocal-rank fusion scores for hybrid.",
+            "examples": [
+              "vector"
+            ],
+            "title": "Mode"
           },
           "ok": {
             "const": true,
@@ -7917,13 +8013,20 @@
             "name": "mode",
             "required": false,
             "schema": {
-              "default": "vector",
-              "enum": [
-                "vector",
-                "hybrid"
+              "anyOf": [
+                {
+                  "enum": [
+                    "vector",
+                    "boost",
+                    "hybrid"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
               ],
-              "title": "Mode",
-              "type": "string"
+              "title": "Mode"
             }
           },
           {
@@ -8256,13 +8359,20 @@
             "name": "mode",
             "required": false,
             "schema": {
-              "default": "vector",
-              "enum": [
-                "vector",
-                "hybrid"
+              "anyOf": [
+                {
+                  "enum": [
+                    "vector",
+                    "boost",
+                    "hybrid"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
               ],
-              "title": "Mode",
-              "type": "string"
+              "title": "Mode"
             }
           }
         ],

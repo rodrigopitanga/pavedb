@@ -114,10 +114,33 @@ class SearchTiming(BaseModel):
     )
 
 
+SearchModeName = Literal["vector", "boost", "hybrid"]
+
+
+def mode_enum(schema: dict[str, Any]) -> None:
+    """Document the modes on a request field typed as a plain string.
+
+    The service checks the value, so an unknown mode answers
+    invalid_search_mode rather than a generic validation error.
+    """
+    for branch in schema.get("anyOf", [schema]):
+        if branch.get("type") == "string":
+            branch["enum"] = ["vector", "boost", "hybrid"]
+
+
 class SearchResponse(OkResponse):
     """Search results with optional timing."""
     matches: list[SearchResult] = Field(
         description="Ranked list of hits, best first.",
+    )
+    mode: SearchModeName | None = Field(
+        default=None,
+        description=(
+            "Mode that ranked the matches: the requested one, or the "
+            "collection's default. Scores are cosine similarity for vector "
+            "and boost, reciprocal-rank fusion scores for hybrid."
+        ),
+        examples=["vector"],
     )
     timing: SearchTiming | None = Field(
         default=None,
@@ -185,11 +208,14 @@ class SearchBody(BaseModel):
         ),
         examples=[{"op": "phrase", "value": "captain nemo"}],
     )
-    mode: Literal["vector", "hybrid"] = Field(
-        default="vector",
+    mode: str | None = Field(
+        default=None,
+        json_schema_extra=mode_enum,
         description=(
-            "Candidate generation mode. Hybrid fuses independent vector and "
-            "lexical rankings and requires a text query."
+            "Ranking mode; omit for the collection's default. vector ranks by "
+            "similarity; boost adds an exact-token nudge within the vector "
+            "candidates; hybrid fuses vector and full-text rankings. boost "
+            "and hybrid require a text query."
         ),
         examples=["hybrid"],
     )
@@ -218,8 +244,6 @@ class SearchBody(BaseModel):
             raise ValueError(
                 "Provide exactly one of 'q' (text query) or 'v' (vector query)."
             )
-        if self.mode == "hybrid" and self.q is None:
-            raise ValueError("Hybrid search requires a text query in 'q'.")
         return self
 
 
@@ -244,9 +268,9 @@ class QueryLogEntry(BaseModel):
         description="Chunk-text predicate applied to the search.",
         examples=[{"op": "prefix", "value": "captain ne"}],
     )
-    mode: Literal["vector", "hybrid"] = Field(
+    mode: SearchModeName = Field(
         default="vector",
-        description="Candidate generation mode used by the search.",
+        description="Ranking mode the search ran with.",
         examples=["hybrid"],
     )
     include_common: bool = Field(
@@ -357,6 +381,11 @@ class QueryReplayResponse(OkResponse):
         examples=["q-9f0a-22b1"],
     )
     matches: list[SearchResult] = Field(description="Hits from the replay.")
+    mode: SearchModeName | None = Field(
+        default=None,
+        description="Mode the replay ran with: the one the original logged.",
+        examples=["vector"],
+    )
     timing: SearchTiming | None = Field(
         default=None,
         description="Per-phase latency breakdown.",
@@ -407,6 +436,15 @@ class CreateCollectionOptionsBody(BaseModel):
         default=None,
         description="Extra embedding options.",
         examples=[{"device": "cpu"}],
+    )
+    search_mode: str | None = Field(
+        default=None,
+        json_schema_extra=mode_enum,
+        description=(
+            "Default ranking mode for searches that name none; fixed at "
+            "creation. Must be a mode the instance serves. Defaults to vector."
+        ),
+        examples=["boost"],
     )
 
     @model_validator(mode="after")
@@ -565,6 +603,11 @@ class CreateCollectionResponse(OkResponse):
         description="Extra embedding options.",
         examples=[{}],
     )
+    search_mode: SearchModeName = Field(
+        default="vector",
+        description="Default ranking mode for searches that name none.",
+        examples=["vector"],
+    )
 
 
 class DeleteCollectionResponse(OkResponse):
@@ -659,6 +702,11 @@ class CollectionDetailResponse(OkResponse):
         description="Identifier for the embedding model and any space-affecting "
         "config shared by this collection's vectors.",
         examples=["sbert:sentence-transformers/all-MiniLM-L6-v2:"],
+    )
+    search_mode: SearchModeName = Field(
+        default="vector",
+        description="Default ranking mode for searches that name none.",
+        examples=["vector"],
     )
     created_at: str | None = Field(
         default=None,

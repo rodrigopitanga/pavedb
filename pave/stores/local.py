@@ -57,6 +57,7 @@ from pave.metadb import (
     RateLimitDecision,
     ReindexJobStateError,
     UnsupportedSchemaVersionError,
+    fts_query_tokens,
     validate_collection_config,
 )
 from pave.stores.base import (
@@ -70,13 +71,14 @@ from pave.stores.base import (
     Metadata,
     MetadataValidationError,
     QueryHomeEntry,
+    SearchModeError,
     QueryLogEntry,
     Record,
     SearchMode,
     SearchOutput,
     SearchResult,
 )
-from pave.config import get_cfg, get_logger
+from pave.config import SEARCH_MODES, get_cfg, get_logger
 from pave.data_dir_lease import DATA_DIR_LOCK_NAME
 from pave.metrics import inc_labeled as m_inc_labeled
 from pave.version import VERSION
@@ -102,17 +104,7 @@ _COLLECTION_RESTORE_BACKUP_PREFIX = ".pavedb-collection-restore-backup-"
 _REINDEX_DIR = ".pavedb-reindex"
 _REINDEX_BATCH_SIZE = 32
 
-# P1-07: exact-token boost tokenizer. Word-boundary matching only, no
-# stemming/normalization beyond casefolding -- the boost is a narrow nudge
-# inside the vector candidate window, not a lexical search engine.
-_EXACT_TOKEN_RE = re.compile(r"\w+")
 _RRF_K = 60
-
-
-def _tokenize_exact(text: str | None) -> frozenset[str]:
-    if not text:
-        return frozenset()
-    return frozenset(m.group(0).casefold() for m in _EXACT_TOKEN_RE.finditer(text))
 
 
 def _reciprocal_rank_fusion(
@@ -1584,6 +1576,47 @@ class LocalStore:
         self._clear_index_dirty(tenant, collection)
         return rebuilt
 
+    @staticmethod
+    def _check_search_mode_served(mode: str) -> None:
+        if mode not in SEARCH_MODES:
+            raise SearchModeError(
+                "invalid_search_mode",
+                "search mode must be 'vector', 'boost' or 'hybrid'",
+            )
+        if mode not in get_cfg().get("search.modes"):
+            raise SearchModeError(
+                "search_mode_disabled",
+                f"search mode {mode!r} is not enabled on this instance",
+            )
+
+    def _collection_setting(self, tenant: str, collection: str, key: str) -> Any:
+        """A setting of an existing collection; None when it does not exist.
+
+        Loads the collection first: that migrates an older meta.db, which a
+        read-only open refuses, and records the settings its first load
+        fills in.
+        """
+        if (tenant, collection) not in self._dbs:
+            if not os.path.isdir(self._base_path(tenant, collection)):
+                return None
+            prebuilt = self._prebuild_collection_embedder(tenant, collection)
+            with self._collection_write_lock(tenant, collection):
+                self._load_or_init(tenant, collection, prebuilt=prebuilt)
+        return self._read_collection_db(
+            tenant,
+            collection,
+            op_name=key,
+            default=None,
+            reader=lambda db: db.get_setting(key),
+        )
+
+    def _collection_search_mode(self, tenant: str, collection: str) -> str:
+        """The collection's default search mode; `vector` if it is new."""
+        return (
+            self._collection_setting(tenant, collection, "search_mode")
+            or "vector"
+        )
+
     def _prebuild_embedder(
         self, cfg: CollectionConfig
     ) -> tuple[str, Embedder] | None:
@@ -1710,6 +1743,10 @@ class LocalStore:
                     Path(self._base_path(tenant, collection)),
                     col_db,
                 )
+                # Record settings on first load, so a collection that ingest
+                # auto-creates, or one made before they existed, has them.
+                if col_db.get_setting("search_mode") is None:
+                    col_db.set_setting("search_mode", "vector")
             if self._index_needs_rebuild(
                 tenant,
                 collection,
@@ -1863,7 +1900,10 @@ class LocalStore:
         embed_model: str | None = None,
         embedder_config: EmbedderConfig | None = None,
         display_name: str | None = None,
+        search_mode: SearchMode | None = None,
     ) -> CollectionInfo:
+        if search_mode is not None:
+            self._check_search_mode_served(search_mode)
         requested = self._resolve_collection_config(
             embedder=embedder,
             embedder_type=embedder_type,
@@ -1908,6 +1948,18 @@ class LocalStore:
                     collection_config=requested,
                     prebuilt=prebuilt,
                 )
+                col_db = self._dbs[(tenant, name)]
+                if is_new:
+                    effective_mode = search_mode or "vector"
+                    col_db.set_setting("search_mode", effective_mode)
+                else:
+                    effective_mode = col_db.get_setting("search_mode")
+                    if search_mode is not None and search_mode != effective_mode:
+                        raise SearchModeError(
+                            "search_mode_conflict",
+                            "collection already exists with search mode "
+                            f"{effective_mode!r}",
+                        )
                 self._save(tenant, name)
                 self._write_collection_config(tenant, name, requested)
                 self._register_catalog_collection(
@@ -1940,6 +1992,7 @@ class LocalStore:
                     self._remove_path(Path(self._base_path(tenant, name)))
                 raise
         requested["display_name"] = resolved_display_name
+        requested["search_mode"] = effective_mode
         return requested
 
     def delete_collection(self, tenant: str, collection: str) -> None:
@@ -3103,6 +3156,7 @@ class LocalStore:
             "schema_version": cfg.get("collection_schema_version"),
             "doc_count": doc_count,
             "chunk_count": chunk_count,
+            "search_mode": self._collection_search_mode(tenant, name),
         }
 
     def _cache_estimated_bytes(self) -> int:
@@ -4084,7 +4138,7 @@ class LocalStore:
     def search(self, tenant: str, collection: str, query: str, k: int = 5,
                filters: FilterSpec | None = None,
                *, content_filter: ContentFilterSpec | None = None,
-               mode: SearchMode = "vector",
+               mode: SearchMode | None = None,
                query_vector: list[float] | None = None,
                embedder_selector: str | None = None) -> SearchOutput:
         """
@@ -4096,10 +4150,19 @@ class LocalStore:
         take the write side, so same-collection searches can overlap without
         racing cache close or data-dir replacement.
         """
-        if mode not in {"vector", "hybrid"}:
-            raise ValueError(f"unsupported search mode: {mode!r}")
-        if mode == "hybrid" and query_vector is not None:
-            raise ValueError("hybrid search requires a text query")
+        if mode is None:
+            # A raw vector has no text to boost or match lexically, so it
+            # ranks as vector whatever the collection's default is.
+            mode = (
+                "vector" if query_vector is not None
+                else self._collection_search_mode(tenant, collection)
+            )
+        elif mode != "vector" and query_vector is not None:
+            raise SearchModeError(
+                "search_mode_requires_text",
+                f"{mode} search requires a text query",
+            )
+        self._check_search_mode_served(mode)
         prebuilt = self._prebuild_collection_embedder(tenant, collection)
         _fspec_str = "N/A" if filters is None else json.dumps(dict(filters))
         _content_str = (
@@ -4116,19 +4179,10 @@ class LocalStore:
 
         fetch_k = max(50, kk * 5)
         boost_weight = 0.0
-        query_tokens: frozenset[str] = frozenset()
-        if mode == "vector" and get_cfg().get("search.exact_token_boost"):
-            # A null or non-numeric weight must not take every search down
-            # with it -- read it behind the toggle and treat a bad value as
-            # the documented "0 disables the boost".
-            try:
-                boost_weight = float(
-                    get_cfg().get("search.exact_token_boost_weight")
-                )
-            except (TypeError, ValueError):
-                boost_weight = 0.0
-            if boost_weight > 0:
-                query_tokens = _tokenize_exact(query)
+        query_tokens: list[str] = []
+        if mode == "boost":
+            boost_weight = float(get_cfg().get("search.boost_weight"))
+            query_tokens = fts_query_tokens(query)
         normed_filters: dict[str, list[Any]] = {}
         for key, vals in (filters or {}).items():
             safe_key = sanit_field(key)
@@ -4194,10 +4248,10 @@ class LocalStore:
             candidate_rids: list[str] = []
             meta_batch: dict[str, Metadata] = {}
             kept: list[tuple[str, float]] = []
-            # rid -> similarity before the exact-token boost, for the
-            # candidates it lifted. Empty unless P1-07 is enabled.
-            exact_hits: dict[str, float] = {}
-            exact_chunk_tokens: dict[str, frozenset[str]] = {}
+            # rid -> (similarity before the boost, tokens matched), for the
+            # candidates the boost lifted. Empty outside boost mode.
+            exact_hits: dict[str, tuple[float, int]] = {}
+            token_counts: dict[str, int] = {}
             hybrid_ranks: dict[str, tuple[int | None, int | None]] = {}
 
             filtered_search = getattr(backend, "search_filtered", None)
@@ -4354,8 +4408,8 @@ class LocalStore:
                     if query_tokens:
                         t0 = _perf()
                         raw, exact_hits = self._apply_exact_token_boost(
-                            tenant, collection, raw, query_tokens, boost_weight,
-                            token_cache=exact_chunk_tokens,
+                            col_db, raw, query_tokens, boost_weight,
+                            counts_cache=token_counts,
                         )
                         boost_ms += _ms_since(t0)
 
@@ -4447,9 +4501,16 @@ class LocalStore:
                         # The boost is named on its own below; folding it
                         # into the percentage would report a lexical nudge
                         # as similarity, and can read past 100%.
-                        query, exact_hits.get(rid, score), filters, rid_meta,
+                        query, exact_hits.get(rid, (score, 0))[0], filters,
+                        rid_meta,
                         content_filter=content_filter,
-                        exact_token_hit=rid in exact_hits,
+                        # Boost reports its count on every hit, 0 included,
+                        # so the reason always names the mode that ranked it.
+                        exact_tokens=(
+                            (exact_hits.get(rid, (score, 0))[1],
+                             len(query_tokens))
+                            if mode == "boost" else None
+                        ),
                         vector_rank=hybrid_ranks.get(rid, (None, None))[0],
                         lexical_rank=hybrid_ranks.get(rid, (None, None))[1],
                     ),
@@ -4476,7 +4537,7 @@ class LocalStore:
                         "lexical_search_ms": round(lexical_search_ms, 2),
                     }
                 )
-            return SearchOutput(matches=out, timing=timing)
+            return SearchOutput(matches=out, timing=timing, mode=mode)
 
         key = (tenant, collection)
         collection_path = self._base_path(tenant, collection)
@@ -4602,6 +4663,7 @@ class LocalStore:
                     return SearchOutput(
                         matches=[],
                         timing=timing,
+                        mode=mode,
                     )
                 self._load_or_init(tenant, collection, prebuilt=prebuilt)
             # The collection may have been deleted between initialization and
@@ -4617,58 +4679,47 @@ class LocalStore:
             f"collection '{collection}' does not exist"
         )
 
+    @staticmethod
     def _apply_exact_token_boost(
-        self,
-        tenant: str,
-        collection: str,
+        col_db: CollectionDB,
         raw: list[tuple[str, float]],
-        query_tokens: frozenset[str],
+        query_tokens: list[str],
         weight: float,
-        token_cache: dict[str, frozenset[str]] | None = None,
-    ) -> tuple[list[tuple[str, float]], dict[str, float]]:
-        """Re-rank candidates already inside the vector window (P1-07).
+        counts_cache: dict[str, int] | None = None,
+    ) -> tuple[list[tuple[str, float]], dict[str, tuple[float, int]]]:
+        """Re-rank candidates already inside the vector window (P1-77).
 
-        Boosts a candidate's score by `weight * matched_fraction`, where
-        `matched_fraction` is the share of query tokens found verbatim
-        (casefolded) in the chunk text. This narrows and re-sorts within the
-        existing fetch window; it never adds candidates FAISS did not already
-        return.
+        A candidate matching `m` of the `n` query tokens, by FTS5, gains
+        `weight * m / n`. This re-sorts the existing fetch window; it never
+        adds candidates FAISS did not already return.
 
-        Returns the re-sorted window plus, for every boosted candidate, the
-        score it carried before the boost. `token_cache` holds chunk tokens
-        across the filter-expansion rounds of a single search, so a
-        candidate's text is read once however far the window grows.
+        Returns the re-sorted window plus, for every boosted candidate, its
+        pre-boost score and match count. `counts_cache` keeps counts across
+        the filter-expansion rounds of one search, so each candidate is
+        matched once however far the window grows.
         """
-        cache = {} if token_cache is None else token_cache
+        cache = {} if counts_cache is None else counts_cache
+        pending = [rid for rid, _score in raw if rid and rid not in cache]
+        if pending:
+            cache.update(dict.fromkeys(pending, 0))
+            cache.update(col_db.token_match_counts(query_tokens, pending))
         boosted: list[tuple[str, float]] = []
-        pre_boost: dict[str, float] = {}
+        hits: dict[str, tuple[float, int]] = {}
         for rid, score in raw:
-            if not rid:
-                boosted.append((rid, score))
-                continue
-            chunk_tokens = cache.get(rid)
-            if chunk_tokens is None:
-                chunk_tokens = _tokenize_exact(
-                    self._load_chunk_text(tenant, collection, rid)
-                )
-                cache[rid] = chunk_tokens
-            matched = query_tokens & chunk_tokens
+            matched = cache.get(rid, 0)
             if matched:
-                pre_boost[rid] = score
-                boosted.append(
-                    (rid, score + weight * len(matched) / len(query_tokens))
-                )
-            else:
-                boosted.append((rid, score))
+                hits[rid] = (score, matched)
+                score += weight * matched / len(query_tokens)
+            boosted.append((rid, score))
         boosted.sort(key=lambda item: item[1], reverse=True)
-        return boosted, pre_boost
+        return boosted, hits
 
     def _build_match_reason(self, query: str, score: float,
                             filters: FilterSpec | None,
                             meta: Metadata | None,
                             *,
                             content_filter: ContentFilterSpec | None = None,
-                            exact_token_hit: bool = False,
+                            exact_tokens: tuple[int, int] | None = None,
                             vector_rank: int | None = None,
                             lexical_rank: int | None = None) -> str:
         """Build a human-readable explanation of why a result matched.
@@ -4687,8 +4738,8 @@ class LocalStore:
         elif query:
             pct = int(score * 100)
             parts.append(f"semantic similarity {pct}%")
-        if exact_token_hit:
-            parts.append("exact token match")
+        if exact_tokens is not None:
+            parts.append(f"exact tokens {exact_tokens[0]}/{exact_tokens[1]}")
 
         # Filter matches - show which filter conditions were satisfied
         if filters:
