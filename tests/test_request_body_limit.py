@@ -215,3 +215,38 @@ def test_tenant_collection_archive_restore_gets_the_ingest_ceiling(guarded):
     )
     assert r.status_code == 413
     assert r.json()["code"] == "request_too_large"
+
+
+def test_validation_errors_do_not_echo_the_rejected_value(client):
+    junk = "x" * 5000
+    response = client.post(
+        "/v1/collections/acme/echo/search", json={"q": "a", "k": junk}
+    )
+
+    assert response.status_code == 422
+    assert junk[:100] not in response.text
+    assert response.json()["details"]["errors"][0]["loc"] == ["body", "k"]
+
+
+def test_long_location_parts_are_cut():
+    from pave.main import _client_validation_errors
+
+    key = "y" * 5000
+    [error] = _client_validation_errors(
+        [{"type": "extra_forbidden", "loc": ("body", key), "input": 1}]
+    )
+
+    assert "input" not in error
+    assert error["loc"] == ["body", "y" * 64 + "..."]
+
+
+def test_unparseable_bodies_get_the_error_envelope(client):
+    response = client.post(
+        "/v1/collections/acme/echo/search",
+        content='{"q": "a", "k": 1' + "0" * 5000 + "}",
+        headers={"content-type": "application/json"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["ok"] is False
+    assert response.json()["code"] == "http_error"

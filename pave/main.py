@@ -22,6 +22,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from fastapi.responses import JSONResponse
 from uvicorn.config import Config
 from uvicorn.main import STARTUP_FAILURE
@@ -424,6 +425,30 @@ def _run_pave_server(app: str, **kwargs) -> None:
             os.remove(config.uds)
     if not pirex.started and not config.should_reload and (config.workers or 1) == 1:
         sys.exit(STARTUP_FAILURE)
+
+
+_LOC_PART_MAX = 64
+
+
+def _client_validation_errors(errors) -> list[dict]:
+    """Validation errors without the rejected value.
+
+    Echoing the input reflects whatever the caller sent back at full size,
+    up to the body limit; the location and message say what was wrong.
+    Location parts are caller-chosen too (an unknown key), so long ones are
+    cut.
+    """
+    cleaned = []
+    for error in errors:
+        error = {key: value for key, value in error.items() if key != "input"}
+        error["loc"] = [
+            part[:_LOC_PART_MAX] + "..."
+            if isinstance(part, str) and len(part) > _LOC_PART_MAX
+            else part
+            for part in error.get("loc", ())
+        ]
+        cleaned.append(error)
+    return cleaned
 
 
 def build_app(cfg) -> FastAPI:
@@ -849,8 +874,12 @@ def build_app(cfg) -> FastAPI:
             if not slot.detached:
                 slot.release()
 
-    @app.exception_handler(HTTPException)
-    async def http_exception_handler(request: Request, exc: HTTPException):
+    # Starlette's base class, so FastAPI's own body-parse and routing errors
+    # get the envelope too, not a bare {"detail": ...}.
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(
+        request: Request, exc: StarletteHTTPException
+    ):
         detail = exc.detail
         if isinstance(detail, dict):
             code = detail.get("code", "http_error")
@@ -880,7 +909,9 @@ def build_app(cfg) -> FastAPI:
                     "code": "validation_error",
                     "error": "validation failed",
                     "details": {
-                        "errors": jsonable_encoder(exc.errors()),
+                        "errors": jsonable_encoder(
+                            _client_validation_errors(exc.errors())
+                        ),
                     },
                 },
                 request_id=_get_request_id(request),
