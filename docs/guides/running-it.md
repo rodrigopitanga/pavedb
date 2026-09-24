@@ -6,6 +6,33 @@
 What an operator has to get right. Every key below is documented in full, with
 its default and environment variable, in [`config.md`](../reference/config.md).
 
+## Production checklist
+
+Work through this before the first tenant arrives. Each step links to the
+section that explains it.
+
+1. **Authentication.** `auth.mode: static`, one token per tenant in the
+   tenants file, and the admin key in `admin.key` (created 0600 at first
+   start) or `auth.global_key` from the environment. A request without a token
+   must get `401`. See [Auth](#auth).
+2. **Persistent data.** Put `data_dir` and the instance home (`admin.key`,
+   `tenants.yml`) on durable storage writable by the server user and nobody
+   else. In a container, mount a volume. See
+   [The data directory](#the-data-directory) and [Containers](#containers).
+3. **Resource limits.** Size the ingest, body and search ceilings for your
+   hardware. On a shared instance, also set the per-tenant shares, request-rate
+   windows and collection/chunk caps. See [Limits](#limits) and
+   [Running a shared instance](#running-a-shared-instance).
+4. **Health.** Readiness probe on `/health/ready`, liveness on
+   `/health/live`. See [Health](#health).
+5. **Metrics.** Scrape `/metrics` (Prometheus text) or read `/health/metrics`
+   (JSON). Both require the admin key under static auth.
+6. **Query-log retention.** Decide whether to keep query text. See
+   [The query log](#the-query-log).
+7. **Backup and restore.** Schedule archives, and rehearse a restore into a
+   scratch instance before you need one. See
+   [Backups and portability](#backups-and-portability).
+
 ## Auth
 
 Two modes, and only one of them belongs in production.
@@ -48,17 +75,47 @@ running instance can catch SQLite mid-write. `pavecli dump-archive` is an
 offline tool and refuses to run while another supported process owns the data
 directory.
 
-For a running server, use `GET /v1/admin/archive` to download a snapshot and
-`PUT /v1/admin/archive` to restore one. Those routes coordinate with the live
-store; do not run `pavecli dump-archive` or `restore-archive` beside it.
+## Backups and portability
 
-A single collection travels on its own: `GET` on
-`/v1/admin/collections/{tenant}/{name}/archive` downloads it and `POST` on the
-destination's copy of that path restores it, as long as the target runs the same
-PaveDB and schema version and resolves the archived embedder locally.
-`pavecli dump-collection-archive` and `pavecli restore-collection-archive` do
-the same offline, under the same version rule and the same stopped-server
-requirement as `dump-archive`.
+Two archive kinds, for two jobs.
+
+**Whole-instance archive: the backup.** `GET /v1/admin/archive` downloads a
+snapshot of a running server and `PUT /v1/admin/archive` restores one. Those
+routes coordinate with the live store; do not run `pavecli dump-archive` or
+`restore-archive` beside it. Offline, with the server stopped, the CLI
+commands do the same. The archive is the data directory: the catalog and,
+per collection, its documents, chunk text and metadata, vectors, query log
+and embedder identity. It holds no credentials. `admin.key`, the tenants
+file, `config.yml` and provider API keys live outside the data directory, so
+back them up separately. Restore replaces the whole instance and accepts
+archives whose vector spaces the destination's configuration can serve.
+
+**Collection archive: portability.** `GET` on
+`/v1/admin/collections/{tenant}/{name}/archive` downloads one collection and
+`POST` on a destination path restores it, under the same or a new
+tenant/collection name, without touching anything else. A tenant can do the
+same for its own collections with its own key on
+`/v1/collections/{tenant}/{name}/archive`. The zip holds `manifest.json`
+(PaveDB and schema version, embedder and backend spec), `meta.db` with the
+collection's documents, chunks and query log, the FAISS index, and the
+collection sidecars. Restore requires the same PaveDB and schema version and
+resolves the embedder from the destination's configuration before it changes
+anything. `pavecli dump-collection-archive` and `restore-collection-archive`
+do the same offline, under the same stopped-server rule as `dump-archive`.
+
+Use the first to recover an instance and the second to move one collection
+between instances, environments or tenants.
+
+## The query log
+
+Every text search is recorded in its collection's metadata database by
+default: the query text, `k`, filters, mode, timing, and the ranked result
+ids. That record is what makes replay and drift comparison possible. It also
+means query text is stored data. This release has no automatic retention
+window: entries stay until their collection is deleted, and they travel with
+both archive kinds. Set `query_log.enabled: false` if query text must not be
+kept; searches still work, but no longer produce a record to inspect or
+replay.
 
 ## Reindex
 

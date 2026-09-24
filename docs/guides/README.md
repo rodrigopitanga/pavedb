@@ -10,7 +10,7 @@ Short, hand-written orientation. Four pages, read in order or jumped into.
 | [Overview](overview.md) | What PaveDB is, and the four nouns everything is built from |
 | [Components](components.md) | Server, CLI, clients — which one you should be using |
 | [Basic operations](basic-operations.md) | Create, ingest, search, inspect, replay |
-| [Running it](running-it.md) | Auth, the data directory, health checks, containers |
+| [Running it](running-it.md) | Production checklist, auth, backups, the query log, health, containers |
 
 ## How the documentation is split
 

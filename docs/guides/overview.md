@@ -82,6 +82,22 @@ Three things decide whether a deployment is sound:
   `/health/ready` verifies the data directory is writable. Point your
   orchestrator at the second one.
 
+The [production checklist](running-it.md#production-checklist) turns these
+into steps.
+
+## Embedded, HTTP, managed
+
+It is one engine behind three doors. Embedded, your Python process opens the
+data directory itself. Self-hosted, `pavesrv` opens it and every client speaks
+HTTP. Managed PaveDB runs the same server for you. The SDK's `connect()` takes
+a path or a URL, so moving between them is a one-line change, and an archive
+taken from one restores into another.
+
+Growing means a bigger machine, or more instances with a data directory each,
+for example one per workload or per group of tenants. PaveDB does not
+spread one index or one query across machines, and several processes never
+share a data directory.
+
 ## Where to go next
 
 | You want | Go to |

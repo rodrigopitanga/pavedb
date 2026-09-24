@@ -114,6 +114,31 @@ pavecli list-chunks demo/books book-1
 pavecli get-chunk-content demo/books book-1::chunk_0
 ```
 
+Put together, this is the inspection loop:
+
+1. **Search**, and note the ranked hits: ids, scores and provenance.
+2. **Open the source** of a hit: its chunk text and the page, row or offset
+   it came from.
+3. **Read the stored record** with `get-query`: parameters, timing, and the
+   ranked result ids as they were at search time.
+4. **Change the corpus**: re-ingest, add or delete documents.
+5. **Replay** the query and **compare** with the stored record: which ids
+   entered or left, and how ranks moved. Scores compare meaningfully only
+   within one vector space, so after a reindex compare ids and ranks.
+
+Changed results are the point: they make retrieval drift visible, attributed
+to a concrete corpus change. PaveDB does not aim to reproduce historical
+results, and it keeps no snapshot of the old corpus. The stored record keeps
+its query text, parameters, timing and result ids after the source changes;
+the text of chunks that were replaced or deleted is gone with them. See
+[the query log](running-it.md#the-query-log) for retention.
+
+The Python SDK runs the whole loop, from search to replay to chunk content,
+in one program: `python -m pavesdk.examples.observability`
+([source][sdk-observability]).
+
+[sdk-observability]: https://gitlab.com/flowlexi/pavedb-sdk-python/-/blob/main/pavesdk/examples/observability.py
+
 ## Clean up
 
 ```bash
