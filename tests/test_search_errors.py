@@ -37,7 +37,7 @@ def test_search_encode_failure_returns_503(client, app, monkeypatch):
     ]
 
     def fail_encode(_texts):
-        raise RuntimeError("embedder offline")
+        raise RuntimeError("upstream=http://10.0.0.7:8000 route=prod-embed")
 
     # An offline embedder cannot serve either surface. The query path uses
     # encode_queries (the worker pool routes it separately from encode), so
@@ -51,6 +51,8 @@ def test_search_encode_failure_returns_503(client, app, monkeypatch):
 
     assert response.status_code == 503
     assert response.json()["code"] == "embedder_unavailable"
+    # Upstream embedder detail is for the operator only (B43).
+    assert "10.0.0.7" not in response.text
 
 
 def test_search_timeout_returns_503(client, app, monkeypatch):

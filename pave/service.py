@@ -97,9 +97,10 @@ def _normalize_search_mode(value: Any) -> SearchMode:
 
 
 # Client-facing text for failures whose exception text is not meant for the
-# caller: it can carry server paths or library internals. The full exception
-# stays in the server log.
+# caller: it can carry server paths, library internals, or upstream embedder
+# detail. The full exception stays in the server log.
 _INTERNAL_ERROR = "internal error; see the server log for this request"
+_EMBEDDER_UNAVAILABLE = "embedding backend unavailable"
 
 
 # Pure-ish service functions operating on a store adapter
@@ -292,7 +293,7 @@ def create_collection(
         return {
             "ok": False,
             "code": "embedder_unavailable",
-            "error": str(e),
+            "error": _EMBEDDER_UNAVAILABLE,
             "error_type": "unavailable",
         }
     except CollectionLimitError as e:
@@ -431,10 +432,11 @@ def start_collection_reindex(
             "error_type": "conflict",
         }
     except EmbedderUnavailableError as exc:
+        log.warning("reindex embedder_unavailable: %s", exc)
         return {
             "ok": False,
             "code": "embedder_unavailable",
-            "error": str(exc),
+            "error": _EMBEDDER_UNAVAILABLE,
             "error_type": "unavailable",
         }
     except ValueError as exc:
@@ -1055,7 +1057,7 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             return {
                 "ok": False,
                 "code": "embedder_unavailable",
-                "error": str(exc),
+                "error": _EMBEDDER_UNAVAILABLE,
             }
         except Exception as e:
             log.warning(
@@ -1180,7 +1182,7 @@ def ingest_text(
             return {
                 "ok": False,
                 "code": "embedder_unavailable",
-                "error": str(exc),
+                "error": _EMBEDDER_UNAVAILABLE,
             }
         except Exception as e:
             log.warning(
@@ -1386,6 +1388,10 @@ def ingest_documents_batch(
             with m_timed("ingest"):
                 indexed = batch_index(tenant, collection, prepared)
         except EmbedderUnavailableError as exc:
+            log.warning(
+                "ingest_batch embedder_unavailable tenant=%s coll=%s: %s",
+                tenant, collection, exc,
+            )
             indexed = []
             for result_index in prepared_indexes:
                 results[result_index] = {
@@ -1393,7 +1399,7 @@ def ingest_documents_batch(
                     "index": result_index,
                     "docid": items[result_index].get("docid"),
                     "code": "embedder_unavailable",
-                    "error": str(exc),
+                    "error": _EMBEDDER_UNAVAILABLE,
                 }
         except MetadataValidationError as exc:
             indexed = []
@@ -1713,7 +1719,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
             request_id,
             exc,
         )
-        raise ServiceError("embedder_unavailable", str(exc)) from exc
+        raise ServiceError("embedder_unavailable", _EMBEDDER_UNAVAILABLE) from exc
     except ValueError as exc:
         msg = str(exc)
         if "does not exist" in msg:
