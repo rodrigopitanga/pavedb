@@ -419,3 +419,37 @@ def test_query_cache_rejects_reused_embedder_id(temp_data_dir):
     assert not hit
     assert new_embedder.calls == [("query",)]
     assert store._query_vector_cache[key][0] is new_embedder
+
+
+def test_collection_locks_are_evicted_once_idle(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    store.index_records("acme", "real", "DOC-1", [("0", "hello", {})])
+    for i in range(50):
+        store.search("acme", f"missing-{i}", "hello", k=1)
+    assert store._collection_locks == {}
+
+
+def test_evicting_a_collection_lock_keeps_writers_exclusive(temp_data_dir):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    inside = 0
+    overlap = []
+    guard = threading.Lock()
+
+    def writer():
+        nonlocal inside
+        for _ in range(200):
+            with store._collection_write_lock("acme", "hot"):
+                with guard:
+                    inside += 1
+                    overlap.append(inside)
+                time.sleep(0)
+                with guard:
+                    inside -= 1
+
+    threads = [threading.Thread(target=writer) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert max(overlap) == 1
+    assert store._collection_locks == {}

@@ -246,6 +246,9 @@ class _CollectionReadWriteLock:
         self._readers: dict[int, int] = {}
         self._writer = False
         self._pending_writers = 0
+        # Threads holding or waiting on this lock; guarded by the store's
+        # _collection_locks_guard, which evicts the lock when it reaches 0.
+        self.borrowers = 0
 
     @contextmanager
     def read_lock(self) -> Iterator[None]:
@@ -432,12 +435,29 @@ class LocalStore:
             sentinel.initialize()
             sentinel.close()
 
-    def _get_collection_lock(self, key: str) -> _CollectionReadWriteLock:
-        if key not in self._collection_locks:
+    @contextmanager
+    def _borrow_collection_lock(
+        self, key: str
+    ) -> Iterator[_CollectionReadWriteLock]:
+        """Lend the lock for `key`, dropping it once nobody holds or awaits it.
+
+        Entries would otherwise accumulate for every name ever requested,
+        existing or not. Holders and waiters are counted under the guard, so
+        an entry is only removed when no thread can still be using it, and
+        the next borrower mints a fresh one.
+        """
+        with self._collection_locks_guard:
+            lock = self._collection_locks.get(key)
+            if lock is None:
+                lock = self._collection_locks[key] = _CollectionReadWriteLock()
+            lock.borrowers += 1
+        try:
+            yield lock
+        finally:
             with self._collection_locks_guard:
-                if key not in self._collection_locks:
-                    self._collection_locks[key] = _CollectionReadWriteLock()
-        return self._collection_locks[key]
+                lock.borrowers -= 1
+                if not lock.borrowers:
+                    del self._collection_locks[key]
 
     @contextmanager
     def _collection_read_lock(
@@ -445,9 +465,9 @@ class LocalStore:
         tenant: str,
         collection: str,
     ) -> Iterator[None]:
+        key = f"t_{tenant}:c_{collection}"
         with self._state_lock.read_lock():
-            lock = self._get_collection_lock(f"t_{tenant}:c_{collection}")
-            with lock.read_lock():
+            with self._borrow_collection_lock(key) as lock, lock.read_lock():
                 yield
 
     @contextmanager
@@ -475,9 +495,10 @@ class LocalStore:
             })
             with ExitStack() as stack:
                 for key in keys:
-                    stack.enter_context(
-                        self._get_collection_lock(key).write_lock()
+                    lock = stack.enter_context(
+                        self._borrow_collection_lock(key)
                     )
+                    stack.enter_context(lock.write_lock())
                 yield
 
     @contextmanager
@@ -486,10 +507,11 @@ class LocalStore:
         tenant: str,
         collection: str,
     ) -> Iterator[bool]:
+        key = f"t_{tenant}:c_{collection}"
         with self._state_lock.read_lock():
-            lock = self._get_collection_lock(f"t_{tenant}:c_{collection}")
-            with lock.try_write_lock() as acquired:
-                yield acquired
+            with self._borrow_collection_lock(key) as lock:
+                with lock.try_write_lock() as acquired:
+                    yield acquired
 
     def _base_path(self, tenant: str, collection: str) -> str:
         return os.path.join(self._data_dir, f"t_{tenant}", f"c_{collection}")
