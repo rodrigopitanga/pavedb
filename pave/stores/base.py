@@ -334,6 +334,8 @@ class BaseStore(Protocol):
     def dump_archive(
         self,
         output_path: str | os.PathLike[str] | None = None,
+        *,
+        skipped: list[str] | None = None,
     ) -> tuple[str, str | None]:
         raise NotImplementedError
 

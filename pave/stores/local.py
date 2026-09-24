@@ -27,7 +27,7 @@ import tempfile
 import uuid
 import zipfile
 from collections import OrderedDict
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Callable, Collection, Iterable, Iterator
 from contextlib import ExitStack, contextmanager, suppress
 from datetime import datetime, date, timezone as tz
 from pathlib import Path
@@ -783,8 +783,15 @@ class LocalStore:
         *,
         validate_destination: bool = False,
         scratch_dir: bool = False,
-    ) -> None:
-        """Validate archive consistency and repair missing config surfaces."""
+        strict: bool = True,
+    ) -> dict[tuple[str, str], str]:
+        """Validate archive consistency and repair missing config surfaces.
+
+        `strict=False` (dump) records a collection that fails validation and
+        moves on, so one damaged directory cannot block a backup of every
+        other tenant; the failures are returned. Restore stays strict and
+        rejects the whole tree.
+        """
         data_dir = data_dir.resolve()
         catalog_path = data_dir / "catalog.db"
         if not catalog_path.is_file():
@@ -822,135 +829,159 @@ class LocalStore:
                 data_dir,
                 require_metadata=False,
             )
+            skipped: dict[tuple[str, str], str] = {}
+
+            def reject(key: tuple[str, str], exc: Exception) -> None:
+                if strict:
+                    raise exc
+                log.warning(
+                    "archive dump skips %s/%s: %s", key[0], key[1], exc,
+                    exc_info=exc.__cause__ or exc,
+                )
+                skipped[key] = (
+                    str(exc) if isinstance(exc, ValueError) else repr(exc)
+                )
+
             for key in catalog_configs:
                 if key not in collection_dirs:
-                    raise ValueError(
+                    reject(key, ValueError(
                         "archive catalog collection has no directory: "
                         f"{key[0]}/{key[1]}"
-                    )
+                    ))
 
             vector_spaces: dict[str, CollectionConfig] = {}
             for (tenant, collection), collection_dir in collection_dirs.items():
-                metadata_path = collection_dir / "meta.db"
-                if not metadata_path.is_file():
-                    raise ValueError(
-                        "archive collection directory is missing metadata "
-                        f"database: {tenant}/{collection}"
-                    )
-                metadata = CollectionDB()
                 try:
-                    metadata.open(metadata_path)
-                    self._migrate_chunk_text_sidecars_in(
-                        collection_dir,
-                        metadata,
-                    )
-                    metadata.verify_text_indexes()
-                    with metadata._reader() as conn:
-                        required_columns = {
-                            "documents": {
-                                "docid", "version", "ingested_at", "meta_json"
-                            },
-                            "chunks": {
-                                "docid", "rid", "chunk_path", "meta_json",
-                                "ingested_at", "text",
-                            },
-                            "chunk_text_fts": {"text"},
-                            "chunk_text_trigram": {"text"},
-                            "chunk_meta": {"rid", "key", "value"},
-                            "document_meta": {"docid", "key", "value"},
-                            "query_log": {
-                                "query_id", "tenant", "collection", "actor",
-                                "query_text", "k", "filters_json", "include_common",
-                                "content_filter_json", "mode",
-                                "common_tenant", "common_collection", "result_ids_json",
-                                "result_count", "latency_ms", "timing_json",
-                                "request_id", "replay_of", "executed_at",
-                            },
-                        }
-                        for table, columns in required_columns.items():
-                            found = {
-                                row[1]
-                                for row in conn.execute(
-                                    f"PRAGMA table_info({table})"
-                                )
-                            }
-                            if not columns <= found:
-                                raise ValueError("incomplete archive metadata schema")
-                        rids = {
-                            str(row[0])
-                            for row in conn.execute("SELECT rid FROM chunks")
-                        }
-                        collection_schema_version = CollectionDB._schema_version(
-                            conn
-                        )
-                    metadata.checkpoint_wal()
-                except Exception:
-                    raise ValueError(
-                        "invalid archive collection metadata database: "
-                        f"{tenant}/{collection}"
-                    ) from None
-                finally:
-                    metadata.close()
-                sidecar = self._archive_sidecar_config(
-                    collection_dir,
-                    tenant,
-                    collection,
-                )
-                catalog_config = catalog_configs.get((tenant, collection))
-                if sidecar is None:
-                    if catalog_config is None:
+                    metadata_path = collection_dir / "meta.db"
+                    if not metadata_path.is_file():
                         raise ValueError(
-                            "archive collection has no recoverable config: "
-                            f"{tenant}/{collection}"
+                            "archive collection directory is missing metadata "
+                            f"database: {tenant}/{collection}"
                         )
-                    self._write_collection_config_at(
-                        collection_dir / COLLECTION_CONFIG_FILENAME,
-                        catalog_config,
-                    )
-                    config = catalog_config
-                elif catalog_config is None:
-                    catalog.register_collection(
+                    metadata = CollectionDB()
+                    try:
+                        metadata.open(metadata_path)
+                        self._migrate_chunk_text_sidecars_in(
+                            collection_dir,
+                            metadata,
+                        )
+                        metadata.verify_text_indexes()
+                        with metadata._reader() as conn:
+                            required_columns = {
+                                "documents": {
+                                    "docid", "version", "ingested_at", "meta_json"
+                                },
+                                "chunks": {
+                                    "docid", "rid", "chunk_path", "meta_json",
+                                    "ingested_at", "text",
+                                },
+                                "chunk_text_fts": {"text"},
+                                "chunk_text_trigram": {"text"},
+                                "chunk_meta": {"rid", "key", "value"},
+                                "document_meta": {"docid", "key", "value"},
+                                "query_log": {
+                                    "query_id", "tenant", "collection", "actor",
+                                    "query_text", "k", "filters_json",
+                                    "include_common", "content_filter_json",
+                                    "mode", "common_tenant", "common_collection",
+                                    "result_ids_json", "result_count",
+                                    "latency_ms", "timing_json",
+                                    "request_id", "replay_of", "executed_at",
+                                },
+                            }
+                            for table, columns in required_columns.items():
+                                found = {
+                                    row[1]
+                                    for row in conn.execute(
+                                        f"PRAGMA table_info({table})"
+                                    )
+                                }
+                                if not columns <= found:
+                                    raise ValueError(
+                                        "incomplete archive metadata schema"
+                                    )
+                            rids = {
+                                str(row[0])
+                                for row in conn.execute("SELECT rid FROM chunks")
+                            }
+                            collection_schema_version = CollectionDB._schema_version(
+                                conn
+                            )
+                        metadata.checkpoint_wal()
+                    except Exception as exc:
+                        # Keep the cause: truncated file, permissions and an
+                        # old schema need different fixes.
+                        raise ValueError(
+                            "invalid archive collection metadata database: "
+                            f"{tenant}/{collection} ({exc!r})"
+                        ) from exc
+                    finally:
+                        metadata.close()
+                    sidecar = self._archive_sidecar_config(
+                        collection_dir,
                         tenant,
                         collection,
-                        backend_type=sidecar["backend_type"],
-                        backend_config=sidecar["backend_config"],
-                        embedder_type=sidecar["embedder_type"],
-                        embed_model=sidecar["embed_model"],
-                        embed_config=sidecar["embedder_config"],
-                        # Recovered from an orphaned collection dir with no
-                        # catalog row; the collection's own meta.db knows its
-                        # schema version, but not the PaveDB build that wrote
-                        # it, so pavedb_version stays unset (P2-25).
-                        collection_schema_version=collection_schema_version,
                     )
-                    config = sidecar
-                elif catalog_config != sidecar:
-                    raise ValueError(
-                        "archive catalog and sidecar conflict: "
-                        f"{tenant}/{collection}"
+                    catalog_config = catalog_configs.get((tenant, collection))
+                    if sidecar is None:
+                        if catalog_config is None:
+                            raise ValueError(
+                                "archive collection has no recoverable config: "
+                                f"{tenant}/{collection}"
+                            )
+                        self._write_collection_config_at(
+                            collection_dir / COLLECTION_CONFIG_FILENAME,
+                            catalog_config,
+                        )
+                        config = catalog_config
+                    elif catalog_config is None:
+                        catalog.register_collection(
+                            tenant,
+                            collection,
+                            backend_type=sidecar["backend_type"],
+                            backend_config=sidecar["backend_config"],
+                            embedder_type=sidecar["embedder_type"],
+                            embed_model=sidecar["embed_model"],
+                            embed_config=sidecar["embedder_config"],
+                            # Recovered from an orphaned collection dir with no
+                            # catalog row; the collection's own meta.db knows its
+                            # schema version, but not the PaveDB build that wrote
+                            # it, so pavedb_version stays unset (P2-25).
+                            collection_schema_version=collection_schema_version,
+                        )
+                        config = sidecar
+                    elif catalog_config != sidecar:
+                        raise ValueError(
+                            "archive catalog and sidecar conflict: "
+                            f"{tenant}/{collection}"
+                        )
+                    else:
+                        config = catalog_config
+                    # Only embedder types that pin `dim` into their vector-space
+                    # config (identity, openai, ollama) are checkable here;
+                    # others (e.g. sbert) only know their dimension once the
+                    # model loads, which preflight avoids.
+                    self._validate_archive_index(
+                        collection_dir,
+                        tenant,
+                        collection,
+                        rids,
+                        expected_dim=(
+                            int(config["embedder_config"]["dim"])
+                            if "dim" in config["embedder_config"]
+                            else None
+                        ),
                     )
-                else:
-                    config = catalog_config
-                # Only embedder types that pin `dim` into their vector-space
-                # config (identity, openai, ollama) are checkable here;
-                # others (e.g. sbert) only know their dimension once the
-                # model loads, which preflight avoids.
-                self._validate_archive_index(
-                    collection_dir,
-                    tenant,
-                    collection,
-                    rids,
-                    expected_dim=(
-                        int(config["embedder_config"]["dim"])
-                        if "dim" in config["embedder_config"]
-                        else None
-                    ),
-                )
-                if validate_destination:
-                    vector_spaces.setdefault(
-                        embedder_factory_mod.vector_space_key(config),
-                        config,
-                    )
+                    if validate_destination:
+                        vector_spaces.setdefault(
+                            embedder_factory_mod.vector_space_key(config),
+                            config,
+                        )
+                except Exception as exc:
+                    # Strict mode re-raises; the outer handler maps anything
+                    # but ValueError to "invalid archive catalog" as before.
+                    reject((tenant, collection), exc)
+
 
             if validate_destination:
                 for vector_key, config in vector_spaces.items():
@@ -968,6 +999,8 @@ class LocalStore:
             raise
         except Exception:
             raise ValueError("invalid archive catalog") from None
+        else:
+            return skipped
         finally:
             catalog.close()
             if scratch_dir:
@@ -4721,22 +4754,54 @@ class LocalStore:
                 except Exception:
                     pass
 
-    def _write_zip(self, source_dir: Path, target_path: Path) -> None:
+    def _write_zip(
+        self,
+        source_dir: Path,
+        target_path: Path,
+        *,
+        exclude: Collection[tuple[str, str]] = (),
+    ) -> None:
+        """Zip `source_dir`, without the `exclude` collections.
+
+        An excluded collection loses its directory and its catalog row, so
+        the archive's catalog never names a collection it does not carry.
+        """
         source_dir = source_dir.resolve()
         target_path = target_path.resolve()
         if not source_dir.is_dir():
             raise FileNotFoundError(f"data directory not found: {source_dir}")
 
         target_path.parent.mkdir(parents=True, exist_ok=True)
+        excluded_dirs = {
+            Path(f"t_{tenant}") / f"c_{collection}"
+            for tenant, collection in exclude
+        }
 
-        with zipfile.ZipFile(
-            target_path,
-            "w",
-            compression=zipfile.ZIP_DEFLATED,
-        ) as zf:
+        with tempfile.TemporaryDirectory(prefix="pavedb_zip_") as scratch, \
+                zipfile.ZipFile(
+                    target_path,
+                    "w",
+                    compression=zipfile.ZIP_DEFLATED,
+                ) as zf:
+            if exclude:
+                catalog_copy = Path(scratch) / "catalog.db"
+                shutil.copy2(source_dir / "catalog.db", catalog_copy)
+                pruned = CatalogDB()
+                pruned.open(catalog_copy)
+                try:
+                    for tenant, collection in exclude:
+                        pruned.unregister_collection(tenant, collection)
+                    pruned.checkpoint_wal()
+                finally:
+                    pruned.close()
+                zf.write(catalog_copy, "catalog.db")
             for root, dirs, files in os.walk(source_dir):
                 root_path = Path(root)
                 rel_root = root_path.relative_to(source_dir)
+                dirs[:] = [
+                    name for name in dirs
+                    if rel_root / name not in excluded_dirs
+                ]
                 if not files and not dirs:
                     arcname = (
                         str(rel_root) + "/"
@@ -4758,6 +4823,8 @@ class LocalStore:
                     rel_name = file_path.relative_to(source_dir)
                     if rel_name == Path(DATA_DIR_LOCK_NAME):
                         continue
+                    if exclude and rel_name == Path("catalog.db"):
+                        continue  # the pruned copy is already in
                     try:
                         zf.write(file_path, rel_name.as_posix())
                     except FileNotFoundError:
@@ -5173,7 +5240,14 @@ class LocalStore:
     def dump_archive(
         self,
         output_path: str | os.PathLike[str] | None = None,
+        *,
+        skipped: list[str] | None = None,
     ) -> tuple[str, str | None]:
+        """Zip the data dir, leaving out collections that fail validation.
+
+        Each left-out collection is appended to `skipped` as
+        `"<tenant>/<collection>: <reason>"`; the archive stays restorable.
+        """
         with self._state_lock.write_lock():
             data_dir_path = Path(self._data_dir).resolve()
             if not data_dir_path.is_dir():
@@ -5182,17 +5256,22 @@ class LocalStore:
                 )
             self._ensure_catalog().checkpoint_wal()
             self._flush_caches()
-            self._preflight_archive(data_dir_path)
+            rejected = self._preflight_archive(data_dir_path, strict=False)
+            if skipped is not None:
+                skipped.extend(
+                    f"{tenant}/{collection}: {reason}"
+                    for (tenant, collection), reason in sorted(rejected.items())
+                )
 
             if output_path is not None:
                 archive_path = Path(output_path).resolve()
-                self._write_zip(data_dir_path, archive_path)
+                self._write_zip(data_dir_path, archive_path, exclude=rejected)
                 return str(archive_path), None
 
             tmp_dir = Path(tempfile.mkdtemp(prefix="pavedb_export_"))
             timestamp = datetime.now(tz.utc).strftime("%Y%m%dT%H%M%SZ")
             archive_path = tmp_dir / f"pavedb-data-{timestamp}.zip"
-            self._write_zip(data_dir_path, archive_path)
+            self._write_zip(data_dir_path, archive_path, exclude=rejected)
             return str(archive_path), str(tmp_dir)
 
     def restore_archive(self, archive_bytes: bytes) -> None:

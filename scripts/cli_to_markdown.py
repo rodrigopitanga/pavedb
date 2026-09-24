@@ -249,7 +249,10 @@ def render_markdown(
             "",
         ])
         if command_parser.description:
-            lines.extend([_escape(command_parser.description), ""])
+            lines.extend([
+                textwrap.fill(_escape(command_parser.description), width=88),
+                "",
+            ])
         lines.extend([
             "### Usage",
             "",

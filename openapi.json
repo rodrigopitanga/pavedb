@@ -3831,7 +3831,7 @@
     },
     "/v1/admin/archive": {
       "get": {
-        "description": "Streams the whole dataset as a zip; requires the admin key.",
+        "description": "Streams the whole dataset as a zip; requires the admin key. Collections that fail validation are left out and named in the X-PaveDB-Skipped-Collections header.",
         "operationId": "dump_archive_v1_admin_archive_get",
         "responses": {
           "200": {

@@ -922,7 +922,7 @@ def test_restore_archive_detects_incomplete_rollback(tmp_path, monkeypatch):
         LocalStore(str(destination_path), FakeEmbedder())
 
 
-def test_dump_archive_rejects_conflicting_collection_config(tmp_path):
+def test_dump_archive_skips_conflicting_collection_config(tmp_path):
     store = LocalStore(str(tmp_path), FakeEmbedder())
     store.create_collection("acme", "documents")
     sidecar_path = tmp_path / "t_acme" / "c_documents" / "collection.json"
@@ -930,8 +930,67 @@ def test_dump_archive_rejects_conflicting_collection_config(tmp_path):
     sidecar["embed_model"] = "conflicting-model"
     sidecar_path.write_text(json.dumps(sidecar), encoding="utf-8")
 
-    with pytest.raises(ValueError, match="catalog and sidecar conflict"):
-        store.dump_archive()
+    skipped: list[str] = []
+    path, tmp = store.dump_archive(skipped=skipped)
+    shutil.rmtree(tmp)
+    assert len(skipped) == 1
+    assert skipped[0].startswith("acme/documents: ")
+    assert "catalog and sidecar conflict" in skipped[0]
+
+
+def test_dump_archive_skips_a_collection_failing_with_os_error(
+    tmp_path, monkeypatch
+):
+    """Any per-collection failure is skipped, not only ValueError (B83)."""
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.index_records("acme", "ok", "doc", [("0", "keep", {})])
+    store.index_records("acme", "denied", "doc", [("0", "lost", {})])
+    original = LocalStore._archive_sidecar_config
+
+    def sidecar(self, collection_dir, tenant, collection):
+        if collection == "denied":
+            raise PermissionError(13, "Permission denied")
+        return original(self, collection_dir, tenant, collection)
+
+    monkeypatch.setattr(LocalStore, "_archive_sidecar_config", sidecar)
+    skipped: list[str] = []
+    path, tmp = store.dump_archive(skipped=skipped)
+    shutil.rmtree(tmp)
+    assert [entry.split(":", 1)[0] for entry in skipped] == ["acme/denied"]
+    assert "PermissionError" in skipped[0]
+
+
+def test_dump_archive_skips_an_unreadable_meta_db(tmp_path):
+    """One damaged collection must not block the whole backup (B83)."""
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.index_records("acme", "healthy", "doc", [("0", "keep me", {})])
+    source.index_records("beta", "damaged", "doc", [("0", "lost", {})])
+    source.close()
+    meta = tmp_path / "source" / "t_beta" / "c_damaged" / "meta.db"
+    meta.write_bytes(meta.read_bytes()[:100])
+
+    # Restore of that same tree stays fail-closed.
+    live_tree = _zip_tree(tmp_path / "source", tmp_path / "live.zip")
+    with pytest.raises(ValueError, match="metadata database: beta/damaged"):
+        _sentinel_store(tmp_path / "strict").restore_archive(live_tree)
+
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    skipped: list[str] = []
+    path, tmp = source.dump_archive(skipped=skipped)
+    try:
+        archive_bytes = Path(path).read_bytes()
+    finally:
+        shutil.rmtree(tmp)
+    assert [entry.split(":", 1)[0] for entry in skipped] == ["beta/damaged"]
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        names = archive.namelist()
+    assert not any(name.startswith("t_beta/c_damaged") for name in names)
+
+    # The partial archive restores: its catalog does not name the gap.
+    destination = LocalStore(str(tmp_path / "restored"), FakeEmbedder())
+    destination.restore_archive(archive_bytes)
+    assert destination.search("acme", "healthy", "keep", k=1)[0].id == "doc::0"
+    assert destination.get_collection_config("beta", "damaged") is None
 
 
 def test_dump_archive_preserves_another_catalog_connection_wal(tmp_path):

@@ -539,7 +539,8 @@ pavecli delete-document demo books book-1
 
 ## `dump-archive`
 
-Offline only; stop the server before reading its data directory.
+Offline only; stop the server before reading its data directory. Collections that fail
+validation are left out and listed under 'skipped', and the command exits non-zero.
 
 ### Usage
 

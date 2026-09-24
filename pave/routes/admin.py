@@ -65,7 +65,11 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
     @router.get(
         "/admin/archive",
         summary="Download an archive",
-        description="Streams the whole dataset as a zip; requires the admin key.",
+        description=(
+            "Streams the whole dataset as a zip; requires the admin key. "
+            "Collections that fail validation are left out and named in the "
+            "X-PaveDB-Skipped-Collections header."
+        ),
         response_class=FileResponse,
         responses=resp(401, 403, 404, 500),
         tags=["Instance Admin"],
@@ -86,9 +90,10 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
                 request_id=rid,
             )
 
+        skipped: list[str] = []
         try:
             archive_path, tmp_dir = await run_in_threadpool(
-                svc_dump_archive, store
+                functools.partial(svc_dump_archive, store, skipped=skipped)
             )
         except FileNotFoundError:
             return error(
@@ -110,11 +115,18 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         filename = os.path.basename(archive_path)
 
         background = BackgroundTask(_cleanup_archive_dir, tmp_dir)
+        headers = {}
+        if skipped:
+            # Names only: the reasons are in the server log.
+            headers["X-PaveDB-Skipped-Collections"] = ",".join(
+                entry.split(":", 1)[0] for entry in skipped
+            )
         return FileResponse(
             archive_path,
             media_type="application/zip",
             filename=filename,
             background=background,
+            headers=headers,
         )
 
     @router.put(

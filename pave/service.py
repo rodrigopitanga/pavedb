@@ -1745,8 +1745,11 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
 def dump_archive(
     store: BaseStore,
     output_path: str | os.PathLike[str] | None = None,
+    *,
+    skipped: list[str] | None = None,
 ) -> tuple[str, str | None]:
-    return store.dump_archive(output_path)
+    """Dump the instance; collections left out are appended to `skipped`."""
+    return store.dump_archive(output_path, skipped=skipped)
 
 
 def restore_archive(store: BaseStore, archive_bytes: bytes) -> ServiceResult:

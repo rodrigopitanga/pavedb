@@ -407,13 +407,18 @@ def cmd_delete_document(args):
 def cmd_dump_archive(args):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     output = args.output or f"pavedb-data-{stamp}.zip"
-    archive_path, _ = svc_dump_archive(_get_store(), output)
+    skipped: list[str] = []
+    archive_path, _ = svc_dump_archive(_get_store(), output, skipped=skipped)
     cfg = get_cfg()
     out = {
-        "ok": True,
+        "ok": not skipped,
         "archive": archive_path,
         "source": str(cfg.get("data_dir")),
     }
+    if skipped:
+        # The archive is usable, but it is not the whole instance.
+        out["code"] = "archive_incomplete"
+        out["skipped"] = skipped
     return out
 
 def cmd_restore_archive(args):
@@ -912,7 +917,9 @@ def build_parser() -> argparse.ArgumentParser:
         "dump-archive",
         help="Export the instance data archive.",
         description=(
-            "Offline only; stop the server before reading its data directory."
+            "Offline only; stop the server before reading its data directory. "
+            "Collections that fail validation are left out and listed under "
+            "'skipped', and the command exits non-zero."
         ),
         example="pavecli dump-archive --output pavedb-data.zip",
     )

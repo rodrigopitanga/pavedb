@@ -450,6 +450,8 @@ class DummyStore:
     def dump_archive(
         self,
         output_path: str | os.PathLike[str] | None = None,
+        *,
+        skipped: list[str] | None = None,
     ) -> tuple[str, str | None]:
         import tempfile
         import zipfile
@@ -949,9 +951,11 @@ class SpyStore:
     def dump_archive(
         self,
         output_path: str | os.PathLike[str] | None = None,
+        *,
+        skipped: list[str] | None = None,
     ) -> tuple[str, str | None]:
         self.calls.append(("dump_archive", output_path))
-        return self.impl.dump_archive(output_path)
+        return self.impl.dump_archive(output_path, skipped=skipped)
 
     def restore_archive(self, archive_bytes: bytes) -> None:
         self.calls.append(("restore_archive", len(archive_bytes)))
