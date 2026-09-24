@@ -174,9 +174,9 @@ client for a running server.
 pavecli init   # create the default instance under ~/pavedb
 curl -LO https://raw.githubusercontent.com/rodrigopitanga/pavedb/main/demo/20k_leagues.txt
 
-pavecli create-collection demo books
-pavecli ingest demo books 20k_leagues.txt --docid=verne-20k --metadata='{"lang":"en"}'
-pavecli search demo books "captain nemo" -k 3
+pavecli create-collection demo/books
+pavecli ingest demo/books 20k_leagues.txt --docid=verne-20k --metadata='{"lang":"en"}'
+pavecli search demo/books "captain nemo" -k 3
 ```
 
 Full [command reference](docs/reference/cli.md).

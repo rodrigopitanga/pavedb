@@ -48,8 +48,8 @@ def test_cli_ingest_on_fresh_collection_with_empty_index_dir(cli_env, tmp_path):
     sample = tmp_path / "s.txt"
     sample.write_text("one two three quatro cinco", encoding="utf-8")
 
-    pvcli.main_cli(["create-collection", tenant, coll])
-    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1", "--metadata", '{"lang":"pt"}'])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
+    pvcli.main_cli(["ingest", f"{tenant}/{coll}", str(sample), "--docid", "DOC1", "--metadata", '{"lang":"pt"}'])
 
     assert ("create_collection", tenant, coll) in store.calls
     assert ("purge_doc", tenant, coll, "DOC1") not in store.calls
@@ -78,9 +78,9 @@ def test_cli_ingest_batch_indexes_raw_text_documents(cli_env, capsys):
         encoding="utf-8",
     )
 
-    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
     capsys.readouterr()
-    rc = pvcli.main_cli(["ingest-batch", tenant, coll, str(batch)])
+    rc = pvcli.main_cli(["ingest-batch", f"{tenant}/{coll}", str(batch)])
 
     assert rc == 0
     out = json.loads(capsys.readouterr().out)
@@ -98,12 +98,11 @@ def test_cli_ingest_text_indexes_raw_text_document(cli_env, capsys):
     pvcli, store, _ = cli_env
     tenant, coll = "acme", "textcli"
 
-    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
     capsys.readouterr()
     rc = pvcli.main_cli([
         "ingest-text",
-        tenant,
-        coll,
+        f"{tenant}/{coll}",
         "Captain Nemo commands the Nautilus.",
         "--docid",
         "NOTE-1",
@@ -126,12 +125,11 @@ def test_cli_ingest_text_indexes_raw_text_document(cli_env, capsys):
 
 def test_cli_search_accepts_content_filter(cli_query_env, capsys):
     pvcli, _store, _ = cli_query_env
-    pvcli.main_cli(["create-collection", "acme", "content-cli"])
+    pvcli.main_cli(["create-collection", "acme/content-cli"])
     pvcli.main_cli(
         [
             "ingest-text",
-            "acme",
-            "content-cli",
+            "acme/content-cli",
             "Captain Nemo commands the Nautilus",
             "--docid",
             "BOOK-1",
@@ -142,8 +140,7 @@ def test_cli_search_accepts_content_filter(cli_query_env, capsys):
     rc = pvcli.main_cli(
         [
             "search",
-            "acme",
-            "content-cli",
+            "acme/content-cli",
             "captain",
             "--mode",
             "hybrid",
@@ -164,8 +161,7 @@ def test_cli_create_collection_accepts_embedder_args(cli_env, capsys):
     rc = pvcli.main_cli(
         [
             "create-collection",
-            tenant,
-            coll,
+            f"{tenant}/{coll}",
             "--embedder-type",
             "sbert",
             "--embed-model",
@@ -190,7 +186,7 @@ def test_cli_create_collection_accepts_embedder_selector(cli_env, capsys):
     pvcli, store, _ = cli_env
 
     rc = pvcli.main_cli(
-        ["create-collection", "acme", "selected", "--embedder", "native"]
+        ["create-collection", "acme/selected", "--embedder", "native"]
     )
     out = json.loads(capsys.readouterr().out)
 
@@ -206,8 +202,7 @@ def test_cli_create_collection_rejects_malformed_embedder_config(cli_env, capsys
     rc = pvcli.main_cli(
         [
             "create-collection",
-            "acme",
-            "bad-json",
+            "acme/bad-json",
             "--embedder-config",
             "{",
         ]
@@ -226,8 +221,7 @@ def test_cli_create_collection_accepts_embed_model(cli_env, capsys):
     rc = pvcli.main_cli(
         [
             "create-collection",
-            "acme",
-            "badcfgcli",
+            "acme/badcfgcli",
             "--embed-model",
             "sentence-transformers/all-MiniLM-L6-v2",
         ]
@@ -247,8 +241,7 @@ def test_cli_create_collection_accepts_display_name(cli_env, capsys):
     rc = pvcli.main_cli(
         [
             "create-collection",
-            "acme",
-            "human-docs",
+            "acme/human-docs",
             "--display-name",
             "Human Docs",
         ]
@@ -265,7 +258,7 @@ def test_cli_create_collection_accepts_display_name(cli_env, capsys):
 def test_cli_create_collection_rejects_invalid_name(cli_env, capsys):
     pvcli, store, _ = cli_env
 
-    rc = pvcli.main_cli(["create-collection", "acme", "Human Docs"])
+    rc = pvcli.main_cli(["create-collection", "acme/Human Docs"])
     out = json.loads(capsys.readouterr().out)
 
     assert rc == 1
@@ -280,10 +273,10 @@ def test_cli_ingest_passes_doc_meta_through_wrapper(cli_env, tmp_path):
     sample = tmp_path / "meta.txt"
     sample.write_text("conteúdo de teste", encoding="utf-8")
 
-    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
     pvcli.main_cli(
         [
-            "ingest", tenant, coll, str(sample),
+            "ingest", f"{tenant}/{coll}", str(sample),
             "--docid", "DOCMETA",
             "--metadata", '{"lang":"pt","source":"cli"}',
         ]
@@ -310,11 +303,11 @@ def test_cli_reingest_same_docid_triggers_purge(cli_env, tmp_path):
     sample = tmp_path / "reup.txt"
     sample.write_text("alpha bravo", encoding="utf-8")
 
-    pvcli.main_cli(["create-collection", tenant, coll])
-    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC-REUP"])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
+    pvcli.main_cli(["ingest", f"{tenant}/{coll}", str(sample), "--docid", "DOC-REUP"])
 
     sample.write_text("delta echo", encoding="utf-8")
-    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC-REUP"])
+    pvcli.main_cli(["ingest", f"{tenant}/{coll}", str(sample), "--docid", "DOC-REUP"])
 
     # Purge now happens atomically inside index_records, so the service no
     # longer issues a separate purge_doc call. Verify the two-ingest path
@@ -336,9 +329,9 @@ def test_cli_search_returns_matches(cli_env, tmp_path):
         encoding="utf-8"
     )
 
-    pvcli.main_cli(["create-collection", tenant, coll])
-    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC2"])
-    pvcli.main_cli(["search", tenant, coll, "avião", "-k", "5"])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
+    pvcli.main_cli(["ingest", f"{tenant}/{coll}", str(sample), "--docid", "DOC2"])
+    pvcli.main_cli(["search", f"{tenant}/{coll}", "avião", "-k", "5"])
 
     assert any(c[0] == "search" and c[1] == tenant and c[2] == coll \
                and c[3] == "avião" and c[4] == 5 for c in store.calls)
@@ -346,7 +339,7 @@ def test_cli_search_returns_matches(cli_env, tmp_path):
 
 def test_cli_search_rejects_non_object_filters(cli_env, capsys):
     pvcli, _, _ = cli_env
-    rc = pvcli.main_cli(["search", "acme", "c", "q", "--filters", "[1, 2]"])
+    rc = pvcli.main_cli(["search", "acme/c", "q", "--filters", "[1, 2]"])
     out = json.loads(capsys.readouterr().out)
     assert rc == 1
     assert out["ok"] is False
@@ -368,19 +361,18 @@ def test_cli_search_does_not_merge_common_by_default(
     local.write_text("captain local", encoding="utf-8")
     common.write_text("captain common", encoding="utf-8")
 
-    pvcli.main_cli(["create-collection", "acme", "local"])
-    pvcli.main_cli(["create-collection", "global", "common"])
-    pvcli.main_cli(["ingest", "acme", "local", str(local), "--docid", "DOC-L"])
+    pvcli.main_cli(["create-collection", "acme/local"])
+    pvcli.main_cli(["create-collection", "global/common"])
+    pvcli.main_cli(["ingest", "acme/local", str(local), "--docid", "DOC-L"])
     pvcli.main_cli(
-        ["ingest", "global", "common", str(common), "--docid", "DOC-C"]
+        ["ingest", "global/common", str(common), "--docid", "DOC-C"]
     )
     capsys.readouterr()
 
     pvcli.main_cli(
         [
             "search",
-            "acme",
-            "local",
+            "acme/local",
             "captain",
             "-k",
             "2",
@@ -417,21 +409,20 @@ def test_cli_search_merges_common_when_enabled(
     local.write_text("captain local", encoding="utf-8")
     common.write_text("captain common", encoding="utf-8")
 
-    pvcli.main_cli(["create-collection", "acme", "localmerge"])
-    pvcli.main_cli(["create-collection", "global", "common"])
+    pvcli.main_cli(["create-collection", "acme/localmerge"])
+    pvcli.main_cli(["create-collection", "global/common"])
     pvcli.main_cli(
-        ["ingest", "acme", "localmerge", str(local), "--docid", "DOC-L"]
+        ["ingest", "acme/localmerge", str(local), "--docid", "DOC-L"]
     )
     pvcli.main_cli(
-        ["ingest", "global", "common", str(common), "--docid", "DOC-C"]
+        ["ingest", "global/common", str(common), "--docid", "DOC-C"]
     )
     capsys.readouterr()
 
     pvcli.main_cli(
         [
             "search",
-            "acme",
-            "localmerge",
+            "acme/localmerge",
             "captain",
             "-k",
             "2",
@@ -463,12 +454,12 @@ def test_cli_list_queries_returns_logged_searches(
     other = tmp_path / "qlog-other.txt"
     other.write_text("other tenant query", encoding="utf-8")
 
-    pvcli.main_cli(["create-collection", tenant, coll])
-    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1"])
-    pvcli.main_cli(["search", tenant, coll, "hello", "-k", "1"])
-    pvcli.main_cli(["create-collection", "beta", "other"])
-    pvcli.main_cli(["ingest", "beta", "other", str(other), "--docid", "DOC2"])
-    pvcli.main_cli(["search", "beta", "other", "other", "-k", "1"])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
+    pvcli.main_cli(["ingest", f"{tenant}/{coll}", str(sample), "--docid", "DOC1"])
+    pvcli.main_cli(["search", f"{tenant}/{coll}", "hello", "-k", "1"])
+    pvcli.main_cli(["create-collection", "beta/other"])
+    pvcli.main_cli(["ingest", "beta/other", str(other), "--docid", "DOC2"])
+    pvcli.main_cli(["search", "beta/other", "other", "-k", "1"])
     capsys.readouterr()
 
     rc = pvcli.main_cli(
@@ -516,9 +507,9 @@ def test_cli_get_query_returns_full_entry(cli_query_env, capsys):
     sample = tmp_path / "qdetail.txt"
     sample.write_text("captain nemo from cli", encoding="utf-8")
 
-    pvcli.main_cli(["create-collection", tenant, coll])
-    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1"])
-    pvcli.main_cli(["search", tenant, coll, "captain", "-k", "1"])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
+    pvcli.main_cli(["ingest", f"{tenant}/{coll}", str(sample), "--docid", "DOC1"])
+    pvcli.main_cli(["search", f"{tenant}/{coll}", "captain", "-k", "1"])
     capsys.readouterr()
 
     query_id = store.impl.list_query_logs(tenant, coll)[0]["query_id"]
@@ -559,13 +550,13 @@ def test_cli_replay_query_returns_fresh_results_and_logs_replay(
     first.write_text("hello world from cli", encoding="utf-8")
     second.write_text("hello again from cli", encoding="utf-8")
 
-    pvcli.main_cli(["create-collection", tenant, coll])
-    pvcli.main_cli(["ingest", tenant, coll, str(first), "--docid", "DOC1"])
-    pvcli.main_cli(["search", tenant, coll, "hello", "-k", "5"])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
+    pvcli.main_cli(["ingest", f"{tenant}/{coll}", str(first), "--docid", "DOC1"])
+    pvcli.main_cli(["search", f"{tenant}/{coll}", "hello", "-k", "5"])
     capsys.readouterr()
 
     original_query_id = store.impl.list_query_logs(tenant, coll)[0]["query_id"]
-    pvcli.main_cli(["ingest", tenant, coll, str(second), "--docid", "DOC2"])
+    pvcli.main_cli(["ingest", f"{tenant}/{coll}", str(second), "--docid", "DOC2"])
     capsys.readouterr()
     store.calls.clear()
 
@@ -620,12 +611,12 @@ def test_cli_list_queries_collection_filter_without_tenant_works(
     first.write_text("same collection one", encoding="utf-8")
     second.write_text("same collection two", encoding="utf-8")
 
-    pvcli.main_cli(["create-collection", "acme", collection])
-    pvcli.main_cli(["create-collection", "beta", collection])
-    pvcli.main_cli(["ingest", "acme", collection, str(first), "--docid", "DOC1"])
-    pvcli.main_cli(["ingest", "beta", collection, str(second), "--docid", "DOC2"])
-    pvcli.main_cli(["search", "acme", collection, "same", "-k", "1"])
-    pvcli.main_cli(["search", "beta", collection, "same", "-k", "1"])
+    pvcli.main_cli(["create-collection", f"acme/{collection}"])
+    pvcli.main_cli(["create-collection", f"beta/{collection}"])
+    pvcli.main_cli(["ingest", f"acme/{collection}", str(first), "--docid", "DOC1"])
+    pvcli.main_cli(["ingest", f"beta/{collection}", str(second), "--docid", "DOC2"])
+    pvcli.main_cli(["search", f"acme/{collection}", "same", "-k", "1"])
+    pvcli.main_cli(["search", f"beta/{collection}", "same", "-k", "1"])
     capsys.readouterr()
 
     rc = pvcli.main_cli(["list-queries", "--collection", collection])
@@ -644,11 +635,11 @@ def test_cli_list_documents_returns_doc_summaries(cli_env, tmp_path, capsys):
     sample = tmp_path / "clidocs.txt"
     sample.write_text("alpha bravo", encoding="utf-8")
 
-    pvcli.main_cli(["create-collection", tenant, coll])
-    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1"])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
+    pvcli.main_cli(["ingest", f"{tenant}/{coll}", str(sample), "--docid", "DOC1"])
     capsys.readouterr()
 
-    pvcli.main_cli(["list-documents", tenant, coll])
+    pvcli.main_cli(["list-documents", f"{tenant}/{coll}"])
     out = json.loads(capsys.readouterr().out)
 
     assert out["ok"] is True
@@ -667,12 +658,11 @@ def test_cli_get_document_returns_full_document(cli_env, tmp_path, capsys):
     sample = tmp_path / "cligetdoc.txt"
     sample.write_text("hello document", encoding="utf-8")
 
-    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
     pvcli.main_cli(
         [
             "ingest",
-            tenant,
-            coll,
+            f"{tenant}/{coll}",
             str(sample),
             "--docid",
             "DOC-GET-1",
@@ -682,7 +672,7 @@ def test_cli_get_document_returns_full_document(cli_env, tmp_path, capsys):
     )
     capsys.readouterr()
 
-    pvcli.main_cli(["get-document", tenant, coll, "DOC-GET-1"])
+    pvcli.main_cli(["get-document", f"{tenant}/{coll}", "DOC-GET-1"])
     out = json.loads(capsys.readouterr().out)
 
     assert out["ok"] is True
@@ -705,11 +695,11 @@ def test_cli_list_chunks_returns_chunk_summaries(
     sample = tmp_path / "clichunks.txt"
     sample.write_text("hello chunk cli", encoding="utf-8")
 
-    pvcli.main_cli(["create-collection", tenant, coll])
-    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1"])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
+    pvcli.main_cli(["ingest", f"{tenant}/{coll}", str(sample), "--docid", "DOC1"])
     capsys.readouterr()
 
-    rc = pvcli.main_cli(["list-chunks", tenant, coll, "DOC1"])
+    rc = pvcli.main_cli(["list-chunks", f"{tenant}/{coll}", "DOC1"])
     out = json.loads(capsys.readouterr().out)
 
     assert rc == 0
@@ -733,11 +723,11 @@ def test_cli_get_chunk_returns_metadata_without_text(
     sample = tmp_path / "cligetchunk.txt"
     sample.write_text("hello chunk metadata", encoding="utf-8")
 
-    pvcli.main_cli(["create-collection", tenant, coll])
-    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1"])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
+    pvcli.main_cli(["ingest", f"{tenant}/{coll}", str(sample), "--docid", "DOC1"])
     capsys.readouterr()
 
-    rc = pvcli.main_cli(["get-chunk", tenant, coll, "DOC1::chunk_0"])
+    rc = pvcli.main_cli(["get-chunk", f"{tenant}/{coll}", "DOC1::chunk_0"])
     out = json.loads(capsys.readouterr().out)
 
     assert rc == 0
@@ -760,12 +750,12 @@ def test_cli_get_chunk_content_writes_raw_bytes(
     sample = tmp_path / "cligetchunkcontent.txt"
     sample.write_text("hello chunk content", encoding="utf-8")
 
-    pvcli.main_cli(["create-collection", tenant, coll])
-    pvcli.main_cli(["ingest", tenant, coll, str(sample), "--docid", "DOC1"])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
+    pvcli.main_cli(["ingest", f"{tenant}/{coll}", str(sample), "--docid", "DOC1"])
     capsysbinary.readouterr()
 
     rc = pvcli.main_cli(
-        ["get-chunk-content", tenant, coll, "DOC1::chunk_0"]
+        ["get-chunk-content", f"{tenant}/{coll}", "DOC1::chunk_0"]
     )
     out = capsysbinary.readouterr().out
 
@@ -780,7 +770,7 @@ def test_cli_get_chunk_content_missing_returns_exit_code_1(
 ):
     pvcli, _, _ = cli_query_env
 
-    rc = pvcli.main_cli(["get-chunk-content", "acme", "docs", "missing"])
+    rc = pvcli.main_cli(["get-chunk-content", "acme/docs", "missing"])
     out = json.loads(capsys.readouterr().out)
 
     assert rc == 1
@@ -818,7 +808,7 @@ def test_cli_dump_collection_archive_creates_zip(cli_env, tmp_path, capsys):
 
     target = tmp_path / "books.zip"
     pvcli.main_cli(
-        ["dump-collection-archive", "acme", "books", "--output", str(target)]
+        ["dump-collection-archive", "acme/books", "--output", str(target)]
     )
 
     out = json.loads(capsys.readouterr().out)
@@ -836,7 +826,7 @@ def test_cli_restore_collection_archive_extracts_zip(cli_env, tmp_path, capsys):
     with zipfile.ZipFile(source, "w") as zf:
         zf.writestr("meta.db", "fake-meta")
 
-    pvcli.main_cli(["restore-collection-archive", "acme", "books", str(source)])
+    pvcli.main_cli(["restore-collection-archive", "acme/books", str(source)])
 
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] is True
@@ -956,10 +946,10 @@ def test_cli_get_collection_returns_detail(cli_env, capsys):
     pvcli, store, _ = cli_env
     tenant, coll = "acme", "detailcli"
 
-    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
     capsys.readouterr()
 
-    pvcli.main_cli(["get-collection", tenant, coll])
+    pvcli.main_cli(["get-collection", f"{tenant}/{coll}"])
     out = json.loads(capsys.readouterr().out)
 
     assert out["ok"] is True
@@ -977,14 +967,13 @@ def test_cli_update_collection_display_name(cli_env, capsys):
     pvcli, store, _ = cli_env
     tenant, coll = "acme", "labelcli"
 
-    pvcli.main_cli(["create-collection", tenant, coll])
+    pvcli.main_cli(["create-collection", f"{tenant}/{coll}"])
     capsys.readouterr()
 
     rc = pvcli.main_cli(
         [
             "update-collection",
-            tenant,
-            coll,
+            f"{tenant}/{coll}",
             "--display-name",
             "Label CLI",
         ]
@@ -1046,3 +1035,40 @@ def test_cli_init_writes_default_instance_files(cli_env, monkeypatch, tmp_path, 
     assert "data_dir:" in config_text
     assert f"# ops_log: '{instance / 'ops.jsonl'}'" in config_text
     assert "~/pavedb" not in config_text
+
+
+@pytest.mark.parametrize("ref", ["demo", "demo/", "/books", "demo/books/x"])
+def test_cli_rejects_a_malformed_collection_ref(ref, capsys):
+    from pave.cli import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["get-collection", ref])
+    assert "expected TENANT/COLLECTION" in capsys.readouterr().err
+
+
+def test_cli_rejects_the_old_two_argument_form(capsys):
+    from pave.cli import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["search", "demo", "books", "query"])
+    assert "expected TENANT/COLLECTION, got 'demo'" in capsys.readouterr().err
+
+
+def test_cli_move_collection_takes_two_refs(cli_env, capsys):
+    pvcli, store, _ = cli_env
+    pvcli.main_cli(["create-collection", "acme/old-books"])
+    capsys.readouterr()
+
+    rc = pvcli.main_cli(["move-collection", "acme/old-books", "acme/books"])
+    assert rc == 0
+    assert ("move_collection", "acme", "old-books", "books") in store.calls
+
+    capsys.readouterr()
+    rc = pvcli.main_cli(["move-collection", "acme/books", "beta/books"])
+    out = json.loads(capsys.readouterr().out)
+    assert rc == 1
+    assert out["code"] == "move_invalid"
+    assert not any(
+        call[:2] == ("move_collection", "acme") and call[2] == "books"
+        for call in store.calls
+    )

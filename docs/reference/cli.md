@@ -12,9 +12,9 @@ Generated from `pave.cli.build_parser`. Regenerate with `make docs-refresh`.
 
 ```bash
 pavecli init
-pavecli create-collection demo books
-pavecli ingest demo books ./book.txt --docid book-1
-pavecli search demo books "captain nemo" -k 3
+pavecli create-collection demo/books
+pavecli ingest demo/books ./book.txt --docid book-1
+pavecli search demo/books "captain nemo" -k 3
 ```
 
 ## Usage
@@ -142,20 +142,20 @@ pavecli create-collection [-h] [--display-name DISPLAY_NAME]
                                  [--embedder-type EMBEDDER_TYPE]
                                  [--embed-model EMBED_MODEL]
                                  [--embedder-config EMBEDDER_CONFIG]
-                                 tenant collection
+                                 tenant/collection
 ```
 
 ### Example
 
 ```bash
-pavecli create-collection demo books --display-name "Books"
+pavecli create-collection demo/books --display-name "Books"
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection slug: lowercase letters, digits, and hyphens; must
-  start with a letter or digit; max 63 chars
+- `tenant/collection` (required): Tenant and new collection, e.g. demo/books. The
+  collection slug takes lowercase letters, digits, and hyphens; must start with a letter
+  or digit; max 63 chars
 - `--display-name` (optional): Human-readable collection label
 - `--embedder` (optional): Configured embedder selector: instance key, type, type:model,
   or full vector-space key
@@ -174,19 +174,18 @@ pavecli ingest [-h] [--docid DOCID] [--metadata METADATA]
                       [--csv-has-header {auto,yes,no}]
                       [--csv-meta-cols CSV_META_COLS]
                       [--csv-include-cols CSV_INCLUDE_COLS]
-                      tenant collection file
+                      tenant/collection file
 ```
 
 ### Example
 
 ```bash
-pavecli ingest demo books ./book.txt --docid book-1 --metadata '{"lang":"en"}'
+pavecli ingest demo/books ./book.txt --docid book-1 --metadata '{"lang":"en"}'
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection name
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books
 - `file` (required): Path to TXT, CSV, or PDF input
 - `--docid` (optional): Stable document ID; defaults from filename when omitted
 - `--metadata` (optional): JSON object attached to the document
@@ -204,19 +203,18 @@ Index a JSON batch of raw-text documents.
 ### Usage
 
 ```bash
-pavecli ingest-batch [-h] tenant collection file
+pavecli ingest-batch [-h] tenant/collection file
 ```
 
 ### Example
 
 ```bash
-pavecli ingest-batch demo books ./documents.json
+pavecli ingest-batch demo/books ./documents.json
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection name
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books
 - `file` (required): JSON batch input file
 
 ## `ingest-text`
@@ -227,19 +225,18 @@ Index one raw-text document.
 
 ```bash
 pavecli ingest-text [-h] [--docid DOCID] [--metadata METADATA]
-                           tenant collection text
+                           tenant/collection text
 ```
 
 ### Example
 
 ```bash
-pavecli ingest-text demo books "Captain Nemo" --docid note-1
+pavecli ingest-text demo/books "Captain Nemo" --docid note-1
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection name
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books
 - `text` (required): Raw text to index
 - `--docid` (optional): Stable document ID; generated when omitted
 - `--metadata` (optional): JSON object attached to the document
@@ -253,19 +250,18 @@ Run ranked search over a collection and print the response envelope.
 ```bash
 pavecli search [-h] [-k K] [--mode {vector,hybrid}] [--include-common]
                       [--filters FILTERS] [--content-filter CONTENT_FILTER]
-                      tenant collection query
+                      tenant/collection query
 ```
 
 ### Example
 
 ```bash
-pavecli search demo books "captain nemo" -k 3
+pavecli search demo/books "captain nemo" -k 3
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection name
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books
 - `query` (required): Natural-language search query
 - `-k` (optional): Number of matches to return (default: 5)
 - `--mode` (optional): Candidate generation mode (choices: vector, hybrid; default:
@@ -346,19 +342,18 @@ Print indexed documents and their collection metadata.
 ### Usage
 
 ```bash
-pavecli list-documents [-h] tenant collection
+pavecli list-documents [-h] tenant/collection
 ```
 
 ### Example
 
 ```bash
-pavecli list-documents demo books
+pavecli list-documents demo/books
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection name
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books
 
 ## `get-document`
 
@@ -367,19 +362,18 @@ Print document metadata and chunk summary for one document.
 ### Usage
 
 ```bash
-pavecli get-document [-h] tenant collection docid
+pavecli get-document [-h] tenant/collection docid
 ```
 
 ### Example
 
 ```bash
-pavecli get-document demo books book-1
+pavecli get-document demo/books book-1
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection name
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books
 - `docid` (required): Document ID
 
 ## `list-chunks`
@@ -389,19 +383,18 @@ Print chunk metadata for a document without chunk text content.
 ### Usage
 
 ```bash
-pavecli list-chunks [-h] tenant collection docid
+pavecli list-chunks [-h] tenant/collection docid
 ```
 
 ### Example
 
 ```bash
-pavecli list-chunks demo books book-1
+pavecli list-chunks demo/books book-1
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection name
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books
 - `docid` (required): Document ID
 
 ## `get-chunk`
@@ -411,19 +404,18 @@ Print metadata for one chunk by record ID.
 ### Usage
 
 ```bash
-pavecli get-chunk [-h] tenant collection rid
+pavecli get-chunk [-h] tenant/collection rid
 ```
 
 ### Example
 
 ```bash
-pavecli get-chunk demo books book-1::chunk_0
+pavecli get-chunk demo/books book-1::chunk_0
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection name
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books
 - `rid` (required): Chunk record ID
 
 ## `get-chunk-content`
@@ -433,19 +425,18 @@ Write one chunk's text content to stdout.
 ### Usage
 
 ```bash
-pavecli get-chunk-content [-h] tenant collection rid
+pavecli get-chunk-content [-h] tenant/collection rid
 ```
 
 ### Example
 
 ```bash
-pavecli get-chunk-content demo books book-1::chunk_0
+pavecli get-chunk-content demo/books book-1::chunk_0
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection name
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books
 - `rid` (required): Chunk record ID
 
 ## `delete-collection`
@@ -455,19 +446,18 @@ Remove a collection, including its local metadata and vector index.
 ### Usage
 
 ```bash
-pavecli delete-collection [-h] tenant collection
+pavecli delete-collection [-h] tenant/collection
 ```
 
 ### Example
 
 ```bash
-pavecli delete-collection demo books
+pavecli delete-collection demo/books
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection name
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books
 
 ## `move-collection`
 
@@ -476,21 +466,20 @@ Rename the collection slug and move its catalog/query-home records.
 ### Usage
 
 ```bash
-pavecli move-collection [-h] tenant old_name new_name
+pavecli move-collection [-h] tenant/collection tenant/new-collection
 ```
 
 ### Example
 
 ```bash
-pavecli move-collection demo old-books books
+pavecli move-collection demo/old-books demo/books
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `old_name` (required): Current collection name
-- `new_name` (required): New collection slug: lowercase letters, digits, and hyphens;
-  must start with a letter or digit; max 63 chars
+- `tenant/collection` (required): Tenant and current collection, e.g. demo/old
+- `tenant/new-collection` (required): Same tenant and the new collection slug: lowercase
+  letters, digits, and hyphens; must start with a letter or digit; max 63 chars
 
 ## `update-collection`
 
@@ -500,19 +489,18 @@ Update collection metadata such as the display name, without re-indexing.
 
 ```bash
 pavecli update-collection [-h] --display-name DISPLAY_NAME
-                                 tenant collection
+                                 tenant/collection
 ```
 
 ### Example
 
 ```bash
-pavecli update-collection demo books --display-name "Books"
+pavecli update-collection demo/books --display-name "Books"
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection name
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books
 - `--display-name` (required): New human-readable collection label
 
 ## `delete-document`
@@ -522,19 +510,18 @@ Remove one document and its chunks from a collection.
 ### Usage
 
 ```bash
-pavecli delete-document [-h] tenant collection docid
+pavecli delete-document [-h] tenant/collection docid
 ```
 
 ### Example
 
 ```bash
-pavecli delete-document demo books book-1
+pavecli delete-document demo/books book-1
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection name
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books
 - `docid` (required): Document ID
 
 ## `dump-archive`
@@ -586,19 +573,18 @@ Offline only; stop the server first. Writes one collection as a portable archive
 
 ```bash
 pavecli dump-collection-archive [-h] [--output OUTPUT]
-                                       tenant collection
+                                       tenant/collection
 ```
 
 ### Example
 
 ```bash
-pavecli dump-collection-archive demo books --output books.zip
+pavecli dump-collection-archive demo/books --output books.zip
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection name
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books
 - `--output` (optional): Destination ZIP file path
 
 ## `restore-collection-archive`
@@ -608,19 +594,18 @@ Offline only; stop the server first. Replaces a collection from a same-version a
 ### Usage
 
 ```bash
-pavecli restore-collection-archive [-h] tenant collection file
+pavecli restore-collection-archive [-h] tenant/collection file
 ```
 
 ### Example
 
 ```bash
-pavecli restore-collection-archive demo books books.zip
+pavecli restore-collection-archive demo/books books.zip
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Destination collection name
+- `tenant/collection` (required): Destination tenant and collection, e.g. demo/books
 - `file` (required): Archive zip file path
 
 ## `reset-metrics`
@@ -703,16 +688,15 @@ Print catalog, embedder, vector-space, document, and chunk details for a collect
 ### Usage
 
 ```bash
-pavecli get-collection [-h] tenant collection
+pavecli get-collection [-h] tenant/collection
 ```
 
 ### Example
 
 ```bash
-pavecli get-collection demo books
+pavecli get-collection demo/books
 ```
 
 ### Arguments And Options
 
-- `tenant` (required): Tenant namespace
-- `collection` (required): Collection name
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books

@@ -8,14 +8,15 @@ ceremonious. Every flag is in [`cli.md`](../reference/cli.md); every endpoint is
 in [`openapi.json`](../../openapi.json). This page shows the shape, not the
 surface.
 
-Examples use tenant `demo` and collection `books`.
+Examples use tenant `demo` and collection `books`. Commands name a collection
+as `tenant/collection`, the same path the HTTP API uses: `demo/books`.
 They open the local data directory directly, so stop any `pavesrv` or persistent
 local Python client using that directory first.
 
 ## Create a collection
 
 ```bash
-pavecli create-collection demo books --embedder native
+pavecli create-collection demo/books --embedder native
 ```
 
 `--embedder` accepts a configured instance key, type, `type:model`, or full
@@ -34,7 +35,7 @@ reindexing because vectors from two models cannot share an index.
 ## Ingest
 
 ```bash
-pavecli ingest demo books ./book.txt --docid book-1
+pavecli ingest demo/books ./book.txt --docid book-1
 ```
 
 PaveDB chunks and embeds the file itself. PDF, CSV and TXT are supported;
@@ -47,9 +48,9 @@ The `docid` is yours to choose and is the update key: re-ingesting the same
 ## Search
 
 ```bash
-pavecli search demo books "captain nemo" -k 3
-pavecli search demo books "captain nemo" -k 3 --mode hybrid
-pavecli search demo books "captain" \
+pavecli search demo/books "captain nemo" -k 3
+pavecli search demo/books "captain nemo" -k 3 --mode hybrid
+pavecli search demo/books "captain" \
   --content-filter '{"op":"phrase","value":"captain nemo"}'
 ```
 
@@ -86,15 +87,15 @@ search; `replay-query` runs it again against current data — useful for telling
 To go from a hit down to the exact stored text:
 
 ```bash
-pavecli list-chunks demo books book-1
-pavecli get-chunk-content demo books book-1::chunk_0
+pavecli list-chunks demo/books book-1
+pavecli get-chunk-content demo/books book-1::chunk_0
 ```
 
 ## Clean up
 
 ```bash
-pavecli delete-document demo books book-1
-pavecli delete-collection demo books
+pavecli delete-document demo/books book-1
+pavecli delete-collection demo/books
 ```
 
 ## Archive and reindex your collection

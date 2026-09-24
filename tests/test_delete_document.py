@@ -108,16 +108,16 @@ def test_delete_document_cli(tmp_path, monkeypatch):
     monkeypatch.setattr(pave.cli, "store", store)
 
     # Create collection and ingest document
-    main_cli(["create-collection", "t1", "c1"])
+    main_cli(["create-collection", "t1/c1"])
     test_file = tmp_path / "test.txt"
     test_file.write_text("hello world cli test")
-    main_cli(["ingest", "t1", "c1", str(test_file), "--docid", "CLI-DOC"])
+    main_cli(["ingest", "t1/c1", str(test_file), "--docid", "CLI-DOC"])
 
     # Verify document exists
     assert store.get_document("t1", "c1", "CLI-DOC") is not None
 
     # Delete document via CLI
-    main_cli(["delete-document", "t1", "c1", "CLI-DOC"])
+    main_cli(["delete-document", "t1/c1", "CLI-DOC"])
 
     # Verify document is gone
     assert store.get_document("t1", "c1", "CLI-DOC") is None

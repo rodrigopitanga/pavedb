@@ -101,10 +101,10 @@ export PAVEDB_CONFIG=/path/to/config.yml
 
 ## CLI example
 ```bash
-pavecli create-collection demo books
-pavecli ingest demo books demo/20k_leagues.txt --docid=verne-20k \
+pavecli create-collection demo/books
+pavecli ingest demo/books demo/20k_leagues.txt --docid=verne-20k \
   --metadata='{"lang":"en"}'
-pavecli search demo books "captain nemo" -k 5
+pavecli search demo/books "captain nemo" -k 5
 ```
 
 ## REST example

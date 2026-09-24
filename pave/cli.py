@@ -381,6 +381,13 @@ def cmd_delete(args):
     return svc_delete_collection(_get_store(), args.tenant, args.collection)
 
 def cmd_move(args):
+    if args.new_tenant != args.tenant:
+        raise ServiceError(
+            "move_invalid",
+            "move-collection renames within one tenant; "
+            f"{args.tenant}/{args.old_name} cannot move to tenant "
+            f"{args.new_tenant}",
+        )
     return svc_move_collection(
         _get_store(),
         args.tenant,
@@ -491,6 +498,50 @@ def _command(
         description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=epilog,
+    )
+
+
+def _collection_ref(value: str) -> tuple[str, str]:
+    tenant, sep, collection = value.partition("/")
+    if not sep or not tenant or not collection or "/" in collection:
+        raise argparse.ArgumentTypeError(
+            f"expected TENANT/COLLECTION, got {value!r}"
+        )
+    return tenant, collection
+
+
+class _CollectionRef(argparse.Action):
+    """Split one TENANT/COLLECTION argument into two namespace attributes.
+
+    The collection lands in `dest`, the tenant in `tenant_dest`, so command
+    handlers keep reading `args.tenant` and `args.collection`.
+    """
+
+    def __init__(self, *args, tenant_dest: str = "tenant", **kwargs):
+        self.tenant_dest = tenant_dest
+        super().__init__(*args, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        tenant, collection = values
+        setattr(namespace, self.tenant_dest, tenant)
+        setattr(namespace, self.dest, collection)
+
+
+def _add_collection_ref(
+    parser,
+    dest: str = "collection",
+    *,
+    help: str = "Tenant and collection, e.g. demo/books",
+    tenant_dest: str = "tenant",
+    metavar: str = "tenant/collection",
+) -> None:
+    parser.add_argument(
+        dest,
+        metavar=metavar,
+        type=_collection_ref,
+        action=_CollectionRef,
+        tenant_dest=tenant_dest,
+        help=help,
     )
 
 
@@ -607,14 +658,14 @@ def build_parser() -> argparse.ArgumentParser:
             "Create a collection, optionally with display and embedder "
             "configuration."
         ),
-        example='pavecli create-collection demo books --display-name "Books"',
+        example='pavecli create-collection demo/books --display-name "Books"',
     )
-    p_create.add_argument("tenant", help="Tenant namespace")
-    p_create.add_argument(
-        "collection",
+    _add_collection_ref(
+        p_create,
         help=(
-            "Collection slug: lowercase letters, digits, and hyphens; must "
-            "start with a letter or digit; max 63 chars"
+            "Tenant and new collection, e.g. demo/books. The collection slug "
+            "takes lowercase letters, digits, and hyphens; must start with a "
+            "letter or digit; max 63 chars"
         ),
     )
     p_create.add_argument("--display-name", help="Human-readable collection label")
@@ -642,12 +693,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Index a file into a collection.",
         description="Preprocess and index a TXT, CSV, or PDF file into a collection.",
         example=(
-            "pavecli ingest demo books ./book.txt --docid book-1 "
+            "pavecli ingest demo/books ./book.txt --docid book-1 "
             "--metadata '{\"lang\":\"en\"}'"
         ),
     )
-    p_ingest.add_argument("tenant", help="Tenant namespace")
-    p_ingest.add_argument("collection", help="Collection name")
+    _add_collection_ref(p_ingest)
     p_ingest.add_argument("file", help="Path to TXT, CSV, or PDF input")
     p_ingest.add_argument(
         "--docid",
@@ -675,11 +725,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Index raw-text documents into a collection.",
         description="Index a JSON batch of raw-text documents.",
         example=(
-            "pavecli ingest-batch demo books ./documents.json"
+            "pavecli ingest-batch demo/books ./documents.json"
         ),
     )
-    p_ingest_batch.add_argument("tenant", help="Tenant namespace")
-    p_ingest_batch.add_argument("collection", help="Collection name")
+    _add_collection_ref(p_ingest_batch)
     p_ingest_batch.add_argument("file", help="JSON batch input file")
     p_ingest_batch.set_defaults(func=cmd_ingest_batch)
 
@@ -689,11 +738,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="Index raw text into a collection.",
         description="Index one raw-text document.",
         example=(
-            'pavecli ingest-text demo books "Captain Nemo" --docid note-1'
+            'pavecli ingest-text demo/books "Captain Nemo" --docid note-1'
         ),
     )
-    p_ingest_text.add_argument("tenant", help="Tenant namespace")
-    p_ingest_text.add_argument("collection", help="Collection name")
+    _add_collection_ref(p_ingest_text)
     p_ingest_text.add_argument("text", help="Raw text to index")
     p_ingest_text.add_argument(
         "--docid",
@@ -713,10 +761,9 @@ def build_parser() -> argparse.ArgumentParser:
             "Run ranked search over a collection and print the response "
             "envelope."
         ),
-        example='pavecli search demo books "captain nemo" -k 3',
+        example='pavecli search demo/books "captain nemo" -k 3',
     )
-    p_search.add_argument("tenant", help="Tenant namespace")
-    p_search.add_argument("collection", help="Collection name")
+    _add_collection_ref(p_search)
     p_search.add_argument("query", help="Natural-language search query")
     p_search.add_argument("-k", type=int, default=5, help="Number of matches to return")
     p_search.add_argument(
@@ -750,6 +797,8 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         example="pavecli list-queries --tenant demo --collection books --limit 20",
     )
+    # Filters, not an address: --collection alone matches that name in
+    # every tenant, so the two stay independent options.
     p_list_queries.add_argument("--tenant", help="Filter by tenant")
     p_list_queries.add_argument("--collection", help="Filter by collection")
     p_list_queries.add_argument(
@@ -792,10 +841,9 @@ def build_parser() -> argparse.ArgumentParser:
         "list-documents",
         help="List documents in a collection.",
         description="Print indexed documents and their collection metadata.",
-        example="pavecli list-documents demo books",
+        example="pavecli list-documents demo/books",
     )
-    p_list_docs.add_argument("tenant", help="Tenant namespace")
-    p_list_docs.add_argument("collection", help="Collection name")
+    _add_collection_ref(p_list_docs)
     p_list_docs.set_defaults(func=cmd_list_documents)
 
     p_get_doc = _command(
@@ -803,10 +851,9 @@ def build_parser() -> argparse.ArgumentParser:
         "get-document",
         help="Fetch one document by ID.",
         description="Print document metadata and chunk summary for one document.",
-        example="pavecli get-document demo books book-1",
+        example="pavecli get-document demo/books book-1",
     )
-    p_get_doc.add_argument("tenant", help="Tenant namespace")
-    p_get_doc.add_argument("collection", help="Collection name")
+    _add_collection_ref(p_get_doc)
     p_get_doc.add_argument("docid", help="Document ID")
     p_get_doc.set_defaults(func=cmd_get_document)
 
@@ -815,10 +862,9 @@ def build_parser() -> argparse.ArgumentParser:
         "list-chunks",
         help="List chunks for a document.",
         description="Print chunk metadata for a document without chunk text content.",
-        example="pavecli list-chunks demo books book-1",
+        example="pavecli list-chunks demo/books book-1",
     )
-    p_list_chunks.add_argument("tenant", help="Tenant namespace")
-    p_list_chunks.add_argument("collection", help="Collection name")
+    _add_collection_ref(p_list_chunks)
     p_list_chunks.add_argument("docid", help="Document ID")
     p_list_chunks.set_defaults(func=cmd_list_chunks)
 
@@ -827,10 +873,9 @@ def build_parser() -> argparse.ArgumentParser:
         "get-chunk",
         help="Fetch chunk metadata.",
         description="Print metadata for one chunk by record ID.",
-        example="pavecli get-chunk demo books book-1::chunk_0",
+        example="pavecli get-chunk demo/books book-1::chunk_0",
     )
-    p_get_chunk.add_argument("tenant", help="Tenant namespace")
-    p_get_chunk.add_argument("collection", help="Collection name")
+    _add_collection_ref(p_get_chunk)
     p_get_chunk.add_argument("rid", help="Chunk record ID")
     p_get_chunk.set_defaults(func=cmd_get_chunk)
 
@@ -839,10 +884,9 @@ def build_parser() -> argparse.ArgumentParser:
         "get-chunk-content",
         help="Print raw chunk text.",
         description="Write one chunk's text content to stdout.",
-        example="pavecli get-chunk-content demo books book-1::chunk_0",
+        example="pavecli get-chunk-content demo/books book-1::chunk_0",
     )
-    p_get_chunk_content.add_argument("tenant", help="Tenant namespace")
-    p_get_chunk_content.add_argument("collection", help="Collection name")
+    _add_collection_ref(p_get_chunk_content)
     p_get_chunk_content.add_argument("rid", help="Chunk record ID")
     p_get_chunk_content.set_defaults(func=cmd_get_chunk_content)
 
@@ -854,10 +898,9 @@ def build_parser() -> argparse.ArgumentParser:
             "Remove a collection, including its local metadata and vector "
             "index."
         ),
-        example="pavecli delete-collection demo books",
+        example="pavecli delete-collection demo/books",
     )
-    p_delete.add_argument("tenant", help="Tenant namespace")
-    p_delete.add_argument("collection", help="Collection name")
+    _add_collection_ref(p_delete)
     p_delete.set_defaults(func=cmd_delete)
 
     p_move = _command(
@@ -868,15 +911,20 @@ def build_parser() -> argparse.ArgumentParser:
             "Rename the collection slug and move its catalog/query-home "
             "records."
         ),
-        example="pavecli move-collection demo old-books books",
+        example="pavecli move-collection demo/old-books demo/books",
     )
-    p_move.add_argument("tenant", help="Tenant namespace")
-    p_move.add_argument("old_name", help="Current collection name")
-    p_move.add_argument(
+    _add_collection_ref(
+        p_move, "old_name", help="Tenant and current collection, e.g. demo/old"
+    )
+    _add_collection_ref(
+        p_move,
         "new_name",
+        tenant_dest="new_tenant",
+        metavar="tenant/new-collection",
         help=(
-            "New collection slug: lowercase letters, digits, and hyphens; "
-            "must start with a letter or digit; max 63 chars"
+            "Same tenant and the new collection slug: lowercase letters, "
+            "digits, and hyphens; must start with a letter or digit; max 63 "
+            "chars"
         ),
     )
     p_move.set_defaults(func=cmd_move)
@@ -889,10 +937,9 @@ def build_parser() -> argparse.ArgumentParser:
             "Update collection metadata such as the display name, without "
             "re-indexing."
         ),
-        example='pavecli update-collection demo books --display-name "Books"',
+        example='pavecli update-collection demo/books --display-name "Books"',
     )
-    p_update_collection.add_argument("tenant", help="Tenant namespace")
-    p_update_collection.add_argument("collection", help="Collection name")
+    _add_collection_ref(p_update_collection)
     p_update_collection.add_argument(
         "--display-name",
         required=True,
@@ -905,10 +952,9 @@ def build_parser() -> argparse.ArgumentParser:
         "delete-document",
         help="Delete a document by ID.",
         description="Remove one document and its chunks from a collection.",
-        example="pavecli delete-document demo books book-1",
+        example="pavecli delete-document demo/books book-1",
     )
-    p_delete_doc.add_argument("tenant", help="Tenant namespace")
-    p_delete_doc.add_argument("collection", help="Collection name")
+    _add_collection_ref(p_delete_doc)
     p_delete_doc.add_argument("docid", help="Document ID")
     p_delete_doc.set_defaults(func=cmd_delete_document)
 
@@ -947,11 +993,10 @@ def build_parser() -> argparse.ArgumentParser:
             "as a portable archive."
         ),
         example=(
-            "pavecli dump-collection-archive demo books --output books.zip"
+            "pavecli dump-collection-archive demo/books --output books.zip"
         ),
     )
-    p_dump_coll.add_argument("tenant", help="Tenant namespace")
-    p_dump_coll.add_argument("collection", help="Collection name")
+    _add_collection_ref(p_dump_coll)
     p_dump_coll.add_argument("--output", help="Destination ZIP file path")
     p_dump_coll.set_defaults(func=cmd_dump_collection_archive)
 
@@ -963,11 +1008,10 @@ def build_parser() -> argparse.ArgumentParser:
             "Offline only; stop the server first. Replaces a collection "
             "from a same-version archive."
         ),
-        example="pavecli restore-collection-archive demo books books.zip",
+        example="pavecli restore-collection-archive demo/books books.zip",
     )
-    p_restore_coll.add_argument("tenant", help="Tenant namespace")
-    p_restore_coll.add_argument(
-        "collection", help="Destination collection name"
+    _add_collection_ref(
+        p_restore_coll, help="Destination tenant and collection, e.g. demo/books"
     )
     p_restore_coll.add_argument("file", help="Archive zip file path")
     p_restore_coll.set_defaults(func=cmd_restore_collection_archive)
@@ -1033,10 +1077,9 @@ def build_parser() -> argparse.ArgumentParser:
             "Print catalog, embedder, vector-space, document, and chunk "
             "details for a collection."
         ),
-        example="pavecli get-collection demo books",
+        example="pavecli get-collection demo/books",
     )
-    p_get_collection.add_argument("tenant", help="Tenant namespace")
-    p_get_collection.add_argument("collection", help="Collection name")
+    _add_collection_ref(p_get_collection)
     p_get_collection.set_defaults(func=cmd_get_collection)
 
     return p
