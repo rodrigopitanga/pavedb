@@ -172,3 +172,16 @@ def test_batch_vector_ingest_round_trip(client):
         json={"v": [0.0, 1.0, 0.0, 0.0], "k": 2},
     )
     assert r.json()["matches"][0]["meta"]["docid"] == "B"
+
+
+def test_oversized_identity_dim_is_a_clean_400(client):
+    r = client.post(
+        "/v1/collections/acme/huge",
+        json={
+            "embedder_type": "identity",
+            "embedder_config": {"dim": 9223372036854775808},
+        },
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["code"] == "invalid_embedder_config"
+    assert "65536" in r.json()["error"]

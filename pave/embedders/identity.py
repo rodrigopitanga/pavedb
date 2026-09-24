@@ -24,6 +24,8 @@ MODELLESS: bool = True
 # A passthrough owns no blocking provider resource, so pooling only adds
 # contention without protecting anything.
 CLONE_SAFE: bool = False
+# Far above any real embedding width, far below FAISS's C `int` bound.
+MAX_DIM = 65_536
 
 
 def validate_spec(resolved_config: dict) -> dict:
@@ -41,6 +43,8 @@ def validate_spec(resolved_config: dict) -> dict:
         raise ValueError("embedder.identity.dim must be an integer") from exc
     if dim <= 0:
         raise ValueError("embedder.identity.dim must be positive")
+    if dim > MAX_DIM:
+        raise ValueError(f"embedder.identity.dim must be at most {MAX_DIM}")
     resolved_config["dim"] = dim
     return resolved_config
 

@@ -49,7 +49,10 @@ def test_warm_is_noop():
 
 def test_validate_spec_rejects_bad_dim():
     assert validate_spec({"dim": "5"})["dim"] == 5
-    for bad in ({}, {"dim": 0}, {"dim": -1}, {"dim": "x"}):
+    for bad in (
+        {}, {"dim": 0}, {"dim": -1}, {"dim": "x"}, {"dim": 65_537},
+        {"dim": 9223372036854775808},
+    ):
         with pytest.raises(ValueError):
             validate_spec(bad)
 
