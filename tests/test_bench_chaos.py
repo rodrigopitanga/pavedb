@@ -125,3 +125,19 @@ def test_chaos_run_uses_makefile_defaults_when_unset():
     out = _render_chaos_run()
     assert "--duration 120" in out
     assert "--concurrency 24" in out
+
+
+def test_large_volume_ingest_gets_its_own_timeout():
+    seen = {}
+
+    class Client:
+        timeout = 30
+
+        def post(self, path, **kwargs):
+            seen.update(kwargs)
+            return SimpleNamespace(status_code=201)
+
+    chaos._ingest_raw(Client(), "c", b"x")
+    assert seen["timeout"] == 30
+    chaos._ingest_raw(Client(), "c", b"x", timeout=chaos.LARGE_VOLUME_TIMEOUT_S)
+    assert seen["timeout"] == chaos.LARGE_VOLUME_TIMEOUT_S

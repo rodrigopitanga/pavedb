@@ -89,6 +89,13 @@ def _name(rng, prefix: str) -> str:
     return f"{prefix}-{rng.randbytes(5).hex()}"
 
 
+# The large-volume fuzz cases ingest hundreds of chunks synchronously. On a
+# CPU runner the default native model alone takes ~30-40 s for the ~340 KB
+# document, so the client default would time out a request the server
+# answers with 201. Those cases check "no 5xx", not latency.
+LARGE_VOLUME_TIMEOUT_S = 300
+
+
 def _client(url: str, api_key: str | None) -> httpx.Client:
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
     return httpx.Client(
@@ -167,7 +174,8 @@ def catalog_disk_violations(data_dir: str | os.PathLike[str]) -> list[str]:
 
 def _ingest_raw(c: httpx.Client, coll: str, content: bytes, *,
                 docid: str = "f", filename: str = "f.txt",
-                metadata: str | None = None) -> httpx.Response:
+                metadata: str | None = None,
+                timeout: float | None = None) -> httpx.Response:
     """Ingest raw bytes (lets fuzz send control chars / non-UTF-8 / huge)."""
     data: dict[str, str] = {"docid": docid}
     if metadata is not None:
@@ -176,6 +184,7 @@ def _ingest_raw(c: httpx.Client, coll: str, content: bytes, *,
         f"{API}/collections/{TENANT}/{coll}/documents",
         files={"file": (filename, content, "text/plain")},
         data=data,
+        timeout=timeout if timeout is not None else c.timeout,
     )
 
 
@@ -363,7 +372,7 @@ def phase_fuzz(c: httpx.Client, rng, viol: list[str]) -> None:
     # large volumes
     case("large document (~340KB, many chunks)", lambda: _ingest_raw(c, fz,
          ("Vector databases store embeddings for similarity search. " * 6000).encode(),
-         docid="bigdoc"))
+         docid="bigdoc", timeout=LARGE_VOLUME_TIMEOUT_S))
     case("large batch (150 docs)", lambda: c.post(f"{base}/documents:batch",
          json={"documents": [
              {
@@ -371,7 +380,7 @@ def phase_fuzz(c: httpx.Client, rng, viol: list[str]) -> None:
                  "docid": f"bb{i}",
              }
              for i in range(150)
-         ]}))
+         ]}, timeout=LARGE_VOLUME_TIMEOUT_S))
 
     # post-fuzz sanity: server alive + a clean collection still works correctly
     live = c.get("/health/live")
