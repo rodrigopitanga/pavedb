@@ -1188,3 +1188,28 @@ def test_dump_archive_waits_for_active_collection_operation(tmp_path):
     finally:
         if tmp_dir:
             shutil.rmtree(tmp_dir[0], ignore_errors=True)
+
+
+def _bomb_zip(path: Path) -> bytes:
+    with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("catalog.db", b"\0" * (8 << 20))
+    return path.read_bytes()
+
+
+def test_restore_refuses_an_archive_that_outgrows_the_disk(tmp_path, monkeypatch):
+    """A high-ratio archive must be refused before extraction (B89)."""
+    bomb = _bomb_zip(tmp_path / "bomb.zip")
+    assert len(bomb) < 64 << 10
+    destination = _sentinel_store(tmp_path / "destination")
+    real_usage = shutil.disk_usage
+
+    def tight(path):
+        return real_usage(path)._replace(free=4 << 20)
+
+    monkeypatch.setattr(shutil, "disk_usage", tight)
+    with pytest.raises(ValueError, match="archive expands to"):
+        destination.restore_archive(bomb)
+    with pytest.raises(ValueError, match="archive expands to"):
+        destination.restore_collection_archive("live", "other", bomb)
+    monkeypatch.undo()
+    assert destination.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"

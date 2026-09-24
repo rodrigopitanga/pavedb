@@ -4857,7 +4857,19 @@ class LocalStore:
                             continue
                         raise
 
-    def _validate_zip_members(self, zf: zipfile.ZipFile) -> None:
+    def _validate_zip_members(
+        self, zf: zipfile.ZipFile, extract_dir: Path
+    ) -> None:
+        # zipfile stops each member at its declared file_size, so the sum
+        # bounds what extraction can write. A high-ratio (or bomb) archive
+        # must not fill the disk, which is often the data dir's own.
+        expanded = sum(member.file_size for member in zf.infolist())
+        room = int(shutil.disk_usage(extract_dir).free * 0.9)
+        if expanded > room:
+            raise ValueError(
+                f"archive expands to {expanded} bytes; only {room} can be "
+                "extracted safely"
+            )
         seen: set[str] = set()
         for member in zf.infolist():
             name = member.filename
@@ -5310,7 +5322,7 @@ class LocalStore:
 
                 try:
                     with zipfile.ZipFile(archive_path, "r") as zf:
-                        self._validate_zip_members(zf)
+                        self._validate_zip_members(zf, extract_dir)
                         zf.extractall(extract_dir)
                 except zipfile.BadZipFile as exc:
                     raise ValueError("invalid archive") from exc
@@ -5483,7 +5495,7 @@ class LocalStore:
                     io.BytesIO(archive_bytes),
                     "r",
                 ) as archive:
-                    self._validate_zip_members(archive)
+                    self._validate_zip_members(archive, extract_dir)
                     archive.extractall(extract_dir)
             except zipfile.BadZipFile as exc:
                 raise ValueError("invalid collection archive") from exc
