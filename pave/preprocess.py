@@ -4,6 +4,7 @@
 from __future__ import annotations
 import io, csv, mimetypes
 from .config import get_cfg
+from .config.config import CHUNK_OVERLAP_RATIO, chunking_pair_error
 from collections.abc import Iterable, Iterator
 from typing import Any
 from pypdf import PdfReader
@@ -11,24 +12,75 @@ from pypdf.errors import PyPdfError
 
 from pave.stores.base import Metadata
 
-_cfg = get_cfg()
-TXT_CHUNK_SIZE = int(_cfg.get("preprocess.txt_chunk_size"))
-TXT_CHUNK_OVERLAP = int(_cfg.get("preprocess.txt_chunk_overlap"))
-
 CsvOptions = dict[str, Any]
+Chunking = dict[str, Any]
 
 
 class PreprocessError(ValueError):
     """Client-supplied document content cannot be preprocessed."""
 
 
-def _chunks(text: str, size: int = TXT_CHUNK_SIZE, overlap: int = TXT_CHUNK_OVERLAP):
+class ChunkingError(ValueError):
+    """A chunking spec or text the operator bounds refuse (P1-78)."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def resolve_chunking(spec: Chunking | None) -> Chunking:
+    """Complete a collection's chunking spec from the operator defaults and
+    check it against the operator bounds."""
+    bounds = get_cfg().get("chunking")
+    spec = dict(spec or {})
+    strategy = spec.pop("strategy", None) or bounds["default_strategy"]
+    if strategy not in bounds["strategies"]:
+        raise ChunkingError(
+            "invalid_chunking",
+            f"chunking strategy {strategy!r} is not enabled on this instance",
+        )
+    if strategy == "none":
+        if spec:
+            raise ChunkingError(
+                "invalid_chunking", "strategy none takes no size or overlap"
+            )
+        return {"strategy": "none"}
+    size = spec.pop("size", bounds["default_size"])
+    overlap = spec.pop("overlap", None)
+    if overlap is None:
+        overlap = bounds["default_overlap"]
+        if isinstance(size, int) and not isinstance(size, bool):
+            # A chosen size keeps the default overlap only while it fits.
+            overlap = min(overlap, size // CHUNK_OVERLAP_RATIO)
+    if spec:
+        raise ChunkingError(
+            "invalid_chunking", f"unknown chunking keys: {sorted(spec)}"
+        )
+    problem = chunking_pair_error(size, overlap, bounds)
+    if problem:
+        raise ChunkingError("invalid_chunking", problem)
+    return {"strategy": "fixed", "size": size, "overlap": overlap}
+
+
+def _text_chunks(
+    text: str, chunking: Chunking
+) -> Iterator[tuple[str, str, Metadata]]:
     text = text or ""
-    step = max(size - overlap, 1)
-    i = 0
-    while i < len(text):
-        yield text[i : i + size]
-        i += step
+    if chunking["strategy"] == "none":
+        limit = get_cfg().get("chunking.max_size")
+        if len(text) > limit:
+            raise ChunkingError(
+                "chunk_too_large",
+                f"text of {len(text)} characters exceeds chunking.max_size "
+                f"{limit}; chunk it before ingesting",
+            )
+        if text:
+            yield "chunk_0", text, {"offset": 0}
+        return
+    size, overlap = chunking["size"], chunking["overlap"]
+    step = size - overlap
+    for i, start in enumerate(range(0, len(text), step)):
+        yield f"chunk_{i}", text[start : start + size], {"offset": start}
 
 def _csv_parse_col_spec(spec: str) -> tuple[list[str], list[int]]:
     names: list[str] = []
@@ -163,12 +215,13 @@ def _preprocess_csv(
         extra["has_header"] = bool(header_row is not None)
         yield (f"row_{rowno-1}", text_part, extra)
 
-def preprocess(filename: str, content: bytes, csv_options: CsvOptions \
-               | None = None) -> Iterator[tuple[str, str, Metadata]]:
+def preprocess(filename: str, content: bytes, csv_options: CsvOptions
+               | None = None, *,
+               chunking: Chunking) -> Iterator[tuple[str, str, Metadata]]:
     """
     Yields (local_id, text, extra_meta):
     - PDF: one chunk per page
-    - TXT: charcount-based chunks
+    - TXT: chunks per the collection's `chunking`
     - CSV: one chunk per row as newline-joined "key: value" fields
     """
     mt, _ = mimetypes.guess_type(filename)
@@ -183,9 +236,7 @@ def preprocess(filename: str, content: bytes, csv_options: CsvOptions \
             raise PreprocessError("invalid PDF document") from exc
     elif ext == "txt":
         text = content.decode("utf-8", errors="ignore")
-        step = max(TXT_CHUNK_SIZE - TXT_CHUNK_OVERLAP, 1)
-        for i, chunk in enumerate(_chunks(text)):
-            yield f"chunk_{i}", chunk, {"offset": i * step}
+        yield from _text_chunks(text, chunking)
     elif ext == "csv" or mt == "text/csv":
         yield from _preprocess_csv(filename, content, csv_options or {})
         return
@@ -193,7 +244,7 @@ def preprocess(filename: str, content: bytes, csv_options: CsvOptions \
         raise PreprocessError(f"unsupported file type: {ext or 'unknown'}")
 
 
-def preprocess_text(text: str) -> Iterator[tuple[str, str, Metadata]]:
-    step = max(TXT_CHUNK_SIZE - TXT_CHUNK_OVERLAP, 1)
-    for i, chunk in enumerate(_chunks(text)):
-        yield f"chunk_{i}", chunk, {"offset": i * step}
+def preprocess_text(
+    text: str, *, chunking: Chunking
+) -> Iterator[tuple[str, str, Metadata]]:
+    return _text_chunks(text, chunking)

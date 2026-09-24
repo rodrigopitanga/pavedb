@@ -24,8 +24,8 @@ def _section_for(key: str) -> str:
         return "Ingest"
     if key.startswith("search."):
         return "Search"
-    if key.startswith("preprocess."):
-        return "Text Preprocessing"
+    if key.startswith("chunking."):
+        return "Chunking"
     if key.startswith("tenants."):
         return "Tenants"
     if key.startswith("server.") or key.startswith("ui."):

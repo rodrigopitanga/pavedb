@@ -156,6 +156,10 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
             embed_model=body.embed_model if body else None,
             embedder_config=body.embedder_config if body else None,
             search_mode=body.search_mode if body else None,
+            chunking=(
+                body.chunking.model_dump(exclude_none=True)
+                if body and body.chunking else None
+            ),
         )
         if not result.get("ok"):
             error_type = result.get("error_type", "failed")

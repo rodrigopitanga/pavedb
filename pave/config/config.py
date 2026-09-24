@@ -389,20 +389,77 @@ def _validate_search(cfg: dict[str, Any]) -> None:
 
 def _validate_config(cfg: dict[str, Any]) -> None:
     _validate_search(cfg)
-    preprocess = cfg.get("preprocess")
-    if not isinstance(preprocess, dict):
-        return
-    size = int(preprocess.get("txt_chunk_size", 0))
-    overlap = int(preprocess.get("txt_chunk_overlap", 0))
-    if size <= 0:
-        raise ValueError("preprocess.txt_chunk_size must be greater than 0")
-    if overlap < 0:
-        raise ValueError("preprocess.txt_chunk_overlap must be non-negative")
-    if overlap >= size:
-        raise ValueError(
-            "preprocess.txt_chunk_overlap must be less than "
-            "preprocess.txt_chunk_size"
+    _validate_chunking(cfg)
+
+
+CHUNKING_STRATEGIES = ("fixed", "none")
+# An overlap above a quarter of the chunk mostly re-embeds the same text.
+CHUNK_OVERLAP_RATIO = 4
+
+
+def chunking_pair_error(
+    size: Any, overlap: Any, chunking: dict[str, Any]
+) -> str | None:
+    """Why a fixed (size, overlap) pair is outside the operator bounds."""
+    for name, value in (("size", size), ("overlap", overlap)):
+        if isinstance(value, bool) or not isinstance(value, int):
+            return f"{name} must be an integer; got {value!r}"
+    if not chunking["min_size"] <= size <= chunking["max_size"]:
+        return (
+            f"size {size} is outside chunking.min_size "
+            f"{chunking['min_size']} .. chunking.max_size {chunking['max_size']}"
         )
+    if not chunking["min_overlap"] <= overlap <= chunking["max_overlap"]:
+        return (
+            f"overlap {overlap} is outside chunking.min_overlap "
+            f"{chunking['min_overlap']} .. chunking.max_overlap "
+            f"{chunking['max_overlap']}"
+        )
+    if overlap * CHUNK_OVERLAP_RATIO > size:
+        return (
+            f"overlap {overlap} is more than 1/{CHUNK_OVERLAP_RATIO} of "
+            f"size {size}"
+        )
+    return None
+
+
+def _validate_chunking(cfg: dict[str, Any]) -> None:
+    chunking = cfg.get("chunking")
+    if not isinstance(chunking, dict):
+        return
+    for key in ("min_size", "max_size", "min_overlap", "max_overlap"):
+        value = chunking.get(key)
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise ValueError(f"chunking.{key} must be an integer; got {value!r}")
+    if not 1 <= chunking["min_size"] <= chunking["max_size"]:
+        raise ValueError(
+            "chunking.min_size must be at least 1 and at most chunking.max_size"
+        )
+    if not 0 <= chunking["min_overlap"] <= chunking["max_overlap"]:
+        raise ValueError(
+            "chunking.min_overlap must be at least 0 and at most "
+            "chunking.max_overlap"
+        )
+    strategies = chunking.get("strategies")
+    if (
+        not isinstance(strategies, list)
+        or not strategies
+        or not set(strategies) <= set(CHUNKING_STRATEGIES)
+    ):
+        raise ValueError(
+            "chunking.strategies must list strategies from fixed, none; "
+            f"got {strategies!r}"
+        )
+    if chunking.get("default_strategy") not in strategies:
+        raise ValueError(
+            "chunking.default_strategy must be one of chunking.strategies"
+        )
+    problem = chunking_pair_error(
+        chunking.get("default_size"), chunking.get("default_overlap"), chunking
+    )
+    if problem:
+        raise ValueError(f"chunking.default_size/default_overlap: {problem}")
+
 
 # --------------- singleton wrapper ----------------
 class Config:

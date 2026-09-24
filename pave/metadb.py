@@ -1336,6 +1336,10 @@ class CollectionDB:
                 return (0, 0)
             return (int(row[0] or 0), int(row[1] or 0))
 
+    def has_chunks(self) -> bool:
+        with self._reader() as conn:
+            return conn.execute("SELECT 1 FROM chunks LIMIT 1").fetchone() is not None
+
     def get_chunk_rids(self) -> set[str]:
         with self._reader() as conn:
             return {

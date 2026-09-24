@@ -19,6 +19,7 @@ from pave.stores.base import (
     SearchResult,
 )
 from pave.config import get_cfg
+from pave.preprocess import resolve_chunking
 
 
 class FakeEmbedder:
@@ -110,6 +111,7 @@ class DummyStore:
         embedder_config: dict[str, Any] | None = None,
         display_name: str | None = None,
         search_mode: str | None = None,
+        chunking: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         self._load_or_init(tenant, name)
         self._save(tenant, name)
@@ -121,8 +123,13 @@ class DummyStore:
         )
         cfg["display_name"] = display_name
         cfg["search_mode"] = search_mode or "vector"
+        cfg["chunking"] = resolve_chunking(chunking)
         self._collection_configs[(tenant, name)] = cfg
         return cfg
+
+    def collection_chunking(self, tenant: str, collection: str) -> dict[str, Any]:
+        cfg = self._collection_configs.get((tenant, collection)) or {}
+        return cfg.get("chunking") or resolve_chunking(None)
 
     def delete_collection(self, tenant: str, collection: str) -> None:
         self._collection_configs.pop((tenant, collection), None)
@@ -562,6 +569,7 @@ class SpyStore:
         embedder_config: dict[str, Any] | None = None,
         display_name: str | None = None,
         search_mode: str | None = None,
+        chunking: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
         self.calls.append(("create_collection", tenant, name))
         return self.impl.create_collection(
@@ -573,7 +581,11 @@ class SpyStore:
             embedder_config=embedder_config,
             display_name=display_name,
             search_mode=search_mode,
+            chunking=chunking,
         )
+
+    def collection_chunking(self, tenant: str, collection: str) -> dict[str, Any]:
+        return self.impl.collection_chunking(tenant, collection)
 
     def delete_collection(self, tenant: str, collection: str) -> None:
         self.calls.append(("delete_collection", tenant, collection))

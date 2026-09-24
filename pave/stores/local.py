@@ -79,6 +79,7 @@ from pave.stores.base import (
     SearchResult,
 )
 from pave.config import SEARCH_MODES, get_cfg, get_logger
+from pave.preprocess import ChunkingError, resolve_chunking
 from pave.data_dir_lease import DATA_DIR_LOCK_NAME
 from pave.metrics import inc_labeled as m_inc_labeled
 from pave.version import VERSION
@@ -105,6 +106,9 @@ _REINDEX_DIR = ".pavedb-reindex"
 _REINDEX_BATCH_SIZE = 32
 
 _RRF_K = 60
+# What every collection was chunked with before chunking became a
+# collection setting (P1-78): the shipped preprocess.txt_chunk_* defaults.
+_LEGACY_CHUNKING = {"strategy": "fixed", "size": 1000, "overlap": 200}
 
 
 def _reciprocal_rank_fusion(
@@ -1589,6 +1593,17 @@ class LocalStore:
                 f"search mode {mode!r} is not enabled on this instance",
             )
 
+    @staticmethod
+    def _default_chunking(col_db: CollectionDB) -> dict[str, Any]:
+        """Chunking for a collection that has none recorded.
+
+        One with chunks predates P1-78 and was chunked with the shipped
+        instance-wide values; an empty one takes the operator default.
+        """
+        if col_db.has_chunks():
+            return dict(_LEGACY_CHUNKING)
+        return resolve_chunking(None)
+
     def _collection_setting(self, tenant: str, collection: str, key: str) -> Any:
         """A setting of an existing collection; None when it does not exist.
 
@@ -1608,6 +1623,15 @@ class LocalStore:
             op_name=key,
             default=None,
             reader=lambda db: db.get_setting(key),
+        )
+
+    def collection_chunking(
+        self, tenant: str, collection: str
+    ) -> dict[str, Any]:
+        """The collection's chunking; the operator default if it is new."""
+        return (
+            self._collection_setting(tenant, collection, "chunking")
+            or resolve_chunking(None)
         )
 
     def _collection_search_mode(self, tenant: str, collection: str) -> str:
@@ -1745,6 +1769,10 @@ class LocalStore:
                 )
                 # Record settings on first load, so a collection that ingest
                 # auto-creates, or one made before they existed, has them.
+                if col_db.get_setting("chunking") is None:
+                    col_db.set_setting(
+                        "chunking", self._default_chunking(col_db)
+                    )
                 if col_db.get_setting("search_mode") is None:
                     col_db.set_setting("search_mode", "vector")
             if self._index_needs_rebuild(
@@ -1901,9 +1929,13 @@ class LocalStore:
         embedder_config: EmbedderConfig | None = None,
         display_name: str | None = None,
         search_mode: SearchMode | None = None,
+        chunking: dict[str, Any] | None = None,
     ) -> CollectionInfo:
         if search_mode is not None:
             self._check_search_mode_served(search_mode)
+        requested_chunking = (
+            resolve_chunking(chunking) if chunking is not None else None
+        )
         requested = self._resolve_collection_config(
             embedder=embedder,
             embedder_type=embedder_type,
@@ -1952,6 +1984,10 @@ class LocalStore:
                 if is_new:
                     effective_mode = search_mode or "vector"
                     col_db.set_setting("search_mode", effective_mode)
+                    effective_chunking = (
+                        requested_chunking or resolve_chunking(None)
+                    )
+                    col_db.set_setting("chunking", effective_chunking)
                 else:
                     effective_mode = col_db.get_setting("search_mode")
                     if search_mode is not None and search_mode != effective_mode:
@@ -1959,6 +1995,16 @@ class LocalStore:
                             "search_mode_conflict",
                             "collection already exists with search mode "
                             f"{effective_mode!r}",
+                        )
+                    effective_chunking = col_db.get_setting("chunking")
+                    if (
+                        requested_chunking is not None
+                        and requested_chunking != effective_chunking
+                    ):
+                        raise ChunkingError(
+                            "chunking_conflict",
+                            "collection already exists with chunking "
+                            f"{effective_chunking}",
                         )
                 self._save(tenant, name)
                 self._write_collection_config(tenant, name, requested)
@@ -1993,6 +2039,7 @@ class LocalStore:
                 raise
         requested["display_name"] = resolved_display_name
         requested["search_mode"] = effective_mode
+        requested["chunking"] = effective_chunking
         return requested
 
     def delete_collection(self, tenant: str, collection: str) -> None:
@@ -3157,6 +3204,7 @@ class LocalStore:
             "doc_count": doc_count,
             "chunk_count": chunk_count,
             "search_mode": self._collection_search_mode(tenant, name),
+            "chunking": self.collection_chunking(tenant, name),
         }
 
     def _cache_estimated_bytes(self) -> int:

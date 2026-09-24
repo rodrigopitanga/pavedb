@@ -224,6 +224,7 @@ def cmd_create(args):
         embed_model=args.embed_model,
         embedder_config=embedder_config,
         search_mode=args.search_mode,
+        chunking=_parse_json_object_arg(args.chunking, "--chunking"),
     )
 
 def cmd_ingest(args):
@@ -690,6 +691,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--search-mode",
         choices=("vector", "boost", "hybrid"),
         help="Default ranking mode for searches that name none (vector)",
+    )
+    p_create.add_argument(
+        "--chunking",
+        help=(
+            'JSON object, e.g. {"strategy":"fixed","size":800,"overlap":100} '
+            'or {"strategy":"none"}; omitted fields take the instance default'
+        ),
     )
     p_create.set_defaults(func=cmd_create)
 

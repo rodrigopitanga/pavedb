@@ -32,6 +32,13 @@ unavailable preferred instance falls back, so one server-wide map never
 breaks collections in other spaces. Changing vector space later requires
 reindexing because vectors from two models cannot share an index.
 
+Chunking is also fixed at creation. `--chunking
+'{"strategy":"fixed","size":800,"overlap":100}'` cuts free text into
+800-character windows that overlap by 100; `{"strategy":"none"}` keeps each
+text as one chunk, for callers that chunk before ingesting. Omitted, the
+instance default applies. PDF pages and CSV rows stay one chunk each either
+way. Another chunking means another collection.
+
 ## Ingest
 
 ```bash

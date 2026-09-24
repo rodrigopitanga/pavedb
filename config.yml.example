@@ -384,18 +384,48 @@ search:
 
 
 # ---------------------------------------------------------------------------
-# Text Preprocessing
+# Chunking
 # ---------------------------------------------------------------------------
 
-preprocess:
+chunking:
 
-  # Plain-text chunk size in characters.
-  # Env: PAVEDB_PREPROCESS__TXT_CHUNK_SIZE
-  txt_chunk_size: 1000
+  # Chunking strategies collections may choose at creation. fixed cuts free text into
+  # overlapping windows of characters; none keeps each text as one chunk, for callers
+  # that chunk before ingesting. PDF pages and CSV rows stay one chunk each under
+  # either.
+  # Env: PAVEDB_CHUNKING__STRATEGIES
+  strategies: ['fixed', 'none']
 
-  # Plain-text chunk overlap in characters.
-  # Env: PAVEDB_PREPROCESS__TXT_CHUNK_OVERLAP
-  txt_chunk_overlap: 200
+  # Smallest chunk size, in characters, a collection may choose for the fixed strategy.
+  # Env: PAVEDB_CHUNKING__MIN_SIZE
+  min_size: 200
+
+  # Largest chunk size, in characters, a collection may choose for the fixed strategy;
+  # also the longest text the none strategy accepts as one chunk (longer is 400
+  # chunk_too_large).
+  # Env: PAVEDB_CHUNKING__MAX_SIZE
+  max_size: 8000
+
+  # Smallest overlap, in characters, a collection may choose for the fixed strategy.
+  # Env: PAVEDB_CHUNKING__MIN_OVERLAP
+  min_overlap: 0
+
+  # Largest overlap, in characters, a collection may choose for the fixed strategy. Any
+  # chosen overlap must also be at most a quarter of the chosen size.
+  # Env: PAVEDB_CHUNKING__MAX_OVERLAP
+  max_overlap: 2000
+
+  # Strategy for collections created without one; must be listed in chunking.strategies.
+  # Env: PAVEDB_CHUNKING__DEFAULT_STRATEGY
+  default_strategy: 'fixed'
+
+  # fixed chunk size for collections that do not name one.
+  # Env: PAVEDB_CHUNKING__DEFAULT_SIZE
+  default_size: 1000
+
+  # fixed chunk overlap for collections that do not name one.
+  # Env: PAVEDB_CHUNKING__DEFAULT_OVERLAP
+  default_overlap: 200
 
 
 # ---------------------------------------------------------------------------

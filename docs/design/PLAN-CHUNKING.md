@@ -57,11 +57,14 @@ chunk_too_large` instead of being cut.
 ## Storage
 
 The collection's chunking lives beside its search mode in the `settings`
-table of its `meta.db` (P1-77), so it travels with both archive kinds.
-Collection schema v10 seeds existing collections with the shipped default,
-`fixed` 1000/200. An instance that customized `preprocess.txt_chunk_*` gets
-records that do not match its old chunks; this is a pre-1.0 release, and the
-release notes say to recreate those collections.
+table of its `meta.db` (P1-77), so it travels with both archive kinds. It is
+recorded when the collection is created, or on its first load: a collection
+that already holds chunks predates P1-78 and records the shipped `fixed`
+1000/200; an empty one, including one that ingest auto-creates, records the
+operator default. No schema migration is needed. An instance that customized
+`preprocess.txt_chunk_*` gets records that do not match its old chunks; this
+is a pre-1.0 release, and the release notes say to recreate those
+collections.
 
 The create response and collection detail report the effective chunking.
 `pavecli create-collection` takes `--chunking '<json>'`, like
@@ -80,5 +83,5 @@ parameterized instead of reading module constants.
 ## Verification
 
 Config sanity failures, create-time validation and defaults, `fixed` and
-`none` ingest (text and TXT), `chunk_too_large`, detail output, v10 migration
-of an existing collection, and archive round trip keeping the chunking.
+`none` ingest (text and TXT), `chunk_too_large`, detail output, and the
+recorded chunking of auto-created and pre-P1-78 collections.

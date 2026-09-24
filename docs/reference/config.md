@@ -384,19 +384,64 @@ collection's vector-space identity.
   token; a chunk matching m of n tokens gains weight * m / n. Must be greater than 0 and
   at most 1.
 
-## Text Preprocessing
+## Chunking
 
-### `preprocess.txt_chunk_size`
+### `chunking.strategies`
 
-- Default: `1000`
-- Env var: `PAVEDB_PREPROCESS__TXT_CHUNK_SIZE`
-- Description: Plain-text chunk size in characters.
+- Default: `['fixed', 'none']`
+- Env var: `PAVEDB_CHUNKING__STRATEGIES`
+- Description: Chunking strategies collections may choose at creation. fixed cuts free
+  text into overlapping windows of characters; none keeps each text as one chunk, for
+  callers that chunk before ingesting. PDF pages and CSV rows stay one chunk each under
+  either.
 
-### `preprocess.txt_chunk_overlap`
+### `chunking.min_size`
 
 - Default: `200`
-- Env var: `PAVEDB_PREPROCESS__TXT_CHUNK_OVERLAP`
-- Description: Plain-text chunk overlap in characters.
+- Env var: `PAVEDB_CHUNKING__MIN_SIZE`
+- Description: Smallest chunk size, in characters, a collection may choose for the fixed
+  strategy.
+
+### `chunking.max_size`
+
+- Default: `8000`
+- Env var: `PAVEDB_CHUNKING__MAX_SIZE`
+- Description: Largest chunk size, in characters, a collection may choose for the fixed
+  strategy; also the longest text the none strategy accepts as one chunk (longer is 400
+  chunk_too_large).
+
+### `chunking.min_overlap`
+
+- Default: `0`
+- Env var: `PAVEDB_CHUNKING__MIN_OVERLAP`
+- Description: Smallest overlap, in characters, a collection may choose for the fixed
+  strategy.
+
+### `chunking.max_overlap`
+
+- Default: `2000`
+- Env var: `PAVEDB_CHUNKING__MAX_OVERLAP`
+- Description: Largest overlap, in characters, a collection may choose for the fixed
+  strategy. Any chosen overlap must also be at most a quarter of the chosen size.
+
+### `chunking.default_strategy`
+
+- Default: `"fixed"`
+- Env var: `PAVEDB_CHUNKING__DEFAULT_STRATEGY`
+- Description: Strategy for collections created without one; must be listed in
+  chunking.strategies.
+
+### `chunking.default_size`
+
+- Default: `1000`
+- Env var: `PAVEDB_CHUNKING__DEFAULT_SIZE`
+- Description: fixed chunk size for collections that do not name one.
+
+### `chunking.default_overlap`
+
+- Default: `200`
+- Env var: `PAVEDB_CHUNKING__DEFAULT_OVERLAP`
+- Description: fixed chunk overlap for collections that do not name one.
 
 ## Tenants
 

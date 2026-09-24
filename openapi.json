@@ -431,6 +431,63 @@
         "title": "ChunkSummary",
         "type": "object"
       },
+      "ChunkingSpec": {
+        "additionalProperties": false,
+        "description": "How a collection cuts free text into chunks; fixed at creation.",
+        "properties": {
+          "overlap": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fixed only: characters shared with the previous chunk; at most a quarter of size. Omitted, the default.",
+            "examples": [
+              200
+            ],
+            "title": "Overlap"
+          },
+          "size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fixed only: characters per chunk; omitted, the default.",
+            "examples": [
+              1000
+            ],
+            "title": "Size"
+          },
+          "strategy": {
+            "anyOf": [
+              {
+                "enum": [
+                  "fixed",
+                  "none"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "fixed: overlapping windows of characters. none: each text is one chunk. Omitted: the instance default.",
+            "examples": [
+              "fixed"
+            ],
+            "title": "Strategy"
+          }
+        },
+        "title": "ChunkingSpec",
+        "type": "object"
+      },
       "CollectionDetailResponse": {
         "description": "Full detail for one collection.",
         "properties": {
@@ -441,6 +498,26 @@
             ],
             "title": "Chunk Count",
             "type": "integer"
+          },
+          "chunking": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Chunking the collection applies to free text.",
+            "examples": [
+              {
+                "overlap": 200,
+                "size": 1000,
+                "strategy": "fixed"
+              }
+            ],
+            "title": "Chunking"
           },
           "created_at": {
             "anyOf": [
@@ -744,6 +821,17 @@
       "CreateCollectionOptionsBody": {
         "description": "Optional settings when creating a collection.",
         "properties": {
+          "chunking": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChunkingSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Chunking for free text, fixed at creation and checked against the instance's bounds. Omitted: the instance default."
+          },
           "display_name": {
             "anyOf": [
               {
@@ -849,6 +937,26 @@
       "CreateCollectionResponse": {
         "description": "A newly created collection.",
         "properties": {
+          "chunking": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Chunking the collection applies to free text.",
+            "examples": [
+              {
+                "overlap": 200,
+                "size": 1000,
+                "strategy": "fixed"
+              }
+            ],
+            "title": "Chunking"
+          },
           "collection": {
             "description": "Collection slug.",
             "examples": [

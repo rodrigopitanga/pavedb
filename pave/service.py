@@ -54,6 +54,8 @@ from pave.metrics import (
 from pave.preprocess import (
     CsvOptions,
     PreprocessError,
+    ChunkingError,
+    resolve_chunking,
     preprocess,
     preprocess_text,
 )
@@ -208,6 +210,7 @@ def create_collection(
     embed_model: str | None = None,
     embedder_config: EmbedderConfig | None = None,
     search_mode: SearchMode | None = None,
+    chunking: dict[str, Any] | None = None,
 ) -> ServiceResult:
     try:
         resolved_name = _validate_collection_name(name)
@@ -226,6 +229,8 @@ def create_collection(
             create_options["embedder"] = embedder
         if search_mode is not None:
             create_options["search_mode"] = search_mode
+        if chunking is not None:
+            create_options["chunking"] = chunking
         created = store.create_collection(
             tenant,
             resolved_name,
@@ -239,6 +244,7 @@ def create_collection(
                 created.get("display_name") or resolved_display_name
             )
             returned_mode = created.get("search_mode") or "vector"
+            returned_chunking = created.get("chunking")
         else:
             # Stores that answer with something other than a CollectionInfo
             # still owe the caller the collection's vector-space identity, the
@@ -259,6 +265,7 @@ def create_collection(
             resolved_config = dict(resolved["embedder_config"])
             returned_display = resolved_display_name
             returned_mode = search_mode or "vector"
+            returned_chunking = resolve_chunking(chunking)
         m_inc("collections_created_total", 1.0)
         return {
             "ok": True,
@@ -270,8 +277,9 @@ def create_collection(
             "embed_model": resolved_model,
             "embedder_config": resolved_config,
             "search_mode": returned_mode,
+            "chunking": returned_chunking,
         }
-    except SearchModeError as e:
+    except (SearchModeError, ChunkingError) as e:
         log.info(
             "create_collection rejected tenant=%s coll=%s: %s",
             tenant, name, e,
@@ -1032,7 +1040,10 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             }
             records = []
             for local_id, text, extra in preprocess(
-                filename, content, csv_options=csv_options
+                filename,
+                content,
+                csv_options=csv_options,
+                chunking=store.collection_chunking(tenant, collection),
             ):
                 rid = f"{baseid}::{local_id}"
                 records.append((rid, text, extra))
@@ -1064,6 +1075,8 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             raise ServiceError("collection_limit_reached", str(exc)) from exc
         except PreprocessError as exc:
             raise ServiceError("unsupported_or_invalid_document", str(exc)) from exc
+        except ChunkingError as exc:
+            raise ServiceError(exc.code, str(exc)) from exc
         except ValueError as exc:
             raise ServiceError("invalid_csv_options", str(exc)) from exc
         except EmbedderUnavailableError as exc:
@@ -1160,7 +1173,10 @@ def ingest_text(
             }
             records = [
                 (f"{baseid}::{local_id}", chunk, extra)
-                for local_id, chunk, extra in preprocess_text(text)
+                for local_id, chunk, extra in preprocess_text(
+                    text,
+                    chunking=store.collection_chunking(tenant, collection),
+                )
             ]
             if not records:
                 log.info(
@@ -1192,6 +1208,8 @@ def ingest_text(
         except CollectionLimitError as exc:
             # Same as ingest(): the implicit create is what can trip the cap.
             raise ServiceError("collection_limit_reached", str(exc)) from exc
+        except ChunkingError as exc:
+            raise ServiceError(exc.code, str(exc)) from exc
         except EmbedderUnavailableError as exc:
             log.warning(
                 "ingest_text embedder_unavailable tenant=%s coll=%s "
@@ -1356,6 +1374,7 @@ def ingest_documents_batch(
     batch_started = _time.perf_counter()
     now = datetime.now(tz.utc).isoformat(timespec="seconds")
     now = now.replace("+00:00", "Z")
+    chunking = store.collection_chunking(tenant, collection)
 
     for index, item in enumerate(items):
         baseid = _validate_docid(item.get("docid") or _default_docid(""))
@@ -1382,10 +1401,22 @@ def ingest_documents_batch(
             }
             continue
 
-        records = [
-            (f"{baseid}::{local_id}", chunk, extra)
-            for local_id, chunk, extra in preprocess_text(str(item["text"]))
-        ]
+        try:
+            records = [
+                (f"{baseid}::{local_id}", chunk, extra)
+                for local_id, chunk, extra in preprocess_text(
+                    str(item["text"]), chunking=chunking,
+                )
+            ]
+        except ChunkingError as exc:
+            results[index] = {
+                "ok": False,
+                "index": index,
+                "docid": baseid,
+                "code": exc.code,
+                "error": str(exc),
+            }
+            continue
         if not records:
             results[index] = {
                 "ok": False,

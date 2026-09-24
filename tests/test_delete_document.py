@@ -87,8 +87,10 @@ def test_delete_document_cli(tmp_path, monkeypatch):
     from utils import FakeEmbedder
 
     cfg = get_cfg()
+    chunking = cfg.get("chunking")
     monkeypatch.setattr(cfg, "_cfg", {
         "data_dir": str(tmp_path),
+        "chunking": chunking,
         "vector_store": {"type": "faiss"},
         "embedder": {
             "default": "native",

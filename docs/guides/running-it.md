@@ -102,6 +102,13 @@ Set these before you have tenants, not after:
 - `server.max_request_body_mb` — general request bodies, checked before routing
   or authentication; `0` disables the cap
 
+Chunking bounds belong here too: `chunking.min_size`/`max_size` and
+`chunking.min_overlap`/`max_overlap` limit what a collection may choose at
+creation, `chunking.strategies` which strategies it may choose, and the
+`chunking.default_*` keys what it gets when it chooses nothing. Startup
+refuses bounds that contradict each other, and an overlap above a quarter of
+the chunk size. `chunking.max_size` also caps a `none` chunk.
+
 A body over its ceiling is refused with `413 request_too_large` before the
 request reaches a route, so an oversized client sees that rather than a
 timeout. Document uploads get the ingest ceiling; other bodies get the tighter

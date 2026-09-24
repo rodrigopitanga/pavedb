@@ -139,6 +139,7 @@ def test_unloaded_pre_v9_collection_migrates_on_first_search(temp_data_dir):
 
     assert out.mode == "vector"
     assert out[0].id == "D::0"
+    assert store.collection_chunking("acme", "old")["size"] == 1000
 
 
 def test_auto_created_collection_records_its_mode(temp_data_dir):

@@ -144,7 +144,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-75 | ~~Exclusive local data-directory ownership~~ | 🧩 | Fail closed before a second server, local client, or offline CLI opens the same canonical data directory | v0.9.6 |
 | P1-76 | ~~CLI names collections as `tenant/collection`~~ | 🔧 | One argument, matching the HTTP path, replaces separate tenant and collection arguments; filters and SDK handles unchanged | v1.0 |
 | P1-77 | ~~Search modes: `vector`, `boost`, `hybrid`~~ | 🔧 | Operator serves modes, collection picks a default at creation, caller may override; boost moves from an instance switch into a mode | v1.0 |
-| P1-78 | Per-collection chunking | 🔧 | `fixed` or `none` chosen at creation within operator bounds (min/max size and overlap); replaces the instance-wide chunk settings | v1.0 |
+| P1-78 | ~~Per-collection chunking~~ | 🔧 | `fixed` or `none` chosen at creation within operator bounds (min/max size and overlap); replaces the instance-wide chunk settings | v1.0 |
 
 ### P2 — Enables enterprise use cases and competitive moat
 
@@ -555,7 +555,7 @@ latency on every search/ingest/delete.~~
   before the CLI contract freezes (P1-76).~~
 - ~~Search modes `vector`/`boost`/`hybrid`: the operator serves them, the
   collection chooses its default, the caller may override (P1-77).~~
-- Per-collection chunking (`fixed`/`none`) inside operator bounds (P1-78).
+- ~~Per-collection chunking (`fixed`/`none`) inside operator bounds (P1-78).~~
 
 **Deferred from v1.0** (to lean the path; pulled in by next
 release, see v1.1 and v1.2 sections): P1-27 admin key auto-gen,

@@ -412,6 +412,32 @@ class MoveCollectionBody(BaseModel):
     new_name: str = Field(description="New collection slug.", examples=["library"])
 
 
+class ChunkingSpec(BaseModel):
+    """How a collection cuts free text into chunks; fixed at creation."""
+    model_config = {"extra": "forbid"}
+    strategy: Literal["fixed", "none"] | None = Field(
+        default=None,
+        description=(
+            "fixed: overlapping windows of characters. none: each text is one "
+            "chunk. Omitted: the instance default."
+        ),
+        examples=["fixed"],
+    )
+    size: int | None = Field(
+        default=None,
+        description="fixed only: characters per chunk; omitted, the default.",
+        examples=[1000],
+    )
+    overlap: int | None = Field(
+        default=None,
+        description=(
+            "fixed only: characters shared with the previous chunk; at most "
+            "a quarter of size. Omitted, the default."
+        ),
+        examples=[200],
+    )
+
+
 class CreateCollectionOptionsBody(BaseModel):
     """Optional settings when creating a collection."""
     display_name: str | None = Field(
@@ -451,6 +477,13 @@ class CreateCollectionOptionsBody(BaseModel):
             "creation. Must be a mode the instance serves. Defaults to vector."
         ),
         examples=["boost"],
+    )
+    chunking: ChunkingSpec | None = Field(
+        default=None,
+        description=(
+            "Chunking for free text, fixed at creation and checked against "
+            "the instance's bounds. Omitted: the instance default."
+        ),
     )
 
     @model_validator(mode="after")
@@ -614,6 +647,11 @@ class CreateCollectionResponse(OkResponse):
         description="Default ranking mode for searches that name none.",
         examples=["vector"],
     )
+    chunking: dict[str, Any] | None = Field(
+        default=None,
+        description="Chunking the collection applies to free text.",
+        examples=[{"strategy": "fixed", "size": 1000, "overlap": 200}],
+    )
 
 
 class DeleteCollectionResponse(OkResponse):
@@ -713,6 +751,11 @@ class CollectionDetailResponse(OkResponse):
         default="vector",
         description="Default ranking mode for searches that name none.",
         examples=["vector"],
+    )
+    chunking: dict[str, Any] | None = Field(
+        default=None,
+        description="Chunking the collection applies to free text.",
+        examples=[{"strategy": "fixed", "size": 1000, "overlap": 200}],
     )
     created_at: str | None = Field(
         default=None,

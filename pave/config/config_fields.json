@@ -226,14 +226,44 @@
       "description": "Largest score the boost mode adds, for a chunk matching every query token; a chunk matching m of n tokens gains weight * m / n. Must be greater than 0 and at most 1."
     },
     {
-      "key": "preprocess.txt_chunk_size",
-      "default": 1000,
-      "description": "Plain-text chunk size in characters."
+      "key": "chunking.strategies",
+      "default": ["fixed", "none"],
+      "description": "Chunking strategies collections may choose at creation. fixed cuts free text into overlapping windows of characters; none keeps each text as one chunk, for callers that chunk before ingesting. PDF pages and CSV rows stay one chunk each under either."
     },
     {
-      "key": "preprocess.txt_chunk_overlap",
+      "key": "chunking.min_size",
       "default": 200,
-      "description": "Plain-text chunk overlap in characters."
+      "description": "Smallest chunk size, in characters, a collection may choose for the fixed strategy."
+    },
+    {
+      "key": "chunking.max_size",
+      "default": 8000,
+      "description": "Largest chunk size, in characters, a collection may choose for the fixed strategy; also the longest text the none strategy accepts as one chunk (longer is 400 chunk_too_large)."
+    },
+    {
+      "key": "chunking.min_overlap",
+      "default": 0,
+      "description": "Smallest overlap, in characters, a collection may choose for the fixed strategy."
+    },
+    {
+      "key": "chunking.max_overlap",
+      "default": 2000,
+      "description": "Largest overlap, in characters, a collection may choose for the fixed strategy. Any chosen overlap must also be at most a quarter of the chosen size."
+    },
+    {
+      "key": "chunking.default_strategy",
+      "default": "fixed",
+      "description": "Strategy for collections created without one; must be listed in chunking.strategies."
+    },
+    {
+      "key": "chunking.default_size",
+      "default": 1000,
+      "description": "fixed chunk size for collections that do not name one."
+    },
+    {
+      "key": "chunking.default_overlap",
+      "default": 200,
+      "description": "fixed chunk overlap for collections that do not name one."
     },
     {
       "key": "tenants.default_max_concurrent",

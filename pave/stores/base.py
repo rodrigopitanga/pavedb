@@ -115,7 +115,12 @@ class BaseStore(Protocol):
         embedder_config: EmbedderConfig | None = None,
         display_name: str | None = None,
         search_mode: SearchMode | None = None,
+        chunking: dict[str, Any] | None = None,
     ) -> CollectionInfo | None: ...
+
+    def collection_chunking(
+        self, tenant: str, collection: str
+    ) -> dict[str, Any]: ...
 
     def delete_collection(self, tenant: str, collection: str) -> None: ...
 
