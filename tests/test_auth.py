@@ -289,3 +289,17 @@ def test_actor_of_never_labels_an_unidentified_caller_admin(tenant):
     assert actor_of(AuthContext(tenant=tenant, is_admin=False)) == "unknown"
     assert actor_of(AuthContext(tenant=None, is_admin=True)) == "admin"
     assert actor_of(AuthContext(tenant="acme", is_admin=False)) == "tenant:acme"
+
+
+def test_static_auth_rejects_unknown_and_non_ascii_tokens():
+    client = TestClient(build_app())
+    ok = client.post(
+        "/collections/acme/x", headers={"Authorization": "Bearer sekret"}
+    )
+    assert ok.status_code == 200
+    for token in ("sekreu", "sekret-longer", "sékret"):
+        r = client.post(
+            "/collections/acme/x",
+            headers={"Authorization": f"Bearer {token}".encode("latin-1")},
+        )
+        assert r.status_code == 403, token

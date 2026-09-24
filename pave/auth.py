@@ -170,6 +170,12 @@ def _raise_500(mode):
         detail={"code": "auth_mode_unknown", "error": f"unknown auth mode: {mode}"},
     )
 
+def _token_matches(token: str, expected: str) -> bool:
+    # Constant time; bytes so a non-ASCII token is a mismatch, not a 500.
+    return secrets.compare_digest(
+        token.encode("utf-8"), expected.encode("utf-8")
+    )
+
 def auth_ctx(
     credentials: HTTPAuthorizationCredentials | None = Security(bearer)
 ) -> AuthContext:
@@ -191,16 +197,24 @@ def auth_ctx(
         global_key = cfg.get("auth.global_key") or _file_admin_key(cfg)
         # No str() here either: this credential grants cross-tenant admin, so
         # a mistyped config value must not become a guessable literal token.
-        if isinstance(global_key, str) and global_key and token == global_key:
+        if (
+            isinstance(global_key, str)
+            and global_key
+            and _token_matches(token, global_key)
+        ):
             return AuthContext(tenant=None, is_admin=True)
 
-        # per-tenant keys
+        # per-tenant keys: scan every entry so timing does not reveal which
+        # position (if any) matched.
         api_keys: dict[str, str] = cfg.get("auth.api_keys") or {}
+        matched = None
         for t, expected in api_keys.items():
             # No str() here: coercing a non-string would turn a mistyped
             # config value into a guessable literal token ("True", "12345").
-            if isinstance(expected, str) and token == expected:
-                return AuthContext(tenant=t, is_admin=False)
+            if isinstance(expected, str) and _token_matches(token, expected):
+                matched = t
+        if matched is not None:
+            return AuthContext(tenant=matched, is_admin=False)
         _raise_403()
 
     _raise_500(mode)
