@@ -8349,7 +8349,7 @@
         ]
       },
       "post": {
-        "description": "Searches the shared scope; empty when that scope is disabled.",
+        "description": "Searches the shared scope by text; empty when that scope is disabled.",
         "operationId": "search_common_post_v1_search_post",
         "requestBody": {
           "content": {
@@ -8371,6 +8371,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
           },
           "401": {
             "content": {

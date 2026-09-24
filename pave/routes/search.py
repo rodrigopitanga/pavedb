@@ -298,10 +298,13 @@ def build_search_router(
     @router.post(
         "/search",
         summary="Search shared collections",
-        description="Searches the shared scope; empty when that scope is disabled.",
+        description=(
+            "Searches the shared scope by text; empty when that scope is "
+            "disabled."
+        ),
         response_model=SearchResponse,
         response_model_exclude_none=True,
-        responses=resp(401, 403, 429, 500, 503),
+        responses=resp(400, 401, 403, 429, 500, 503),
         tags=["Global Search"],
     )
     @ops_event(
@@ -323,6 +326,17 @@ def build_search_router(
         ctx: AuthContext = Depends(auth_ctx),
         store: BaseStore = Depends(current_store),
     ):
+        if body.v is not None:
+            # A caller-chosen probe vector against the exact index returns
+            # exact cosines, so d basis-vector probes rebuild every stored
+            # vector. The shared corpus is queried by text only.
+            return error(
+                400,
+                "vector_query_not_allowed",
+                "shared search accepts a text query in 'q' only",
+                request=request,
+                request_id=rid,
+            )
         if not cfg.common_enabled:
             return trace(
                 {
@@ -354,7 +368,6 @@ def build_search_router(
                         else None
                     ),
                     mode=body.mode,
-                    v=body.v,
                     request_id=rid,
                     actor=actor_of(ctx),
                     # The query log lives in the searched collection; here that is

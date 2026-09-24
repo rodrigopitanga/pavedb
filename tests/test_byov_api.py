@@ -46,9 +46,12 @@ def test_identity_vector_round_trip(client, cfg):
     cfg.set("common_enabled", True)
     cfg.set("common_tenant", tenant)
     cfg.set("common_collection", name)
+    # Shared scope is text-only: exact cosines against caller-chosen probe
+    # vectors would reconstruct every stored vector (B50).
     r = client.post("/v1/search", json={"v": [1.0, 0.0, 0.0, 0.0], "k": 1})
-    assert r.status_code == 200, r.text
-    assert r.json()["matches"][0]["meta"]["docid"] == "A"
+    assert r.status_code == 400, r.text
+    assert r.json()["code"] == "vector_query_not_allowed"
+    assert "matches" not in r.json()
 
 
 def test_embedding_collection_accepts_both_text_and_vector(client):
