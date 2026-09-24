@@ -714,3 +714,96 @@ def test_create_collection_reports_vector_space_config_for_opaque_store():
     assert result["embedder_type"] == "openai"
     assert result["embed_model"] == "bge-m3"
     assert result["embedder_config"] == {"dim": 1024}
+
+
+def test_create_builds_the_embedder_outside_the_state_lock(tmp_path):
+    import threading
+
+    _set_openai_instance("slow-build", dim=4)
+    building = threading.Event()
+    release = threading.Event()
+
+    def make_embedder(_embedder_type, _embed_model, embedder_config):
+        building.set()
+        assert release.wait(timeout=5)
+        return FakeEmbedder(dim=int(embedder_config["dim"]))
+
+    store = LocalStore(
+        str(tmp_path), FakeEmbedder(dim=8), embedder_factory=make_embedder
+    )
+    creator = threading.Thread(
+        target=store.create_collection,
+        args=("acme", "slow"),
+        kwargs={
+            "embedder_type": "openai",
+            "embed_model": "bge-m3",
+            "embedder_config": {"dim": 4},
+        },
+    )
+    creator.start()
+    try:
+        assert building.wait(timeout=5)
+        # An archive dump/restore takes the state write lock; a model load
+        # must not hold it off.
+        got_write_lock = threading.Event()
+
+        def take_write_lock():
+            with store._state_lock.write_lock():
+                got_write_lock.set()
+
+        writer = threading.Thread(target=take_write_lock)
+        writer.start()
+        assert got_write_lock.wait(timeout=2)
+        writer.join()
+    finally:
+        release.set()
+        creator.join(timeout=5)
+    assert store.get_collection_vector_dim("acme", "slow") == 4
+    store.close()
+
+
+def test_concurrent_cold_loads_build_the_embedder_once(tmp_path):
+    import threading
+    import time
+
+    _set_openai_instance("shared-build", dim=4)
+    builds = []
+    release = threading.Event()
+
+    def make_embedder(_embedder_type, _embed_model, embedder_config):
+        builds.append(1)
+        assert release.wait(timeout=5)
+        return FakeEmbedder(dim=int(embedder_config["dim"]))
+
+    spec = {
+        "embedder_type": "openai",
+        "embed_model": "bge-m3",
+        "embedder_config": {"dim": 4},
+    }
+    first = LocalStore(
+        str(tmp_path), FakeEmbedder(dim=8), embedder_factory=lambda *a: (
+            FakeEmbedder(dim=4)
+        ),
+    )
+    first.create_collection("acme", "cold", **spec)
+    first.close()
+
+    store = LocalStore(
+        str(tmp_path), FakeEmbedder(dim=8), embedder_factory=make_embedder
+    )
+    searches = [
+        threading.Thread(target=store.search, args=("acme", "cold", "q"))
+        for _ in range(4)
+    ]
+    for thread in searches:
+        thread.start()
+    # Hold the first build open long enough for the others to arrive; without
+    # single-flight each of them would call the factory in this window.
+    deadline = time.monotonic() + 0.5
+    while len(builds) < len(searches) and time.monotonic() < deadline:
+        time.sleep(0.01)
+    release.set()
+    for thread in searches:
+        thread.join(timeout=10)
+    assert len(builds) == 1
+    store.close()

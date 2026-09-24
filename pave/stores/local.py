@@ -31,7 +31,7 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import ExitStack, contextmanager, suppress
 from datetime import datetime, date, timezone as tz
 from pathlib import Path
-from threading import Condition, Lock, Thread, current_thread, get_ident
+from threading import Condition, Event, Lock, Thread, current_thread, get_ident
 from typing import Any
 import time as _time
 
@@ -330,6 +330,10 @@ class LocalStore:
         self._embedder_cache: OrderedDict[Any, Embedder] = OrderedDict()
         self._embedder_route_offsets: dict[str, int] = {}
         self._embedder_route_guard = Lock()
+        # Vector spaces whose embedder a thread is building outside the
+        # store locks; later arrivals wait instead of loading it again.
+        self._embedder_builds: dict[str, Event] = {}
+        self._embedder_builds_guard = Lock()
         self._dbs: OrderedDict[tuple[str, str], CollectionDB] = OrderedDict()
         self._collection_cache_max = self._positive_config_int(
             "cache.collection_max",
@@ -1533,12 +1537,63 @@ class LocalStore:
         self._clear_index_dirty(tenant, collection)
         return rebuilt
 
+    def _prebuild_embedder(
+        self, cfg: CollectionConfig
+    ) -> tuple[str, Embedder] | None:
+        """Build `cfg`'s embedder and probe its dim before any store lock.
+
+        Construction can load a model or wait on a remote probe, and the
+        model is tenant-chosen. Under the collection lock it would also hold
+        the state read lock, stalling archive dump/restore and, behind that
+        queued writer, every tenant. One thread builds per vector space;
+        others wait and let the locked load take it from the cache. The
+        builder gets `(vector_space_key, embedder)` for `_load_or_init`, so
+        a failover that already passed a dead instance does not retry it.
+        """
+        space = embedder_factory_mod.vector_space_key(cfg)
+        with self._embedder_builds_guard:
+            building = self._embedder_builds.get(space)
+            if building is None:
+                building = self._embedder_builds[space] = Event()
+                owner = True
+            else:
+                owner = False
+        if not owner:
+            building.wait()
+            return None
+        try:
+            embedder = self._get_embedder_for_config(cfg)
+            self._embedder_dim_for_config(cfg, embedder)
+            return space, embedder
+        finally:
+            with self._embedder_builds_guard:
+                del self._embedder_builds[space]
+            building.set()
+
+    def _prebuild_collection_embedder(
+        self, tenant: str, collection: str
+    ) -> tuple[str, Embedder] | None:
+        """`_prebuild_embedder` for a stored collection not yet in cache."""
+        if (tenant, collection) in self._collection_embedders:
+            return None
+        try:
+            stored = self._with_catalog_retry(
+                "get_collection_config",
+                lambda catalog: catalog.get_collection_config(tenant, collection),
+            )
+        except Exception:
+            return None  # the locked load reports catalog trouble itself
+        if stored is None:
+            return None
+        return self._prebuild_embedder(self._effective_collection_config(stored))
+
     def _load_or_init(
         self,
         tenant: str,
         collection: str,
         *,
         collection_config: CollectionConfig | None = None,
+        prebuilt: tuple[str, Embedder] | None = None,
     ) -> None:
         key = (tenant, collection)
         if (
@@ -1557,7 +1612,13 @@ class LocalStore:
         # After the catalog registration, not before: a registration refused
         # by the collection quota must not leave a directory behind (B33).
         os.makedirs(self._base_path(tenant, collection), exist_ok=True)
-        embedder = self._get_embedder_for_config(coll_cfg)
+        if (
+            prebuilt is not None
+            and prebuilt[0] == embedder_factory_mod.vector_space_key(coll_cfg)
+        ):
+            embedder = prebuilt[1]
+        else:
+            embedder = self._get_embedder_for_config(coll_cfg)
         embedder_dim = self._embedder_dim_for_config(coll_cfg, embedder)
         idx_dir = self._index_dir(tenant, collection)
 
@@ -1761,6 +1822,7 @@ class LocalStore:
         )
         resolved_display_name = display_name
         is_new = False
+        prebuilt = self._prebuild_embedder(requested) if explicit else None
         with self._collection_write_lock(tenant, name):
             try:
                 stored = self._with_catalog_retry(
@@ -1788,6 +1850,7 @@ class LocalStore:
                     tenant,
                     name,
                     collection_config=requested,
+                    prebuilt=prebuilt,
                 )
                 self._save(tenant, name)
                 self._write_collection_config(tenant, name, requested)
@@ -3711,8 +3774,9 @@ class LocalStore:
         purged = 0
         key = (tenant, collection)
         sel_space: str | None = None
+        prebuilt = self._prebuild_collection_embedder(tenant, collection)
         with self._collection_write_lock(tenant, collection):
-            self._load_or_init(tenant, collection)
+            self._load_or_init(tenant, collection, prebuilt=prebuilt)
             embedder = self._collection_embedders[key]
         bound_embedder = embedder
         if embedder_selector is not None and not byov:
@@ -3861,8 +3925,9 @@ class LocalStore:
         ] = []
         key = (tenant, collection)
 
+        prebuilt = self._prebuild_collection_embedder(tenant, collection)
         with self._collection_write_lock(tenant, collection):
-            self._load_or_init(tenant, collection)
+            self._load_or_init(tenant, collection, prebuilt=prebuilt)
             embedder = self._collection_embedders[key]
 
         for docid, records, doc_meta in prepared:
@@ -3979,6 +4044,7 @@ class LocalStore:
             raise ValueError(f"unsupported search mode: {mode!r}")
         if mode == "hybrid" and query_vector is not None:
             raise ValueError("hybrid search requires a text query")
+        prebuilt = self._prebuild_collection_embedder(tenant, collection)
         _fspec_str = "N/A" if filters is None else json.dumps(dict(filters))
         _content_str = (
             "N/A" if content_filter is None else json.dumps(content_filter)
@@ -4481,7 +4547,7 @@ class LocalStore:
                         matches=[],
                         timing=timing,
                     )
-                self._load_or_init(tenant, collection)
+                self._load_or_init(tenant, collection, prebuilt=prebuilt)
             # The collection may have been deleted between initialization and
             # reacquiring the shared read lock. Loop back and re-check caches.
         out = _try_search()
