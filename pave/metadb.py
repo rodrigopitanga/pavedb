@@ -23,6 +23,7 @@ touches their connection state.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 import sqlite3
@@ -35,6 +36,8 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from pave.filters import sanit_sql
+
+log = logging.getLogger(__name__)
 
 
 class LegacyMetadataError(RuntimeError):
@@ -547,9 +550,13 @@ class CollectionDB:
         if parent.exists():
             if ((parent / "catalog.json").exists()
                     or (parent / "meta.json").exists()):
+                # The absolute path is for the operator's log only; the
+                # message can reach a tenant, so it names the collection dir.
+                log.warning("legacy catalog.json/meta.json in %s", parent)
                 raise LegacyMetadataError(
-                    f"Legacy catalog.json/meta.json detected in {parent}; "
-                    "migration not supported — remove JSON files first."
+                    "Legacy catalog.json/meta.json detected in "
+                    f"{parent.parent.name}/{parent.name}; migration not "
+                    "supported — remove JSON files first."
                 )
         if not read_only:
             parent.mkdir(parents=True, exist_ok=True)

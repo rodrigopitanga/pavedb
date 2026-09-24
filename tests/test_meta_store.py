@@ -546,8 +546,11 @@ def test_legacy_json_detection(tmp_path, legacy_name):
     base.mkdir(parents=True, exist_ok=True)
     (base / legacy_name).write_text("{}", encoding="utf-8")
     db = CollectionDB()
-    with pytest.raises(LegacyMetadataError):
+    with pytest.raises(LegacyMetadataError) as info:
         db.open(base / "meta.db")
+    # The message can reach a tenant: collection-scoped, never absolute.
+    assert str(tmp_path) not in str(info.value)
+    assert f"{base.parent.name}/{base.name}" in str(info.value)
 
 
 def test_upsert_and_get_meta(tmp_path):
