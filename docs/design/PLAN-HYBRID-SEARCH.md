@@ -15,6 +15,7 @@ Roadmap ownership:
 - `P1-70` — SQLite chunk text and content filters, v1.2
 - `P1-71` — backend-aware filtered vector search, v1.3
 - `P1-72` — hybrid lexical/vector retrieval, v1.2
+- `P1-77` — search modes: who enables, defaults, and picks them, v1.0
 
 ## Current flow
 
@@ -102,6 +103,85 @@ Query logging persists both `content_filter` and `mode`; replay restores them
 verbatim so a logged content-filtered or hybrid search cannot become a plain
 vector search.
 
+## P1-77 — search modes
+
+P1-07 shipped the exact-token boost as an instance-wide switch: one operator
+setting re-ranked every search of every tenant, the caller could not see or
+choose it, the query log did not record it, and hybrid mode silently dropped
+it. P1-77 makes ranking one per-search choice with three levels of control.
+
+### Modes
+
+| Mode | Ranking |
+|---|---|
+| `vector` | FAISS similarity only (the default) |
+| `boost` | `vector`, plus the exact-token nudge inside the vector window |
+| `hybrid` | reciprocal-rank fusion of FAISS and FTS5 candidates (P1-72) |
+
+`vector` stays the industry name for vector-only ranking. `flat` is rejected
+because it already means the brute-force FAISS index, `plain` because it
+describes nothing, and `exact` because it collides with the `exact`
+content-filter op and with exact nearest-neighbour search. `boost` names
+what the mode does. Boost and hybrid are alternatives, one mode each, so the
+case where a hybrid search silently drops the boost cannot arise.
+
+### Who decides
+
+1. **Operator** — `search.modes` lists the modes this instance serves
+   (default all three; must include `vector`). `search.boost_weight` (default
+   `0.1`, `0 < w <= 1`) is the operator's tuning of the boost. The
+   instance-wide `search.exact_token_boost` switch and its weight key are
+   removed.
+2. **Collection** — `search_mode` is chosen at creation (default `vector`) and
+   must be a mode the instance serves. It does not change afterwards.
+3. **Caller** — `mode` on a search is optional; omitted, the collection's
+   `search_mode` applies. A mode the operator does not serve, requested or
+   defaulted, answers `400 search_mode_disabled`; it is never downgraded
+   silently.
+
+A raw-vector query has no text, so it always ranks as `vector`: asking for
+`boost` or `hybrid` with `v` is a `400`, and a collection defaulting to either
+runs a raw-vector query as `vector`. The response carries the effective
+`mode`, so a caller always knows which score scale it got (cosine for
+`vector`/`boost`, fusion score for `hybrid`). Shared-scope search (`/v1/search`)
+uses the shared collection's default; a merged `include_common` search ranks
+both collections with the caller's effective mode.
+
+### Boost semantics
+
+A query token is a `\w+` run of the query, deduplicated case-insensitively:
+the same split hybrid's lexical side already uses. A token matches a
+candidate when FTS5 (`unicode61`) matches it in that chunk, so "exact token"
+means the same thing in `boost`, in `hybrid`, and in the `exact`/`phrase`
+content filters. A candidate matching `m` of `n` tokens gains
+`boost_weight * m / n`; the match reason reads `exact tokens m/n`. The boost
+still re-ranks only the vector candidate window and never adds candidates.
+
+### Query log and replay
+
+The log records the effective mode; replay runs the recorded mode and answers
+`400 search_mode_disabled` if the operator has since stopped serving it.
+`boost_weight` is not recorded: it is operator tuning, like embedder routing,
+and changing it is an operator action outside the corpus-drift story.
+
+### Storage
+
+A collection's settings live in its own `meta.db`, in a `settings` table
+(collection schema v9), so they travel with collection and instance archives
+with no new catalog column, sidecar field or manifest key. v9 seeds existing
+collections with `search_mode = vector` and rebuilds `query_log` so its mode
+check accepts `boost`.
+
+### Simplest-path review (ponytail)
+
+Cut: an "always" level that stops callers overriding the default (no
+competitor has one); changing `search_mode` after creation; weighted fusion
+(`alpha`); recording `boost_weight`; a restore-time check of the default mode
+(the first search already answers `search_mode_disabled`). Reused instead of
+written: FTS5 decides token matches, which deletes the Python tokenizer and
+the per-candidate chunk-text reads the boost did before. SDK and client
+`mode` parameters follow in their own repos.
+
 ## P1-71 — true filtered vector search
 
 P1-71 changes execution order for selective filters:
@@ -130,6 +210,9 @@ enabling a new backend path.
   `content_filter`.
 - `P1-71`: identical result semantics with and without backend filtering, plus
   selectivity benchmarks showing reduced vector work.
+- `P1-77`: create/search/replay/restore across the operator, collection and
+  caller levels; boost counts match FTS5 for mixed-case tokens; v9 migration
+  of an existing collection.
 
 ## Not in scope
 
