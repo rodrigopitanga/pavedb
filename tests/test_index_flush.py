@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import faiss
 import pytest
 
 from pave.stores.local import LocalStore
@@ -47,7 +48,8 @@ def test_ingest_defers_faiss_flush_until_explicit_save(tmp_path):
 
     index_dir = _index_dir(store, tenant, collection)
     assert (index_dir / ".pavedb-index-dirty").is_file()
-    assert not (index_dir / "faiss.index").exists()
+    # Only the empty pair written at creation is on disk (B85).
+    assert faiss.read_index(str(index_dir / "faiss.index")).ntotal == 0
     assert store.search(tenant, collection, "deferred", k=1)
 
     store._save(tenant, collection)
@@ -250,7 +252,7 @@ def test_dirty_index_rebuilds_from_chunks_on_reopen(tmp_path):
     )
     index_dir = _index_dir(store, tenant, collection)
     assert (index_dir / ".pavedb-index-dirty").is_file()
-    assert not (index_dir / "faiss.index").exists()
+    assert faiss.read_index(str(index_dir / "faiss.index")).ntotal == 0
 
     for db in list(store._dbs.values()):
         db.close()

@@ -723,6 +723,20 @@ class LocalStore:
         expected_dim: int | None = None,
     ) -> None:
         index_dir = collection_dir / "index"
+        missing = [
+            name for name in ("faiss.index", "id_map.json")
+            if not (index_dir / name).is_file()
+        ]
+        if len(missing) == 2 and not rids:
+            # An empty collection auto-created by an older build, killed
+            # before its first flush: nothing to validate, nothing lost.
+            # A half pair is not this case; the loader refuses it.
+            return
+        if missing:
+            raise ValueError(
+                f"archive collection index is missing {', '.join(missing)}: "
+                f"{tenant}/{collection}"
+            )
         try:
             index = faiss.read_index(str(index_dir / "faiss.index"))
             id_map = json.loads(
@@ -1714,6 +1728,15 @@ class LocalStore:
                     col_db,
                     embedder,
                 )
+            if (
+                not (idx_dir / "faiss.index").is_file()
+                and not backend.rids()
+                and not col_db.get_chunk_rids()
+            ):
+                # A new collection: meta.db now exists, so persist the empty
+                # index pair beside it. A crash before the first real flush
+                # must not leave a dir that archive preflight rejects.
+                backend.flush()
         except Exception:
             if key not in self._dbs:
                 col_db.close()

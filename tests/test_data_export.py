@@ -993,6 +993,45 @@ def test_dump_archive_skips_an_unreadable_meta_db(tmp_path):
     assert destination.get_collection_config("beta", "damaged") is None
 
 
+def test_new_collection_persists_an_empty_index_pair(tmp_path):
+    """No window where a collection dir exists without its index (B85)."""
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "fresh")
+    index_dir = tmp_path / "t_acme" / "c_fresh" / "index"
+    assert (index_dir / "faiss.index").is_file()
+    assert (index_dir / "id_map.json").is_file()
+
+
+def test_dump_archive_accepts_an_empty_collection_without_index(tmp_path):
+    """Pre-1.0 builds could leave this behind after a hard kill (B85)."""
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "fresh")
+    store.close()
+    shutil.rmtree(tmp_path / "t_acme" / "c_fresh" / "index")
+
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    assert not (tmp_path / "t_acme" / "c_fresh" / "index").exists()
+    skipped: list[str] = []
+    path, tmp = store.dump_archive(skipped=skipped)
+    shutil.rmtree(tmp)
+    assert skipped == []
+
+
+def test_dump_archive_skips_a_half_index_pair(tmp_path):
+    """Only a wholly absent pair is an empty legacy collection (B85)."""
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "half")
+    store.close()
+    (tmp_path / "t_acme" / "c_half" / "index" / "id_map.json").unlink()
+
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    skipped: list[str] = []
+    path, tmp = store.dump_archive(skipped=skipped)
+    shutil.rmtree(tmp)
+    assert len(skipped) == 1
+    assert "missing id_map.json: acme/half" in skipped[0]
+
+
 def test_dump_archive_preserves_another_catalog_connection_wal(tmp_path):
     store = LocalStore(str(tmp_path), FakeEmbedder())
     store.create_collection("acme", "documents")
