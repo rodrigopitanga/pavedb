@@ -1549,6 +1549,7 @@ class LocalStore:
             index_path = idx_dir / "faiss.index"
             map_path = idx_dir / "id_map.json"
             try:
+                backend.recover_interrupted_flush()
                 if index_path.is_file() and not map_path.is_file():
                     raise ValueError("id_map.json is missing")
                 backend.initialize()

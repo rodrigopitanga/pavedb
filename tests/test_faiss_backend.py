@@ -160,3 +160,71 @@ def test_initialize_raises_on_dimension_mismatch(tmp_path):
     b2 = FaissBackend(8, storage_dir=storage)
     with pytest.raises(ValueError, match="dimension mismatch"):
         b2.initialize()
+
+
+def _flushed(storage, rows):
+    backend = FaissBackend(4, storage_dir=storage)
+    backend.add([f"r{i}" for i in range(len(rows))], _v(*rows))
+    backend.flush()
+    return backend
+
+
+def test_flush_leaves_no_staging_files(tmp_path):
+    storage = tmp_path / "idx"
+    _flushed(storage, [[1, 0, 0, 0]])
+    assert sorted(p.name for p in storage.iterdir()) == [
+        "faiss.index",
+        "id_map.json",
+    ]
+
+
+@pytest.mark.parametrize("name", ["faiss.index", "id_map.json"])
+def test_initialize_rejects_truncated_file(tmp_path, name):
+    storage = tmp_path / "idx"
+    _flushed(storage, [[1, 0, 0, 0], [0, 1, 0, 0]])
+    target = storage / name
+    target.write_bytes(target.read_bytes()[:10])
+    with pytest.raises(Exception):
+        FaissBackend(4, storage_dir=storage).initialize()
+
+
+def test_initialize_rejects_current_index_with_stale_map(tmp_path):
+    storage = tmp_path / "idx"
+    backend = _flushed(storage, [[1, 0, 0, 0]])
+    stale_map = (storage / "id_map.json").read_bytes()
+    backend.add(["r9"], _v([0, 0, 1, 0]))
+    backend.flush()
+    (storage / "id_map.json").write_bytes(stale_map)
+    with pytest.raises(ValueError, match="inconsistent"):
+        FaissBackend(4, storage_dir=storage).initialize()
+
+
+def test_initialize_completes_a_flush_cut_between_renames(tmp_path):
+    storage = tmp_path / "idx"
+    backend = _flushed(storage, [[1, 0, 0, 0]])
+    old_map = (storage / "id_map.json").read_bytes()
+    backend.add(["r9"], _v([0, 0, 1, 0]))
+    backend.flush()
+    # Crash after the index rename, before the map rename.
+    (storage / "id_map.json").rename(storage / "id_map.json.tmp")
+    (storage / "id_map.json").write_bytes(old_map)
+
+    reloaded = FaissBackend(4, storage_dir=storage)
+    reloaded.initialize()
+    assert reloaded.count() == 2
+    assert not (storage / "id_map.json.tmp").exists()
+
+
+def test_initialize_discards_a_flush_cut_before_any_rename(tmp_path):
+    storage = tmp_path / "idx"
+    _flushed(storage, [[1, 0, 0, 0]])
+    (storage / "faiss.index.tmp").write_bytes(b"partial")
+    (storage / "id_map.json.tmp").write_bytes(b"{")
+
+    reloaded = FaissBackend(4, storage_dir=storage)
+    reloaded.initialize()
+    assert reloaded.count() == 1
+    assert sorted(p.name for p in storage.iterdir()) == [
+        "faiss.index",
+        "id_map.json",
+    ]

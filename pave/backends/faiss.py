@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Collection
 from pathlib import Path
 
@@ -23,6 +24,14 @@ from numpy.typing import NDArray
 from .base import SearchHit
 
 log = logging.getLogger(__name__)
+
+
+def _fsync_path(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 class FaissBackend:
@@ -56,7 +65,31 @@ class FaissBackend:
     def _map_file(self) -> Path:
         return self._storage_dir / "id_map.json"
 
+    @property
+    def _index_tmp(self) -> Path:
+        return self._index_file.with_name(self._index_file.name + ".tmp")
+
+    @property
+    def _map_tmp(self) -> Path:
+        return self._map_file.with_name(self._map_file.name + ".tmp")
+
+    def recover_interrupted_flush(self) -> None:
+        """Finish or discard a flush a crash cut short.
+
+        flush() stages both files, then renames the index before the map.
+        A staged index still present means no rename happened: the old
+        pair is intact, so drop the staging. A staged map alone means the
+        index is already the new one: complete the pair.
+        """
+        if self._index_tmp.exists():
+            self._index_tmp.unlink()
+            self._map_tmp.unlink(missing_ok=True)
+        elif self._map_tmp.exists():
+            os.replace(self._map_tmp, self._map_file)
+            _fsync_path(self._storage_dir)
+
     def initialize(self) -> None:
+        self.recover_interrupted_flush()
         if not self._index_file.is_file() or not self._map_file.is_file():
             return
 
@@ -309,17 +342,29 @@ class FaissBackend:
                 raise RuntimeError(message)
 
         self._storage_dir.mkdir(parents=True, exist_ok=True)
-        faiss.write_index(self._index, str(self._index_file))
+        # Two-phase: stage both files durably, then rename index before
+        # map, syncing the directory after each, so a crash never leaves a
+        # truncated file and recover_interrupted_flush() can always tell
+        # which pair is current.
+        index_tmp = self._index_tmp
+        map_tmp = self._map_tmp
+        faiss.write_index(self._index, str(index_tmp))
+        _fsync_path(index_tmp)
 
         payload = {
             "rid_to_id": self._rid_to_id,
             "id_to_rid": {str(iid): rid for iid, rid in self._id_to_rid.items()},
             "next_id": self._next_id,
         }
-        self._map_file.write_text(
-            json.dumps(payload, ensure_ascii=False),
-            encoding="utf-8",
-        )
+        with map_tmp.open("w", encoding="utf-8") as map_file:
+            map_file.write(json.dumps(payload, ensure_ascii=False))
+            map_file.flush()
+            os.fsync(map_file.fileno())
+        _fsync_path(self._storage_dir)
+        os.replace(index_tmp, self._index_file)
+        _fsync_path(self._storage_dir)
+        os.replace(map_tmp, self._map_file)
+        _fsync_path(self._storage_dir)
         self._dirty = False
 
     def close(self) -> None:
