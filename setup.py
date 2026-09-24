@@ -38,6 +38,10 @@ setup(
     author="Rodrigo Rodrigues da Silva",
     author_email="rodrigo@flowlexi.com",
     license="AGPL-3.0-or-later",
+    keywords=[
+        "vector database", "semantic search", "retrieval", "RAG",
+        "embeddings", "provenance", "query replay", "faiss",
+    ],
     python_requires=">=3.10,<3.15",
     packages=find_packages(include=["pave", "pave.*"]),  # internal package
     include_package_data=True,

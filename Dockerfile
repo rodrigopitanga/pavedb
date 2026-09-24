@@ -59,7 +59,11 @@ RUN pip install --no-cache-dir --no-deps --progress-bar=off /app
 
 # Write build id file and label the image. Use ${BUILD_ID} expansion.
 RUN printf "%s\n" "${BUILD_ID}" > /app/BUILD_ID
-LABEL org.opencontainers.image.revision=${BUILD_ID}
+LABEL org.opencontainers.image.revision=${BUILD_ID} \
+      org.opencontainers.image.title="PaveDB" \
+      org.opencontainers.image.description="Inspectable retrieval database" \
+      org.opencontainers.image.source="https://gitlab.com/flowlexi/pavedb" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later"
 
 # Run unprivileged. The instance home (admin.key, tenants.yml, data/) is
 # pinned to /data so it does not depend on the runtime user's ~ -- mount a
