@@ -61,6 +61,17 @@ RUN pip install --no-cache-dir --no-deps --progress-bar=off /app
 RUN printf "%s\n" "${BUILD_ID}" > /app/BUILD_ID
 LABEL org.opencontainers.image.revision=${BUILD_ID}
 
+# Run unprivileged. The instance home (admin.key, tenants.yml, data/) is
+# pinned to /data so it does not depend on the runtime user's ~ -- mount a
+# volume there to keep it across container replacement. The user keeps a
+# real ~ for library caches (the native model download lands in ~/.cache).
+RUN useradd --system --uid 1000 --user-group --create-home \
+      --home-dir /home/pavedb pavedb && \
+    mkdir -p /data && chown pavedb:pavedb /data
+ENV PAVEDB_HOME=/data
+VOLUME /data
+USER pavedb
+
 EXPOSE 8086
 
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \

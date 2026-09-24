@@ -8,15 +8,23 @@ services:
     container_name: pavedb
     ports:
       - "8086:8086"
+    # The image runs as UID 1000; ./data must be writable by it. The
+    # instance home (/data: admin.key, tenants.yml) is a named volume so it
+    # survives recreates without landing inside the data directory, which
+    # archives would then carry.
     volumes:
-      - ./data:/data
+      - pavedb-home:/data
+      - ./data:/data/data
       - ./config.yml:/app/config.yml:ro
     environment:
       - PAVEDB_CONFIG=/app/config.yml
-      - PAVEDB_DATA_DIR=/data
+      - PAVEDB_DATA_DIR=/data/data
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8086/health/ready"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
+
+volumes:
+  pavedb-home:

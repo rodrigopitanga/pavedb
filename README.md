@@ -270,12 +270,15 @@ the API port mapped locally:
 docker pull registry.gitlab.com/flowlexi/pavedb/pavedb:latest-cpu
 docker run -d --name pavedb -p 8086:8086 \
   -e PAVEDB_AUTH__GLOBAL_KEY \
-  -v pavedb-data:/root/pavedb \
+  -v pavedb-data:/data \
   registry.gitlab.com/flowlexi/pavedb/pavedb:latest-cpu
 ```
 
-The named `pavedb-data` volume preserves the instance home across container
-replacement. The server is now reachable at `http://localhost:8086` — drive it
+The named `pavedb-data` volume preserves the instance home (`PAVEDB_HOME=/data`)
+across container replacement. The image runs as the unprivileged `pavedb` user
+(UID 1000), so a bind-mounted host directory must be writable by that UID. Volumes
+from releases before 1.0 were mounted at `/root/pavedb` as root; mount them at `/data` and
+`chown -R 1000:1000` their contents. The server is now reachable at `http://localhost:8086` — drive it
 as in [Server & REST API](#-server--rest-api).
 
 ### 🛠️ From source
