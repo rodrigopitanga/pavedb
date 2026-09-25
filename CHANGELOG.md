@@ -1,6 +1,88 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
+## 0.9.7 — 2026-09-25
+
+### Bug Fixes
+- [store] Correct exact-token boost reporting and config read (P1-07)
+- [api] Keep admin replay off the tenant request budget (refs P1-28)
+- [store] Follow the collection lifecycle for reindex jobs (P1-55)
+- [core] Return vector-space embedder config on create (refs P1-60)
+- [store] Carry archive version tags onto restored rows (P2-25)
+- [log] Never record an unidentified caller as admin (B72)
+- [api] Compare bearer tokens in constant time (B60)
+- [conf] Let a null tenant key revoke a sidecar key (B63)
+- [log] Create the ops log owner/group-only (B67)
+- [pkg] Run the container as an unprivileged user (B70)
+- [core] Cap the identity embedder dim (B77)
+- [store] Write the FAISS index pair atomically (B45)
+- [api] Keep raw exception text out of error bodies (B59)
+- [api] Answer embedder failures with a fixed message (B43)
+- [store] Keep data_dir paths out of legacy-metadata errors (B84)
+- [api] Stop logging shared searches into the shared tenant (B34)
+- [api] Accept only text queries on shared search (B50)
+- [store] Drop collection locks nobody holds (B49)
+- [store] Build embedders before taking store locks (B48)
+- [store] Dump the healthy collections when one is damaged (B83)
+- [store] Give a new collection its index pair on creation (B85)
+- [store] Refuse archives that would fill the disk on restore (B89)
+- [core] Refuse embedder models the operator never configured (B90)
+- [api] Stop echoing rejected input in validation errors
+
+### Core
+- Add persistent tenant request rate limits (P1-28)
+- Add resumable collection reindex jobs (P1-55)
+- Add embedder selector and routing policies (P1-60)
+- Add per-collection archives (P1-54)
+- [cli] Tag new collections and add archive commands (P2-25)
+- Route embedders per operation class (refs P1-60)
+- Add search modes: vector, boost, hybrid (P1-77)
+- Make match_reason explain how each score was made (refs P1-77)
+- Choose chunking per collection within operator bounds (P1-78)
+- [api] Restore a collection archive as new (POST) or over one (PUT)
+
+### Documentation
+- Document rate limits, collection archive and reindex (R7-86)
+- Mention the exact-token boost beside hybrid search
+- Add production, backup and replay guidance (P3-54)
+- Show the current match_reason and mode in the README
+
+### Infrastructure
+- Stop publishing unused runtime freeze artifacts (R3-83)
+- Gate merge requests on the full pytest suite
+- Parse multi-key commit subjects and name what closed each issue
+- Give the suite room and test branches that have no MR
+- Group [ci] commits under Infrastructure in the changelog
+
+### Store
+- [conf] Add exact-token boost inside the vector candidate window (P1-07)
+- [api] Boost search scores by a metadata priority (P2-11)
+- [api] Add SQLite chunk-text filters (P1-70)
+- Add backend-aware filtered vector search (P1-71)
+- [api] Add hybrid lexical-vector retrieval (P1-72)
+
+### API
+- [store] Add per-collection archives (P1-54)
+- Self-service collection archive and reindex (refs P1-54, P1-55, P1-28)
+
+### Performance
+- Add bounded embedder worker pools (P1-61)
+- Size the chaos large-volume timeout to the work (B88)
+
+### Build
+- Start 0.9.7 release
+
+### CLI
+- Name collections as tenant/collection (P1-76)
+
+### Packaging
+- Describe the product in package and image metadata
+
+### Testing
+- Give the archive lock-wait tests room on a loaded host
+- Give the search race tests room on a loaded host
+
+---
 ## 0.9.6 — 2026-08-29
 
 ### Bug Fixes
