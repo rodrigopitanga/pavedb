@@ -228,6 +228,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P3-53 | Micro-batch concurrent query embeddings | 🧱 | v1.8 |
 | P3-54 | ~~Deployment, operations, and replay documentation update~~ | 🧩 | v1.0 |
 | P3-55 | Keep the pytest suite well inside one CI job budget (parallel workers or split slow tests) | 🧩 | v1.1 |
+| P3-56 | Harden timing-based tests: condition waits sized for a loaded CI runner instead of one second | 🧩 | v1.1 |
 
 P1-53e includes a checked-in `openapi.json` snapshot plus a
 `docs-ref-openapi` dump and drift check, mirroring P1-53b's CLI gate.
