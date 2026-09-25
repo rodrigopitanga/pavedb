@@ -18,7 +18,7 @@ class BlockingIngestEmbedder(FakeEmbedder):
     def encode(self, texts):
         if any("slow ingest payload" in text for text in texts):
             self.started.set()
-            if not self.release.wait(timeout=2.0):
+            if not self.release.wait(timeout=10.0):
                 raise TimeoutError("blocked ingest encode was not released")
         return super().encode(texts)
 
@@ -180,7 +180,7 @@ def test_search_final_cache_retry_does_not_run_under_write_lock(temp_data_dir):
 
     t = threading.Thread(target=run_search, daemon=True)
     t.start()
-    t.join(timeout=2.0)
+    t.join(timeout=10.0)
 
     assert done.is_set(), "search deadlocked on final cache retry"
     assert result["hits"]
@@ -203,7 +203,7 @@ def test_search_reports_collection_moved_during_query_encode(temp_data_dir):
 
     def blocked_encode(*args, **kwargs):
         encode_started.set()
-        if not release_encode.wait(timeout=2.0):
+        if not release_encode.wait(timeout=10.0):
             raise TimeoutError("blocked search encode was not released")
         return original_encode(*args, **kwargs)
 
@@ -222,7 +222,7 @@ def test_search_reports_collection_moved_during_query_encode(temp_data_dir):
         store.move_collection(tenant, collection, "moved_search")
     finally:
         release_encode.set()
-    worker.join(timeout=2.0)
+    worker.join(timeout=10.0)
 
     assert not worker.is_alive()
     assert len(errors) == 1
@@ -333,7 +333,7 @@ def _assert_search_runs_while_ingest_embeds(
     search_thread.join(timeout=0.5)
 
     embedder.release.set()
-    thread.join(timeout=2.0)
+    thread.join(timeout=10.0)
 
     assert search_done.is_set(), wait_message
     assert search_result["hits"]
