@@ -808,7 +808,7 @@ def test_cli_dump_collection_archive_creates_zip(cli_env, tmp_path, capsys):
 
     target = tmp_path / "books.zip"
     pvcli.main_cli(
-        ["dump-collection-archive", "acme/books", "--output", str(target)]
+        ["dump-archive", "acme/books", "--output", str(target)]
     )
 
     out = json.loads(capsys.readouterr().out)
@@ -826,7 +826,7 @@ def test_cli_restore_collection_archive_extracts_zip(cli_env, tmp_path, capsys):
     with zipfile.ZipFile(source, "w") as zf:
         zf.writestr("meta.db", "fake-meta")
 
-    pvcli.main_cli(["restore-collection-archive", "acme/books", str(source)])
+    pvcli.main_cli(["restore-archive", "acme/books", str(source)])
 
     out = json.loads(capsys.readouterr().out)
     assert out["ok"] is True
@@ -840,6 +840,20 @@ def test_cli_restore_collection_archive_extracts_zip(cli_env, tmp_path, capsys):
     cfg = get_cfg()
     restored = Path(cfg.get("data_dir")) / "acme" / "books" / "meta.db"
     assert restored.read_text(encoding="utf-8") == "fake-meta"
+
+
+def test_cli_restore_archive_without_collection_restores_instance(
+    cli_env, tmp_path, capsys,
+):
+    pvcli, store, _ = cli_env
+    source = tmp_path / "data.zip"
+    with zipfile.ZipFile(source, "w") as zf:
+        zf.writestr("sample.txt", "hello")
+
+    pvcli.main_cli(["restore-archive", str(source)])
+
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+    assert ("restore_archive", source.stat().st_size) in store.calls
 
 
 def test_cli_list_tenants(cli_env, tmp_path, capsys, monkeypatch):

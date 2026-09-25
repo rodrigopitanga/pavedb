@@ -388,5 +388,7 @@ class BaseStore(Protocol):
         tenant: str,
         collection: str,
         archive_bytes: bytes,
+        *,
+        replace: bool = False,
     ) -> None:
         raise NotImplementedError

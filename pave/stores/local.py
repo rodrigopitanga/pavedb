@@ -55,6 +55,8 @@ from pave.metadb import (
     ChunkLimitError,
     CollectionConfigRecoveryError,
     CollectionDB,
+    CollectionExistsError,
+    CollectionNotFoundError,
     RateLimitDecision,
     ReindexJobStateError,
     UnsupportedSchemaVersionError,
@@ -5709,8 +5711,15 @@ class LocalStore:
         tenant: str,
         collection: str,
         archive_bytes: bytes,
+        *,
+        replace: bool = False,
     ) -> None:
-        """Replace one collection after complete same-version preflight."""
+        """Restore an archive after complete same-version preflight.
+
+        By default it creates the collection and refuses an existing one;
+        with `replace` it overwrites an existing one and refuses a missing
+        one.
+        """
         with tempfile.TemporaryDirectory(
             prefix="pavedb_collection_import_"
         ) as tmp_dir:
@@ -5736,6 +5745,21 @@ class LocalStore:
                 target = Path(self._base_path(tenant, collection)).resolve()
                 if not target.is_relative_to(data_dir):
                     raise ValueError("invalid collection archive target")
+                registered = self._with_catalog_retry(
+                    "get_collection_config",
+                    lambda catalog: catalog.get_collection_config(
+                        tenant, collection,
+                    ),
+                )
+                exists = registered is not None or target.exists()
+                if exists and not replace:
+                    raise CollectionExistsError(
+                        f"collection '{tenant}/{collection}' already exists"
+                    )
+                if replace and not exists:
+                    raise CollectionNotFoundError(
+                        f"collection '{tenant}/{collection}' does not exist"
+                    )
                 target.parent.mkdir(parents=True, exist_ok=True)
                 self._assert_no_collection_restore_backup(target)
                 install_root = Path(
@@ -5788,6 +5812,9 @@ class LocalStore:
                                 "schema_version"
                             ],
                             query_homes=query_homes,
+                            max_collections=self._tenant_max_collections(
+                                tenant
+                            ),
                         ),
                     )
 

@@ -438,13 +438,26 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
 
     @router.post(
         "/collections/{tenant}/{name}/archive",
-        summary="Restore this collection from a portable archive",
+        summary="Restore a portable archive as a new collection",
         description=(
-            "Replaces the collection from a same-version archive after "
-            "embedder preflight, scoped to your own tenant."
+            "Creates the collection from a same-version archive after "
+            "embedder preflight, scoped to your own tenant; an existing "
+            "collection is refused."
         ),
         response_model=RestoreCollectionArchiveResponse,
-        responses=resp(400, 401, 403, 413, 429, 500, 503),
+        responses=resp(400, 401, 403, 409, 413, 429, 500, 503),
+        tags=["Collection Portability"],
+    )
+    @router.put(
+        "/collections/{tenant}/{name}/archive",
+        summary="Replace this collection from a portable archive",
+        description=(
+            "Replaces an existing collection from a same-version archive after "
+            "embedder preflight, scoped to your own tenant; a missing "
+            "collection is refused."
+        ),
+        response_model=RestoreCollectionArchiveResponse,
+        responses=resp(400, 401, 403, 404, 413, 429, 500, 503),
         tags=["Collection Portability"],
     )
     @ops_event("restore_collection_archive", coll="name", request_id="rid")
@@ -471,6 +484,7 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
                 tenant,
                 name,
                 content,
+                replace=request.method == "PUT",
             )
         except Exception as exc:
             return archive_restore_error(exc, request, rid, error=error)

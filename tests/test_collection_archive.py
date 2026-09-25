@@ -12,7 +12,11 @@ from pathlib import Path
 import pytest
 
 from pave.config import get_cfg
-from pave.metadb import COLLECTION_SCHEMA_VERSION
+from pave.metadb import (
+    COLLECTION_SCHEMA_VERSION,
+    CollectionExistsError,
+    CollectionLimitError,
+)
 from pave.stores.local import LocalStore
 from pave.version import VERSION
 from utils import FakeEmbedder
@@ -76,7 +80,7 @@ def test_collection_archive_manifest_and_members(tmp_path):
     }
 
 
-def test_collection_archive_restore_replaces_only_target(tmp_path):
+def test_collection_archive_restores_into_a_new_slot_only(tmp_path):
     source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
     source.index_records(
         "acme",
@@ -95,10 +99,16 @@ def test_collection_archive_restore_replaces_only_target(tmp_path):
     )
     destination.index_records(
         "new-tenant",
-        "library",
+        "taken",
         "old",
         [("0", "old target", {})],
     )
+
+    with pytest.raises(CollectionExistsError):
+        destination.restore_collection_archive(
+            "new-tenant", "taken", archive_bytes,
+        )
+    assert destination.get_document("new-tenant", "taken", "old") is not None
 
     destination.restore_collection_archive(
         "new-tenant",
@@ -106,7 +116,6 @@ def test_collection_archive_restore_replaces_only_target(tmp_path):
         archive_bytes,
     )
 
-    assert destination.get_document("new-tenant", "library", "old") is None
     assert destination.get_document("new-tenant", "library", "verne") is not None
     assert destination.search(
         "new-tenant",
@@ -116,6 +125,19 @@ def test_collection_archive_restore_replaces_only_target(tmp_path):
         content_filter={"op": "contains", "value": "Nemo sub"},
     )[0].id == "verne::0"
     assert destination.get_document("other", "keep", "sentinel") is not None
+
+
+def test_collection_archive_restore_counts_against_the_limit(tmp_path, cfg):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.index_records("acme", "books", "verne", [("0", "Nemo", {})])
+    archive_bytes = _archive_bytes(source, "acme", "books")
+    cfg.set("tenants.default_max_collections", 1)
+    destination = LocalStore(str(tmp_path / "destination"), FakeEmbedder())
+    destination.create_collection("acme", "first")
+
+    with pytest.raises(CollectionLimitError):
+        destination.restore_collection_archive("acme", "second", archive_bytes)
+    assert not (tmp_path / "destination" / "acme" / "second").exists()
 
 
 def test_collection_archive_restore_tags_the_destination_row(tmp_path):
@@ -130,7 +152,9 @@ def test_collection_archive_restore_tags_the_destination_row(tmp_path):
         "acme", "books", "sentinel", [("0", "replace me", {})]
     )
 
-    destination.restore_collection_archive("acme", "books", archive_bytes)
+    destination.restore_collection_archive(
+        "acme", "books", archive_bytes, replace=True,
+    )
     destination.restore_collection_archive("imported", "library", archive_bytes)
 
     # Restore is same-version only, so a collection that travelled reports
@@ -234,7 +258,9 @@ def test_collection_archive_rolls_back_catalog_publish_failure(
     )
 
     with pytest.raises(OSError, match="catalog publish failed"):
-        destination.restore_collection_archive("acme", "books", archive_bytes)
+        destination.restore_collection_archive(
+            "acme", "books", archive_bytes, replace=True,
+        )
 
     assert destination.get_document("acme", "books", "sentinel") is not None
     assert destination.get_document("acme", "books", "verne") is None
@@ -259,6 +285,12 @@ def test_collection_archive_http_round_trip(client):
     assert restored.status_code == 200
     assert restored.json()["tenant"] == "imported"
     assert restored.json()["collection"] == "library"
+
+    archive = {"file": ("books.zip", dumped.content, "application/zip")}
+    path = "/v1/admin/collections/imported/{}/archive"
+    assert client.post(path.format("library"), files=archive).status_code == 409
+    assert client.put(path.format("absent"), files=archive).status_code == 404
+    assert client.put(path.format("library"), files=archive).status_code == 200
     result = client.post(
         "/v1/collections/imported/library/search",
         json={

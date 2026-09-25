@@ -257,13 +257,26 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
 
     @router.post(
         "/admin/collections/{tenant}/{name}/archive",
-        summary="Restore a collection archive",
+        summary="Restore a collection archive as a new collection",
         description=(
-            "Replaces one collection from a same-version archive after local "
-            "embedder preflight; requires the admin key."
+            "Creates the collection from a same-version archive after local "
+            "embedder preflight; an existing collection is refused. Requires "
+            "the admin key."
         ),
         response_model=RestoreCollectionArchiveResponse,
-        responses=resp(400, 401, 403, 500),
+        responses=resp(400, 401, 403, 409, 429, 500),
+        tags=["Instance Admin"],
+    )
+    @router.put(
+        "/admin/collections/{tenant}/{name}/archive",
+        summary="Replace a collection from an archive",
+        description=(
+            "Replaces an existing collection from a same-version archive "
+            "after local embedder preflight; a missing collection is refused. "
+            "Requires the admin key."
+        ),
+        response_model=RestoreCollectionArchiveResponse,
+        responses=resp(400, 401, 403, 404, 500),
         tags=["Instance Admin"],
     )
     @ops_event("restore_collection_archive", coll="name", request_id="rid")
@@ -292,6 +305,7 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
                 tenant,
                 name,
                 content,
+                replace=request.method == "PUT",
             )
             return trace(out, request, request_id=rid)
         except Exception as exc:

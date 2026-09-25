@@ -274,7 +274,9 @@ def test_restore_collection_archive_clears_reindex_jobs(
         if tmp_dir:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    store.restore_collection_archive("acme", "archived", archive_bytes)
+    store.restore_collection_archive(
+        "acme", "archived", archive_bytes, replace=True,
+    )
 
     with pytest.raises(FileNotFoundError):
         store.get_reindex_job(job_id)

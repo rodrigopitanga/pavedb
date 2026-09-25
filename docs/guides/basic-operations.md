@@ -164,8 +164,8 @@ needed:
 curl -H "Authorization: Bearer $KEY" -o books.zip \
   "$PAVEDB_URL/v1/collections/demo/books/archive"
 
-# restore it — same PaveDB version, any instance, your tenant
-curl -H "Authorization: Bearer $KEY" -F file=@books.zip \
+# roll it back to that snapshot (PUT); POST restores into a new collection
+curl -X PUT -H "Authorization: Bearer $KEY" -F file=@books.zip \
   "$PAVEDB_URL/v1/collections/demo/books/archive"
 
 # rebuild into another embedder space (resumable job; poll or cancel by id)

@@ -538,6 +538,8 @@ class DummyStore:
         tenant: str,
         collection: str,
         archive_bytes: bytes,
+        *,
+        replace: bool = False,
     ) -> None:
         import io
         import zipfile
@@ -1001,6 +1003,8 @@ class SpyStore:
         tenant: str,
         collection: str,
         archive_bytes: bytes,
+        *,
+        replace: bool = False,
     ) -> None:
         self.calls.append(
             ("restore_collection_archive", tenant, collection, len(archive_bytes))
@@ -1009,4 +1013,5 @@ class SpyStore:
             tenant,
             collection,
             archive_bytes,
+            replace=replace,
         )

@@ -32,7 +32,9 @@ from pave.config import SEARCH_MODES, get_cfg, get_logger
 from pave.embedders import EmbedderUnavailableError
 from pave.metadb import (
     ChunkLimitError,
+    CollectionExistsError,
     CollectionLimitError,
+    CollectionNotFoundError,
     ReindexJobConflictError,
     ReindexJobStateError,
 )
@@ -1856,13 +1858,23 @@ def restore_collection_archive(
     tenant: str,
     collection: str,
     archive_bytes: bytes,
+    *,
+    replace: bool = False,
 ) -> ServiceResult:
     resolved_collection = _validate_collection_name(collection)
-    store.restore_collection_archive(
-        tenant,
-        resolved_collection,
-        archive_bytes,
-    )
+    try:
+        store.restore_collection_archive(
+            tenant,
+            resolved_collection,
+            archive_bytes,
+            replace=replace,
+        )
+    except CollectionExistsError as exc:
+        raise ServiceError("collection_exists", str(exc)) from exc
+    except CollectionNotFoundError as exc:
+        raise ServiceError("collection_not_found", str(exc)) from exc
+    except CollectionLimitError as exc:
+        raise ServiceError("collection_limit_reached", str(exc)) from exc
     return {
         "ok": True,
         "tenant": tenant,

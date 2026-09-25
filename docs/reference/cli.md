@@ -74,10 +74,8 @@ There is NO WARRANTY, to the extent permitted by law.
 | `move-collection` | Move a collection to a new name. |
 | `update-collection` | Update collection metadata. |
 | `delete-document` | Delete a document by ID. |
-| `dump-archive` | Export the instance data archive. |
-| `restore-archive` | Restore an instance data archive. |
-| `dump-collection-archive` | Export one collection as a portable archive. |
-| `restore-collection-archive` | Restore a collection from a portable archive. |
+| `dump-archive` | Export the instance, or one collection, as an archive. |
+| `restore-archive` | Restore the instance, or one collection, from an archive. |
 | `reset-metrics` | Reset persisted metrics. |
 | `list-tenants` | List tenants with cataloged collections. |
 | `list-embedders` | List configured embedder instances. |
@@ -537,87 +535,53 @@ pavecli delete-document demo/books book-1
 
 ## `dump-archive`
 
-Offline only; stop the server before reading its data directory. Collections that fail
-validation are left out and listed under 'skipped', and the command exits non-zero.
+Offline only; stop the server before reading its data directory. With tenant/collection,
+writes that collection as a portable archive. Without it, writes the whole instance;
+collections that fail validation are left out and listed under 'skipped', and the
+command exits non-zero.
 
 ### Usage
 
 ```bash
-pavecli dump-archive [-h] [--output OUTPUT]
+pavecli dump-archive [-h] [--output OUTPUT] [tenant/collection]
 ```
 
-### Example
+### Examples
 
 ```bash
 pavecli dump-archive --output pavedb-data.zip
+pavecli dump-archive demo/books --output books.zip
 ```
 
 ### Arguments And Options
 
+- `tenant/collection` (optional): Collection to export; omit for the instance
 - `--output` (optional): Destination ZIP file path
 
 ## `restore-archive`
 
-Offline only; stop the server before replacing its data directory.
+Offline only; stop the server first. With tenant/collection, creates that collection
+from a same-version collection archive, or with --replace overwrites the existing one.
+Without it, replaces the data directory from an instance archive.
 
 ### Usage
 
 ```bash
-pavecli restore-archive [-h] file
+pavecli restore-archive [-h] [--replace] [tenant/collection] file
 ```
 
-### Example
+### Examples
 
 ```bash
 pavecli restore-archive pavedb-data.zip
+pavecli restore-archive demo/books books.zip
 ```
 
 ### Arguments And Options
 
+- `tenant/collection` (optional): Destination collection; omit for an instance archive
 - `file` (required): Archive zip file path
-
-## `dump-collection-archive`
-
-Offline only; stop the server first. Writes one collection as a portable archive.
-
-### Usage
-
-```bash
-pavecli dump-collection-archive [-h] [--output OUTPUT]
-                                       tenant/collection
-```
-
-### Example
-
-```bash
-pavecli dump-collection-archive demo/books --output books.zip
-```
-
-### Arguments And Options
-
-- `tenant/collection` (required): Tenant and collection, e.g. demo/books
-- `--output` (optional): Destination ZIP file path
-
-## `restore-collection-archive`
-
-Offline only; stop the server first. Replaces a collection from a same-version archive.
-
-### Usage
-
-```bash
-pavecli restore-collection-archive [-h] tenant/collection file
-```
-
-### Example
-
-```bash
-pavecli restore-collection-archive demo/books books.zip
-```
-
-### Arguments And Options
-
-- `tenant/collection` (required): Destination tenant and collection, e.g. demo/books
-- `file` (required): Archive zip file path
+- `--replace` (optional): Overwrite an existing collection instead of creating it
 
 ## `reset-metrics`
 

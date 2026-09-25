@@ -380,8 +380,9 @@ production — and your code barely changes along the way:
 
    Collection archives contain `manifest.json`, `meta.db`, the FAISS index,
    and collection sidecars. Restore accepts the current PaveDB and collection
-   schema version only, and resolves the archived embedder specification from
-   local configuration before changing the destination collection.
+   schema version only, resolves the archived embedder specification from
+   local configuration. `POST` creates the destination collection and refuses
+   one that exists; `PUT` replaces an existing one from the snapshot.
 
 7. **Rebuild a collection's vector space.** Start an admin reindex job when a
    collection must move to another configured embedding model. The live index

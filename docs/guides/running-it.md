@@ -92,16 +92,20 @@ archives whose vector spaces the destination's configuration can serve.
 
 **Collection archive: portability.** `GET` on
 `/v1/admin/collections/{tenant}/{name}/archive` downloads one collection and
-`POST` on a destination path restores it, under the same or a new
-tenant/collection name, without touching anything else. A tenant can do the
-same for its own collections with its own key on
+`POST` on a destination path restores it as a new collection, under the same
+or a new tenant/collection name, without touching anything else. The
+destination must not exist yet (`409 collection_exists`), and it counts
+against the tenant's collection limit. `PUT` on the same path instead rolls an
+existing collection back to the snapshot (`404` if it does not exist). A
+tenant can do the same for its own collections with its own key on
 `/v1/collections/{tenant}/{name}/archive`. The zip holds `manifest.json`
 (PaveDB and schema version, embedder and backend spec), `meta.db` with the
 collection's documents, chunks and query log, the FAISS index, and the
 collection sidecars. Restore requires the same PaveDB and schema version and
-resolves the embedder from the destination's configuration before it changes
-anything. `pavecli dump-collection-archive` and `restore-collection-archive`
-do the same offline, under the same stopped-server rule as `dump-archive`.
+resolves the embedder from the destination's configuration before it writes
+anything. `pavecli dump-archive demo/books` and `pavecli restore-archive
+demo/books books.zip` (`--replace` for the `PUT` case) do the same offline,
+under the same stopped-server rule as the instance archive.
 
 Use the first to recover an instance and the second to move one collection
 between instances, environments or tenants.

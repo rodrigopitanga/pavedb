@@ -416,6 +416,14 @@ def cmd_delete_document(args):
 
 def cmd_dump_archive(args):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    if args.collection:
+        output = args.output or (
+            f"pavedb-collection-{args.tenant}-{args.collection}-{stamp}.zip"
+        )
+        archive_path, _ = svc_dump_collection_archive(
+            _get_store(), args.tenant, args.collection, output
+        )
+        return {"ok": True, "archive": archive_path}
     output = args.output or f"pavedb-data-{stamp}.zip"
     skipped: list[str] = []
     archive_path, _ = svc_dump_archive(_get_store(), output, skipped=skipped)
@@ -433,22 +441,12 @@ def cmd_dump_archive(args):
 
 def cmd_restore_archive(args):
     content = _read(args.file)
+    if args.collection:
+        return svc_restore_collection_archive(
+            _get_store(), args.tenant, args.collection, content,
+            replace=args.replace,
+        )
     return svc_restore_archive(_get_store(), content)
-
-def cmd_dump_collection_archive(args):
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    default_name = f"pavedb-collection-{args.tenant}-{args.collection}-{stamp}.zip"
-    output = args.output or default_name
-    archive_path, _ = svc_dump_collection_archive(
-        _get_store(), args.tenant, args.collection, output
-    )
-    return {"ok": True, "archive": archive_path}
-
-def cmd_restore_collection_archive(args):
-    content = _read(args.file)
-    return svc_restore_collection_archive(
-        _get_store(), args.tenant, args.collection, content
-    )
 
 def cmd_reset_metrics(args):
     return metrics.reset(_get_store())
@@ -525,7 +523,7 @@ class _CollectionRef(argparse.Action):
         super().__init__(*args, **kwargs)
 
     def __call__(self, parser, namespace, values, option_string=None):
-        tenant, collection = values
+        tenant, collection = values or (None, None)
         setattr(namespace, self.tenant_dest, tenant)
         setattr(namespace, self.dest, collection)
 
@@ -537,9 +535,11 @@ def _add_collection_ref(
     help: str = "Tenant and collection, e.g. demo/books",
     tenant_dest: str = "tenant",
     metavar: str = "tenant/collection",
+    optional: bool = False,
 ) -> None:
     parser.add_argument(
         dest,
+        nargs="?" if optional else None,
         metavar=metavar,
         type=_collection_ref,
         action=_CollectionRef,
@@ -982,13 +982,21 @@ def build_parser() -> argparse.ArgumentParser:
     p_dump = _command(
         sub,
         "dump-archive",
-        help="Export the instance data archive.",
+        help="Export the instance, or one collection, as an archive.",
         description=(
             "Offline only; stop the server before reading its data directory. "
-            "Collections that fail validation are left out and listed under "
-            "'skipped', and the command exits non-zero."
+            "With tenant/collection, writes that collection as a portable "
+            "archive. Without it, writes the whole instance; collections that "
+            "fail validation are left out and listed under 'skipped', and the "
+            "command exits non-zero."
         ),
-        example="pavecli dump-archive --output pavedb-data.zip",
+        example=(
+            "pavecli dump-archive --output pavedb-data.zip",
+            "pavecli dump-archive demo/books --output books.zip",
+        ),
+    )
+    _add_collection_ref(
+        p_dump, optional=True, help="Collection to export; omit for the instance"
     )
     p_dump.add_argument("--output", help="Destination ZIP file path")
     p_dump.set_defaults(func=cmd_dump_archive)
@@ -996,46 +1004,30 @@ def build_parser() -> argparse.ArgumentParser:
     p_restore = _command(
         sub,
         "restore-archive",
-        help="Restore an instance data archive.",
+        help="Restore the instance, or one collection, from an archive.",
         description=(
-            "Offline only; stop the server before replacing its data directory."
-        ),
-        example="pavecli restore-archive pavedb-data.zip",
-    )
-    p_restore.add_argument("file", help="Archive zip file path")
-    p_restore.set_defaults(func=cmd_restore_archive)
-
-    p_dump_coll = _command(
-        sub,
-        "dump-collection-archive",
-        help="Export one collection as a portable archive.",
-        description=(
-            "Offline only; stop the server first. Writes one collection "
-            "as a portable archive."
+            "Offline only; stop the server first. With tenant/collection, "
+            "creates that collection from a same-version collection archive, "
+            "or with --replace overwrites the existing one. Without it, "
+            "replaces the data directory from an instance archive."
         ),
         example=(
-            "pavecli dump-collection-archive demo/books --output books.zip"
+            "pavecli restore-archive pavedb-data.zip",
+            "pavecli restore-archive demo/books books.zip",
         ),
-    )
-    _add_collection_ref(p_dump_coll)
-    p_dump_coll.add_argument("--output", help="Destination ZIP file path")
-    p_dump_coll.set_defaults(func=cmd_dump_collection_archive)
-
-    p_restore_coll = _command(
-        sub,
-        "restore-collection-archive",
-        help="Restore a collection from a portable archive.",
-        description=(
-            "Offline only; stop the server first. Replaces a collection "
-            "from a same-version archive."
-        ),
-        example="pavecli restore-collection-archive demo/books books.zip",
     )
     _add_collection_ref(
-        p_restore_coll, help="Destination tenant and collection, e.g. demo/books"
+        p_restore,
+        optional=True,
+        help="Destination collection; omit for an instance archive",
     )
-    p_restore_coll.add_argument("file", help="Archive zip file path")
-    p_restore_coll.set_defaults(func=cmd_restore_collection_archive)
+    p_restore.add_argument("file", help="Archive zip file path")
+    p_restore.add_argument(
+        "--replace",
+        action="store_true",
+        help="Overwrite an existing collection instead of creating it",
+    )
+    p_restore.set_defaults(func=cmd_restore_archive)
 
     p_reset_metrics = _command(
         sub,

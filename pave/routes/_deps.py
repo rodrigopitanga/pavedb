@@ -44,7 +44,15 @@ def reindex_response(result, request: Request, rid, *, error, trace):
 def archive_restore_error(exc: Exception, request: Request, rid, *, error):
     """Map a collection-archive restore failure to the shared envelope."""
     if isinstance(exc, ServiceError):
-        return error(400, exc.code, exc.message, request=request, request_id=rid)
+        status = {
+            "collection_exists": 409,
+            "collection_not_found": 404,
+            "collection_limit_reached": 429,
+        }
+        return error(
+            status.get(exc.code, 400), exc.code, exc.message,
+            request=request, request_id=rid,
+        )
     if isinstance(exc, ValueError):
         return error(
             400, "collection_archive_invalid", str(exc),

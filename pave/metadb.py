@@ -60,6 +60,14 @@ class CollectionLimitError(RuntimeError):
     pass
 
 
+class CollectionExistsError(RuntimeError):
+    pass
+
+
+class CollectionNotFoundError(RuntimeError):
+    pass
+
+
 class ChunkLimitError(RuntimeError):
     pass
 
@@ -2581,12 +2589,31 @@ class CatalogDB:
         pavedb_version: str | None,
         collection_schema_version: int | None,
         query_homes: list[tuple[str, str]],
+        max_collections: int = 0,
     ) -> None:
-        """Replace one catalog row and its query-home index atomically."""
+        """Write one restored catalog row and its query-home index atomically.
+
+        A restore that creates a collection counts against the tenant's
+        collection limit like a create does; one that replaces it does not.
+        """
         restored_at = created_at or datetime.now(tz.utc).isoformat(
             timespec="seconds"
         )
         with self._writer() as conn, conn:
+            exists = conn.execute(
+                "SELECT 1 FROM collections WHERE tenant=? AND name=?",
+                (tenant, name),
+            ).fetchone()
+            if max_collections > 0 and exists is None:
+                (count,) = conn.execute(
+                    "SELECT COUNT(*) FROM collections WHERE tenant=?",
+                    (tenant,),
+                ).fetchone()
+                if count >= max_collections:
+                    raise CollectionLimitError(
+                        f"tenant '{tenant}' is at its collection limit "
+                        f"({max_collections})"
+                    )
             conn.execute(
                 """
                 INSERT INTO collections (
