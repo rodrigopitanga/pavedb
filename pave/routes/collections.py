@@ -160,6 +160,7 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
                 body.chunking.model_dump(exclude_none=True)
                 if body and body.chunking else None
             ),
+            priority_key=body.priority_key if body else None,
         )
         if not result.get("ok"):
             error_type = result.get("error_type", "failed")

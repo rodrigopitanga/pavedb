@@ -150,7 +150,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 
 | ID | Task | Effort | Why it matters | Source |
 |---|---|---|---|---|
-| P2-11 | `meta.priority` boosts |  | Surface priority items | v1.2 |
+| P2-11 | ~~Metadata priority boosts~~ | 🧩 | Surface priority items | v1.0 |
 | P2-12 | ~~List tenants/collections API~~ | 🧩 | Ops visibility | v1.0 |
 | P2-13 | Collection log export | 🧱 | Search analytics | v1.4 |
 | P2-14 | Document versioning | 🧱 | Audit trails | v1.7 |
@@ -557,6 +557,7 @@ latency on every search/ingest/delete.~~
 - ~~Search modes `vector`/`boost`/`hybrid`: the operator serves them, the
   collection chooses its default, the caller may override (P1-77).~~
 - ~~Per-collection chunking (`fixed`/`none`) inside operator bounds (P1-78).~~
+- ~~Honor metadata priority boosts during scoring (P2-11).~~
 
 **Deferred from v1.0** (to lean the path; pulled in by next
 release, see v1.1 and v1.2 sections): P1-27 admin key auto-gen,
@@ -610,7 +611,6 @@ lands where it has more impact during post-contract hardening.
 - ~~SQLite chunk-text index and additive content filters: migrate
   sidecar text into the collection database, index it with native
   FTS5, and expose contains/phrase/prefix matching (P1-70).~~
-- Honor `meta.priority` boosts during scoring (P2-11).
 - ~~Add exact token boost inside the vector candidate window (P1-07).~~
 - ~~Add hybrid retrieval by fusing independent FAISS and FTS5
   candidate lists; depends on P1-70 (P1-72).~~

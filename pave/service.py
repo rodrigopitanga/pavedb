@@ -59,13 +59,16 @@ from pave.preprocess import (
     preprocess,
     preprocess_text,
 )
+from pave.filters import sanit_field
 from pave.schemas import ContentFilter, MAX_SEARCH_K
 from pave.stores.base import (
     BaseStore,
     ContentFilterSpec,
+    DEFAULT_PRIORITY_KEY,
     FilterSpec,
     Metadata,
     MetadataValidationError,
+    PriorityKeyError,
     QueryLogEntry,
     SearchMode,
     SearchModeError,
@@ -95,6 +98,20 @@ def _normalize_search_mode(value: Any) -> SearchMode | None:
         raise ServiceError(
             "invalid_search_mode",
             "search mode must be 'vector', 'boost' or 'hybrid'",
+        )
+    return value
+
+
+def _normalize_priority_key(value: Any) -> str | None:
+    """A priority key must already be a sanitized metadata field name, so
+    it names exactly the field ingest stores."""
+    if value is not None and (
+        not isinstance(value, str) or not value or sanit_field(value) != value
+    ):
+        raise ServiceError(
+            "invalid_priority_key",
+            "priority key must be a metadata field name made of letters, "
+            "digits, '-' and single inner '_'",
         )
     return value
 
@@ -211,10 +228,12 @@ def create_collection(
     embedder_config: EmbedderConfig | None = None,
     search_mode: SearchMode | None = None,
     chunking: dict[str, Any] | None = None,
+    priority_key: str | None = None,
 ) -> ServiceResult:
     try:
         resolved_name = _validate_collection_name(name)
         search_mode = _normalize_search_mode(search_mode)
+        priority_key = _normalize_priority_key(priority_key)
         resolved_display_name = _normalize_display_name(
             display_name,
             resolved_name,
@@ -231,6 +250,8 @@ def create_collection(
             create_options["search_mode"] = search_mode
         if chunking is not None:
             create_options["chunking"] = chunking
+        if priority_key is not None:
+            create_options["priority_key"] = priority_key
         created = store.create_collection(
             tenant,
             resolved_name,
@@ -245,6 +266,7 @@ def create_collection(
             )
             returned_mode = created.get("search_mode") or "vector"
             returned_chunking = created.get("chunking")
+            returned_priority_key = created.get("priority_key")
         else:
             # Stores that answer with something other than a CollectionInfo
             # still owe the caller the collection's vector-space identity, the
@@ -266,6 +288,7 @@ def create_collection(
             returned_display = resolved_display_name
             returned_mode = search_mode or "vector"
             returned_chunking = resolve_chunking(chunking)
+            returned_priority_key = priority_key or DEFAULT_PRIORITY_KEY
         m_inc("collections_created_total", 1.0)
         return {
             "ok": True,
@@ -278,8 +301,9 @@ def create_collection(
             "embedder_config": resolved_config,
             "search_mode": returned_mode,
             "chunking": returned_chunking,
+            "priority_key": returned_priority_key,
         }
-    except (SearchModeError, ChunkingError) as e:
+    except (SearchModeError, ChunkingError, PriorityKeyError) as e:
         log.info(
             "create_collection rejected tenant=%s coll=%s: %s",
             tenant, name, e,

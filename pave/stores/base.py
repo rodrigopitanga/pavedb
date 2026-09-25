@@ -42,6 +42,20 @@ class SearchModeError(ValueError):
         self.code = code
 
 
+# Metadata field a collection reads priority boosts from unless it names
+# another at creation (P2-11).
+DEFAULT_PRIORITY_KEY = "prio_boost"
+
+
+class PriorityKeyError(ValueError):
+    """A collection's priority key conflicts with the one it was created
+    with. `code` is the client-facing error code."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
 class MetadataValidationError(ValueError):
     """Raised when metadata keys become invalid after sanitization."""
 
@@ -116,6 +130,7 @@ class BaseStore(Protocol):
         display_name: str | None = None,
         search_mode: SearchMode | None = None,
         chunking: dict[str, Any] | None = None,
+        priority_key: str | None = None,
     ) -> CollectionInfo | None: ...
 
     def collection_chunking(

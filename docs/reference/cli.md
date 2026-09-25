@@ -143,6 +143,7 @@ pavecli create-collection [-h] [--display-name DISPLAY_NAME]
                                  [--embed-model EMBED_MODEL]
                                  [--embedder-config EMBEDDER_CONFIG]
                                  [--search-mode {vector,boost,hybrid}]
+                                 [--priority-key PRIORITY_KEY]
                                  [--chunking CHUNKING]
                                  tenant/collection
 ```
@@ -166,6 +167,8 @@ pavecli create-collection demo/books --display-name "Books"
 - `--embedder-config` (optional): JSON object with embedder-specific config
 - `--search-mode` (optional): Default ranking mode for searches that name none (vector)
   (choices: vector, boost, hybrid)
+- `--priority-key` (optional): Metadata field whose value in [-1, 1] scales scores by (1
+  + value); omitted: prio_boost
 - `--chunking` (optional): JSON object, e.g.
   {"strategy":"fixed","size":800,"overlap":100} or {"strategy":"none"}; omitted fields
   take the instance default

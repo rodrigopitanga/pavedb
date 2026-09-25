@@ -19,6 +19,7 @@ import errno
 import hashlib
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -65,11 +66,13 @@ from pave.stores.base import (
     ChunkInfo,
     CollectionInfo,
     ContentFilterSpec,
+    DEFAULT_PRIORITY_KEY,
     DocumentInfo,
     FilterSpec,
     IndexResult,
     Metadata,
     MetadataValidationError,
+    PriorityKeyError,
     QueryHomeEntry,
     SearchModeError,
     QueryLogEntry,
@@ -1775,6 +1778,8 @@ class LocalStore:
                     )
                 if col_db.get_setting("search_mode") is None:
                     col_db.set_setting("search_mode", "vector")
+                if col_db.get_setting("priority_key") is None:
+                    col_db.set_setting("priority_key", DEFAULT_PRIORITY_KEY)
             if self._index_needs_rebuild(
                 tenant,
                 collection,
@@ -1930,6 +1935,7 @@ class LocalStore:
         display_name: str | None = None,
         search_mode: SearchMode | None = None,
         chunking: dict[str, Any] | None = None,
+        priority_key: str | None = None,
     ) -> CollectionInfo:
         if search_mode is not None:
             self._check_search_mode_served(search_mode)
@@ -1988,6 +1994,10 @@ class LocalStore:
                         requested_chunking or resolve_chunking(None)
                     )
                     col_db.set_setting("chunking", effective_chunking)
+                    effective_priority_key = (
+                        priority_key or DEFAULT_PRIORITY_KEY
+                    )
+                    col_db.set_setting("priority_key", effective_priority_key)
                 else:
                     effective_mode = col_db.get_setting("search_mode")
                     if search_mode is not None and search_mode != effective_mode:
@@ -2005,6 +2015,18 @@ class LocalStore:
                             "chunking_conflict",
                             "collection already exists with chunking "
                             f"{effective_chunking}",
+                        )
+                    effective_priority_key = col_db.get_setting(
+                        "priority_key"
+                    )
+                    if (
+                        priority_key is not None
+                        and priority_key != effective_priority_key
+                    ):
+                        raise PriorityKeyError(
+                            "priority_key_conflict",
+                            "collection already exists with priority key "
+                            f"{effective_priority_key!r}",
                         )
                 self._save(tenant, name)
                 self._write_collection_config(tenant, name, requested)
@@ -2040,6 +2062,7 @@ class LocalStore:
         requested["display_name"] = resolved_display_name
         requested["search_mode"] = effective_mode
         requested["chunking"] = effective_chunking
+        requested["priority_key"] = effective_priority_key
         return requested
 
     def delete_collection(self, tenant: str, collection: str) -> None:
@@ -3205,6 +3228,9 @@ class LocalStore:
             "chunk_count": chunk_count,
             "search_mode": self._collection_search_mode(tenant, name),
             "chunking": self.collection_chunking(tenant, name),
+            "priority_key": self._collection_setting(
+                tenant, name, "priority_key"
+            ),
         }
 
     def _cache_estimated_bytes(self) -> int:
@@ -4226,6 +4252,9 @@ class LocalStore:
         kk = max(1, int(k))
 
         fetch_k = max(50, kk * 5)
+        priority_key = self._collection_setting(
+            tenant, collection, "priority_key"
+        )
         boost_weight = 0.0
         query_tokens: list[str] = []
         if mode == "boost":
@@ -4302,6 +4331,9 @@ class LocalStore:
             token_counts: dict[str, int] = {}
             hybrid_ranks: dict[str, tuple[int | None, int | None]] = {}
             vector_cosines: dict[str, float] = {}
+            # rid -> (score before the priority boost, clamped priority),
+            # for the hits whose metadata carries a usable priority.
+            priority_hits: dict[str, tuple[float, float]] = {}
 
             filtered_search = getattr(backend, "search_filtered", None)
             # Exact-token boost is defined over the vector-first fetch window.
@@ -4373,8 +4405,15 @@ class LocalStore:
                         meta_batch.get(rid, {}),
                         normed_filters,
                     )
-                ][:kk]
+                ]
                 filter_post_ms += _ms_since(t0)
+                if priority_key:
+                    t0 = _perf()
+                    kept, priority_hits = self._apply_priority_boost(
+                        kept, meta_batch, priority_key,
+                    )
+                    boost_ms += _ms_since(t0)
+                kept = kept[:kk]
             elif can_prefilter:
                 # Select a SQL-safe superset first. Metadata is hydrated from
                 # the same read transaction as its SQL filter, then canonical
@@ -4427,7 +4466,11 @@ class LocalStore:
                 use_filtered = (
                     total is None or len(allowed_rids) != total
                 )
-                vector_limit = min(len(allowed_rids), kk)
+                # A priority boost reranks, so it needs the whole fetch
+                # window rather than just the top k.
+                vector_limit = min(
+                    len(allowed_rids), fetch_k if priority_key else kk
+                )
                 if vector_limit > 0:
                     t0 = _perf()
                     if use_filtered:
@@ -4440,6 +4483,12 @@ class LocalStore:
                         raw = backend.search(q_vec, vector_limit)
                     search_ms += _ms_since(t0)
 
+                if priority_key:
+                    t0 = _perf()
+                    raw, priority_hits = self._apply_priority_boost(
+                        raw, meta_batch, priority_key,
+                    )
+                    boost_ms += _ms_since(t0)
                 kept = raw[:kk]
                 log.debug(
                     "SEARCH-FILTER-PREFILTER: eligible=%s indexed=%s "
@@ -4503,6 +4552,13 @@ class LocalStore:
                         )
                         hydrate_meta_ms += _ms_since(t0)
 
+                    if priority_key:
+                        t0 = _perf()
+                        raw, priority_hits = self._apply_priority_boost(
+                            raw, meta_batch, priority_key,
+                        )
+                        boost_ms += _ms_since(t0)
+
                     kept = []
                     if normed_filters:
                         log.debug(f"SEARCH-FILTER-POST: {normed_filters}")
@@ -4540,6 +4596,7 @@ class LocalStore:
             for rid, score in kept:
                 txt = self._load_chunk_text(tenant, collection, rid)
                 rid_meta = meta_batch.get(rid, {})
+                priority = priority_hits.get(rid)
                 out.append(SearchResult(
                     id=rid,
                     score=score,
@@ -4549,19 +4606,25 @@ class LocalStore:
                     meta=rid_meta,
                     match_reason=self._build_match_reason(
                         mode,
-                        score,
+                        priority[0] if priority else score,
                         filters,
                         rid_meta,
                         content_filter=content_filter,
                         cosine=(
                             vector_cosines.get(rid) if mode == "hybrid"
-                            else exact_hits.get(rid, (score, 0))[0]
+                            else exact_hits.get(
+                                rid, (priority[0] if priority else score, 0)
+                            )[0]
                         ),
                         tokens=(
                             exact_hits.get(rid, (score, 0))[1],
                             len(query_tokens),
                         ),
                         ranks=hybrid_ranks.get(rid, (None, None)),
+                        priority=(
+                            (priority_key, priority[1], score) if priority
+                            else None
+                        ),
                     ),
                 ))
             hydrate_text_ms = _ms_since(t0)
@@ -4764,6 +4827,53 @@ class LocalStore:
         return boosted, hits
 
     @staticmethod
+    def _priority_factor(meta: Metadata | None, key: str) -> float:
+        """The hit's priority under `key`, clamped to [-1, 1] (P2-11).
+
+        Numbers and numeric strings count; booleans, NaN, infinities and
+        anything else unparseable count as no priority.
+        """
+        raw = lookup_meta(meta, key)
+        if raw is None or isinstance(raw, bool):
+            return 0.0
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            return 0.0
+        if not math.isfinite(value):
+            return 0.0
+        return max(-1.0, min(value, 1.0))
+
+    @classmethod
+    def _apply_priority_boost(
+        cls,
+        raw: list[tuple[str, float]],
+        meta_batch: dict[str, Metadata],
+        key: str,
+    ) -> tuple[list[tuple[str, float]], dict[str, tuple[float, float]]]:
+        """Re-rank candidates by `score * (1 + priority)` (P2-11).
+
+        Scaling by `abs(score)` keeps a positive priority lifting a
+        negative score too; for the usual positive score it is exactly
+        `score * (1 + priority)`. Like the exact-token boost, it re-sorts
+        the window it is given and never adds candidates.
+
+        Returns the re-sorted window plus, for every hit with a priority,
+        its pre-boost score and clamped priority.
+        """
+        boosted: list[tuple[str, float]] = []
+        hits: dict[str, tuple[float, float]] = {}
+        for rid, score in raw:
+            factor = cls._priority_factor(meta_batch.get(rid), key)
+            if factor:
+                hits[rid] = (score, factor)
+                score += abs(score) * factor
+            boosted.append((rid, score))
+        if hits:
+            boosted.sort(key=lambda item: item[1], reverse=True)
+        return boosted, hits
+
+    @staticmethod
     def _build_match_reason(
         mode: SearchMode,
         score: float,
@@ -4774,12 +4884,14 @@ class LocalStore:
         cosine: float | None = None,
         tokens: tuple[int, int] = (0, 0),
         ranks: tuple[int | None, int | None] = (None, None),
+        priority: tuple[str, float, float] | None = None,
     ) -> str:
         """Explain a hit so its reported `score` can be rebuilt from it.
 
         vector: the score is the cosine. boost: cosine plus the boost for the
         exact tokens matched. hybrid: the sum of 1/(k+rank) over the vector
-        and lexical ranks the hit holds.
+        and lexical ranks the hit holds. `score` is the score before any
+        priority boost; `priority` is `(key, factor, reported score)`.
         """
         if mode == "hybrid":
             vector_rank, lexical_rank = ranks
@@ -4811,6 +4923,12 @@ class LocalStore:
                 parts.append("filters: " + ", ".join(matched_filters))
         if content_filter:
             parts.append(f"content {content_filter['op']} match")
+        if priority:
+            key, factor, reported = priority
+            parts.append(
+                f"priority: {key} {factor:+.2f}, "
+                f"{score:.3f} -> {reported:.3f}"
+            )
         return "; ".join(parts)
 
     def _flush_caches(self) -> None:

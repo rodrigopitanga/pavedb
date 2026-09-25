@@ -112,6 +112,7 @@ class DummyStore:
         display_name: str | None = None,
         search_mode: str | None = None,
         chunking: dict[str, Any] | None = None,
+        priority_key: str | None = None,
     ) -> dict[str, Any]:
         self._load_or_init(tenant, name)
         self._save(tenant, name)
@@ -124,6 +125,7 @@ class DummyStore:
         cfg["display_name"] = display_name
         cfg["search_mode"] = search_mode or "vector"
         cfg["chunking"] = resolve_chunking(chunking)
+        cfg["priority_key"] = priority_key or "prio_boost"
         self._collection_configs[(tenant, name)] = cfg
         return cfg
 
@@ -570,6 +572,7 @@ class SpyStore:
         display_name: str | None = None,
         search_mode: str | None = None,
         chunking: dict[str, Any] | None = None,
+        priority_key: str | None = None,
     ) -> dict[str, Any] | None:
         self.calls.append(("create_collection", tenant, name))
         return self.impl.create_collection(
@@ -582,6 +585,7 @@ class SpyStore:
             display_name=display_name,
             search_mode=search_mode,
             chunking=chunking,
+            priority_key=priority_key,
         )
 
     def collection_chunking(self, tenant: str, collection: str) -> dict[str, Any]:

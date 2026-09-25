@@ -485,6 +485,15 @@ class CreateCollectionOptionsBody(BaseModel):
             "the instance's bounds. Omitted: the instance default."
         ),
     )
+    priority_key: str | None = Field(
+        default=None,
+        description=(
+            "Metadata field whose numeric value, clamped to [-1, 1], scales "
+            "each hit's score by (1 + value). Fixed at creation. Omitted: "
+            "prio_boost."
+        ),
+        examples=["priority"],
+    )
 
     @model_validator(mode="after")
     def keep_embedder_selector_exclusive(self) -> "CreateCollectionOptionsBody":
@@ -652,6 +661,11 @@ class CreateCollectionResponse(OkResponse):
         description="Chunking the collection applies to free text.",
         examples=[{"strategy": "fixed", "size": 1000, "overlap": 200}],
     )
+    priority_key: str = Field(
+        default="prio_boost",
+        description="Metadata field that boosts search scores.",
+        examples=["prio_boost"],
+    )
 
 
 class DeleteCollectionResponse(OkResponse):
@@ -756,6 +770,11 @@ class CollectionDetailResponse(OkResponse):
         default=None,
         description="Chunking the collection applies to free text.",
         examples=[{"strategy": "fixed", "size": 1000, "overlap": 200}],
+    )
+    priority_key: str = Field(
+        default="prio_boost",
+        description="Metadata field that boosts search scores.",
+        examples=["prio_boost"],
     )
     created_at: str | None = Field(
         default=None,

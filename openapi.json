@@ -644,6 +644,15 @@
             ],
             "title": "Pavedb Version"
           },
+          "priority_key": {
+            "default": "prio_boost",
+            "description": "Metadata field that boosts search scores.",
+            "examples": [
+              "prio_boost"
+            ],
+            "title": "Priority Key",
+            "type": "string"
+          },
           "request_id": {
             "anyOf": [
               {
@@ -910,6 +919,21 @@
             ],
             "title": "Embedder Type"
           },
+          "priority_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Metadata field whose numeric value, clamped to [-1, 1], scales each hit's score by (1 + value). Fixed at creation. Omitted: prio_boost.",
+            "examples": [
+              "priority"
+            ],
+            "title": "Priority Key"
+          },
           "search_mode": {
             "anyOf": [
               {
@@ -1030,6 +1054,15 @@
             ],
             "title": "Ok",
             "type": "boolean"
+          },
+          "priority_key": {
+            "default": "prio_boost",
+            "description": "Metadata field that boosts search scores.",
+            "examples": [
+              "prio_boost"
+            ],
+            "title": "Priority Key",
+            "type": "string"
           },
           "request_id": {
             "anyOf": [

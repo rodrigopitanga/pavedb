@@ -225,6 +225,7 @@ def cmd_create(args):
         embedder_config=embedder_config,
         search_mode=args.search_mode,
         chunking=_parse_json_object_arg(args.chunking, "--chunking"),
+        priority_key=args.priority_key,
     )
 
 def cmd_ingest(args):
@@ -691,6 +692,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--search-mode",
         choices=("vector", "boost", "hybrid"),
         help="Default ranking mode for searches that name none (vector)",
+    )
+    p_create.add_argument(
+        "--priority-key",
+        help=(
+            "Metadata field whose value in [-1, 1] scales scores by "
+            "(1 + value); omitted: prio_boost"
+        ),
     )
     p_create.add_argument(
         "--chunking",

@@ -90,6 +90,14 @@ tokens 2/3`, or `hybrid: vector rank 2 (cosine 0.812) + lexical rank 5, each
 1/(60+rank)`. Cosine scores compare across collections sharing a vector
 space; hybrid scores only rank hits within one response.
 
+A hit whose `prio_boost` metadata is a number in [-1, 1] ranks by
+`score * (1 + value)`: `1` doubles it, `-1` zeroes it. A collection that
+already uses that field for something else names another at creation
+(`create-collection --priority-key rank`). Values outside the range are
+clamped; booleans and anything non-numeric are ignored. The boost re-sorts
+the candidates each mode already fetched, and the hit's `match_reason` ends
+with it: `vector: cosine 0.500; priority: prio_boost +0.50, 0.500 -> 0.750`.
+
 ## Inspect and replay
 
 Text searches are logged by default and can be replayed. Query logging can be
