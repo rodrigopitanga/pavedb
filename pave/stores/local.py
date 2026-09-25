@@ -1950,6 +1950,7 @@ class LocalStore:
             embed_model=embed_model,
             embedder_config=embedder_config,
         )
+        embedder_factory_mod.require_configured_model(get_cfg(), requested)
         explicit = (
             embedder is not None
             or embedder_type is not None
@@ -2306,6 +2307,7 @@ class LocalStore:
                 embed_model=embed_model,
                 embedder_config=embedder_config,
             )
+            embedder_factory_mod.require_configured_model(get_cfg(), requested)
             target: CollectionConfig = {
                 "backend_type": source["backend_type"],
                 "backend_config": dict(source.get("backend_config") or {}),

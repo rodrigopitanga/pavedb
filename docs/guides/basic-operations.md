@@ -20,17 +20,19 @@ pavecli create-collection demo/books --embedder native
 ```
 
 `--embedder` accepts a configured instance key, type, `type:model`, or full
-vector-space key; omit it to take `embedder.default`. The collection persists
-the selected vector-space identity, not an operational instance pin. When
-several instances produce that space, `embedder.routing.policy` chooses among
-them, and `embedder.routing.priority.<op>` refines the choice per operation
-class (`ingest`, `search`, `maintenance`): an ordered list of instance names
-where the first one in the collection's vector space runs that operation — so
-a batch ingest or a reindex lands on a GPU instance while interactive search
+vector-space key; omit it to take `embedder.default`. A model no configured
+instance names is refused, so a caller cannot make the instance fetch one. The
+collection persists the selected vector-space identity, not an operational
+instance pin. When several instances produce that space,
+`embedder.routing.policy` chooses among them, and
+`embedder.routing.priority.<op>` refines the choice per operation class
+(`ingest`, `search`, `maintenance`): an ordered list of instance names where
+the first one in the collection's vector space runs that operation — so a
+batch ingest or a reindex lands on a GPU instance while interactive search
 stays on the default. Unknown or incompatible names are skipped and an
-unavailable preferred instance falls back, so one server-wide map never
-breaks collections in other spaces. Changing vector space later requires
-reindexing because vectors from two models cannot share an index.
+unavailable preferred instance falls back, so one server-wide map never breaks
+collections in other spaces. Changing vector space later requires reindexing
+because vectors from two models cannot share an index.
 
 Chunking is also fixed at creation. `--chunking
 '{"strategy":"fixed","size":800,"overlap":100}'` cuts free text into

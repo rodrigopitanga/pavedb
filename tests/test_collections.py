@@ -35,6 +35,23 @@ def _set_openai_instance(
     cfg.set(f"embedder.instances.{key}.config.base_url", base_url)
 
 
+def _set_sbert_instance(key: str, model: str) -> None:
+    cfg = get_cfg()
+    cfg.set(f"embedder.instances.{key}.type", "sbert")
+    cfg.set(f"embedder.instances.{key}.model", model)
+
+
+def test_create_collection_refuses_unconfigured_embed_model(client):
+    r = client.post(
+        "/v1/collections/acme/foreign",
+        json={"embed_model": "attacker/any-hf-repo"},
+    )
+
+    assert r.status_code == 400
+    assert r.json()["code"] == "invalid_embedder_config"
+    assert "not configured" in r.json()["error"]
+
+
 def _mk_collections_with_store(store, tenant: str, *collections: str):
     for collection in collections:
         store.create_collection(tenant, collection)
@@ -77,6 +94,7 @@ def test_create_collection_rejects_invalid_path_name(client):
 
 
 def test_create_collection_accepts_different_embed_model(client):
+    _set_sbert_instance("mini", "sentence-transformers/all-MiniLM-L6-v2")
     r = client.post(
         "/v1/collections/acme/contracts2",
         json={"embed_model": "sentence-transformers/all-MiniLM-L6-v2"},
@@ -616,6 +634,7 @@ def test_vector_space_key_on_detail_default_sbert(client):
 
 
 def test_vector_space_key_on_listing(client):
+    _set_sbert_instance("mini", "sentence-transformers/all-MiniLM-L6-v2")
     client.post("/v1/collections/acme/space-a")
     client.post(
         "/v1/collections/acme/space-b",

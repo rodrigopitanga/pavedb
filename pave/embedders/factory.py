@@ -781,6 +781,32 @@ def resolve_embedder_spec(
     return spec
 
 
+def require_configured_model(
+    cfg: Config, spec: Mapping[str, Any]
+) -> None:
+    """Refuse a model no configured instance names (B90).
+
+    A caller picks among the operator's instances; naming any other model
+    would make the instance download and hold it. Model-less types (BYOV)
+    carry no model to check.
+    """
+    etype = str(spec.get("embedder_type") or "")
+    model = str(spec.get("embed_model") or "")
+    if _is_modelless(etype):
+        return
+    instances = embedder_instances(cfg)
+    if any(
+        str(i.spec["embedder_type"]) == etype
+        and str(i.spec.get("embed_model") or "") == model
+        for i in instances
+    ):
+        return
+    raise ValueError(
+        f"{etype} model {model!r} is not configured. Available instances: "
+        f"{_format_instances(instances)}"
+    )
+
+
 def embedder_cache_key(spec: Mapping[str, Any]) -> tuple[str, str, str]:
     return (
         str(spec.get("embedder_type") or ""),

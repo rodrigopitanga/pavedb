@@ -65,6 +65,9 @@ def test_tenant_archive_daily_window(client):
 
 def test_tenant_reindex_monthly_window_and_ownership(client):
     cfg = get_cfg()
+    for key, model in (("v2", "fake-v2"), ("v3", "fake-v3")):
+        cfg.set(f"embedder.instances.{key}.type", "sbert")
+        cfg.set(f"embedder.instances.{key}.model", model)
     cfg.set("tenants.default_max_reindex_per_month", 1)
     try:
         _ingest(client, "acme", "books")

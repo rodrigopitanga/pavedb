@@ -15,6 +15,13 @@ from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
 
+@pytest.fixture(autouse=True)
+def _configured_target(cfg):
+    # A reindex target must be a configured instance (B90).
+    cfg.set("embedder.instances.v2.type", "sbert")
+    cfg.set("embedder.instances.v2.model", "fake-v2")
+
+
 def _wait_for_job(get_job, *statuses: str) -> dict:
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
@@ -84,6 +91,12 @@ def test_admin_reindex_rebuilds_vectors_and_updates_collection(client):
         data={"docid": "verne"},
     )
     assert ingested.status_code == 201
+
+    refused = client.post(
+        "/v1/admin/collections/acme/books/reindex",
+        json={"embed_model": "attacker/any-hf-repo"},
+    )
+    assert refused.status_code == 400, refused.text
 
     started = client.post(
         "/v1/admin/collections/acme/books/reindex",
