@@ -785,7 +785,7 @@ class CollectionDetailResponse(OkResponse):
         default=None,
         description="PaveDB version that created the collection; unset for "
         "collections that predate this tag (P2-25).",
-        examples=["0.9.6"],
+        examples=["0.9.7"],
     )
     schema_version: int | None = Field(
         default=None,

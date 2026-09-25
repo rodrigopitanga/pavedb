@@ -668,7 +668,7 @@
             ],
             "description": "PaveDB version that created the collection; unset for collections that predate this tag (P2-25).",
             "examples": [
-              "0.9.6"
+              "0.9.7"
             ],
             "title": "Pavedb Version"
           },
@@ -3980,7 +3980,7 @@
   "info": {
     "description": "Inspectable Retrieval Database",
     "title": "PaveDB",
-    "version": "0.9.6"
+    "version": "0.9.7"
   },
   "openapi": "3.1.0",
   "paths": {
