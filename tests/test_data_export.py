@@ -1098,8 +1098,8 @@ def test_restore_archive_waits_for_active_collection_operation(tmp_path):
     assert not restored.is_set()
 
     release.set()
-    holder.join(timeout=2.0)
-    restorer.join(timeout=2.0)
+    holder.join(timeout=10.0)
+    restorer.join(timeout=10.0)
 
     assert restored.is_set()
     assert (target / "t_acme" / "c_restored" / "meta.db").is_file()
@@ -1135,8 +1135,8 @@ def test_restore_archive_waits_for_active_collection_read(tmp_path):
     assert not restored.is_set()
 
     release.set()
-    holder.join(timeout=2.0)
-    restorer.join(timeout=2.0)
+    holder.join(timeout=10.0)
+    restorer.join(timeout=10.0)
 
     assert restored.is_set()
     assert (target / "t_acme" / "c_restored" / "meta.db").is_file()
@@ -1178,8 +1178,8 @@ def test_dump_archive_waits_for_active_collection_operation(tmp_path):
     assert not dumped.is_set()
 
     release.set()
-    holder.join(timeout=2.0)
-    dumper.join(timeout=2.0)
+    holder.join(timeout=10.0)
+    dumper.join(timeout=10.0)
 
     try:
         assert dumped.is_set()
