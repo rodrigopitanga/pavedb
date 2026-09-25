@@ -200,8 +200,8 @@ curl -H "Authorization: Bearer $PAVEDB_AUTH__GLOBAL_KEY" \
   "http://localhost:8086/v1/collections/demo/books/search?q=captain+nemo&k=3"
 ```
 
-Every hit comes back with the same provenance as the Python and CLI paths, plus latency
-and request id:
+Every hit comes back with the same provenance as the Python and CLI paths and says
+how its score was made; the response adds the ranking mode, latency and request id:
 
 ```json
 {
@@ -212,7 +212,7 @@ and request id:
       "text": "Captain Nemo conducted me to the central staircase ...",
       "tenant": "demo",
       "collection": "books",
-      "match_reason": "semantic",
+      "match_reason": "vector: cosine 0.820",
       "meta": {
         "docid": "verne-20k",
         "filename": "20k_leagues.txt",
@@ -222,6 +222,7 @@ and request id:
       }
     }
   ],
+  "mode": "vector",
   "latency_ms": 12.4,
   "request_id": "req-5f3a-b812"
 }
