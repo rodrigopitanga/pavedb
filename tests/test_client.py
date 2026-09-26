@@ -439,3 +439,37 @@ def test_sdk_empty_text_raises_invalid_request(tmp_path):
         with pytest.raises(InvalidRequest) as exc:
             books.add("")
         assert exc.value.code == "no_text_extracted"
+
+
+def test_local_client_covers_the_097_collection_surface(tmp_path, cfg):
+    cfg.set("embedder.instances.v2.type", "sbert")
+    cfg.set("embedder.instances.v2.model", "fake-v2")
+    with provider(tmp_path / "db") as db:
+        books = db.create_collection(
+            "books",
+            search_mode="boost",
+            chunking={"strategy": "none"},
+            priority_key="rank",
+        )
+        detail = books.detail()
+        assert detail["search_mode"] == "boost"
+        assert detail["chunking"]["strategy"] == "none"
+        assert detail["priority_key"] == "rank"
+
+        books.add("Captain Nemo commands the Nautilus", docid="BOOK-1")
+        books.dump_archive(tmp_path / "books.zip")
+        data = (tmp_path / "books.zip").read_bytes()
+        db.collection("copy").restore_archive(data)
+        with pytest.raises(Conflict):
+            db.collection("copy").restore_archive(data)
+        books.restore_archive(data, replace=True)
+        with pytest.raises(NotFoundError):
+            db.collection("absent").restore_archive(data, replace=True)
+
+        job = books.reindex(embed_model="fake-v2")
+        assert books.reindex_job(job["job_id"])["job_id"] == job["job_id"]
+        with pytest.raises(NotFoundError):
+            db.collection("copy").reindex_job(job["job_id"])
+        with pytest.raises(NotFoundError):
+            db.collection("copy").cancel_reindex(job["job_id"])
+        books.cancel_reindex(job["job_id"])

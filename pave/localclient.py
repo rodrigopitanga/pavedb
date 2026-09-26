@@ -31,6 +31,7 @@ from pave.data_dir_lease import DataDirInUseError, DataDirLease
 from pave.embedders import LazyEmbedder
 from pave.service import (
     ServiceError,
+    cancel_reindex_job as svc_cancel_reindex_job,
     create_collection as svc_create_collection,
     delete_collection as svc_delete_collection,
     delete_document as svc_delete_document,
@@ -41,8 +42,9 @@ from pave.service import (
     get_collection_detail as svc_get_collection_detail,
     get_document as svc_get_document,
     get_query_log_entry_scoped as svc_get_query_log_entry_scoped,
-    ingest_documents_batch as svc_ingest_documents_batch,
+    get_reindex_job as svc_get_reindex_job,
     ingest_document as svc_ingest_document,
+    ingest_documents_batch as svc_ingest_documents_batch,
     ingest_text as svc_ingest_text,
     list_chunks as svc_list_chunks,
     list_collections as svc_list_collections,
@@ -51,10 +53,13 @@ from pave.service import (
     list_query_homes as svc_list_query_homes,
     list_tenants as svc_list_tenants,
     move_collection as svc_move_collection,
+    pause_reindex_job as svc_pause_reindex_job,
     replay_query_scoped as svc_replay_query_scoped,
     restore_archive as svc_restore_archive,
     restore_collection_archive as svc_restore_collection_archive,
+    resume_reindex_job as svc_resume_reindex_job,
     search as svc_search,
+    start_collection_reindex as svc_start_collection_reindex,
     update_collection as svc_update_collection,
 )
 from pave.stores.base import (
@@ -231,12 +236,17 @@ class LocalClient(BaseClient):
         embedder_type: str | None,
         embed_model: str | None,
         embedder_config: Mapping[str, Any] | None,
+        embedder: str | None = None,
+        search_mode: SearchMode | None = None,
+        chunking: Mapping[str, Any] | None = None,
+        priority_key: str | None = None,
     ) -> dict:
         result = self._call(
             svc_create_collection,
             tenant,
             name,
             display_name=display_name,
+            embedder=embedder,
             embedder_type=embedder_type,
             embed_model=embed_model,
             embedder_config=(
@@ -244,6 +254,9 @@ class LocalClient(BaseClient):
                 if embedder_config is not None
                 else None
             ),
+            search_mode=search_mode,
+            chunking=dict(chunking) if chunking is not None else None,
+            priority_key=priority_key,
         )
         return _unwrap(result)
 
@@ -297,11 +310,49 @@ class LocalClient(BaseClient):
         tenant: str,
         name: str,
         archive_bytes: bytes,
+        *,
+        replace: bool = False,
     ) -> dict:
         result = self._call(
-            svc_restore_collection_archive, tenant, name, archive_bytes
+            svc_restore_collection_archive,
+            tenant,
+            name,
+            archive_bytes,
+            replace=replace,
         )
         return _unwrap(result)
+
+    def _reindex(self, tenant: str, collection: str, **target: Any) -> dict:
+        result = self._call(
+            svc_start_collection_reindex, tenant, collection, **target
+        )
+        return _unwrap(result)
+
+    def _own_reindex_job(self, tenant: str, collection: str, job_id: str) -> dict:
+        """The job, if it belongs to this collection -- the self-service
+        routes' scoping, so a handle never reaches another collection's job."""
+        job = _unwrap(self._call(svc_get_reindex_job, job_id))
+        if (job.get("tenant"), job.get("collection")) != (tenant, collection):
+            raise NotFoundError(
+                "reindex_job_not_found",
+                f"reindex job {job_id!r} not found in {tenant}/{collection}",
+            )
+        return job
+
+    def _reindex_job(self, tenant: str, collection: str, job_id: str) -> dict:
+        return self._own_reindex_job(tenant, collection, job_id)
+
+    def _cancel_reindex(
+        self, tenant: str, collection: str, job_id: str
+    ) -> dict:
+        self._own_reindex_job(tenant, collection, job_id)
+        return _unwrap(self._call(svc_cancel_reindex_job, job_id))
+
+    def _pause_reindex(self, job_id: str) -> dict:
+        return _unwrap(self._call(svc_pause_reindex_job, job_id))
+
+    def _resume_reindex(self, job_id: str) -> dict:
+        return _unwrap(self._call(svc_resume_reindex_job, job_id))
 
     def _ingest(
         self,
