@@ -461,12 +461,14 @@ def build_app(cfg) -> FastAPI:
     log = get_logger()
 
     def _resp(*codes: int) -> dict[int, dict[str, object]]:
-        # Python 3.13 renamed the 413 phrase ("Request Entity Too Large" ->
-        # "Content Too Large"); pin it so openapi.json is interpreter-stable.
+        # Python versions differ on the 413 and 422 phrases. Pin them so the
+        # served schema and openapi.json are interpreter-stable.
         return {
             code: (
                 {"model": ErrorResponse, "description": "Content Too Large"}
                 if code == 413
+                else {"model": ErrorResponse, "description": "Unprocessable Content"}
+                if code == 422
                 else {"model": ErrorResponse}
             )
             for code in codes
