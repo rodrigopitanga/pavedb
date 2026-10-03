@@ -77,9 +77,10 @@ Sequence:
 - **P1-75 — local data-directory ownership fence (v0.9.6).**
   One supported local entry point owns a data directory; competing server, CLI,
   or local-client opens fail before constructing `LocalStore`.
-- **P2-32 — remote CLI usability evaluation (v1.1).** Evaluate
-  whether a thin CLI over the SDK helps Cloud agents and
-  orchestrators manage several PaveDB sites.
+- **P2-32 — remote CLI usability evaluation (v1.1).** Evaluated: a
+  shell over the SDK helps only callers that cannot import Python,
+  belongs in `pavedb-sdk` if it is delivered at all, and is never a
+  mode on `pavecli`.
 
 ## Object model — handle-based
 
@@ -153,13 +154,17 @@ into `PaveError`.
 `search` returns `list[dict]` of matches (the envelope's
 `timing`/`query_id` are still logged and reachable via the query
 inspection methods). The HTTP client unwraps the JSON envelope to
-the same shape, preserving parity.
+the same shape, preserving parity. The P2-32 evaluation found that
+reachability claim holds only on a quiet collection: `queries()`
+reads the newest log entry, which a concurrent search can win. See
+the P2-32 section for the envelope the transport should keep.
 
 ## API breadth for P1-15
 
 Principle: **the library surface equals the CLI surface** — both
-wrap the same `service.py`. The only CLI commands the library
-omits are environment/ops (`init`, `reset-metrics`).
+wrap the same `service.py`. The CLI commands the library omits are
+environment/ops (`init`, `reset-metrics`) and the on-disk admin key
+(`admin show-key`, `admin rotate-key`).
 
 **Core — collections + search**
 - `Client`: `create_collection`, `collection(name)`,
@@ -224,22 +229,125 @@ explicitly unsafe; neither is a supported second local owner.
 
 ## Remote CLI usability evaluation — P2-32
 
-The CLI today prints the full `{ok, latency_ms, timing, query_id,
-request_id, …}` JSON envelope, a tested contract (`test_cli.py`,
-`test_cli_reference.py`). The SDK now provides local and HTTP
-transports, but core PaveDB must not import or construct its HTTP
-client.
+The evaluation is complete. Remote management already works for Python
+callers, so a CLI buys a process boundary rather than a capability; the
+boundary is worth paying for only outside Python, and only after the SDK
+stops discarding the search envelope. The outcome is a narrow,
+conditional yes to a separate command shell in `pavedb-sdk`, and a flat
+no to a remote mode on `pavecli`.
 
-The v1.1 evaluation starts from agents and orchestrators managing
-several Cloud sites through stable, non-interactive commands. It
-must decide whether a CLI adds a useful process boundary over
-calling the SDK directly, and whether `--host` is the right target
-selection UX. The minimum shape is one explicit site per invocation,
-deterministic endpoint and credential selection, machine-readable
-output, bounded timeouts, and preserved exception-to-exit-code
-behavior. It is not a fleet scheduler or credential store.
+### Starting position
 
-If the evaluation justifies delivery, the HTTP-capable command shell
-belongs in `pavedb-sdk`; PaveDB keeps the local provider. Preserve the
-current CLI envelope rather than adding a raw escape hatch to the
-public client API solely for CLI compatibility.
+`pavecli` prints the full service envelope: `pavecli search` emits
+`{ok, matches, mode, priority_boost, latency_ms, timing, request_id,
+query_id}` straight from `service.search`, and that shape is a tested
+contract — `tests/test_cli.py` asserts `out["ok"]` command by command,
+and the generated `docs/reference/cli.md` is pinned by
+`tests/test_cli_reference.py`. On the other side,
+`pavesdk.client.connect("https://host", api_key=…, timeout=…)` returns an
+`HttpClient` implementing the same `Client`/`Collection` interface the
+local provider implements, so driving one remote site from Python needs
+no new code. Core PaveDB must not import or construct that HTTP client.
+
+### Findings
+
+**F1 — a CLI adds no remote capability, only a process boundary.**
+`connect()` plus `HttpClient` already drive a remote instance across the
+bulk of the HTTP API (F6 bounds what is still missing), and a CLI adds no
+route of its own. What it adds is the boundary: it serves callers that
+cannot import Python — shell jobs, CI steps, Makefiles, unit files — and
+agent harnesses restricted to spawning processes. Tool-calling agents are
+served better by the MCP server (P2-35), and a control plane written in
+another language cannot use a Python CLI either; it drives the HTTP API
+directly. "Agents and orchestrators" therefore narrows to shell-level
+orchestrators: a real audience, smaller than the roadmap line implies.
+
+**F2 — packaging decides where the shell lives.** `pavedb-sdk` depends on
+`httpx` alone; `pavedb` pulls `fastapi`, `uvicorn`, `faiss-cpu`,
+`sentence-transformers`, `openai`, and `pypdf`. A remote mode on
+`pavecli` would make every remote-only caller install the local engine to
+reach an instance it never runs. The shell belongs in `pavedb-sdk`.
+
+**F3 — `--host` is the wrong option, twice over.** `server.host`
+(`PAVEDB_SERVER__HOST`) already names the address an instance binds, so
+`--host` would mean two different things in one product. And a bare host
+revives the heuristics `connect()` refuses on purpose: `localhost` is a
+path, not an address. The target must carry a scheme, be required, and
+name exactly one site per invocation.
+
+**F4 — the envelope gap is an SDK gap, not a CLI gap.**
+`HttpClient._json` drops `ok` and `_search` returns `data["matches"]`
+only, so every SDK caller loses `mode`, `priority_boost`, `latency_ms`,
+`timing`, `request_id`, and the `query_id` that `replay()` takes as its
+argument. Recovering that id from `queries()` is a race under concurrent
+search. Preserving the envelope is thus not CLI-compatibility work: the
+public search surface cannot reach the inspectability PaveDB sells. Fix
+it in the SDK first, and the command shell formats what the transport
+already returns — no raw escape hatch on the public client API.
+
+**F5 — exit codes and error metadata are not orchestrator-ready.**
+`main_cli` turns a `ServiceError` into `{ok: false, code, error}` with
+exit 1 and leaves every other outcome at exit 0. Remotely there is a
+third class, the failure worth retrying, and the server already marks it:
+`Retry-After` on a throttled request (`pave/auth.py`), and `request_id`
+plus `latency_ms` on the error body `_error` builds (`pave/main.py`).
+`HttpClient._raise_data` keeps only `code` and `message` and never the
+status, so a caller cannot separate a missing collection from a throttled
+instance, nor correlate either with that instance's own logs.
+
+**F6 — the surfaces already drift both ways, so "the same CLI, remotely"
+is not deliverable.** The SDK carries `reindex`, its job controls, and
+the tenant-key methods with no `pavecli` command; `pavecli` carries
+`export-queries`, the document-version commands, the telemetry commands,
+`delete-documents`, `list-profiles`, and the cross-tenant form of
+`move-collection` with no SDK method (`_rename` sends `new_name` only).
+Three commands have no remote meaning at all: `init` writes an instance's
+config, `admin show-key`/`rotate-key` read and rewrite the admin key on
+disk, and `reset-metrics` has no route. A remote shell is a subset the
+HTTP API shapes — generated and tested against the SDK's own coverage,
+never mirrored from `pavecli`'s command list.
+
+### Decisions
+
+1. **No remote mode on `pavecli`.** The local CLI stays the local owner of
+   a data directory (P1-75) and keeps its envelope. `--host` is refused on
+   naming (F3) and on packaging (F2).
+2. **A delivered shell is its own console script in `pavedb-sdk`,** built
+   on `HttpClient`, taking one required scheme-bearing target per
+   invocation.
+3. **Delivery is conditional and narrow.** Where `curl` against the
+   documented API already suffices, ship nothing: the API is public,
+   `openapi.json` ships in the repo, and a second command surface owes
+   parity maintenance forever (F6). The commands that earn their keep are
+   the ones `curl` makes awkward — multipart ingest, binary archive dump
+   and restore, and keyset-paged query export.
+4. **Credentials never arrive on argv,** which is world-readable through
+   `/proc` on Linux: the shell reads the key from a file or stdin, with at
+   most one documented environment variable as the fallback. `PAVEDB_` is
+   the server's config prefix and its overrides are allowlisted from
+   declared config keys, so a client variable parked there is inert but
+   misleading; the `PAVEDB_URL`/`PAVEDB_API_KEY` pair used by the SDK
+   examples is a convention to decide on, not one to inherit silently.
+
+### Prerequisites before any delivery
+
+In order, all of them SDK-side:
+
+1. The transport preserves the service envelope, so a caller can read
+   `query_id`, `timing`, `latency_ms`, `request_id`, `mode`, and
+   `priority_boost` from a search (F4).
+2. Errors carry the status class, `request_id`, and `Retry-After`, so a
+   caller can separate retryable from terminal (F5).
+3. The SDK covers the endpoints `pavecli` already reaches, so the shell's
+   subset is a choice rather than an accident (F6).
+
+None of the three is CLI work and each improves the SDK on its own.
+Scheduling them, and the shell itself, is a roadmap decision in
+`pavedb-sdk`, where the code would live.
+
+### Out of scope, confirmed
+
+Fleet scheduling, a site registry, multi-site fan-out, credential
+distribution, and failover policy stay outside PaveDB. One invocation
+targets one instance; the caller that holds several sites is the one that
+iterates over them.
