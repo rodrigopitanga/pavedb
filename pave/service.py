@@ -37,6 +37,7 @@ from pave.metadb import (
     CollectionNotFoundError,
     ReindexJobConflictError,
     ReindexJobStateError,
+    TenantChunkLimitError,
 )
 from pave.embedders.base import EmbedderConfig
 from pave.embedders.factory import (
@@ -1095,6 +1096,8 @@ def ingest_document(store, tenant: str, collection: str, filename: str, content:
             raise ServiceError("invalid_metadata_keys", str(exc)) from exc
         except ChunkLimitError as exc:
             raise ServiceError("chunk_limit_reached", str(exc)) from exc
+        except TenantChunkLimitError as exc:
+            raise ServiceError("tenant_chunk_limit_reached", str(exc)) from exc
         except CollectionLimitError as exc:
             # Ingest into an unknown collection creates it, so it can now hit
             # the per-tenant cap (B33). Report the quota, not a generic 500.
@@ -1231,6 +1234,8 @@ def ingest_text(
             raise ServiceError("invalid_metadata_keys", str(exc)) from exc
         except ChunkLimitError as exc:
             raise ServiceError("chunk_limit_reached", str(exc)) from exc
+        except TenantChunkLimitError as exc:
+            raise ServiceError("tenant_chunk_limit_reached", str(exc)) from exc
         except CollectionLimitError as exc:
             # Same as ingest(): the implicit create is what can trip the cap.
             raise ServiceError("collection_limit_reached", str(exc)) from exc
@@ -1487,15 +1492,20 @@ def ingest_documents_batch(
                     "code": "invalid_metadata_keys",
                     "error": str(exc),
                 }
-        except (ChunkLimitError, CollectionLimitError) as exc:
+        except (
+            ChunkLimitError,
+            CollectionLimitError,
+            TenantChunkLimitError,
+        ) as exc:
             # The store rejects the batch as a whole, so every prepared
             # document reports the quota rather than a generic failure.
             indexed = []
-            code = (
-                "chunk_limit_reached"
-                if isinstance(exc, ChunkLimitError)
-                else "collection_limit_reached"
-            )
+            if isinstance(exc, ChunkLimitError):
+                code = "chunk_limit_reached"
+            elif isinstance(exc, TenantChunkLimitError):
+                code = "tenant_chunk_limit_reached"
+            else:
+                code = "collection_limit_reached"
             for result_index in prepared_indexes:
                 results[result_index] = {
                     "ok": False,

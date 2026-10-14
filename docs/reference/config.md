@@ -479,6 +479,16 @@ collection's vector-space identity.
 - Description: Default cap on indexed chunks per collection enforced at ingest; 0
   disables the cap. Per-tenant max_chunks_per_collection in tenants.yml overrides it.
 
+### `tenants.default_max_chunks_per_tenant`
+
+- Default: `0`
+- Env var: `PAVEDB_TENANTS__DEFAULT_MAX_CHUNKS_PER_TENANT`
+- Description: Default cap on indexed chunks across all of a tenant's collections,
+  enforced at ingest; 0 disables the cap. Per-tenant max_chunks_per_tenant in
+  tenants.yml overrides it. This is the tenant's storage ceiling:
+  max_chunks_per_collection alone bounds one collection, so a tenant allowed several has
+  no ceiling without this.
+
 ### `tenants.default_max_archives_per_day`
 
 - Default: `0`

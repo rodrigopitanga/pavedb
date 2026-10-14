@@ -458,6 +458,13 @@ tenants:
   # Env: PAVEDB_TENANTS__DEFAULT_MAX_CHUNKS_PER_COLLECTION
   default_max_chunks_per_collection: 0
 
+  # Default cap on indexed chunks across all of a tenant's collections, enforced at
+  # ingest; 0 disables the cap. Per-tenant max_chunks_per_tenant in tenants.yml
+  # overrides it. This is the tenant's storage ceiling: max_chunks_per_collection alone
+  # bounds one collection, so a tenant allowed several has no ceiling without this.
+  # Env: PAVEDB_TENANTS__DEFAULT_MAX_CHUNKS_PER_TENANT
+  default_max_chunks_per_tenant: 0
+
   # Collection archive operations (dump or restore) a tenant may start per day; 0 =
   # unlimited. Override per tenant as tenants.<name>.max_archives_per_day. Charged on
   # the persistent per-operation rate window.

@@ -72,6 +72,15 @@ class ChunkLimitError(RuntimeError):
     pass
 
 
+class TenantChunkLimitError(RuntimeError):
+    """The tenant's own chunk ceiling, not one collection's (P2-21).
+
+    Its own class because the two refusals mean different things to a
+    caller: a per-collection limit leaves room in another collection, and a
+    per-tenant one does not.
+    """
+
+
 class ReindexJobConflictError(RuntimeError):
     pass
 

@@ -59,6 +59,7 @@ from pave.metadb import (
     CollectionNotFoundError,
     RateLimitDecision,
     ReindexJobStateError,
+    TenantChunkLimitError,
     UnsupportedSchemaVersionError,
     fts_query_tokens,
     validate_collection_config,
@@ -520,6 +521,56 @@ class LocalStore:
 
     def _base_path(self, tenant: str, collection: str) -> str:
         return os.path.join(self._data_dir, f"t_{tenant}", f"c_{collection}")
+
+    def tenant_chunk_count(
+        self,
+        tenant: str,
+        *,
+        excluding: str | None = None,
+    ) -> int:
+        """Indexed chunks the tenant holds across its collections (P2-21).
+
+        The unit the tenant's storage ceiling counts, because it is the one
+        the engine already stores and gives back: deleting a document drops
+        it on the spot, where bytes on disk do not return to the filesystem
+        without a vacuum. Separating those bytes by kind is P2-47.
+
+        *excluding* leaves one collection out, for the caller that already
+        holds that collection's own exact figures.
+        """
+        names = self._with_catalog_retry(
+            "list_collections",
+            lambda catalog: catalog.list_collections(tenant),
+        )
+        return sum(
+            self._read_doc_chunk_counts(tenant, name)[1]
+            for name in names
+            if name != excluding
+        )
+
+    def _tenant_chunk_budget(
+        self,
+        tenant: str,
+        collection: str,
+    ) -> tuple[int, int]:
+        """(cap, chunks already held elsewhere) for the tenant chunk ceiling.
+
+        Returns (0, 0) where no cap is set, which is the default: an uncapped
+        tenant pays for none of the counting.
+
+        Counted before the caller takes `collection`'s write lock, never
+        under it: `_read_doc_chunk_counts` takes the read lock of every
+        collection it visits, and an ingest holding A's write lock while
+        asking for B's read lock deadlocks against one doing the reverse.
+        The cost is that two concurrent ingests into different collections of
+        the same tenant can both read the same total and both pass, so the
+        ceiling is exact within a collection and bounded -- not exact --
+        across a tenant's collections.
+        """
+        cap = self._tenant_limit(tenant, "max_chunks_per_tenant")
+        if cap <= 0:
+            return 0, 0
+        return cap, self.tenant_chunk_count(tenant, excluding=collection)
 
     def _db_path(self, tenant: str, collection: str) -> Path:
         return Path(self._base_path(tenant, collection)) / "meta.db"
@@ -3984,6 +4035,14 @@ class LocalStore:
                 doc_meta,
             )
         )
+        # An ingest carrying no record is a purge, which grows nothing and
+        # is charged against no ceiling.
+        tenant_cap, tenant_chunks_elsewhere = (
+            self._tenant_chunk_budget(tenant, collection)
+            if rids_to_add
+            else (0, 0)
+        )
+
         if byov:
             vectors = np.asarray(vectors, dtype=np.float32)
         elif not rids_to_add:
@@ -4017,6 +4076,19 @@ class LocalStore:
                     raise ChunkLimitError(
                         f"collection '{tenant}/{collection}' would exceed "
                         f"its chunk limit ({max_chunks})"
+                    )
+            if tenant_cap > 0 and rids_to_add:
+                total, replacing = col_db.chunk_counts(docid)
+                projected = (
+                    tenant_chunks_elsewhere
+                    + total
+                    - replacing
+                    + len(rids_to_add)
+                )
+                if projected > tenant_cap:
+                    raise TenantChunkLimitError(
+                        f"tenant '{tenant}' would exceed its chunk limit "
+                        f"({tenant_cap}) across its collections"
                     )
             purged = self._purge_doc_locked(tenant, collection, docid)
             if purged:
@@ -4134,6 +4206,12 @@ class LocalStore:
             all_rids.extend(rids)
             all_texts.extend(texts)
 
+        tenant_cap, tenant_chunks_elsewhere = (
+            self._tenant_chunk_budget(tenant, collection)
+            if all_rids
+            else (0, 0)
+        )
+
         vectors = (
             self._encode_embedder(embedder, all_texts)
             if all_rids else None
@@ -4161,6 +4239,20 @@ class LocalStore:
                     raise ChunkLimitError(
                         f"collection '{tenant}/{collection}' would exceed "
                         f"its chunk limit ({max_chunks})"
+                    )
+            if tenant_cap > 0 and all_rids:
+                _docs, total = col_db.get_doc_chunk_counts()
+                replacing = sum(
+                    col_db.chunk_counts(docid)[1]
+                    for docid in {doc[0] for doc in docs_to_commit}
+                )
+                projected = (
+                    tenant_chunks_elsewhere + total - replacing + len(all_rids)
+                )
+                if projected > tenant_cap:
+                    raise TenantChunkLimitError(
+                        f"tenant '{tenant}' would exceed its chunk limit "
+                        f"({tenant_cap}) across its collections"
                     )
 
             for docid, rids, texts, chunk_rows, safe_doc_meta in docs_to_commit:

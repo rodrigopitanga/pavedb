@@ -236,6 +236,30 @@ answers `503 <op>_capacity` (concurrency) or `429 <op>_rate_limited`
 A shared instance without these means one tenant can consume the disk, the
 index memory, and the pools that every other tenant depends on.
 
+## Bounding what a tenant stores
+
+`max_chunks_per_collection` bounds one collection, so a tenant allowed ten of
+them has a ceiling ten times that cap — which is no ceiling you can publish
+from one number. `max_chunks_per_tenant` is that number: the indexed chunks a
+tenant may hold across every collection it owns, refused at ingest with
+`429 tenant_chunk_limit_reached`. Set it per tenant as
+`tenants.<name>.max_chunks_per_tenant` in `tenants.yml`, or for every tenant
+as `tenants.default_max_chunks_per_tenant`; 0 disables it. Set both caps, or
+the per-collection cap alone bounds nothing at the tenant level.
+
+It counts chunks rather than megabytes on purpose. Deleting a document gives
+a chunk back immediately; it gives no disk back until a vacuum, because
+SQLite keeps freed pages and the write-ahead log grows on the way. A cap
+measured on file sizes would be one a tenant could not escape by deleting its
+own data. To translate the number for a customer, multiply by your average
+chunk size — the chunk count is what the engine enforces, and a document
+count is what they can picture.
+
+Delete paths are never charged against the ceiling, so a tenant that hits it
+can always free its own budget. Re-ingesting a document at the ceiling is
+allowed while it yields no more chunks than the version it replaces, since
+the check is on the count the write leaves behind, not on the write itself.
+
 ## Containers
 
 The published image runs the server with a data directory you are expected to

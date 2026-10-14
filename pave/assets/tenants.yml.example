@@ -20,5 +20,8 @@
 #                         # tenants.default_max_collections; 0 = unlimited
 #     max_chunks_per_collection: 100000 # indexed-chunk cap per collection;
 #                         # overrides tenants.default_max_chunks_per_collection
+#     max_chunks_per_tenant: 500000 # indexed-chunk ceiling across every
+#                         # collection the tenant owns; overrides
+#                         # tenants.default_max_chunks_per_tenant
 #   umbrella:
 #     max_concurrent: 20

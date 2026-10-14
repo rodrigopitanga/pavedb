@@ -301,6 +301,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     "dim_mismatch": 400,
                     "chunk_limit_reached": 429,
                     "collection_limit_reached": 429,
+                    "tenant_chunk_limit_reached": 429,
                     "ingest_failed": 500,
                 }
                 return error(
@@ -407,6 +408,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     "chunk_too_large": 400,
                     "chunk_limit_reached": 429,
                     "collection_limit_reached": 429,
+                    "tenant_chunk_limit_reached": 429,
                     "ingest_failed": 500,
                 }
                 return error(
