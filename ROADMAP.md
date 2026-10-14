@@ -155,7 +155,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-12 | ~~List tenants/collections API~~ | 🧩 | Ops visibility | v1.0 |
 | P2-13 | Collection log export | 🧱 | Search analytics | v1.4 |
 | P2-14 | Document versioning | 🧱 | Audit trails | v1.7 |
-| P2-19 | Tenant admin infra | 🧱 | API-owned tenants are catalog rows with lifecycle and caps; file-owned tenants stay as `tenants.yml` declares | v1.0 |
+| P2-19 | Tenant admin infra | 🧱 | Admin ops: tenants are catalog rows with lifecycle and caps that bind without a restart | v1.0 |
 | P2-20 | ~~Collection limit / tenant~~ | 🧩 | Billing-hard growth cap | v0.9.5 |
 | P2-21 | Storage limit / tenant | 🧩 | `max_chunks_per_tenant` bounds a tenant's chunks across its collections, 429 at ingest; cross-collection admission still open | v1.0 |
 | P2-22 | Usage stats to mothership |  | Capacity planning | v1.4 |
@@ -173,7 +173,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-35 | MCP server | 🧱 | AI agent integration | v1.3 |
 | P2-36 | LlamaIndex adapter | 🧱 | Framework coverage | v1.3 |
 | P2-37 | Audit logs for admin actions | 🧩 | Governance trail | v1.6 |
-| P2-38 | Tenant key management API | 🔧 | Create, rotate and revoke keys at runtime for API-owned tenants; file-owned tenants keep file keys | v1.0 |
+| P2-38 | Tenant key management API | 🔧 | Create/rotate/revoke tenant keys at runtime through the admin API; no config edit or restart per tenant. `tenants.yml` seeds SQL on first boot | v1.0 |
 | P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v1.2 |
 | P2-40 | ~~Error logging at service layer~~ | 🧩 | `log.warning` on every `ok: false` return site; audit codes and choose level per error class | v0.5.9 |
 | P2-41 | ~~TXT preprocessor: character offset in chunk metadata~~ | 🧩 | Provenance contract (replace `chunk` key with `offset`) | v0.5.9 |
@@ -554,12 +554,14 @@ latency on every search/ingest/delete.~~
   collection chooses its default, the caller may override (P1-77).~~
 - ~~Per-collection chunking (`fixed`/`none`) inside operator bounds (P1-78).~~
 - ~~Honor metadata priority boosts during scoring (P2-11).~~
-- Tenant admin infrastructure: API-owned tenants become catalog rows with
-  lifecycle and caps that bind without a restart (P2-19).
-- Per-tenant storage limit: `max_chunks_per_tenant` bounds a tenant's chunks
-  across its collections; cross-collection admission still open (P2-21).
-- Tenant key management API: create, rotate and revoke keys at runtime for
-  API-owned tenants (P2-38).
+- Tenant admin infrastructure: tenants become catalog rows with
+  lifecycle (provision, suspend, retire) and caps that bind without a
+  restart; `tenants.yml` seeds the registry on first boot (P2-19).
+- Tenant key management API: `POST /admin/tenants/{tenant}/keys`,
+  `DELETE /admin/tenants/{tenant}/keys/{id}`. Keys are created, rotated
+  and revoked at runtime, so onboarding a tenant needs no config edit
+  or server restart. SQL is the source of truth after the first-boot
+  seed; the config map stays supported (P2-38).
 
 **Deferred from v1.0** (to lean the path; pulled in by next
 release, see v1.1 and v1.2 sections): P1-27 admin key auto-gen,
@@ -653,6 +655,7 @@ lands where it has more impact during post-contract hardening.
 
 ### PaveDB v1.5 — Lifecycle
 
+- Per-tenant storage limit (P2-21).
 - Per-collection storage accounting: `document_bytes` exposed for
   quota surfaces; `chunk_bytes` admin-only (P2-47).
 - Formalize collection independence from tenant (P2-31).
