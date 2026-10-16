@@ -1043,6 +1043,7 @@ def main_srv(argv=None):
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
+        "-V",
         "--version",
         action="version",
         version=version_banner("pavesrv"),

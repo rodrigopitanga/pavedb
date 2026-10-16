@@ -41,7 +41,7 @@ There is NO WARRANTY, to the extent permitted by law.
 ## Global Options
 
 - `--compact` (optional): Emit compact JSON for scripting
-- `--version` (optional): Print version, copyright, and license information
+- `-V`, `--version` (optional): Print version, copyright, and license information
 - `--home` (optional): Instance home directory; omitted siblings default under it;
   defaults to ~/pavedb
 - `--config` (optional): Explicit config.yml path; default comes from

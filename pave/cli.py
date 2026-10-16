@@ -571,6 +571,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Emit compact JSON for scripting",
     )
     p.add_argument(
+        "-V",
         "--version",
         action="version",
         version=version_banner("pavecli"),

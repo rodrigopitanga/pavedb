@@ -8,6 +8,7 @@ import pytest
 import pave.main as main_mod
 from pave.config import get_cfg
 from pave.metadb import SchemaMigrationError, UnsupportedSchemaVersionError
+from pave.version import version_banner
 
 
 def _capture_server_run(monkeypatch):
@@ -24,6 +25,17 @@ def _capture_server_run(monkeypatch):
 
     monkeypatch.setattr(main_mod, "_run_pave_server", capture)
     return calls
+
+
+@pytest.mark.parametrize("flag", ["-V", "--version"])
+def test_main_srv_version_flag_prints_the_banner(flag, capsys):
+    with pytest.raises(SystemExit) as excinfo:
+        main_mod.main_srv([flag])
+
+    captured = capsys.readouterr()
+    assert excinfo.value.code == 0
+    assert captured.out == version_banner("pavesrv") + "\n"
+    assert captured.err == ""
 
 
 def test_main_srv_accepts_home_flag(monkeypatch, tmp_path):

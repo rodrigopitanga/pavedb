@@ -49,8 +49,9 @@ These are non-negotiable constraints that apply across all versions.
   forward without data loss. Newer schemas reject downgrades; incompatible reads fail
   loudly with actionable guidance rather than silently corrupting data.
 - **PaveDB enforces limits; it does not govern business logic.** Resource limits,
-  quotas, and tier profiles are read from a manifest and applied at runtime. Billing,
-  onboarding, and payment are outside PaveDB's scope — it just reads a file.
+  quotas, and tier profiles are declared to PaveDB, by `tenants.yml` or by the admin
+  API, and applied at runtime. Billing, onboarding, and payment are outside PaveDB's
+  scope — it applies what it is told.
 
 ---
 
@@ -141,7 +142,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-72 | ~~Hybrid lexical/vector retrieval~~ | 🧱 | Fuse independent FAISS and SQLite FTS5 candidate lists; depends on P1-70 | v1.0 |
 | P1-73 | ~~Preview SQLite compatibility baseline~~ | 🔧 | Transactional forward migrations from v0.9.5; reject downgrades and pre-baseline schemas | v0.9.5 |
 | P1-74 | ~~Sbert embedder options: `trust_remote_code`, task prefixes (space keys), `runtime=remote` (TEI)~~ | 🔧 | Unlocks custom-architecture local models and GPU offload with an unchanged `vector_space_key`; additive config, frozen protocol untouched. | v1.1 |
-| P1-75 | ~~Exclusive local data-directory ownership~~ | 🧩 | Fail closed before a second server, local client, or offline CLI opens the same canonical data directory | v0.9.6 |
+| P1-75 | ~~Exclusive local data-directory ownership~~ | 🧩 | Fail closed before a second server, local client, or offline CLI opens the same canonical data directory | v1.0 |
 | P1-76 | ~~CLI names collections as `tenant/collection`~~ | 🔧 | One argument, matching the HTTP path, replaces separate tenant and collection arguments; filters and SDK handles unchanged | v1.0 |
 | P1-77 | ~~Search modes: `vector`, `boost`, `hybrid`~~ | 🔧 | Operator serves modes, collection picks a default at creation, caller may override; boost moves from an instance switch into a mode | v1.0 |
 | P1-78 | ~~Per-collection chunking~~ | 🔧 | `fixed` or `none` chosen at creation within operator bounds (min/max size and overlap); replaces the instance-wide chunk settings | v1.0 |
@@ -154,9 +155,9 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-12 | ~~List tenants/collections API~~ | 🧩 | Ops visibility | v1.0 |
 | P2-13 | Collection log export | 🧱 | Search analytics | v1.4 |
 | P2-14 | Document versioning | 🧱 | Audit trails | v1.7 |
-| P2-19 | Tenant admin infra | 🧱 | Admin ops | v1.5 |
+| P2-19 | Tenant admin infra | 🧱 | API-owned tenants are catalog rows with lifecycle and caps; file-owned tenants stay as `tenants.yml` declares | v1.0 |
 | P2-20 | ~~Collection limit / tenant~~ | 🧩 | Billing-hard growth cap | v0.9.5 |
-| P2-21 | Storage limit / tenant | 🧩 | Cap storage | v1.5 |
+| P2-21 | Storage limit / tenant | 🧩 | `max_chunks_per_tenant` bounds a tenant's chunks across its collections, 429 at ingest; cross-collection admission still open | v1.0 |
 | P2-22 | Usage stats to mothership |  | Capacity planning | v1.4 |
 | P2-23 | ~~Chunk inspector + collection browser~~ | 🔧 | List chunks, get chunk by ID, browse doc→chunk tree | v0.9 |
 | P2-24 | Delete by ID list / by query | 🧩 | Bulk ops, DX | v1.6 |
@@ -166,13 +167,13 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-29 | ~~Public cross-language retrieval fixtures~~ | 🧩 | Recall validation | v0.5.9 |
 | P2-30 | ~~Benchmark CI gate + p99 SLO~~ | 🧩 | Latency contract | v0.5.9 |
 | P2-31 | Formalize collection independence | 🔧 | Portability contract | v1.5 |
-| P2-32 | Remote CLI usability evaluation | 🔧 | Multisite Cloud management by agents and orchestrators | v1.1 |
+| P2-32 | ~~Remote CLI usability evaluation~~ | 🔧 | Evaluated: one HTTP instance per invocation through the SDK; any shell lives in `pavedb-sdk`. See [`docs/design/PLAN-CLIENT.md`](docs/design/PLAN-CLIENT.md) | v1.1 |
 | P2-33 | JS/TS client | 🧱 | Web + Node adoption | v1.3 |
 | P2-34 | LangChain adapter | 🧱 | Framework coverage | v1.3 |
 | P2-35 | MCP server | 🧱 | AI agent integration | v1.3 |
 | P2-36 | LlamaIndex adapter | 🧱 | Framework coverage | v1.3 |
 | P2-37 | Audit logs for admin actions | 🧩 | Governance trail | v1.6 |
-| P2-38 | Tenant key management API | 🔧 | Generate/revoke keys, YAML seed → SQL | v1.5 |
+| P2-38 | Tenant key management API | 🔧 | Create, rotate and revoke keys at runtime for API-owned tenants; file-owned tenants keep file keys | v1.0 |
 | P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v1.2 |
 | P2-40 | ~~Error logging at service layer~~ | 🧩 | `log.warning` on every `ok: false` return site; audit codes and choose level per error class | v0.5.9 |
 | P2-41 | ~~TXT preprocessor: character offset in chunk metadata~~ | 🧩 | Provenance contract (replace `chunk` key with `offset`) | v0.5.9 |
@@ -416,26 +417,21 @@ latency on every search/ingest/delete.~~
   `bench-stress.py`. Race-outcome reclassification keeps real
   5xx visible (P2-48).~~
 
-### PaveDB v0.9.3 — Final contract preview
-
-- Freeze features after the current hardening batch. Run one final full review
-  against the merged candidate and accept only release-critical corrections:
-  data loss/corruption, security/auth, crash/recovery, installation/packaging,
-  licensing, or documented destructive behavior.
-- Keep the v1.1/v1.2 feature branches parked. P1-46, P1-47, and P1-62 start
-  after the v0.9.3 tag and do not expand this release.
-- Ship the current runtime as a final pre-1.0 preview. The supported contract
-  is declared only when the distribution docs, Python API reference, examples,
-  and rendered site land together at v1.0.
-
-### PaveDB v0.9.6 — 1.0 preview hardening
-
-- ~~Give each canonical local data directory one supported local owner; a
-  second server, local client, or offline CLI fails before opening the store
-  (P1-75).~~
-
 ### PaveDB v1.0 — Supported contract
 
+- ~~Freeze features after the hardening batch; one final full review of the
+  merged candidate accepting only release-critical corrections: data
+  loss/corruption, security/auth, crash/recovery, installation/packaging,
+  licensing, or documented destructive behavior (shipped as the v0.9.3
+  preview).~~
+- ~~Keep the v1.1/v1.2 feature branches parked; P1-46, P1-47, and P1-62 start
+  after the v0.9.3 tag and do not expand the preview.~~
+- ~~Ship the runtime as pre-1.0 previews (v0.9.3, v0.9.6, v0.9.7). The supported
+  contract is declared only when the distribution docs, Python API reference,
+  examples, and rendered site land together at v1.0.~~
+- ~~Give each canonical local data directory one supported local owner; a
+  second server, local client, or offline CLI fails before opening the store
+  (P1-75; shipped in the v0.9.6 preview).~~
 - ~~Define embedder/store separation contract (P3-26).~~
 - ~~Activate embedder factory cache (P1-30; superseded by P1-29b).~~
 - ~~Per-collection embeddings + `display_name` + admin move/update
@@ -558,6 +554,12 @@ latency on every search/ingest/delete.~~
   collection chooses its default, the caller may override (P1-77).~~
 - ~~Per-collection chunking (`fixed`/`none`) inside operator bounds (P1-78).~~
 - ~~Honor metadata priority boosts during scoring (P2-11).~~
+- Tenant admin infrastructure: API-owned tenants become catalog rows with
+  lifecycle and caps that bind without a restart (P2-19).
+- Per-tenant storage limit: `max_chunks_per_tenant` bounds a tenant's chunks
+  across its collections; cross-collection admission still open (P2-21).
+- Tenant key management API: create, rotate and revoke keys at runtime for
+  API-owned tenants (P2-38).
 
 **Deferred from v1.0** (to lean the path; pulled in by next
 release, see v1.1 and v1.2 sections): P1-27 admin key auto-gen,
@@ -591,9 +593,9 @@ lands where it has more impact during post-contract hardening.
   models, e5-style task prefixes that join the vector-space key, and
   `runtime=remote` delegation to a TEI-compatible endpoint serving the
   identical model (P1-74).~~
-- Evaluate remote CLI usability for Cloud multisite management by agents and
+- ~~Evaluate remote CLI usability for Cloud multisite management by agents and
   orchestrators. One invocation targets one HTTP instance through the SDK;
-  fleet policy remains outside PaveDB (P2-32).
+  fleet policy remains outside PaveDB (P2-32).~~
 
 ### PaveDB v1.2 — Control
 
@@ -651,16 +653,9 @@ lands where it has more impact during post-contract hardening.
 
 ### PaveDB v1.5 — Lifecycle
 
-- Tenant admin infrastructure (P2-19).
-- Per-tenant storage limit (P2-21).
 - Per-collection storage accounting: `document_bytes` exposed for
   quota surfaces; `chunk_bytes` admin-only (P2-47).
 - Formalize collection independence from tenant (P2-31).
-- Tenant key management API: `POST /admin/tenants/{tenant}/keys`,
-  `DELETE /admin/tenants/{tenant}/keys/{id}`. Seed `tenants.yml`
-  into SQL on first boot; SQL becomes source of truth for keys
-  and limits thereafter. Lands with tenant admin infra (P2-19)
-  as the foundation the v1.6 governance items build on (P2-38).
 - Bound archive-dump disk materialization on both admin dump paths
   (collection + instance): stream the archive or cap concurrent
   materializations (P2-56).
@@ -1156,9 +1151,10 @@ PaveDB stays "no cluster, no cloud" as *software*. The hosted offering wraps
 that single-process model per tenant rather than replacing it with a shared
 cluster — same deployment shape, someone else runs it.
 
-Multisite agents and orchestrators motivate an early remote CLI usability
-evaluation (P2-32). Each invocation would target one explicit HTTP instance;
-fleet scheduling, credential distribution, and failover policy remain outside
+Multisite agents and orchestrators motivated an early remote CLI usability
+evaluation (P2-32), which kept the one-explicit-instance-per-invocation shape
+and placed any command shell in `pavedb-sdk` rather than in `pavecli`. Fleet
+scheduling, credential distribution, and failover policy remain outside
 PaveDB.
 
 ### Control/data plane: Fly.io

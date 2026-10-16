@@ -1086,3 +1086,17 @@ def test_cli_move_collection_takes_two_refs(cli_env, capsys):
         call[:2] == ("move_collection", "acme") and call[2] == "books"
         for call in store.calls
     )
+
+
+@pytest.mark.parametrize("flag", ["-V", "--version"])
+def test_cli_version_flag_prints_the_banner(flag, capsys):
+    from pave.cli import build_parser
+    from pave.version import version_banner
+
+    with pytest.raises(SystemExit) as excinfo:
+        build_parser().parse_args([flag])
+
+    captured = capsys.readouterr()
+    assert excinfo.value.code == 0
+    assert captured.out == version_banner("pavecli") + "\n"
+    assert captured.err == ""
