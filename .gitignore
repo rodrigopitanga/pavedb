@@ -45,11 +45,24 @@ transformers_cache/
 # Local env/config (keep only examples in VCS)
 .env
 *.env
+.env.*
 config.yml
 tenants.yml
 tenants.secrets.yml
 !config.yml.example
 !tenants.yml.example
+
+# Empty stub files sometimes materialized by sandboxed tooling (not project files)
+.gitmodules
+.npmrc
+.yarnrc
+.yarnrc.yml
+bunfig.toml
+package.json
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+node_modules/
 
 # Logs
 *.log
