@@ -17,7 +17,7 @@ import tempfile
 from fastapi import HTTPException, Depends, Security, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.concurrency import run_in_threadpool
-from .config import get_cfg, get_logger
+from .config import cfg_bool, get_cfg, get_logger
 
 bearer = HTTPBearer(auto_error=False)
 log = get_logger()
@@ -482,7 +482,7 @@ def _take_tenant_slot(
 
 def _is_dev(cfg) -> bool:
     # check dev flag from config/env overlay
-    return bool(cfg.get("dev"))
+    return cfg_bool(cfg.get("dev"))
 
 
 # Deliberately the same rule as _COLLECTION_NAME_RE in pave/service.py: one

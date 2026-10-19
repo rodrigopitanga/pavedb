@@ -108,6 +108,24 @@ def test_dev_mode_defaults_to_debug_without_log_level_env(monkeypatch, tmp_path)
     assert calls["kwargs"]["log_level"] == "debug"
 
 
+@pytest.mark.parametrize("value", ["no", "off", "disabled"])
+def test_disabled_dev_string_does_not_force_debug(value, monkeypatch, tmp_path):
+    # The env overlay only coerces "true"/"false" and numbers, so PAVEDB_DEV=no
+    # arrives as the string "no": truthy to Python, off to the operator.
+    calls = _capture_server_run(monkeypatch)
+    home = tmp_path / "instance"
+
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
+    monkeypatch.setenv("PAVEDB_DEV", value)
+    monkeypatch.delenv("PAVEDB_LOG__LEVEL", raising=False)
+    monkeypatch.setattr(main_mod, "enforce_policy", lambda _cfg: None)
+    monkeypatch.setattr(main_mod, "resolve_bind", lambda _cfg: ("127.0.0.1", 8086))
+
+    main_mod.main_srv(["--home", str(home)])
+
+    assert calls["kwargs"]["log_level"] == "info"
+
+
 def test_main_srv_routes_access_log_to_file(monkeypatch, tmp_path):
     calls = _capture_server_run(monkeypatch)
     home = tmp_path / "instance"

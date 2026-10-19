@@ -188,3 +188,37 @@ def test_configure_file_creates_owner_group_only_file(tmp_path):
     assert stat.S_IMODE(target.parent.stat().st_mode) == 0o750
     line = target.read_text(encoding="utf-8").splitlines()[0]
     assert json.loads(line)["op"] == "search"
+
+
+@pytest.mark.parametrize(
+    "dev,expected_debug",
+    [("no", False), ("off", False), ("disabled", False), ("", False),
+     ("on", True), ("yes", True), (True, True), (False, False)],
+)
+def test_dev_stream_level_parses_the_dev_flag(dev, expected_debug, monkeypatch):
+    """Only cfg_bool's vocabulary may force the pave stream to DEBUG: the env
+    overlay leaves PAVEDB_DEV=no as the string "no", which is truthy."""
+    import logging
+
+    from pave.config import get_cfg
+
+    monkeypatch.delenv("PAVEDB_LOG__LEVEL", raising=False)
+    cfg = get_cfg()
+    cfg.set("dev", dev)
+    cfg.set("log.level", "INFO")
+
+    # _init_logger() rebuilds the root handlers in place; put them back so the
+    # rest of the suite (and caplog) keeps the configuration it started with.
+    root = logging.getLogger()
+    pave_logger = logging.getLogger("pave")
+    saved_handlers = root.handlers[:]
+    saved_root_level = root.level
+    saved_pave_level = pave_logger.level
+    try:
+        level = ops_log._init_logger().level
+    finally:
+        root.handlers[:] = saved_handlers
+        root.setLevel(saved_root_level)
+        pave_logger.setLevel(saved_pave_level)
+
+    assert level == (logging.DEBUG if expected_debug else logging.INFO)

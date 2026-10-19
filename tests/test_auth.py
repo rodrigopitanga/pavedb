@@ -78,6 +78,51 @@ def test_enforce_policy_dev_loopback_coercion():
     assert resolve_bind(cfg) == ("127.0.0.1", 8086)
 
 
+@pytest.mark.parametrize("value", ["1", "true", "yes", "on"])
+def test_enforce_policy_accepts_development_strings(value):
+    from pave.auth import enforce_policy, resolve_bind
+    from pave.config import Config
+
+    cfg = Config(data={"dev": value, "auth": {"mode": "none"},
+                       "server": {"host": "0.0.0.0"}})
+    enforce_policy(cfg)
+    assert resolve_bind(cfg)[0] == "127.0.0.1"
+
+
+@pytest.mark.parametrize("value", ["no", "off", "disabled"])
+def test_enforce_policy_refuses_disabled_dev_env_string(value, monkeypatch, tmp_path):
+    """Built from the env, not from `data=`: that is where the string comes
+    from. The overlay only coerces "true"/"false" and numbers, so PAVEDB_DEV=no
+    stays the string "no" — truthy to Python, off to the operator."""
+    from pave.auth import enforce_policy
+    from pave.config import Config
+
+    # Redirected so no installed ~/pavedb/config.yml joins this overlay.
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
+    monkeypatch.setenv("PAVEDB_DEV", value)
+    cfg = Config()
+    cfg.set("auth.mode", "none")
+
+    with pytest.raises(RuntimeError, match="auth.mode=none not allowed"):
+        enforce_policy(cfg)
+
+
+@pytest.mark.parametrize("value", ["yes", "on"])
+def test_enforce_policy_accepts_enabled_dev_env_string(value, monkeypatch, tmp_path):
+    """The same uncoerced strings the other way: dev must still recognize them."""
+    from pave.auth import enforce_policy, resolve_bind
+    from pave.config import Config
+
+    monkeypatch.setenv("HOME", str(tmp_path / "user-home"))
+    monkeypatch.setenv("PAVEDB_DEV", value)
+    cfg = Config()
+    cfg.set("auth.mode", "none")
+    cfg.set("server.host", "0.0.0.0")
+
+    enforce_policy(cfg)
+    assert resolve_bind(cfg)[0] == "127.0.0.1"
+
+
 def test_enforce_policy_constrains_multiple_workers_to_dev(caplog):
     from pave.auth import enforce_policy
     from pave.config.config import Config

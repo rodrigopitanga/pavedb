@@ -131,7 +131,7 @@ def _init_logger() -> logging.Logger:
       - all others (base +2)
     Lazy import of get_cfg avoids a circular import with config.py.
     """
-    from pave.config import get_cfg
+    from pave.config import cfg_bool, get_cfg
     cfg = get_cfg()
     base_level = getattr(logging, str(cfg.get("log.level")).upper(), logging.INFO)
 
@@ -160,7 +160,11 @@ def _init_logger() -> logging.Logger:
     root.addHandler(handler)
 
     pave_log = logging.getLogger("pave")
-    dev_forces_debug = cfg.get("dev") and "PAVEDB_LOG__LEVEL" not in os.environ
+    # cfg_bool, not truthiness: PAVEDB_DEV=no reaches the overlay as the
+    # string "no", which is true to Python but false to the operator.
+    dev_forces_debug = (
+        cfg_bool(cfg.get("dev")) and "PAVEDB_LOG__LEVEL" not in os.environ
+    )
     pave_log.setLevel(logging.DEBUG if dev_forces_debug else base_level)
 
     for ns in namespaces(cfg.get("log.debug")):

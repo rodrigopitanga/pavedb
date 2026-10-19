@@ -38,6 +38,7 @@ from pave.auth import (
     resolve_bind,
 )
 from pave.config import (
+    cfg_bool,
     get_cfg,
     get_logger,
     reload_cfg,
@@ -1125,7 +1126,7 @@ def main_srv(argv=None):
     log_level = str(cfg.get("log.level")).lower()
     timeout_keep_alive = int(cfg.get("server.timeout_keep_alive"))
 
-    if cfg.get("dev") and "PAVEDB_LOG__LEVEL" not in os.environ:
+    if cfg_bool(cfg.get("dev")) and "PAVEDB_LOG__LEVEL" not in os.environ:
         log_level = "debug"
     log.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 
