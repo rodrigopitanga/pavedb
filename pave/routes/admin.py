@@ -59,6 +59,20 @@ def _cleanup_archive_dir(path: str | None) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
+def _query_home_field(index: int):
+    """Read the query owner the handler stored on request.state."""
+    # ops_event builds its fields in a finally block and does not guard
+    # tenant/collection resolution, so resolving the owner there would
+    # repeat the handler's catalog lookup, replace the response when that
+    # lookup fails, and drop the event with it.
+    def field(kw, _result):
+        state = getattr(kw.get("request"), "state", None)
+        home = getattr(state, "query_home", None)
+        return home[index] if home else None
+
+    return field
+
+
 def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
     router = APIRouter()
 
@@ -634,7 +648,13 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         responses=resp(401, 403, 404, 500),
         tags=["Query Admin"],
     )
-    @ops_event("get_query_log", coll=None, request_id="rid")
+    @ops_event(
+        "get_query_log",
+        tenant=_query_home_field(0),
+        coll=_query_home_field(1),
+        query_id="query_id",
+        request_id="rid",
+    )
     def get_query_log(
         request: Request,
         query_id: str,
@@ -661,6 +681,8 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
                 request_id=rid,
             )
         tenant, collection = home
+        # Hand the owner to the ops event instead of resolving it twice more.
+        request.state.query_home = home
         result = svc_get_query_log_entry_scoped(
             store,
             tenant,
@@ -689,7 +711,13 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
         responses=resp(401, 403, 404, 429, 500, 503),
         tags=["Query Admin"],
     )
-    @ops_event("replay_query", coll=None, request_id="rid")
+    @ops_event(
+        "replay_query",
+        tenant=_query_home_field(0),
+        coll=_query_home_field(1),
+        query_id="query_id",
+        request_id="rid",
+    )
     async def replay_query(
         request: Request,
         response: Response,
@@ -717,6 +745,8 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
                 request_id=rid,
             )
         tenant, collection = home
+        # Hand the owner to the ops event instead of resolving it twice more.
+        request.state.query_home = home
         # The replay really runs on the owner tenant's search capacity, so it
         # still takes that tenant's concurrency slot. Its moving-window budget
         # is a plan quota instead, and admin credentials bypass that

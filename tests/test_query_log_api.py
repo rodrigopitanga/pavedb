@@ -371,3 +371,132 @@ def test_shared_scope_search_does_not_log_into_the_shared_tenant(client, cfg):
     logs = client.get("/v1/collections/global/common/queries")
     assert logs.status_code == 200
     assert logs.json()["count"] == 0
+
+
+def test_admin_query_ops_include_owner_and_query_id(app, cfg, tmp_path):
+    import json
+    import pave.log as ops_log
+
+    collection = "audited"
+    client = TestClient(app)
+    try:
+        client.post(f"/v1/collections/acme/{collection}")
+        client.post(
+            f"/v1/collections/acme/{collection}/documents",
+            json={"text": "audit query", "docid": "d1"},
+        )
+        search = client.post(
+            f"/v1/collections/acme/{collection}/search",
+            json={"q": "audit", "k": 1},
+        )
+        query_id = search.json()["query_id"]
+        cfg.set("auth.mode", "static")
+        cfg.set("auth.global_key", "adminkey")
+        cfg.set("auth.api_keys", {"acme": "acmekey"})
+        path = tmp_path / "ops.jsonl"
+        ops_log.configure(str(path))
+        try:
+            headers = {"Authorization": "Bearer adminkey"}
+            assert client.get(
+                f"/v1/admin/queries/{query_id}", headers=headers,
+            ).status_code == 200
+            assert client.post(
+                f"/v1/admin/queries/{query_id}/replay", headers=headers,
+            ).status_code == 200
+        finally:
+            ops_log.close()
+            ops_log.configure(None)
+    finally:
+        client.close()
+    events = [json.loads(line) for line in path.read_text().splitlines()]
+    for op in ("get_query_log", "replay_query"):
+        event = next(item for item in events if item["op"] == op)
+        assert event["tenant"] == "acme"
+        assert event["collection"] == collection
+        assert event["query_id"] == query_id
+
+
+def test_admin_query_ops_do_not_repeat_the_query_home_lookup(app, cfg, monkeypatch):
+    import pave.routes.admin as admin_routes
+
+    lookups = []
+    resolve = admin_routes.svc_resolve_query_home
+
+    def counted(store, query_id):
+        lookups.append(query_id)
+        return resolve(store, query_id)
+
+    collection = "lookupcount"
+    client = TestClient(app)
+    try:
+        client.post(f"/v1/collections/acme/{collection}")
+        client.post(
+            f"/v1/collections/acme/{collection}/documents",
+            json={"text": "audit query", "docid": "d1"},
+        )
+        search = client.post(
+            f"/v1/collections/acme/{collection}/search",
+            json={"q": "audit", "k": 1},
+        )
+        query_id = search.json()["query_id"]
+        cfg.set("auth.mode", "static")
+        cfg.set("auth.global_key", "adminkey")
+        headers = {"Authorization": "Bearer adminkey"}
+        monkeypatch.setattr(admin_routes, "svc_resolve_query_home", counted)
+
+        assert client.get(
+            f"/v1/admin/queries/{query_id}", headers=headers,
+        ).status_code == 200
+        # One lookup per request: the ops fields reuse it instead of
+        # repeating it, and are built even with the ops stream off.
+        assert lookups == [query_id]
+
+        assert client.post(
+            f"/v1/admin/queries/{query_id}/replay", headers=headers,
+        ).status_code == 200
+        assert lookups == [query_id, query_id]
+    finally:
+        client.close()
+
+
+def test_admin_query_ops_survive_an_unresolvable_owner(
+    app, cfg, tmp_path, monkeypatch,
+):
+    import json
+    import pave.log as ops_log
+
+    def unavailable(_query_id):
+        raise RuntimeError("catalog unavailable")
+
+    path = tmp_path / "ops.jsonl"
+    client = TestClient(app)
+    try:
+        cfg.set("auth.mode", "static")
+        cfg.set("auth.global_key", "adminkey")
+        cfg.set("auth.api_keys", {"acme": "acmekey"})
+        monkeypatch.setattr(
+            app.state.store, "resolve_query_home", unavailable,
+        )
+        ops_log.configure(str(path))
+        try:
+            # A rejected request never resolves an owner, so logging must not
+            # resolve one either: it would turn the 403 into a 500 and lose
+            # the event with it.
+            rejected = client.get(
+                "/v1/admin/queries/q-missing",
+                headers={"Authorization": "Bearer acmekey"},
+            )
+        finally:
+            ops_log.close()
+            ops_log.configure(None)
+    finally:
+        client.close()
+
+    assert rejected.status_code == 403
+    assert rejected.json()["code"] == "admin_required"
+    events = [json.loads(line) for line in path.read_text().splitlines()]
+    event = next(item for item in events if item["op"] == "get_query_log")
+    assert event["status"] == "error"
+    assert event["error_code"] == "admin_required"
+    assert "tenant" not in event
+    assert "collection" not in event
