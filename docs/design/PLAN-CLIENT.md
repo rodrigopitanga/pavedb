@@ -239,8 +239,8 @@ no to a remote mode on `pavecli`.
 ### Starting position
 
 `pavecli` prints the full service envelope: `pavecli search` emits
-`{ok, matches, mode, priority_boost, latency_ms, timing, request_id,
-query_id}` straight from `service.search`, and that shape is a tested
+`{ok, matches, mode, latency_ms, timing, request_id, query_id}`
+straight from `service.search`, and that shape is a tested
 contract — `tests/test_cli.py` asserts `out["ok"]` command by command,
 and the generated `docs/reference/cli.md` is pinned by
 `tests/test_cli_reference.py`. On the other side,
@@ -277,8 +277,8 @@ name exactly one site per invocation.
 
 **F4 — the envelope gap is an SDK gap, not a CLI gap.**
 `HttpClient._json` drops `ok` and `_search` returns `data["matches"]`
-only, so every SDK caller loses `mode`, `priority_boost`, `latency_ms`,
-`timing`, `request_id`, and the `query_id` that `replay()` takes as its
+only, so every SDK caller loses `mode`, `latency_ms`, `timing`,
+`request_id`, and the `query_id` that `replay()` takes as its
 argument. Recovering that id from `queries()` is a race under concurrent
 search. Preserving the envelope is thus not CLI-compatibility work: the
 public search surface cannot reach the inspectability PaveDB sells. Fix
@@ -297,15 +297,17 @@ instance, nor correlate either with that instance's own logs.
 
 **F6 — the surfaces already drift both ways, so "the same CLI, remotely"
 is not deliverable.** The SDK carries `reindex`, its job controls, and
-the tenant-key methods with no `pavecli` command; `pavecli` carries
-`export-queries`, the document-version commands, the telemetry commands,
-`delete-documents`, `list-profiles`, and the cross-tenant form of
-`move-collection` with no SDK method (`_rename` sends `new_name` only).
-Three commands have no remote meaning at all: `init` writes an instance's
-config, `admin show-key`/`rotate-key` read and rewrite the admin key on
-disk, and `reset-metrics` has no route. A remote shell is a subset the
-HTTP API shapes — generated and tested against the SDK's own coverage,
-never mirrored from `pavecli`'s command list.
+the tenant provisioning and key methods with no `pavecli` command;
+`pavecli` carries two operations with no SDK method: `reset-metrics`
+(`DELETE /v1/admin/metrics`) and the catalog-wide
+`get-query`/`replay-query`, which resolve a `query_id` without naming
+its collection (`/v1/admin/queries/{query_id}`) where the SDK reaches
+only the collection-scoped routes. Three commands have no remote
+meaning at all: `init` writes an instance's config, and the
+`admin show-key`/`rotate-key` pair reads and rewrites the admin key on
+disk. A remote shell is a subset the HTTP API shapes — generated and
+tested against the SDK's own coverage, never mirrored from `pavecli`'s
+command list.
 
 ### Decisions
 
@@ -334,8 +336,8 @@ never mirrored from `pavecli`'s command list.
 In order, all of them SDK-side:
 
 1. The transport preserves the service envelope, so a caller can read
-   `query_id`, `timing`, `latency_ms`, `request_id`, `mode`, and
-   `priority_boost` from a search (F4).
+   `query_id`, `timing`, `latency_ms`, `request_id`, and `mode` from a
+   search (F4).
 2. Errors carry the status class, `request_id`, and `Retry-After`, so a
    caller can separate retryable from terminal (F5).
 3. The SDK covers the endpoints `pavecli` already reaches, so the shell's
