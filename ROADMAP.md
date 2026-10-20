@@ -665,10 +665,10 @@ lands where it has more impact during post-contract hardening.
 - OIDC/JWT as opt-in alternative auth (`auth.oidc.issuer` config);
   API keys remain permanently supported. PaveDB accepts either on
   any request (P3-17).
-- Tenant profiles: manifest-driven resource limits (memory,
-  storage, concurrency, models available), profile templates
-  (e.g. free/paid tiers); PaveDB enforces limits, does not
-  handle billing or onboarding (P2-26).
+- Tenant profiles: declared resource limits (memory, storage,
+  concurrency, models available) from `tenants.yml` or the admin
+  API, profile templates (e.g. free/paid tiers); PaveDB enforces
+  limits, does not handle billing or onboarding (P2-26).
 - Embedder credential refs: allow multiple runtime instances for
   the same provider/model without storing or returning raw keys in
   collection config. Credential identity participates in the
