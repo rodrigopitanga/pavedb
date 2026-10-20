@@ -97,6 +97,27 @@ def test_filter_pushdown_matches_canonical_capabilities(tmp_path, filters):
     db.close()
 
 
+def test_filter_candidate_selection_matches_exact_pushdown(tmp_path):
+    db, all_rids = _open_parity_db(tmp_path)
+    for filters in (
+        {"lang": ["pt"]},
+        {"source": ["gold"], "lang": ["en"]},
+        {"docid": ["doc042"]},
+        {"tags": ["gold", "silver"]},
+    ):
+        selected = db.select_filter_candidates(filters, None)
+        assert selected == db.filter_by_meta(all_rids, filters)
+        assert db.select_filter_candidates(
+            filters, None, len(all_rids) + 1,
+        ) == selected
+    # A cap below the eligible count stops the scan there, so the result
+    # proves only that the predicate reaches the cap.
+    capped = db.select_filter_candidates({"lang": ["pt"]}, None, 5)
+    assert len(capped) == 5
+    assert capped < db.select_filter_candidates({"lang": ["pt"]}, None)
+    db.close()
+
+
 def test_filter_pushdown_respects_chunk_metadata_override(tmp_path):
     db = CollectionDB()
     db.open(_meta_db(tmp_path))

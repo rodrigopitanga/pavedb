@@ -1,13 +1,26 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import sqlite3
+import time
 from typing import Any
 
 import numpy as np
 import pytest
 
-from pave.stores.local import LocalStore
+from pave.stores.local import _PREFILTER_MAX_SELECTIVITY, LocalStore
 from utils import FakeEmbedder
+
+# Long enough that the screen dominates every other filter phase in the
+# assertion below, short enough to stay cheap.
+_SCREEN_DELAY_MS = 50.0
+
+# Host parameters one statement can bind on pre-3.32 SQLite, and a
+# collection past it: the k below overfetches 1250 candidates, so every
+# rid-list query on the fallback path has to batch under the floor.
+_LEGACY_SQL_VARS = 999
+_OVER_FLOOR_RECORDS = 1200
+_OVER_FLOOR_K = 250
 
 
 def _seed_records(count: int) -> list[tuple[str, str, dict]]:
@@ -173,10 +186,17 @@ def test_search_calls_pushdown_for_postfilter_only_conditions(temp_data_dir):
     assert len(hits) == 5
 
 
-def test_filtered_search_hydrates_from_filter_snapshot(temp_data_dir):
+@pytest.mark.parametrize("other_count", [0, 19])
+def test_filtered_search_hydrates_from_filter_snapshot(
+    temp_data_dir, other_count,
+):
     store = LocalStore(str(temp_data_dir), FakeEmbedder())
     tenant, collection = "tenant", "meta_scope_snapshot"
-    store.index_records(tenant, collection, "doc", _seed_records(1))
+    records = _seed_records(1) + [
+        (f"other{i}", "shared query token", {"lang": "pt"})
+        for i in range(other_count)
+    ]
+    store.index_records(tenant, collection, "doc", records)
 
     col_db = store._dbs[(tenant, collection)]
     original_filter = col_db.filter_by_meta
@@ -277,6 +297,9 @@ def test_filtered_search_constrains_vector_work_to_sql_selection(temp_data_dir):
     normal_search_calls = 0
     original_search = backend.search
     original_search_filtered = backend.search_filtered
+    col_db = store._dbs[(tenant, collection)]
+    original_get_meta_batch = col_db.get_meta_batch
+    hydrated: list[list[str]] = []
 
     def _spy_search(vector, limit):
         nonlocal normal_search_calls
@@ -287,8 +310,13 @@ def test_filtered_search_constrains_vector_work_to_sql_selection(temp_data_dir):
         seen.append((limit, set(allowed_rids)))
         return original_search_filtered(vector, limit, allowed_rids)
 
+    def _spy_get_meta_batch(rids):
+        hydrated.append(list(rids))
+        return original_get_meta_batch(rids)
+
     backend.search = _spy_search  # type: ignore[method-assign]
     backend.search_filtered = _spy_search_filtered  # type: ignore[method-assign]
+    col_db.get_meta_batch = _spy_get_meta_batch  # type: ignore[method-assign]
 
     hits = store.search(
         tenant,
@@ -301,6 +329,187 @@ def test_filtered_search_constrains_vector_work_to_sql_selection(temp_data_dir):
     assert [hit.id for hit in hits] == ["target::r0"]
     assert seen == [(1, {"target::r0"})]
     assert normal_search_calls == 0
+    assert hydrated == [["target::r0"]]
+
+
+@pytest.mark.parametrize(
+    "filters, content_filter",
+    [
+        ({"shape": "other"}, None),
+        (None, {"op": "prefix", "value": "near"}),
+    ],
+)
+def test_broad_filter_skips_full_collection_prefilter(
+    temp_data_dir, filters, content_filter,
+):
+    store = LocalStore(str(temp_data_dir), _RankedEmbedder())
+    tenant, collection = "tenant", "meta_scope_broad_filter"
+    store.index_records(
+        tenant,
+        collection,
+        "other",
+        [
+            (f"r{i}", "near payload", {"shape": "other"})
+            for i in range(60)
+        ],
+    )
+    store.index_records(
+        tenant,
+        collection,
+        "target",
+        [("r0", "target payload", {"shape": "target"})],
+    )
+
+    backend = store._emb[(tenant, collection)]
+    col_db = store._dbs[(tenant, collection)]
+    assert len(col_db.select_filter_candidates(
+        {"shape": ["other"]},
+        {"op": "prefix", "value": "near"},
+        62,
+    )) == 60
+
+    def _unexpected(*_args, **_kwargs):
+        pytest.fail("broad filter enumerated the whole collection")
+
+    backend.search_filtered = _unexpected  # type: ignore[method-assign]
+    col_db.get_chunk_rids = _unexpected  # type: ignore[method-assign]
+
+    hits = store.search(
+        tenant,
+        collection,
+        "needle query",
+        k=3,
+        filters=filters,
+        content_filter=content_filter,
+    )
+
+    assert len(hits) == 3
+    assert {hit.meta["shape"] for hit in hits} == {"other"}
+
+
+def test_selectivity_screen_selects_candidates_once_and_is_timed(
+    temp_data_dir,
+):
+    store = LocalStore(str(temp_data_dir), _RankedEmbedder())
+    tenant, collection = "tenant", "meta_scope_screen_once"
+    store.index_records(
+        tenant,
+        collection,
+        "other",
+        [
+            (f"r{i}", "near payload", {"shape": "other"})
+            for i in range(60)
+        ],
+    )
+    store.index_records(
+        tenant,
+        collection,
+        "target",
+        [("r0", "target payload", {"shape": "target"})],
+    )
+
+    col_db = store._dbs[(tenant, collection)]
+    original_select = col_db.select_filter_candidates
+    limits: list[int | None] = []
+
+    def _spy_select(filters, content_filter, limit=None):
+        limits.append(limit)
+        time.sleep(_SCREEN_DELAY_MS / 1000.0)
+        return original_select(filters, content_filter, limit)
+
+    col_db.select_filter_candidates = _spy_select  # type: ignore[method-assign]
+
+    hits = store.search(
+        tenant,
+        collection,
+        "needle query",
+        k=1,
+        filters={"shape": "target"},
+    )
+
+    assert [hit.id for hit in hits] == ["target::r0"]
+    # One capped pass both screens selectivity and keeps the eligible IDs:
+    # the predicate drives a full chunks scan, so selecting twice would
+    # double it for exactly the selective filters this path accelerates.
+    assert limits == [int(61 * _PREFILTER_MAX_SELECTIVITY) + 1]
+    # The screen applies the metadata filter, so its cost belongs to
+    # filter_ms. Reported milliseconds are rounded, hence the slack.
+    assert hits.timing["filter_ms"] > _SCREEN_DELAY_MS - 1.0
+
+
+def test_many_exact_filter_values_use_vector_first_on_legacy_sqlite(
+    temp_data_dir,
+):
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    tenant, collection = "tenant", "meta_scope_many_filter_values"
+    store.index_records(tenant, collection, "doc", _seed_records(20))
+
+    col_db = store._dbs[(tenant, collection)]
+    if hasattr(col_db._rconn, "setlimit"):
+        col_db._rconn.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 999)
+
+    filters = {"lang": [f"miss{i}" for i in range(499)] + ["en"]}
+    hits = store.search(tenant, collection, "shared", k=5, filters=filters)
+
+    assert len(hits) == 5
+    assert {hit.meta["lang"] for hit in hits} == {"en"}
+
+
+def _legacy_variable_limit(store, tenant, collection):
+    """Pin the collection reader to the pre-3.32 variable floor."""
+    col_db = store._dbs[(tenant, collection)]
+    if not hasattr(col_db._rconn, "setlimit"):
+        pytest.skip("sqlite3.Connection.setlimit requires Python 3.11+")
+    col_db._rconn.setlimit(
+        sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, _LEGACY_SQL_VARS
+    )
+
+
+@pytest.mark.parametrize(
+    "filters",
+    [
+        pytest.param({"lang": ["en"]}, id="meta-key"),
+        pytest.param({"docid": ["doc"]}, id="docid"),
+    ],
+)
+def test_broad_filter_fallback_batches_under_legacy_sqlite(
+    temp_data_dir, filters,
+):
+    """The vector-first path the prefilter guard defers to must also fit.
+
+    The guard sends over-wide predicates here, and this path used to bind
+    the rid batch plus its key and value in one statement.
+    """
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    tenant, collection = "tenant", "meta_scope_legacy_fallback"
+    store.index_records(
+        tenant, collection, "doc", _seed_records(_OVER_FLOOR_RECORDS)
+    )
+    _legacy_variable_limit(store, tenant, collection)
+
+    # A broad filter keeps every overfetched candidate eligible.
+    hits = store.search(
+        tenant, collection, "shared", k=_OVER_FLOOR_K, filters=filters,
+    )
+
+    assert len(hits) == _OVER_FLOOR_K
+    assert {hit.meta["lang"] for hit in hits} == {"en"}
+
+
+def test_boost_token_counts_batch_under_legacy_sqlite(temp_data_dir):
+    """Token counting binds its token alongside the rid batch."""
+    store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    tenant, collection = "tenant", "meta_scope_legacy_boost"
+    store.index_records(
+        tenant, collection, "doc", _seed_records(_OVER_FLOOR_RECORDS)
+    )
+    _legacy_variable_limit(store, tenant, collection)
+
+    hits = store.search(
+        tenant, collection, "shared", k=_OVER_FLOOR_K, mode="boost",
+    )
+
+    assert len(hits) == _OVER_FLOOR_K
 
 
 def test_backend_filtered_search_matches_vector_first_fallback(temp_data_dir):
@@ -310,14 +519,22 @@ def test_backend_filtered_search_matches_vector_first_fallback(temp_data_dir):
         tenant,
         collection,
         "doc",
-        [
-            ("r1", "alpha one", {"lang": "en"}),
-            ("r2", "alpha two", {"lang": "pt"}),
-            ("r3", "alpha three", {"lang": "pt"}),
-            ("r4", "alpha four", {"lang": "pt"}),
+        [("r1", "alpha one", {"lang": "en"})] + [
+            (f"r{i}", f"alpha {i}", {"lang": "pt"})
+            for i in range(2, 21)
         ],
     )
 
+    backend = store._emb[(tenant, collection)]
+    original_search_filtered = backend.search_filtered
+    filtered_calls = 0
+
+    def _spy_search_filtered(vector, limit, allowed_rids):
+        nonlocal filtered_calls
+        filtered_calls += 1
+        return original_search_filtered(vector, limit, allowed_rids)
+
+    backend.search_filtered = _spy_search_filtered  # type: ignore[method-assign]
     accelerated = store.search(
         tenant,
         collection,
@@ -326,8 +543,6 @@ def test_backend_filtered_search_matches_vector_first_fallback(temp_data_dir):
         filters={"lang": "en"},
     )
 
-    backend = store._emb[(tenant, collection)]
-    original_search_filtered = backend.search_filtered
     backend.search_filtered = None  # type: ignore[method-assign]
     fallback = store.search(
         tenant,
@@ -338,6 +553,7 @@ def test_backend_filtered_search_matches_vector_first_fallback(temp_data_dir):
     )
     backend.search_filtered = original_search_filtered  # type: ignore[method-assign]
 
+    assert filtered_calls == 1
     assert [hit.id for hit in accelerated] == [hit.id for hit in fallback]
     assert [hit.score for hit in accelerated] == pytest.approx(
         [hit.score for hit in fallback]

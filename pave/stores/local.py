@@ -47,7 +47,9 @@ sqlite3.register_adapter(datetime, datetime.isoformat)
 from pave.backends import FaissBackend
 from pave.embedders import Embedder, EmbedderConfig, EmbedderUnavailableError
 import pave.embedders.factory as embedder_factory_mod
-from pave.filters import lookup_meta, matches_filters, sanit_field, sanit_meta_dict
+from pave.filters import (
+    lookup_meta, matches_filters, sanit_field, sanit_meta_dict, sanit_sql,
+)
 from pave.metadb import (
     COLLECTION_CONFIG_FILENAME,
     COLLECTION_SCHEMA_VERSION,
@@ -112,6 +114,7 @@ _REINDEX_DIR = ".pavedb-reindex"
 _REINDEX_BATCH_SIZE = 32
 
 _RRF_K = 60
+_PREFILTER_MAX_SELECTIVITY = 0.1
 # What every collection was chunked with before chunking became a
 # collection setting (P1-78): the shipped preprocess.txt_chunk_* defaults.
 _LEGACY_CHUNKING = {"strategy": "fixed", "size": 1000, "overlap": 200}
@@ -4365,22 +4368,28 @@ class LocalStore:
                 normed_filters[safe_key] = [vals]
         requires_expansion = bool(normed_filters or content_filter)
 
-        def _has_metadata_prefilter() -> bool:
-            """Whether SQLite can narrow at least one metadata key."""
+        def _can_sql_prefilter() -> bool:
+            """Whether SQLite can apply every metadata predicate exactly."""
             skip_prefixes = ("!", ">=", "<=", ">", "<")
-            for values in normed_filters.values():
-                has_exact = False
-                mixed_semantics = False
+            # The selection also binds its LIMIT. Older SQLite builds allow
+            # only 999 variables per statement, so use the vector-first path
+            # when the combined predicate would exceed that floor.
+            sql_params = 1 + int(bool(content_filter))
+            for key, values in normed_filters.items():
+                if not values:
+                    return False
                 for value in values:
                     if not isinstance(value, str):
-                        continue
-                    if "*" in value or value.startswith(skip_prefixes):
-                        mixed_semantics = True
-                        break
-                    has_exact = True
-                if has_exact and not mixed_semantics:
-                    return True
-            return False
+                        return False
+                    safe_value = sanit_sql(value)
+                    if "*" in safe_value or safe_value.startswith(skip_prefixes):
+                        return False
+                sql_params += (
+                    len(values) if key == "docid" else 2 * len(values) + 3
+                )
+                if sql_params > 999:
+                    return False
+            return True
 
         def _backend_count(backend: FaissBackend) -> int | None:
             count = getattr(backend, "count", None)
@@ -4417,6 +4426,7 @@ class LocalStore:
             lexical_search_ms = 0.0
             raw: list[tuple[str, float]] = []
             candidate_rids: list[str] = []
+            allowed_rids: set[str] = set()
             meta_batch: dict[str, Metadata] = {}
             kept: list[tuple[str, float]] = []
             # rid -> (similarity before the boost, tokens matched), for the
@@ -4436,8 +4446,32 @@ class LocalStore:
             can_prefilter = (
                 callable(filtered_search)
                 and not query_tokens
-                and (bool(content_filter) or _has_metadata_prefilter())
+                and mode != "hybrid"
+                and total is not None
+                and total > 0
+                and (bool(content_filter) or bool(normed_filters))
+                and _can_sql_prefilter()
             )
+            if can_prefilter:
+                # Selecting at most one over the threshold avoids a full
+                # collection scan for common, broad predicates, and a result
+                # within the threshold is the eligible set itself -- counting
+                # first would scan the collection twice for exactly the
+                # selective predicates this path exists to accelerate.
+                max_eligible = int(total * _PREFILTER_MAX_SELECTIVITY)
+                t0 = _perf()
+                allowed_rids = col_db.select_filter_candidates(
+                    normed_filters,
+                    content_filter,
+                    max_eligible + 1,
+                )
+                filter_push_ms += _ms_since(t0)
+                can_prefilter = len(allowed_rids) <= max_eligible
+                if not can_prefilter:
+                    # The cap scales with the collection, so a rejected
+                    # screen drops its IDs instead of holding a tenth of
+                    # the corpus for a search that never reads them.
+                    allowed_rids = set()
 
             if mode == "hybrid":
                 t0 = _perf()
@@ -4509,73 +4543,44 @@ class LocalStore:
                     boost_ms += _ms_since(t0)
                 kept = kept[:kk]
             elif can_prefilter:
-                # Select a SQL-safe superset first. Metadata is hydrated from
-                # the same read transaction as its SQL filter, then canonical
-                # Python semantics remove any unsupported-filter survivors.
-                t0 = _perf()
-                selected_rids = list(col_db.get_chunk_rids())
-                if content_filter:
-                    content_rids = col_db.filter_by_content(
-                        selected_rids,
-                        content_filter,
-                    )
-                    selected_rids = [
-                        rid for rid in selected_rids if rid in content_rids
-                    ]
-                filter_push_ms += _ms_since(t0)
-
-                if normed_filters:
-                    surviving, meta_batch, meta_timing = (
-                        col_db.filter_meta_batch(
-                            selected_rids,
-                            normed_filters,
-                        )
-                    )
-                    selected_rids = [
-                        rid for rid in selected_rids if rid in surviving
-                    ]
-                    filter_push_ms += meta_timing["filter_ms"]
-                    hydrate_meta_ms += meta_timing["hydrate_ms"]
-                    log.debug(f"SEARCH-FILTER-POST: {normed_filters}")
-                else:
-                    t0 = _perf()
-                    meta_batch = col_db.get_meta_batch(selected_rids)
-                    hydrate_meta_ms += _ms_since(t0)
-
-                t0 = _perf()
-                allowed_rids = {
-                    rid
-                    for rid in selected_rids
-                    if matches_filters(
-                        meta_batch.get(rid, {}),
-                        normed_filters,
-                    )
-                }
-                filter_post_ms += _ms_since(t0)
-
-                # Keep the normal FAISS path when every indexed record is
-                # eligible. Otherwise the optional capability scores only the
-                # selected IDs. Canonical filtering is already complete, so
-                # the backend only needs to return k records.
-                use_filtered = (
-                    total is None or len(allowed_rids) != total
-                )
+                # SQL predicates are exact here and the selectivity screen
+                # already selected every eligible ID. Hydrate only scored
+                # records; the broad-filter path stays on vector-first search.
                 # A priority boost reranks, so it needs the whole fetch
                 # window rather than just the top k.
                 vector_limit = min(
                     len(allowed_rids), fetch_k if priority_key else kk
                 )
-                if vector_limit > 0:
+                while vector_limit > 0:
                     t0 = _perf()
-                    if use_filtered:
-                        raw = filtered_search(
-                            q_vec,
-                            vector_limit,
-                            allowed_rids,
-                        )
-                    else:
-                        raw = backend.search(q_vec, vector_limit)
+                    raw = filtered_search(q_vec, vector_limit, allowed_rids)
                     search_ms += _ms_since(t0)
+
+                    scored_rids = [rid for rid, _score in raw]
+                    if normed_filters:
+                        surviving, meta_batch, meta_timing = (
+                            col_db.filter_meta_batch(
+                                scored_rids, normed_filters,
+                            )
+                        )
+                        filter_push_ms += meta_timing["filter_ms"]
+                        hydrate_meta_ms += meta_timing["hydrate_ms"]
+                    else:
+                        t0 = _perf()
+                        meta_batch = col_db.get_meta_batch(scored_rids)
+                        hydrate_meta_ms += _ms_since(t0)
+                        surviving = set(scored_rids)
+                    t0 = _perf()
+                    raw = [
+                        (rid, score) for rid, score in raw
+                        if rid in surviving and matches_filters(
+                            meta_batch.get(rid, {}), normed_filters,
+                        )
+                    ]
+                    filter_post_ms += _ms_since(t0)
+                    if len(raw) >= kk or vector_limit >= len(allowed_rids):
+                        break
+                    vector_limit = min(len(allowed_rids), vector_limit * 2)
 
                 if priority_key:
                     t0 = _perf()
@@ -4585,11 +4590,9 @@ class LocalStore:
                     boost_ms += _ms_since(t0)
                 kept = raw[:kk]
                 log.debug(
-                    "SEARCH-FILTER-PREFILTER: eligible=%s indexed=%s "
-                    "backend_filtered=%s",
+                    "SEARCH-FILTER-PREFILTER: eligible=%s indexed=%s",
                     len(allowed_rids),
                     total,
-                    use_filtered,
                 )
             else:
                 while True:

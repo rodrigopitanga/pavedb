@@ -59,6 +59,21 @@ def test_collection_db_indexes_content_filters_and_lexical_candidates(tmp_path):
         rids,
         {"op": "phrase", "value": 'captain" OR nemo'},
     ) == set()
+    for content_filter in (
+        {"op": "exact", "value": "Captain Nemo commands the Nautilus"},
+        {"op": "phrase", "value": "captain nemo"},
+        {"op": "prefix", "value": "captain ne"},
+        {"op": "contains", "value": "tain Ne"},
+    ):
+        selected = db.select_filter_candidates({}, content_filter)
+        assert selected == db.filter_by_content(rids, content_filter)
+        assert db.select_filter_candidates(
+            {}, content_filter, len(rids) + 1,
+        ) == selected
+    assert db.select_filter_candidates(
+        {"kind": ["novel"]},
+        {"op": "contains", "value": "Nautilus"},
+    ) == {"a::0"}
 
     candidates = db.lexical_candidates("captain nemo", 10)
     assert [rid for rid, _score in candidates] == ["a::0", "b::0"]

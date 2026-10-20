@@ -39,6 +39,11 @@ from pave.filters import sanit_sql
 
 log = logging.getLogger(__name__)
 
+# Host parameters allowed in one statement by the oldest SQLite builds
+# (SQLITE_MAX_VARIABLE_NUMBER before 3.32). Statements that bind values
+# alongside an rid list must batch below this by their fixed bind count.
+_MAX_SQL_VARS = 999
+
 
 class LegacyMetadataError(RuntimeError):
     pass
@@ -1365,6 +1370,87 @@ class CollectionDB:
                 for row in conn.execute("SELECT rid FROM chunks")
             }
 
+    def _filter_candidate_predicate(
+        self,
+        filters: dict[str, list[Any]],
+        content_filter: dict[str, str] | None,
+    ) -> tuple[str, list[Any]]:
+        """Build the SQL predicate behind candidate selection."""
+        conditions: list[str] = []
+        params: list[Any] = []
+        if content_filter:
+            op = str(content_filter.get("op") or "")
+            value = content_filter.get("value")
+            if op not in {"exact", "phrase", "prefix", "contains"}:
+                raise ValueError(f"unsupported content filter operation: {op!r}")
+            if not isinstance(value, str) or not value:
+                raise ValueError("content filter value must be a non-empty string")
+            if op == "contains" and len(value) < 3:
+                raise ValueError(
+                    "contains content filter requires at least three characters"
+                )
+            if op == "exact":
+                conditions.append("c.text=?")
+                params.append(value)
+            else:
+                table = (
+                    "chunk_text_trigram" if op == "contains"
+                    else "chunk_text_fts"
+                )
+                query = self._fts5_quote(value)
+                if op == "prefix":
+                    query += " *"
+                conditions.append(
+                    f"c.rowid IN (SELECT rowid FROM {table} "
+                    f"WHERE {table} MATCH ?)"
+                )
+                params.append(query)
+
+        for key, values in filters.items():
+            safe_values = [sanit_sql(value) for value in values]
+            placeholders = ",".join("?" for _ in safe_values)
+            if key == "docid":
+                conditions.append(f"c.docid IN ({placeholders})")
+                params.extend(safe_values)
+                continue
+            conditions.append(
+                "(EXISTS (SELECT 1 FROM chunk_meta AS cm "
+                f"WHERE cm.rid=c.rid AND cm.key=? AND cm.value IN ({placeholders})) "
+                "OR (NOT EXISTS (SELECT 1 FROM chunk_meta AS cm "
+                "WHERE cm.rid=c.rid AND cm.key=?) "
+                "AND EXISTS (SELECT 1 FROM document_meta AS dm "
+                "WHERE dm.docid=c.docid AND dm.key=? "
+                f"AND dm.value IN ({placeholders}))))"
+            )
+            params.extend([key, *safe_values, key, key, *safe_values])
+
+        return " AND ".join(conditions) or "1", params
+
+    def select_filter_candidates(
+        self,
+        filters: dict[str, list[Any]],
+        content_filter: dict[str, str] | None,
+        limit: int | None = None,
+    ) -> set[str]:
+        """Return IDs allowed by exact SQL metadata and content predicates.
+
+        ``limit`` stops the scan once that many chunks qualify. ``rid`` is the
+        chunks primary key and the predicate only adds subqueries, so one row
+        per ID: a result below the cap is the complete eligible set, and a
+        result at the cap only proves the predicate reaches it. Callers that
+        screen for selectivity therefore need a single pass, not a count
+        followed by a selection over the same scan.
+        """
+        where, params = self._filter_candidate_predicate(
+            filters, content_filter,
+        )
+        sql = f"SELECT c.rid FROM chunks AS c WHERE {where}"
+        if limit is not None:
+            sql += " LIMIT ?"
+            params = [*params, limit]
+        with self._reader() as conn:
+            return {str(row[0]) for row in conn.execute(sql, params)}
+
     @staticmethod
     def _fts5_quote(value: str) -> str:
         """Return one literal FTS5 phrase without exposing query syntax."""
@@ -1405,8 +1491,9 @@ class CollectionDB:
                 query += " *"
 
         with self._reader() as conn:
-            for i in range(0, len(candidate_rids), 998):
-                batch = candidate_rids[i : i + 998]
+            width = _MAX_SQL_VARS - 1
+            for i in range(0, len(candidate_rids), width):
+                batch = candidate_rids[i : i + width]
                 placeholders = ",".join(["?"] * len(batch))
                 if table is None:
                     rows = conn.execute(
@@ -1436,8 +1523,9 @@ class CollectionDB:
             return counts
         with self._reader() as conn:
             for token in tokens:
-                for i in range(0, len(rids), 999):
-                    batch = rids[i : i + 999]
+                width = _MAX_SQL_VARS - 1
+                for i in range(0, len(rids), width):
+                    batch = rids[i : i + width]
                     placeholders = ",".join(["?"] * len(batch))
                     rows = conn.execute(
                         "SELECT c.rid FROM chunk_text_fts "
@@ -1479,8 +1567,9 @@ class CollectionDB:
         value: str,
     ) -> set[str]:
         matches: set[str] = set()
-        for i in range(0, len(candidate_rids), 999):
-            batch = candidate_rids[i : i + 999]
+        width = _MAX_SQL_VARS - 2
+        for i in range(0, len(candidate_rids), width):
+            batch = candidate_rids[i : i + width]
             placeholders = ",".join(["?"] * len(batch))
             cur = conn.execute(
                 f"SELECT rid FROM chunk_meta "
@@ -1499,8 +1588,9 @@ class CollectionDB:
         value: str,
     ) -> set[str]:
         matches: set[str] = set()
-        for i in range(0, len(candidate_rids), 999):
-            batch = candidate_rids[i : i + 999]
+        width = _MAX_SQL_VARS - 2
+        for i in range(0, len(candidate_rids), width):
+            batch = candidate_rids[i : i + width]
             placeholders = ",".join(["?"] * len(batch))
             cur = conn.execute(
                 f"SELECT c.rid FROM chunks AS c "
@@ -1523,8 +1613,9 @@ class CollectionDB:
         value: str,
     ) -> set[str]:
         matches: set[str] = set()
-        for i in range(0, len(candidate_rids), 999):
-            batch = candidate_rids[i : i + 999]
+        width = _MAX_SQL_VARS - 1
+        for i in range(0, len(candidate_rids), width):
+            batch = candidate_rids[i : i + width]
             placeholders = ",".join(["?"] * len(batch))
             cur = conn.execute(
                 f"SELECT rid FROM chunks "
