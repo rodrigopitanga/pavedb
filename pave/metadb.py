@@ -77,7 +77,8 @@ class TenantChunkLimitError(RuntimeError):
 
     Its own class because the two refusals mean different things to a
     caller: a per-collection limit leaves room in another collection, and a
-    per-tenant one does not.
+    per-tenant one does not. A write that breaks both raises this one, so a
+    refusal never points at room the tenant has not got.
     """
 
 

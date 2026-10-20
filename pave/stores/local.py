@@ -4070,25 +4070,25 @@ class LocalStore:
             # lock serializes all chunk writers, so the count cannot be
             # raced past a billing-hard limit.
             max_chunks = self._tenant_limit(tenant, "max_chunks_per_collection")
-            if max_chunks > 0 and rids_to_add:
+            if rids_to_add and (max_chunks > 0 or tenant_cap > 0):
+                # One read serves both caps, and the tenant ceiling
+                # answers first: `chunk_limit_reached` means another
+                # collection has room, which is false once the tenant's own
+                # ceiling is what stands in the way (P2-21).
                 total, replacing = col_db.chunk_counts(docid)
-                if total - replacing + len(rids_to_add) > max_chunks:
-                    raise ChunkLimitError(
-                        f"collection '{tenant}/{collection}' would exceed "
-                        f"its chunk limit ({max_chunks})"
-                    )
-            if tenant_cap > 0 and rids_to_add:
-                total, replacing = col_db.chunk_counts(docid)
-                projected = (
-                    tenant_chunks_elsewhere
-                    + total
-                    - replacing
-                    + len(rids_to_add)
-                )
-                if projected > tenant_cap:
+                projected = total - replacing + len(rids_to_add)
+                if (
+                    tenant_cap > 0
+                    and tenant_chunks_elsewhere + projected > tenant_cap
+                ):
                     raise TenantChunkLimitError(
                         f"tenant '{tenant}' would exceed its chunk limit "
                         f"({tenant_cap}) across its collections"
+                    )
+                if max_chunks > 0 and projected > max_chunks:
+                    raise ChunkLimitError(
+                        f"collection '{tenant}/{collection}' would exceed "
+                        f"its chunk limit ({max_chunks})"
                     )
             purged = self._purge_doc_locked(tenant, collection, docid)
             if purged:
@@ -4229,30 +4229,28 @@ class LocalStore:
             max_chunks = self._tenant_limit(
                 tenant, "max_chunks_per_collection"
             )
-            if max_chunks > 0 and all_rids:
+            if all_rids and (max_chunks > 0 or tenant_cap > 0):
+                # One read and the same tenant-first order as
+                # index_records. A batch gives back only the chunks of the
+                # docids it carries, which is what `replacing` sums.
                 _docs, total = col_db.get_doc_chunk_counts()
                 replacing = sum(
                     col_db.chunk_counts(docid)[1]
                     for docid in {doc[0] for doc in docs_to_commit}
                 )
-                if total - replacing + len(all_rids) > max_chunks:
-                    raise ChunkLimitError(
-                        f"collection '{tenant}/{collection}' would exceed "
-                        f"its chunk limit ({max_chunks})"
-                    )
-            if tenant_cap > 0 and all_rids:
-                _docs, total = col_db.get_doc_chunk_counts()
-                replacing = sum(
-                    col_db.chunk_counts(docid)[1]
-                    for docid in {doc[0] for doc in docs_to_commit}
-                )
-                projected = (
-                    tenant_chunks_elsewhere + total - replacing + len(all_rids)
-                )
-                if projected > tenant_cap:
+                projected = total - replacing + len(all_rids)
+                if (
+                    tenant_cap > 0
+                    and tenant_chunks_elsewhere + projected > tenant_cap
+                ):
                     raise TenantChunkLimitError(
                         f"tenant '{tenant}' would exceed its chunk limit "
                         f"({tenant_cap}) across its collections"
+                    )
+                if max_chunks > 0 and projected > max_chunks:
+                    raise ChunkLimitError(
+                        f"collection '{tenant}/{collection}' would exceed "
+                        f"its chunk limit ({max_chunks})"
                     )
 
             for docid, rids, texts, chunk_rows, safe_doc_meta in docs_to_commit:

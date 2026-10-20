@@ -245,7 +245,9 @@ tenant may hold across every collection it owns, refused at ingest with
 `429 tenant_chunk_limit_reached`. Set it per tenant as
 `tenants.<name>.max_chunks_per_tenant` in `tenants.yml`, or for every tenant
 as `tenants.default_max_chunks_per_tenant`; 0 disables it. Set both caps, or
-the per-collection cap alone bounds nothing at the tenant level.
+the per-collection cap alone bounds nothing at the tenant level. A write that
+breaks both answers `tenant_chunk_limit_reached`, because the per-collection
+code means there is room in another collection and here there is none.
 
 It counts chunks rather than megabytes on purpose. Deleting a document gives
 a chunk back immediately; it gives no disk back until a vacuum, because

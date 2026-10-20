@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from pave.config import get_cfg
-from pave.metadb import TenantChunkLimitError
+from pave.metadb import ChunkLimitError, TenantChunkLimitError
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
@@ -131,6 +131,31 @@ def test_batch_ingest_cannot_bypass_the_tenant_ceiling(tmp_path):
     hits = store.search("acme", "two", "two", k=5)
     assert not any(hit.id.startswith(("d2::", "d3::")) for hit in hits)
     assert store.tenant_chunk_count("acme") == 1
+
+
+def test_a_write_over_both_caps_reports_the_tenant_ceiling(tmp_path):
+    # Both caps set is the documented setup, and only the tenant ceiling
+    # tells the caller that no other collection has room either.
+    get_cfg().set("tenants.default_max_chunks_per_collection", 1)
+    get_cfg().set("tenants.default_max_chunks_per_tenant", 1)
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.index_records("acme", "one", "d1", [("d1::0", "one", {})])
+
+    with pytest.raises(TenantChunkLimitError):
+        store.index_records("acme", "one", "d2", [("d2::0", "two", {})])
+    with pytest.raises(TenantChunkLimitError):
+        store.index_documents(
+            "acme", "one", [("d2", [("d2::0", "two", {})], None)]
+        )
+
+    # Where the tenant still has room, the per-collection refusal stands.
+    get_cfg().set("tenants.default_max_chunks_per_tenant", 10)
+    with pytest.raises(ChunkLimitError):
+        store.index_records("acme", "one", "d2", [("d2::0", "two", {})])
+    with pytest.raises(ChunkLimitError):
+        store.index_documents(
+            "acme", "one", [("d2", [("d2::0", "two", {})], None)]
+        )
 
 
 def test_another_tenant_keeps_its_own_budget(tmp_path):
