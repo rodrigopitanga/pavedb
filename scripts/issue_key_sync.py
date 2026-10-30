@@ -4,7 +4,11 @@
 
 from __future__ import annotations
 
+import datetime
+import email.message
+import email.utils
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -27,6 +31,37 @@ ROADMAP = Path(__file__).resolve().parents[1] / "ROADMAP.md"
 TYPE_LABELS = {"FEAT", "REV", "BUG"}
 ZERO_SHA = "0" * 40
 CHAOS_FAILURE_MARKER = "<!-- flowlexi-ci-failure: pavedb-chaos-level1 -->"
+RETRY_AFTER_CAP = 120
+
+
+def retry_after_delay(headers: email.message.Message | None, fallback: float) -> float:
+    """Seconds to wait before retrying a throttled GitLab response.
+
+    ``Retry-After`` carries either delta-seconds or an HTTP-date (RFC 9110
+    10.2.3) and the sender picks the form, so reading only the integer form
+    left date-form replies on the 1-2s exponential backoff this retry policy
+    exists to replace. Values that are unparsable, non-finite, zero or already
+    past fall back to that backoff rather than reaching ``time.sleep``, which
+    rejects them -- a negative header would otherwise abort the sync run this
+    loop is meant to save.
+    """
+    raw = (headers.get("Retry-After") or "").strip() if headers else ""
+    if not raw:
+        return fallback
+    try:
+        delay = float(raw)
+    except ValueError:
+        try:
+            when = email.utils.parsedate_to_datetime(raw)
+        except (TypeError, ValueError):
+            return fallback
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        delay = (when - now).total_seconds()
+    if not math.isfinite(delay) or delay <= 0:
+        return fallback
+    return min(delay, RETRY_AFTER_CAP)
 
 
 class GitLab:
@@ -54,8 +89,13 @@ class GitLab:
         # the old code raised on the first error with no retry, dropping the
         # whole push's sync). Backoff only fires on failure, so the happy path
         # keeps its original cost.
+        # A 429 carries Retry-After; waiting less than that only burns the
+        # attempt. A scheduled pipeline on the default branch matches both
+        # issue-key-sync and issue-reconcile, so two runs of this script
+        # spend one GITLAB_ISSUE_TOKEN rate budget at once; the header wins
+        # over the backoff whenever it parses to a usable wait.
         last: Exception | None = None
-        for attempt in range(3):
+        for attempt in range(5):
             req = urllib.request.Request(
                 f"{self.api_url}{path}",
                 data=encoded,
@@ -67,16 +107,16 @@ class GitLab:
                     body = resp.read().decode()
                 return json.loads(body) if body else {}
             except urllib.error.HTTPError as exc:
-                if exc.code in (429, 500, 502, 503, 504) and attempt < 2:
+                if exc.code in (429, 500, 502, 503, 504) and attempt < 4:
                     last = exc
-                    time.sleep(2**attempt)
+                    time.sleep(retry_after_delay(exc.headers, 2**attempt))
                     continue
                 detail = exc.read().decode(errors="replace")
                 raise RuntimeError(
                     f"GitLab API {method} {path} failed: {detail}"
                 ) from exc
             except urllib.error.URLError as exc:
-                if attempt < 2:
+                if attempt < 4:
                     last = exc
                     time.sleep(2**attempt)
                     continue

@@ -1,15 +1,19 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import datetime
+
 import pytest
 
 import scripts.issue_key_sync as issue_key_sync
 from scripts.issue_key_sync import (
     CHAOS_FAILURE_MARKER,
+    RETRY_AFTER_CAP,
     closing_keys,
     issue_body_for_roadmap,
     mr_texts,
     public_keys,
+    retry_after_delay,
     sync_chaos_failure,
     sync_roadmap_issues,
     title_key,
@@ -277,3 +281,101 @@ def test_chaos_failure_creates_next_bug_key(monkeypatch, tmp_path):
 
     assert sync_chaos_failure() == 0
     assert fake.requests[0][2]["title"] == "B13: Nightly PaveDB chaos failure"
+
+
+def _headers(retry_after):
+    import email.message
+
+    headers = email.message.Message()
+    if retry_after is not None:
+        headers["Retry-After"] = retry_after
+    return headers
+
+
+def _throttled_request(monkeypatch, retry_after, failures):
+    """A GitLab bound to a server that answers ``failures`` 429s carrying
+    ``retry_after`` and then succeeds, plus its call and sleep logs."""
+    import io
+    import urllib.error
+
+    gl = issue_key_sync.GitLab.__new__(issue_key_sync.GitLab)
+    gl.api_url, gl.project_id, gl.token = "http://x", "1", "t"
+    headers = _headers(retry_after)
+    calls = []
+
+    def urlopen(req, timeout):
+        calls.append(req)
+        if len(calls) <= failures:
+            raise urllib.error.HTTPError(
+                req.full_url,
+                429,
+                "Too Many Requests",
+                headers,
+                io.BytesIO(b"Rate limit exceeded"),
+            )
+        return io.BytesIO(b'{"ok": true}')
+
+    slept = []
+    monkeypatch.setattr(issue_key_sync.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(issue_key_sync.time, "sleep", slept.append)
+    return gl, calls, slept
+
+
+def _throttled_sleeps(monkeypatch, retry_after, failures=3):
+    """Sleeps GitLab.request chooses when ``failures`` 429s carry
+    ``retry_after``, with the request succeeding on the next attempt."""
+    gl, _calls, slept = _throttled_request(monkeypatch, retry_after, failures)
+    assert gl.request("GET", "/p") == {"ok": True}
+    return slept
+
+
+def test_request_waits_retry_after_on_rate_limit(monkeypatch):
+    assert _throttled_sleeps(monkeypatch, "7") == [7, 7, 7]
+
+
+@pytest.mark.parametrize("header", ["-5", "0", "nan", "inf", "soon", "", None])
+def test_request_never_sleeps_on_an_unusable_retry_after(monkeypatch, header):
+    """A header time.sleep would reject (negative, NaN, infinite) must not
+    reach it: raising there aborts the very sync the retry loop protects."""
+    assert _throttled_sleeps(monkeypatch, header) == [1, 2, 4]
+
+
+def test_request_honors_a_retry_after_date(monkeypatch):
+    import email.utils
+
+    when = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=45)
+    slept = _throttled_sleeps(monkeypatch, email.utils.format_datetime(when), 1)
+    assert len(slept) == 1 and 40 < slept[0] <= 45
+
+
+def test_request_caps_a_long_retry_after(monkeypatch):
+    assert _throttled_sleeps(monkeypatch, "600", 1) == [RETRY_AFTER_CAP]
+
+
+def test_request_gives_up_after_the_fifth_throttled_attempt(monkeypatch):
+    """The budget's upper edge: five attempts, four waits, then one error
+    carrying the server's own refusal. The other throttling tests succeed on
+    the second or fourth attempt, so every budget of four or more leaves them
+    green; only this test fails when ``range(5)`` drops back to ``range(4)``.
+    The assertions hold the ``attempt < 4`` guard in step with that range too:
+    a guard that fires early loses a call and a wait, and a range that ends
+    before the guard fires swaps the refusal for the "after retries" message.
+    """
+    gl, calls, slept = _throttled_request(monkeypatch, "7", failures=99)
+    with pytest.raises(RuntimeError, match="Rate limit exceeded"):
+        gl.request("GET", "/p")
+    assert len(calls) == 5
+    assert slept == [7, 7, 7, 7]
+
+
+def test_retry_after_delay_ignores_a_past_date():
+    import email.utils
+
+    when = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=1)
+    assert retry_after_delay(_headers(email.utils.format_datetime(when)), 8) == 8
+
+
+def test_retry_after_delay_reads_a_naive_date_as_utc():
+    when = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=30)
+    stamp = when.strftime("%a, %d %b %Y %H:%M:%S")
+    assert 25 < retry_after_delay(_headers(stamp), 8) <= 30
