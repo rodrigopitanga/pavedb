@@ -191,6 +191,11 @@ pytest-arm64:
 
 bench:
   stage: benchmark
+  # The p99 SLO was calibrated on GitLab SaaS runners (search p99 ~280ms).
+  # The shared xeon group runner measures ~2.3s for the same run and fails
+  # it, so the latency gate runs on our own idle runner, like the release jobs.
+  tags:
+    - m4-colima
   variables:
     # Cold local runners download the model on first run; give startup headroom.
     BENCH_STARTUP_TIMEOUT_S: "120"
