@@ -69,7 +69,7 @@ def _fixed_usage_width():
 def _usage(parser):
     if parser.prog == "pavecli":
         return (
-            "pavecli [-h] [--compact] [--version] [--home HOME]\n"
+            "pavecli [-h] [--compact] [-V] [--home HOME]\n"
             "        [--config CONFIG]\n"
             "        [--tenants TENANTS] [--data-dir DATA_DIR] <command> ..."
         )

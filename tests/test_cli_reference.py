@@ -4,11 +4,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 import pytest
 
 from pave.cli import build_parser
-from scripts.cli_to_markdown import render_markdown
+from scripts.cli_to_markdown import _fixed_usage_width, _usage, render_markdown
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +33,24 @@ def test_cli_subcommands_have_reference_metadata(capsys):
             parser.parse_args(["--help"])
         assert exc.value.code == 0
         assert name in capsys.readouterr().out
+
+
+def _usage_option_groups(usage):
+    return [
+        re.sub(r"\s+", " ", group).strip()
+        for group in re.findall(r"\[([^][]+)\]", usage)
+    ]
+
+
+def test_cli_reference_usage_lists_the_options_the_parser_accepts():
+    """The pavecli synopsis is hand-wrapped in the generator because argparse
+    inlines the whole command list, so only this check keeps it from drifting
+    away from the flags `pavecli --help` really prints."""
+    parser = build_parser()
+    with _fixed_usage_width():
+        real_usage = parser.format_usage()
+
+    assert _usage_option_groups(_usage(parser)) == _usage_option_groups(real_usage)
 
 
 def test_cli_reference_markdown_is_current():

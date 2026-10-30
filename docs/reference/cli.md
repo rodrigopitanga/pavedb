@@ -20,7 +20,7 @@ pavecli search demo/books "captain nemo" -k 3
 ## Usage
 
 ```bash
-pavecli [-h] [--compact] [--version] [--home HOME]
+pavecli [-h] [--compact] [-V] [--home HOME]
         [--config CONFIG]
         [--tenants TENANTS] [--data-dir DATA_DIR] <command> ...
 ```
