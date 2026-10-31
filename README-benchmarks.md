@@ -185,6 +185,11 @@ including probe time, and fails early if the server exits. Teardown gives only
 the server started by the harness five seconds after TERM, then sends KILL
 and checks for exit for one more second. Startup and teardown failures save
 the server log as above; cleanup retains an earlier failure status.
+Deadlines use a monotonic clock: wall-clock corrections cannot shorten startup
+or extend teardown. Phase diagnostics print monotonic elapsed milliseconds,
+wall elapsed/Unix milliseconds and Bash `SECONDS`, so guest clock changes can
+be distinguished from runner trace timestamps. A completed model-loading
+progress bar does not establish that warmup finished or HTTP became available.
 
 Stress keeps its 60-second HTTP I/O timeout and gives the complete setup
 (header, coverage discovery, and seeding) 120 seconds. `STR_LENGTH` still

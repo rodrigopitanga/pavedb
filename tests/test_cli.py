@@ -57,16 +57,6 @@ def test_cli_ingest_on_fresh_collection_with_empty_index_dir(cli_env, tmp_path):
                and c[3] == "DOC1" for c in store.calls)
 
 
-def test_cli_short_version_option(capsys):
-    from pave import cli as pvcli
-
-    with pytest.raises(SystemExit) as exc:
-        pvcli.main_cli(["-V"])
-
-    assert exc.value.code == 0
-    assert "PaveDB" in capsys.readouterr().out
-
-
 def test_cli_ingest_batch_indexes_raw_text_documents(cli_env, capsys):
     pvcli, store, tmp_path = cli_env
     tenant, coll = "acme", "batchcli"
@@ -1100,11 +1090,11 @@ def test_cli_move_collection_takes_two_refs(cli_env, capsys):
 
 @pytest.mark.parametrize("flag", ["-V", "--version"])
 def test_cli_version_flag_prints_the_banner(flag, capsys):
-    from pave.cli import build_parser
+    from pave.cli import main_cli
     from pave.version import version_banner
 
     with pytest.raises(SystemExit) as excinfo:
-        build_parser().parse_args([flag])
+        main_cli([flag])
 
     captured = capsys.readouterr()
     assert excinfo.value.code == 0

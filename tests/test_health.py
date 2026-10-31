@@ -4,6 +4,8 @@
 import os
 from concurrent.futures import ThreadPoolExecutor
 
+from pave.main import VERSION
+
 
 def test_health_endpoints(client):
     r = client.get("/health/live")

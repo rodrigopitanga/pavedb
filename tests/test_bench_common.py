@@ -232,8 +232,17 @@ def bench_harness(tmp_path):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
         from pathlib import Path
 
+        def step_clock(phase):
+            if os.environ.get("FIXTURE_STEP_PHASE") == phase:
+                Path(os.environ["FIXTURE_CLOCK_FILE"]).write_text(
+                    os.environ["FIXTURE_CLOCK_STEP"]
+                )
+
+        def ignore_term(*_):
+            step_clock("cleanup")
+
         if os.environ.get("FIXTURE_IGNORE_TERM") == "1":
-            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            signal.signal(signal.SIGTERM, ignore_term)
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
@@ -248,6 +257,8 @@ def bench_harness(tmp_path):
         )
         print("fixture server started", flush=True)
         Path("server.pid").write_text(str(os.getpid()))
+        step_clock("startup")
+        time.sleep(float(os.environ.get("FIXTURE_READY_DELAY", "0")))
         server.serve_forever()
     '''))
     with socket.socket() as sock:
@@ -296,9 +307,76 @@ def bench_harness(tmp_path):
         kill_group(pid)
 
 
+@pytest.fixture(params=[0, 300, -300], ids=["steady", "forward", "backward"])
+def bench_clock_step(request, bench_harness, tmp_path):
+    """Step process realtime only; the kernel and monotonic clock stay intact.
+
+    Bash derives SECONDS from gettimeofday, not CLOCK_MONOTONIC. Interpose the
+    realtime libc calls so the actual recipe sees the same discontinuity a
+    guest clock correction would cause, without privileges or a host change.
+    """
+    step = request.param
+    _, env, _, _ = bench_harness
+    env.update(
+        FIXTURE_CLOCK_FILE=str(tmp_path / "clock-step"),
+        FIXTURE_CLOCK_STEP=str(step), FIXTURE_STEP_PHASE="startup",
+    )
+    if not step:
+        return step
+    compiler = shutil.which("cc")
+    if sys.platform != "linux" or compiler is None:
+        pytest.skip("clock interposition requires Linux and a C compiler")
+    source = tmp_path / "clock.c"
+    library = tmp_path / "clock.so"
+    source.write_text(textwrap.dedent('''\
+        #define _GNU_SOURCE
+        #include <dlfcn.h>
+        #include <stdio.h>
+        #include <stdlib.h>
+        #include <sys/time.h>
+        #include <time.h>
+
+        static long offset(void) {
+            long seconds = 0;
+            FILE *file = fopen(getenv("FIXTURE_CLOCK_FILE"), "r");
+            if (file) {
+                if (fscanf(file, "%ld", &seconds) != 1) seconds = 0;
+                fclose(file);
+            }
+            return seconds;
+        }
+        int gettimeofday(struct timeval *tv, void *tz) {
+            int (*real_get)(struct timeval *, void *) =
+                dlsym(RTLD_NEXT, "gettimeofday");
+            int result = real_get(tv, tz);
+            if (result == 0) tv->tv_sec += offset();
+            return result;
+        }
+        time_t time(time_t *out) {
+            time_t (*real_time)(time_t *) = dlsym(RTLD_NEXT, "time");
+            time_t result = real_time(NULL) + offset();
+            if (out) *out = result;
+            return result;
+        }
+        int clock_gettime(clockid_t id, struct timespec *ts) {
+            int (*real_clock)(clockid_t, struct timespec *) =
+                dlsym(RTLD_NEXT, "clock_gettime");
+            int result = real_clock(id, ts);
+            if (result == 0 && id == CLOCK_REALTIME) ts->tv_sec += offset();
+            return result;
+        }
+    '''))
+    subprocess.run(
+        [compiler, "-shared", "-fPIC", str(source), "-o", str(library), "-ldl"],
+        check=True, capture_output=True, text=True,
+    )
+    env["LD_PRELOAD"] = str(library)
+    return step
+
+
 @pytest.mark.parametrize("ignore_term", [False, True])
 def test_nonresponding_managed_health_is_bounded_and_preserves_logs(
-    bench_harness, tmp_path, ignore_term,
+    bench_harness, tmp_path, ignore_term, bench_clock_step,
 ):
     run, env, _, _ = bench_harness
     env["FIXTURE_HANG"] = "1"
@@ -309,6 +387,7 @@ def test_nonresponding_managed_health_is_bounded_and_preserves_logs(
     allowance = 6 if ignore_term else 0
     assert elapsed < 4.5 + allowance, output  # 3s startup and scheduling slack.
     assert "did not become ready in 3s" in output
+    assert elapsed >= 3, output
     assert re.search(r"_bench-with-server\] Error 1\b", output)
     assert "fixture-run" not in output
     (log,) = (tmp_path / "benchmarks/results").glob("server-*.log")
@@ -320,15 +399,17 @@ def test_nonresponding_managed_health_is_bounded_and_preserves_logs(
 
 @pytest.mark.parametrize("failure", ["0", "23"])
 def test_term_resistant_server_has_bounded_cleanup(
-    bench_harness, tmp_path, failure,
+    bench_harness, tmp_path, failure, bench_clock_step,
 ):
     run, env, _, _ = bench_harness
     env["FIXTURE_IGNORE_TERM"] = "1"
+    env["FIXTURE_STEP_PHASE"] = "cleanup"
     status, output, elapsed = run(FIXTURE_STATUS=failure)
 
     assert status != 0
     assert elapsed < 9, output  # Startup, 5s TERM grace, 1s KILL grace, slack.
     assert "sending KILL" in output
+    assert elapsed >= 5, output  # A forward clock step cannot cut the TERM grace.
     # GNU make maps the inner target's failure to 2; cleanup must retain it.
     expected = "1" if failure == "0" else "2"
     assert re.search(r"_bench-with-server\] Error " + expected + r"\b", output)
@@ -336,6 +417,26 @@ def test_term_resistant_server_has_bounded_cleanup(
     assert "fixture server started" in log.read_text()
     with pytest.raises(ProcessLookupError):
         os.kill(int((tmp_path / "server.pid").read_text()), 0)
+
+
+def test_delayed_healthy_server_survives_clock_steps(
+    bench_harness, tmp_path, bench_clock_step,
+):
+    run, env, _, _ = bench_harness
+    env["FIXTURE_READY_DELAY"] = "1.5"
+    status, output, elapsed = run()
+
+    assert status == 0, output
+    assert 1.5 <= elapsed < 4.5, output
+    assert "fixture-run _fixture-run" in output
+    assert "benchmark ready:" in output
+    assert not list(tmp_path.glob("pavedb-bench.*"))
+    # Compare clocks from inside the job, independently of trace timestamps.
+    ready = re.search(
+        r"benchmark ready: elapsed_ms=(\d+) wall_elapsed_ms=(-?\d+)", output
+    )
+    monotonic_ms, wall_ms = map(int, ready.groups())
+    assert abs(wall_ms - monotonic_ms - bench_clock_step * 1000) < 100
 
 
 def test_healthy_benchmark_keeps_all_variants_and_cleans_up(bench_harness, tmp_path):

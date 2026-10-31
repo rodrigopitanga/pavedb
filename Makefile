@@ -1008,7 +1008,20 @@ _bench-with-server:
 	srv_pid=""; \
 	keep_data_dir=0; \
 	bench_status=0; \
-	startup_deadline=$$((SECONDS + $(BENCH_STARTUP_TIMEOUT_S))); \
+	bench_clock() { \
+	  clock_values=$$($(PYTHON) -c 'import time; print( \
+	    time.monotonic_ns() // 1000000, time.time_ns() // 1000000)') || return; \
+	  read -r now_ms wall_ms <<< "$$clock_values"; \
+	}; \
+	bench_clock; \
+	startup_ms=$$now_ms; startup_wall_ms=$$wall_ms; \
+	startup_deadline=$$((startup_ms + $(BENCH_STARTUP_TIMEOUT_S) * 1000)); \
+	bench_timing() { \
+	  bench_clock; \
+	  echo "==> benchmark $$1: elapsed_ms=$$((now_ms - startup_ms))" \
+	    "wall_elapsed_ms=$$((wall_ms - startup_wall_ms))" \
+	    "wall_unix_ms=$$wall_ms bash_seconds=$$SECONDS"; \
+	}; \
 	if [ -n "$(BENCH_SERVER_URL)" ]; then \
 	  bench_url="$(BENCH_SERVER_URL)"; \
 	  if ! curl -q -fsS --connect-timeout 2 --max-time 2 \
@@ -1073,18 +1086,20 @@ _bench-with-server:
 	  trap '' INT TERM; \
 	  if [ "$$managed" = "1" ]; then \
 	    if [ -n "$$srv_pid" ] && kill -0 "$$srv_pid" >/dev/null 2>&1; then \
+	      bench_timing stopping; \
 	      kill "$$srv_pid" >/dev/null 2>&1 || true; \
-	      stop_deadline=$$((SECONDS + 5)); \
-	      while kill -0 "$$srv_pid" >/dev/null 2>&1 && \
-	          [ "$$SECONDS" -lt "$$stop_deadline" ]; do sleep 0.1; done; \
+	      stop_deadline=$$((now_ms + 5000)); \
+	      while kill -0 "$$srv_pid" >/dev/null 2>&1 && bench_clock && \
+	          [ "$$now_ms" -lt "$$stop_deadline" ]; do sleep 0.1; done; \
 	      if kill -0 "$$srv_pid" >/dev/null 2>&1; then \
+	        bench_timing killing; \
 	        echo "ERROR: benchmark server did not stop in 5s; sending KILL."; \
 	        keep_data_dir=1; \
 	        if [ "$$exit_status" = "0" ]; then exit_status=1; fi; \
 	        kill -KILL "$$srv_pid" >/dev/null 2>&1 || true; \
-	        stop_deadline=$$((SECONDS + 1)); \
-	        while kill -0 "$$srv_pid" >/dev/null 2>&1 && \
-	            [ "$$SECONDS" -lt "$$stop_deadline" ]; do sleep 0.1; done; \
+	        stop_deadline=$$((now_ms + 1000)); \
+	        while kill -0 "$$srv_pid" >/dev/null 2>&1 && bench_clock && \
+	            [ "$$now_ms" -lt "$$stop_deadline" ]; do sleep 0.1; done; \
 	      fi; \
 	      if kill -0 "$$srv_pid" >/dev/null 2>&1; then \
 	        echo "ERROR: benchmark server PID $$srv_pid still alive after KILL."; \
@@ -1124,6 +1139,7 @@ _bench-with-server:
 	trap 'exit 130' INT; \
 	trap 'exit 143' TERM; \
 	if [ "$$managed" = "1" ]; then \
+	  bench_timing starting; \
 	  while :; do \
 	    if ! kill -0 "$$srv_pid" >/dev/null 2>&1; then \
 	      srv_status=0; \
@@ -1136,24 +1152,36 @@ _bench-with-server:
 	      if [ "$$srv_status" = "0" ]; then srv_status=1; fi; \
 	      exit "$$srv_status"; \
 	    fi; \
-	    probe_timeout=$$((startup_deadline - SECONDS)); \
-	    if [ "$$probe_timeout" -le 0 ]; then break; fi; \
-	    if [ "$$probe_timeout" -gt 2 ]; then probe_timeout=2; fi; \
+	    bench_clock; \
+	    remaining_ms=$$((startup_deadline - now_ms)); \
+	    if [ "$$remaining_ms" -le 0 ]; then break; fi; \
+	    if [ "$$remaining_ms" -gt 2000 ]; then remaining_ms=2000; fi; \
+	    printf -v probe_timeout '%d.%03d' \
+	      $$((remaining_ms / 1000)) $$((remaining_ms % 1000)); \
 	    if curl -q -fsS --connect-timeout 2 --max-time "$$probe_timeout" \
 	        "$$bench_url/health/live" >/dev/null 2>&1 && \
-	        [ "$$SECONDS" -lt "$$startup_deadline" ] && \
+	        bench_clock && [ "$$now_ms" -lt "$$startup_deadline" ] && \
 	        kill -0 "$$srv_pid" >/dev/null 2>&1; then \
 	      ready=1; \
 	      break; \
 	    fi; \
-	    if [ "$$SECONDS" -lt "$$startup_deadline" ]; then sleep 1; fi; \
+	    bench_clock; \
+	    remaining_ms=$$((startup_deadline - now_ms)); \
+	    if [ "$$remaining_ms" -gt 0 ]; then \
+	      if [ "$$remaining_ms" -gt 1000 ]; then remaining_ms=1000; fi; \
+	      printf -v pause '%d.%03d' \
+	        $$((remaining_ms / 1000)) $$((remaining_ms % 1000)); \
+	      sleep "$$pause"; \
+	    fi; \
 	  done; \
 	  if [ "$${ready:-0}" != "1" ]; then \
 	    keep_data_dir=1; \
+	    bench_timing startup-timeout; \
 	    echo "ERROR: benchmark server did not become ready in $(BENCH_STARTUP_TIMEOUT_S)s."; \
 	    tail -n 80 "$$log_file" || true; \
 	    exit 1; \
 	  fi; \
+	  bench_timing ready; \
 	fi; \
 	$(MAKE) -o install-dev _url="$$bench_url" _data_dir="$$data_dir" \
 	  _ts="$(_ts)" $(_run_target) || \
