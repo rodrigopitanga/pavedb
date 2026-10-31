@@ -23,6 +23,7 @@ SDIST_REQUIRED = {
     "docs/guides/running-it.md",
     "docs/reference/cli.md",
     "docs/reference/config.md",
+    "docs/reference/pavecli.1",
     "docs/reference/protocols.md",
     "openapi.json",
 }

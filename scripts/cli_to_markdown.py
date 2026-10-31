@@ -18,9 +18,10 @@ _USAGE_COLUMNS = "80"
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from pave.version import PRODUCT, PRODUCT_EMOJI
+from pave.version import PRODUCT, PRODUCT_EMOJI, VERSION
 
 DEFAULT_OUTPUT = ROOT / "docs" / "reference" / "cli.md"
+DEFAULT_MAN_OUTPUT = ROOT / "docs" / "reference" / "pavecli.1"
 
 
 def _load_cli_parser():
@@ -37,10 +38,7 @@ def _subparser_action(parser):
 
 
 def _is_subparser_action(action):
-    return (
-        getattr(action, "dest", None) == "cmd"
-        and isinstance(getattr(action, "choices", None), dict)
-    )
+    return isinstance(action, argparse._SubParsersAction)
 
 
 def _visible_actions(parser):
@@ -67,12 +65,6 @@ def _fixed_usage_width():
 
 
 def _usage(parser):
-    if parser.prog == "pavecli":
-        return (
-            "pavecli [-h] [--compact] [-V] [--home HOME]\n"
-            "        [--config CONFIG]\n"
-            "        [--tenants TENANTS] [--data-dir DATA_DIR] <command> ..."
-        )
     with _fixed_usage_width():
         usage = parser.format_usage().strip()
     return usage.removeprefix("usage: ").strip()
@@ -80,7 +72,7 @@ def _usage(parser):
 
 def _top_level_sections(parser):
     if not parser.epilog:
-        return [], []
+        return [], [], []
     sections = []
     current = []
     for raw in parser.epilog.splitlines():
@@ -95,12 +87,15 @@ def _top_level_sections(parser):
 
     pre_release = []
     legal = []
+    contact = []
     for section in sections:
         if section[0].lower() == "pre-1.0 note:":
             pre_release = section[1:]
+        elif section[0].startswith("Report bugs to:"):
+            contact = section
         else:
             legal.extend(section)
-    return pre_release, legal
+    return pre_release, legal, contact
 
 
 def _escape(value):
@@ -222,11 +217,13 @@ def render_markdown(
         "",
     ]
 
-    note, legal = _top_level_sections(parser)
+    note, legal, contact = _top_level_sections(parser)
     if note:
         lines.extend(["## Pre-1.0 Note", "", *note, ""])
     if legal:
         lines.extend(["## Legal Notice", "", *legal, ""])
+    if contact:
+        lines.extend(["## Support", "", *contact, ""])
 
     global_options = _options_block(parser)
     if global_options:
@@ -274,12 +271,125 @@ def render_markdown(
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _roff(value):
+    text = str(value).replace("\\", r"\e").replace("-", r"\-")
+    return r"\&" + text if text.startswith((".", "'")) else text
+
+
+def _roff_paragraph(value):
+    return [
+        _roff(line) for line in textwrap.wrap(
+            str(value), width=72, break_long_words=False,
+        )
+    ]
+
+
+def _roff_lines(values):
+    # roff fills adjacent input lines into one paragraph, so authored line
+    # breaks only survive when an explicit .br separates them.
+    lines = []
+    for value in values:
+        if lines:
+            lines.append(".br")
+        lines.append(_roff(value))
+    return lines
+
+
+def _command_entries(parser, prefix=""):
+    action = _subparser_action(parser)
+    if action is None:
+        return
+    summaries = _command_help(action)
+    for name, command_parser in action.choices.items():
+        path = f"{prefix} {name}".strip()
+        yield path, command_parser, summaries.get(name, "")
+        yield from _command_entries(command_parser, path)
+
+
+def _man_metavar(action):
+    if action.metavar is not None:
+        return action.metavar
+    if action.choices is not None:
+        return "{" + ",".join(str(choice) for choice in action.choices) + "}"
+    return action.dest.upper() if action.option_strings else action.dest
+
+
+def _man_options(parser):
+    lines = []
+    for action in parser._actions:
+        if _is_subparser_action(action) or action.help is argparse.SUPPRESS:
+            continue
+        name = ", ".join(action.option_strings) or _man_metavar(action)
+        if action.option_strings and action.nargs != 0:
+            name += f" {_man_metavar(action)}"
+        lines.extend([
+            ".TP", f".B {_roff(name)}",
+            *_roff_paragraph(action.help or ""),
+        ])
+    return lines
+
+
+def render_manpage(parser: argparse.ArgumentParser | None = None) -> str:
+    parser = parser or _load_cli_parser()
+    note, legal, contact = _top_level_sections(parser)
+    lines = [
+        f'.TH PAVECLI 1 "" "PaveDB {VERSION}" "User Commands"',
+        ".SH NAME",
+        r"pavecli \- local PaveDB administration and data loading",
+        ".SH SYNOPSIS",
+        ".nf",
+        *(_roff(line) for line in _usage(parser).splitlines()),
+        ".fi",
+        ".SH DESCRIPTION",
+        *_roff_paragraph(parser.description),
+        ".SH OPTIONS",
+        *_man_options(parser),
+        ".SH COMMANDS",
+    ]
+    for path, command_parser, summary in _command_entries(parser):
+        lines.extend([
+            f".SS {_roff(path)}",
+            *_roff_paragraph(command_parser.description or summary),
+            ".PP",
+            ".nf",
+            *(_roff(line) for line in _usage(command_parser).splitlines()),
+            ".fi",
+        ])
+        options = _man_options(command_parser)
+        if options:
+            lines.extend([".PP", *options])
+        examples = _examples(command_parser)
+        if examples:
+            lines.extend([
+                ".PP",
+                "Example:" if len(examples) == 1 else "Examples:",
+                ".nf",
+                *(_roff(line) for line in examples),
+                ".fi",
+            ])
+    if note:
+        lines.extend([".SH PRE-1.0 NOTE", *_roff_lines(note)])
+    report, home = contact[:1], contact[1:]
+    if report:
+        lines.extend([".SH REPORTING BUGS", *_roff_lines(report)])
+    if home:
+        lines.extend([".SH HOME PAGE", *_roff_lines(home)])
+    if legal:
+        lines.extend([".SH LEGAL NOTICE", *_roff_lines(legal)])
+    return "\n".join(lines) + "\n"
+
+
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="Render pavecli reference markdown.")
+    parser = argparse.ArgumentParser(description="Render pavecli references.")
     parser.add_argument(
         "--output",
         default=str(DEFAULT_OUTPUT),
         help="Markdown output path",
+    )
+    parser.add_argument(
+        "--man-output",
+        default=str(DEFAULT_MAN_OUTPUT),
+        help="Man page output path",
     )
     parser.add_argument(
         "--check",
@@ -288,17 +398,22 @@ def main(argv=None) -> int:
     )
     args = parser.parse_args(argv)
 
-    output = Path(args.output)
-    rendered = render_markdown()
+    outputs = (
+        (Path(args.output), render_markdown()),
+        (Path(args.man_output), render_manpage()),
+    )
     if args.check:
-        current = output.read_text(encoding="utf-8") if output.exists() else ""
-        if current != rendered:
+        stale = [
+            output for output, rendered in outputs
+            if not output.exists() or output.read_text(encoding="utf-8") != rendered
+        ]
+        for output in stale:
             print(f"{output} is stale; run `make docs-refresh`.", file=sys.stderr)
-            return 1
-        return 0
+        return 1 if stale else 0
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(rendered, encoding="utf-8")
+    for output, rendered in outputs:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered, encoding="utf-8")
     return 0
 
 

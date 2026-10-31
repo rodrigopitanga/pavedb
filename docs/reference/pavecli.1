@@ -1,0 +1,721 @@
+.TH PAVECLI 1 "" "PaveDB 0.9.7" "User Commands"
+.SH NAME
+pavecli \- local PaveDB administration and data loading
+.SH SYNOPSIS
+.nf
+pavecli [OPTION]... COMMAND [ARG]...
+.fi
+.SH DESCRIPTION
+PaveDB CLI
+.SH OPTIONS
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B \-\-compact
+Emit compact JSON for scripting
+.TP
+.B \-V, \-\-version
+Print version, copyright, and license information
+.TP
+.B \-\-home HOME
+Instance home directory; omitted siblings default under it; defaults to
+~/pavedb
+.TP
+.B \-\-config CONFIG
+Explicit config.yml path; default comes from PAVEDB_CONFIG/config search
+.TP
+.B \-\-tenants TENANTS
+Explicit tenants.yml path; default comes from
+PAVEDB_AUTH__TENANTS_FILE/config
+.TP
+.B \-\-data\-dir DATA_DIR
+Explicit data directory; default comes from PAVEDB_DATA_DIR/config
+.SH COMMANDS
+.SS help
+Show help for the CLI or a named command.
+.PP
+.nf
+pavecli help [\-h] [command ...]
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B command
+Command path to describe
+.PP
+Examples:
+.nf
+pavecli help
+pavecli help search
+pavecli help admin show\-key
+.fi
+.SS init
+Create config.yml, tenants.yml, and the data directory for an instance.
+.PP
+.nf
+pavecli init [\-h] [\-\-force] [root]
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B root
+Instance home directory
+.TP
+.B \-\-force
+Overwrite config and tenants files if they already exist
+.PP
+Examples:
+.nf
+pavecli init
+pavecli init ~/pavedb\-staging
+pavecli \-\-config /etc/pavedb/config.yml \e
+  \-\-tenants /var/pavedb/tenants.yml \e
+  \-\-data\-dir /var/pavedb/data init
+.fi
+.SS admin
+Show or rotate the local instance admin key.
+.PP
+.nf
+pavecli admin [\-h] {show\-key,rotate\-key} ...
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.PP
+Examples:
+.nf
+pavecli admin show\-key
+pavecli admin rotate\-key
+.fi
+.SS admin show\-key
+Print the existing admin key without generating one.
+.PP
+.nf
+pavecli admin show\-key [\-h]
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.PP
+Example:
+.nf
+pavecli admin show\-key
+.fi
+.SS admin rotate\-key
+Atomically replace the local admin key and print it once.
+.PP
+.nf
+pavecli admin rotate\-key [\-h]
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.PP
+Example:
+.nf
+pavecli admin rotate\-key
+.fi
+.SS create\-collection
+Create a collection, optionally with display and embedder configuration.
+.PP
+.nf
+pavecli create\-collection [\-h] [\-\-display\-name DISPLAY_NAME]
+                                 [\-\-embedder EMBEDDER]
+                                 [\-\-embedder\-type EMBEDDER_TYPE]
+                                 [\-\-embed\-model EMBED_MODEL]
+                                 [\-\-embedder\-config EMBEDDER_CONFIG]
+                                 [\-\-search\-mode {vector,boost,hybrid}]
+                                 [\-\-priority\-key PRIORITY_KEY]
+                                 [\-\-chunking CHUNKING]
+                                 tenant/collection
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and new collection, e.g. demo/books. The collection slug takes
+lowercase letters, digits, and hyphens; must start with a letter or
+digit; max 63 chars
+.TP
+.B \-\-display\-name DISPLAY_NAME
+Human\-readable collection label
+.TP
+.B \-\-embedder EMBEDDER
+Configured embedder selector: instance key, type, type:model, or full
+vector\-space key
+.TP
+.B \-\-embedder\-type EMBEDDER_TYPE
+Embedder type, such as sbert, openai, or ollama
+.TP
+.B \-\-embed\-model EMBED_MODEL
+Embedding model name
+.TP
+.B \-\-embedder\-config EMBEDDER_CONFIG
+JSON object with embedder\-specific config
+.TP
+.B \-\-search\-mode {vector,boost,hybrid}
+Default ranking mode for searches that name none (vector)
+.TP
+.B \-\-priority\-key PRIORITY_KEY
+Metadata field whose value in [\-1, 1] scales scores by (1 + value);
+omitted: prio_boost
+.TP
+.B \-\-chunking CHUNKING
+JSON object, e.g. {"strategy":"fixed","size":800,"overlap":100} or
+{"strategy":"none"}; omitted fields take the instance default
+.PP
+Example:
+.nf
+pavecli create\-collection demo/books \-\-display\-name "Books"
+.fi
+.SS ingest
+Preprocess and index a TXT, CSV, or PDF file into a collection.
+.PP
+.nf
+pavecli ingest [\-h] [\-\-docid DOCID] [\-\-metadata METADATA]
+                      [\-\-csv\-has\-header {auto,yes,no}]
+                      [\-\-csv\-meta\-cols CSV_META_COLS]
+                      [\-\-csv\-include\-cols CSV_INCLUDE_COLS]
+                      tenant/collection file
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and collection, e.g. demo/books
+.TP
+.B file
+Path to TXT, CSV, or PDF input
+.TP
+.B \-\-docid DOCID
+Stable document ID; defaults from filename when omitted
+.TP
+.B \-\-metadata METADATA
+JSON object attached to the document
+.TP
+.B \-\-csv\-has\-header {auto,yes,no}
+CSV header handling: auto, yes, or no
+.TP
+.B \-\-csv\-meta\-cols CSV_META_COLS
+CSV columns for metadata only (not indexed). Names or 1\-based indices,
+comma\-separated
+.TP
+.B \-\-csv\-include\-cols CSV_INCLUDE_COLS
+CSV columns to index. Names or 1\-based indices, comma\-separated.
+Defaults to all non\-meta columns
+.PP
+Example:
+.nf
+pavecli ingest demo/books ./book.txt \-\-docid book\-1 \-\-metadata '{"lang":"en"}'
+.fi
+.SS ingest\-batch
+Index a JSON batch of raw\-text documents.
+.PP
+.nf
+pavecli ingest\-batch [\-h] tenant/collection file
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and collection, e.g. demo/books
+.TP
+.B file
+JSON batch input file
+.PP
+Example:
+.nf
+pavecli ingest\-batch demo/books ./documents.json
+.fi
+.SS ingest\-text
+Index one raw\-text document.
+.PP
+.nf
+pavecli ingest\-text [\-h] [\-\-docid DOCID] [\-\-metadata METADATA]
+                           tenant/collection text
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and collection, e.g. demo/books
+.TP
+.B text
+Raw text to index
+.TP
+.B \-\-docid DOCID
+Stable document ID; generated when omitted
+.TP
+.B \-\-metadata METADATA
+JSON object attached to the document
+.PP
+Example:
+.nf
+pavecli ingest\-text demo/books "Captain Nemo" \-\-docid note\-1
+.fi
+.SS search
+Run ranked search over a collection and print the response envelope.
+.PP
+.nf
+pavecli search [\-h] [\-k K] [\-\-mode {vector,boost,hybrid}]
+                      [\-\-include\-common] [\-\-filters FILTERS]
+                      [\-\-content\-filter CONTENT_FILTER]
+                      tenant/collection query
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and collection, e.g. demo/books
+.TP
+.B query
+Natural\-language search query
+.TP
+.B \-k K
+Number of matches to return
+.TP
+.B \-\-mode {vector,boost,hybrid}
+Ranking mode; defaults to the collection's search mode
+.TP
+.B \-\-include\-common
+Include configured common collection results
+.TP
+.B \-\-filters FILTERS
+JSON object, e.g. {"docid":"DOC\-1"}
+.TP
+.B \-\-content\-filter CONTENT_FILTER
+JSON object with op exact, phrase, prefix, or contains and a non\-empty
+value
+.PP
+Example:
+.nf
+pavecli search demo/books "captain nemo" \-k 3
+.fi
+.SS list\-queries
+List logged query IDs, optionally scoped to a tenant or collection.
+.PP
+.nf
+pavecli list\-queries [\-h] [\-\-tenant TENANT] [\-\-collection COLLECTION]
+                            [\-\-limit LIMIT] [\-\-offset OFFSET]
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B \-\-tenant TENANT
+Filter by tenant
+.TP
+.B \-\-collection COLLECTION
+Filter by collection
+.TP
+.B \-\-limit LIMIT
+Maximum entries to return
+.TP
+.B \-\-offset OFFSET
+Entries to skip
+.PP
+Example:
+.nf
+pavecli list\-queries \-\-tenant demo \-\-collection books \-\-limit 20
+.fi
+.SS get\-query
+Resolve a query_id through the catalog and print the stored query log
+entry.
+.PP
+.nf
+pavecli get\-query [\-h] query_id
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B query_id
+Query ID to fetch
+.PP
+Example:
+.nf
+pavecli get\-query 6f7cfd26\-7d7f\-4e5d\-942b\-f2a516f515a6
+.fi
+.SS replay\-query
+Resolve a query_id through the catalog and run the stored query again.
+.PP
+.nf
+pavecli replay\-query [\-h] query_id
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B query_id
+Query ID to replay
+.PP
+Example:
+.nf
+pavecli replay\-query 6f7cfd26\-7d7f\-4e5d\-942b\-f2a516f515a6
+.fi
+.SS list\-documents
+Print indexed documents and their collection metadata.
+.PP
+.nf
+pavecli list\-documents [\-h] tenant/collection
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and collection, e.g. demo/books
+.PP
+Example:
+.nf
+pavecli list\-documents demo/books
+.fi
+.SS get\-document
+Print document metadata and chunk summary for one document.
+.PP
+.nf
+pavecli get\-document [\-h] tenant/collection docid
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and collection, e.g. demo/books
+.TP
+.B docid
+Document ID
+.PP
+Example:
+.nf
+pavecli get\-document demo/books book\-1
+.fi
+.SS list\-chunks
+Print chunk metadata for a document without chunk text content.
+.PP
+.nf
+pavecli list\-chunks [\-h] tenant/collection docid
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and collection, e.g. demo/books
+.TP
+.B docid
+Document ID
+.PP
+Example:
+.nf
+pavecli list\-chunks demo/books book\-1
+.fi
+.SS get\-chunk
+Print metadata for one chunk by record ID.
+.PP
+.nf
+pavecli get\-chunk [\-h] tenant/collection rid
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and collection, e.g. demo/books
+.TP
+.B rid
+Chunk record ID
+.PP
+Example:
+.nf
+pavecli get\-chunk demo/books book\-1::chunk_0
+.fi
+.SS get\-chunk\-content
+Write one chunk's text content to stdout.
+.PP
+.nf
+pavecli get\-chunk\-content [\-h] tenant/collection rid
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and collection, e.g. demo/books
+.TP
+.B rid
+Chunk record ID
+.PP
+Example:
+.nf
+pavecli get\-chunk\-content demo/books book\-1::chunk_0
+.fi
+.SS delete\-collection
+Remove a collection, including its local metadata and vector index.
+.PP
+.nf
+pavecli delete\-collection [\-h] tenant/collection
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and collection, e.g. demo/books
+.PP
+Example:
+.nf
+pavecli delete\-collection demo/books
+.fi
+.SS move\-collection
+Rename the collection slug and move its catalog/query\-home records.
+.PP
+.nf
+pavecli move\-collection [\-h] tenant/collection tenant/new\-collection
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and current collection, e.g. demo/old
+.TP
+.B tenant/new\-collection
+Same tenant and the new collection slug: lowercase letters, digits, and
+hyphens; must start with a letter or digit; max 63 chars
+.PP
+Example:
+.nf
+pavecli move\-collection demo/old\-books demo/books
+.fi
+.SS update\-collection
+Update collection metadata such as the display name, without re\-
+indexing.
+.PP
+.nf
+pavecli update\-collection [\-h] \-\-display\-name DISPLAY_NAME
+                                 tenant/collection
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and collection, e.g. demo/books
+.TP
+.B \-\-display\-name DISPLAY_NAME
+New human\-readable collection label
+.PP
+Example:
+.nf
+pavecli update\-collection demo/books \-\-display\-name "Books"
+.fi
+.SS delete\-document
+Remove one document and its chunks from a collection.
+.PP
+.nf
+pavecli delete\-document [\-h] tenant/collection docid
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and collection, e.g. demo/books
+.TP
+.B docid
+Document ID
+.PP
+Example:
+.nf
+pavecli delete\-document demo/books book\-1
+.fi
+.SS dump\-archive
+Offline only; stop the server before reading its data directory. With
+tenant/collection, writes that collection as a portable archive. Without
+it, writes the whole instance; collections that fail validation are left
+out and listed under 'skipped', and the command exits non\-zero.
+.PP
+.nf
+pavecli dump\-archive [\-h] [\-\-output OUTPUT] [tenant/collection]
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Collection to export; omit for the instance
+.TP
+.B \-\-output OUTPUT
+Destination ZIP file path
+.PP
+Examples:
+.nf
+pavecli dump\-archive \-\-output pavedb\-data.zip
+pavecli dump\-archive demo/books \-\-output books.zip
+.fi
+.SS restore\-archive
+Offline only; stop the server first. With tenant/collection, creates
+that collection from a same\-version collection archive, or with
+\-\-replace overwrites the existing one. Without it, replaces the data
+directory from an instance archive.
+.PP
+.nf
+pavecli restore\-archive [\-h] [\-\-replace] [tenant/collection] file
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Destination collection; omit for an instance archive
+.TP
+.B file
+Archive zip file path
+.TP
+.B \-\-replace
+Overwrite an existing collection instead of creating it
+.PP
+Examples:
+.nf
+pavecli restore\-archive pavedb\-data.zip
+pavecli restore\-archive demo/books books.zip
+.fi
+.SS reset\-metrics
+Clear the shared runtime metrics in the configured catalog database.
+.PP
+.nf
+pavecli reset\-metrics [\-h]
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.PP
+Example:
+.nf
+pavecli reset\-metrics
+.fi
+.SS list\-tenants
+Print tenants currently present in the collection catalog.
+.PP
+.nf
+pavecli list\-tenants [\-h]
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.PP
+Example:
+.nf
+pavecli list\-tenants
+.fi
+.SS list\-embedders
+Print configured embedder instances and the resolved default routing
+pool.
+.PP
+.nf
+pavecli list\-embedders [\-h] [\-\-tenant TENANT]
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B \-\-tenant TENANT
+Tenant namespace to echo in the response
+.PP
+Examples:
+.nf
+pavecli list\-embedders
+pavecli list\-embedders \-\-tenant demo
+.fi
+.SS list\-collections
+Print collection names, display labels, and embedder labels for a
+tenant.
+.PP
+.nf
+pavecli list\-collections [\-h] tenant
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant
+Tenant namespace
+.PP
+Example:
+.nf
+pavecli list\-collections demo
+.fi
+.SS get\-collection
+Print catalog, embedder, vector\-space, document, and chunk details for a
+collection.
+.PP
+.nf
+pavecli get\-collection [\-h] tenant/collection
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and collection, e.g. demo/books
+.PP
+Example:
+.nf
+pavecli get\-collection demo/books
+.fi
+.SH PRE-1.0 NOTE
+Runtime selectors (\-\-home, \-\-config, \-\-tenants, \-\-data\-dir) are global options.
+.br
+Pass them before the command, e.g. pavecli \-\-home ./instance list\-tenants.
+.br
+Store commands open the local data directory directly.
+.br
+They refuse to run while another PaveDB process owns it.
+.SH REPORTING BUGS
+Report bugs to: pavedb@flowlexi.com
+.SH HOME PAGE
+PaveDB home page: https://pavedb.org
+.SH LEGAL NOTICE
+PaveDB 0.9.7 (pavecli)
+.br
+Copyright (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+.br
+There is NO WARRANTY, to the extent permitted by law.

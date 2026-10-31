@@ -47,7 +47,7 @@ from pave.runtime_paths import (
     render_config_template,
     resolve_runtime_paths,
 )
-from pave.version import help_notice, version_banner
+from pave.version import CONTACT_EMAIL, WEBSITE_URL, help_notice, version_banner
 
 store: BaseStore | None = None
 store_lease: DataDirLease | None = None
@@ -559,10 +559,16 @@ def build_parser() -> argparse.ArgumentParser:
         "  They refuse to run while another PaveDB process owns it."
     )
     notice = help_notice("pavecli")
+    contact = (
+        f"Report bugs to: {CONTACT_EMAIL}\n"
+        f"PaveDB home page: {WEBSITE_URL}"
+    )
     p = argparse.ArgumentParser(
         prog="pavecli",
         description="PaveDB CLI",
-        epilog=runtime_note + (f"\n\n{notice}" if notice else ""),
+        usage="%(prog)s [OPTION]... COMMAND [ARG]...",
+        epilog=runtime_note + (f"\n\n{notice}" if notice else "")
+        + f"\n\n{contact}",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument(
@@ -600,7 +606,19 @@ def build_parser() -> argparse.ArgumentParser:
         dest="data_dir",
         help="Explicit data directory; default comes from PAVEDB_DATA_DIR/config",
     )
-    sub = p.add_subparsers(dest="cmd", required=True)
+    sub = p.add_subparsers(
+        dest="cmd", required=True, title="commands", metavar="COMMAND",
+        prog="pavecli",
+    )
+
+    p_help = _command(
+        sub,
+        "help",
+        help="Show help for a command.",
+        description="Show help for the CLI or a named command.",
+        example=("pavecli help", "pavecli help search", "pavecli help admin show-key"),
+    )
+    p_help.add_argument("command", nargs="*", help="Command path to describe")
 
     p_init = _command(
         sub,
@@ -1102,6 +1120,19 @@ def build_parser() -> argparse.ArgumentParser:
 def main_cli(argv=None):
     p = build_parser()
     args = p.parse_args(argv)
+    if args.cmd == "help":
+        target = p
+        for name in args.command:
+            subcommands = next(
+                (action.choices for action in target._actions
+                 if isinstance(action, argparse._SubParsersAction)),
+                {},
+            )
+            if name not in subcommands:
+                p.error(f"unknown command: {' '.join(args.command)}")
+            target = subcommands[name]
+        target.print_help()
+        return 0
     if args.cmd != "init":
         _prepare_runtime(args)
     try:

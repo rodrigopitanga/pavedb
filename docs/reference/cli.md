@@ -20,9 +20,7 @@ pavecli search demo/books "captain nemo" -k 3
 ## Usage
 
 ```bash
-pavecli [-h] [--compact] [-V] [--home HOME]
-        [--config CONFIG]
-        [--tenants TENANTS] [--data-dir DATA_DIR] <command> ...
+pavecli [OPTION]... COMMAND [ARG]...
 ```
 
 ## Pre-1.0 Note
@@ -37,6 +35,11 @@ They refuse to run while another PaveDB process owns it.
 PaveDB 0.9.7 (pavecli)
 Copyright (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 There is NO WARRANTY, to the extent permitted by law.
+
+## Support
+
+Report bugs to: pavedb@flowlexi.com
+PaveDB home page: https://pavedb.org
 
 ## Global Options
 
@@ -55,6 +58,7 @@ There is NO WARRANTY, to the extent permitted by law.
 
 | Command | Description |
 |---|---|
+| `help` | Show help for a command. |
 | `init` | Create a PaveDB instance config and data directory. |
 | `admin` | Manage the local admin key. |
 | `create-collection` | Create a collection. |
@@ -81,6 +85,28 @@ There is NO WARRANTY, to the extent permitted by law.
 | `list-embedders` | List configured embedder instances. |
 | `list-collections` | List collections for a tenant. |
 | `get-collection` | Fetch collection details. |
+
+## `help`
+
+Show help for the CLI or a named command.
+
+### Usage
+
+```bash
+pavecli help [-h] [command ...]
+```
+
+### Examples
+
+```bash
+pavecli help
+pavecli help search
+pavecli help admin show-key
+```
+
+### Arguments And Options
+
+- `command` (optional): Command path to describe
 
 ## `init`
 
@@ -123,10 +149,6 @@ pavecli admin [-h] {show-key,rotate-key} ...
 pavecli admin show-key
 pavecli admin rotate-key
 ```
-
-### Arguments And Options
-
-- `admin_cmd` (required): (choices: show-key, rotate-key)
 
 ## `create-collection`
 

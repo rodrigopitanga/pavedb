@@ -93,6 +93,7 @@ The PaveDB sdist must contain:
 - `config.yml.example`;
 - `openapi.json`;
 - `docs/reference/cli.md`;
+- `docs/reference/pavecli.1`;
 - `docs/reference/config.md`;
 - `docs/reference/protocols.md`;
 - public user/operations guides added for 1.0; and
@@ -126,7 +127,8 @@ P1-62 defines reference generation and P1-66 defines example migration in
 
 The current P1-53 generators remain PaveDB-owned:
 
-- `scripts/cli_to_markdown.py` -> `docs/reference/cli.md`;
+- `scripts/cli_to_markdown.py` -> `docs/reference/cli.md` and
+  `docs/reference/pavecli.1`;
 - `scripts/config_reference.py` -> `config.yml.example` and
   `docs/reference/config.md`; and
 - `scripts/openapi_snapshot.py` -> `openapi.json`.
