@@ -121,16 +121,40 @@ validate-release-announcement:
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}$/'
 
-pytest:
+# The suite runs in two tiers, the same split as `make test-fast` and
+# `make test`. The full suite outgrew a merge-path budget: on 2026-10-30 the
+# untagged runner spent 9m20s on the installs and 30m30s in `pytest -q`,
+# reaching 939 of ~940 tests with no failure and no stall before the 40m cap
+# killed it (job 17617632088, branch pipeline for bug/bench-runner). Nothing
+# hung and nothing regressed — the full suite just costs more wall clock than
+# every merge should pay. So the merge path runs the fast tier and the full
+# suite stays mandatory where it gates a release.
+#
+# This buys headroom; it does not make the suite fast. The fast tier is still
+# ~22-25m of that trace, and 19m of wall clock for 4m24s of user CPU locally:
+# four fifths of it is tests waiting, not working (P3-56 —
+# test_concurrent_upsert_with_manual_lock alone waits 60-107s, depending on
+# how loaded the host is). Keeping the suite inside one job budget is still
+# P3-55. Both stay open.
+#
+# Each budget below is the worst measured case: the installs plus the tier at
+# the slowest runner speed on record (2026-10-21, job 17358079926 — ~11m of
+# installs and 53% of the suite in 25m, ~1.5x slower than the trace above).
+.pytest-tier:
   stage: test
-  # The suite outgrew the runner's former 20-minute cap; P3-55 brings it
-  # back down instead of raising this further.
-  timeout: 40m
-  script:
+  before_script:
     - python -m pip install --upgrade pip -q
     - pip install -r requirements-cpu.txt -q
     - pip install ".[test]" -q
-    - pytest -q
+  # A suite that ran out of wall clock runs out again: on 2026-10-21 the
+  # default stuck_or_timeout_failure retry re-ran three timed-out suites at
+  # the same second and spent two runner-hours learning nothing. Every other
+  # job keeps that retry — the tagged ones need it when their one runner
+  # reports stuck — but the suite only retries a runner that dies under it.
+  retry:
+    max: 2
+    when:
+      - runner_system_failure
   artifacts:
     when: always
     reports:
@@ -139,22 +163,43 @@ pytest:
       - junit.xml
       - .pytest_cache
     expire_in: 1 week
+
+# Merge path: the fast tier, FakeEmbedder only. ~32-34m measured, ~48m at the
+# slowest observed speed — so 40m was never enough for this suite on a bad
+# day, tier or no tier, and the cap is sized rather than guessed.
+pytest:
+  extends: .pytest-tier
+  timeout: 55m
+  script:
+    - pytest -q -m "not slow" --junitxml=junit.xml --durations=25
   # Without rules this defaulted to branch/tag pipelines only, so it never ran
   # on merge-request pipelines: every MR merged on bench alone while the suite
-  # was red on the push pipeline, unread. Gate the MR and the default branch,
-  # exactly like bench, so a red suite blocks the merge. A branch with an
+  # was red on the push pipeline, unread. Gate the MR here and the default
+  # branch in pytest-full, so a red suite blocks the merge. A branch with an
   # open MR is tested by the MR pipeline; one without would otherwise never
   # run the suite at all.
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH && $CI_OPEN_MERGE_REQUESTS == null'
+
+# Release path: the full suite, real embeddings included, mandatory on the
+# default branch and on every tag. `make release` runs the same full suite
+# locally before it tags; this is the gate that proves the merged result.
+# ~40m measured, ~58m at the slowest observed speed, and a timeout here
+# blocks a release rather than a merge, so it keeps the wider margin.
+pytest-full:
+  extends: .pytest-tier
+  timeout: 75m
+  script:
+    - pytest -q --junitxml=junit.xml --durations=25
+  rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_COMMIT_TAG'
-    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS == null'
 
 # Release gate for the published architecture. The images have been arm64
-# since the runner moved (ROADMAP C7) and nothing tested that: pytest runs
-# on the shared amd64 image, so the artifact people actually pull was the
-# one architecture with no test run against it.
+# since the runner moved (ROADMAP C7) and nothing tested that: the untagged
+# suite runs on the shared amd64 image, so the artifact people actually pull
+# was the one architecture with no test run against it.
 #
 # Final tags only, on our own runner. rc and artifact refreshes are not
 # worth the wall time here, and no SaaS minutes are spent.
@@ -174,7 +219,7 @@ pytest-arm64:
     - pip install -r requirements-cpu.txt -q
     - pip install ".[test]" -q
     - python -c "import platform, sys; print('arch:', platform.machine(), '| platform:', sys.platform)"
-    - pytest -q
+    - pytest -q --junitxml=junit.xml --durations=25
   artifacts:
     when: always
     reports:

@@ -71,6 +71,9 @@ logs/
 # Benchmark outputs (GitLab CI artifacts, not source files)
 benchmarks/results/
 
+# Test report the CI suite jobs write (pytest --junitxml)
+junit.xml
+
 # Make target temp files
 .check_search.json
 .e2e_ingest.json

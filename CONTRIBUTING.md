@@ -447,8 +447,15 @@ four-component `vX.Y.Z.W` tag is a package/image correction release.
 
 In practical terms, the Flowlexi GitLab pipeline does:
 
-- **Every pipeline** (branches and tags): run `pytest` (CPU deps) plus
-  GitLab SAST and Secret Detection.
+- **Every pipeline**: GitLab SAST and Secret Detection, plus at most one
+  suite tier (CPU deps). Merge-request pipelines, and branch pipelines with
+  no open MR, run the fast tier (`pytest`, the `make test-fast` selection);
+  the default branch and every tag run the full suite (`pytest-full`), which
+  is the gate that has to be green to release. A branch pipeline whose
+  branch already has an open MR runs no tier at all: the MR pipeline
+  already covers that push, and running the suite twice per push buys
+  nothing. The full suite costs more wall clock than every merge should
+  pay, so it runs where coverage is mandatory rather than on each push.
 - **`vX.Y.Z` and `vX.Y.Z.W` tags**: publish packages to PyPI and the GitLab
   Package Registry, and publish Docker `-cpu` and `latest-cpu` images.
 - **`vX.Y.ZrcN` tags**: publish package to TestPyPI and GitLab Package
