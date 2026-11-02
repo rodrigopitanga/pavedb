@@ -1,6 +1,26 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
+## 0.9.8 — Unreleased
+
+### Bug Fixes
+- [sdk] Implement the 0.9.7 collection hooks in the local provider (B91).
+- Store and compare metadata values as sent (B40, B74, B75). Documents
+  ingested before 0.9.8 keep the rewritten text, so filtering them by their
+  real values needs a re-ingest. See the
+  [upgrade note](docs/guides/running-it.md#metadata-values-stored-before-098).
+
+### Configuration
+- Use `0` for no quota allowance and `-1` for unlimited across tenant count,
+  rate, concurrency and operation budgets, and request/ingest byte ceilings.
+- Reject invalid quota values and keep unlimited defaults at `-1`.
+- Add `python -m pave.migrate_limits` to convert old unlimited YAML zeros into
+  new private files. Migrate environment and generated configuration too.
+  See the
+  [migration guide](docs/guides/running-it.md#quota-values-and-upgrading-from-097).
+
+---
+
 ## 0.9.7 — 2026-09-25
 
 ### Bug Fixes

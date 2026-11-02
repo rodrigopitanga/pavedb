@@ -193,6 +193,83 @@ concurrency cap below answers with the same code, so `-Window` is what tells the
 two apart. Admin credentials bypass the budget entirely, so verify a limit with
 a tenant token rather than the admin key.
 
+## Quota values and upgrading from 0.9.7
+
+From **0.9.8**, count, rate and concurrency quotas use one contract:
+
+- `0`: no allowance. A zero reindex budget refuses every tenant reindex start.
+- Positive integer: the maximum allowed count, rate or concurrency.
+- `-1`: unlimited. Other negatives, booleans, fractional counts and strings
+  are configuration errors, rather than silently disabling enforcement.
+- An omitted or null tenant override inherits the instance default. An explicit
+  `0` or `-1` overrides it. Previously uncapped defaults now use `-1`.
+
+This applies to `tenants.default_max_*`, the corresponding named-tenant
+`max_*` overrides, and `search`, `ingest`, `archive` and `reindex` concurrency
+caps. The three size ceilings (`ingest.max_file_size_mb`,
+`ingest.max_batch_size_mb`, `server.max_request_body_mb`) also use `-1` for
+unlimited and `0` for no bytes; finite nonnegative fractional MB remain valid.
+A null batch ceiling inherits the single-file ceiling.
+
+Zero quotas prevent new work; they do not delete existing collections or
+chunks. A zero request budget returns `429 tenant_rate_limited` with a zero
+remaining allowance and no `Retry-After`: waiting does not reopen the quota.
+Zero concurrency returns the existing capacity error. Archive and reindex
+windows count admitted starts, not completions; the reindex month is a moving
+30-day window, not a calendar month. Operator/admin maintenance paths keep their
+existing privileges; verify tenant restrictions with tenant credentials.
+
+**This changes the meaning of explicit zeros in older configurations.** Before
+starting 0.9.8, convert old unlimited zeros to `-1` in both `config.yml` and
+`tenants.yml`. The packaged migration tool opens no database and leaves the
+originals intact:
+
+```sh
+# Without --output: report the quota paths that would change, without secrets.
+python -m pave.migrate_limits /path/to/config.yml
+python -m pave.migrate_limits /path/to/config.yml --output /path/to/config.new.yml
+python -m pave.migrate_limits /path/to/tenants.yml --output /path/to/tenants.new.yml
+```
+
+Run this with the new package before starting the service. Review the new files,
+then install them in place of the originals with the ownership/read permissions
+needed by the service. Output is a new file with mode `0600`; existing files
+are never overwritten. YAML is normalized, so comments and anchors are not
+preserved. The converter changes only recognized quota zeros, leaves positive
+limits and `-1` intact, and rejects invalid legacy values. It is for old configs:
+do not run it on new zero-as-deny policies.
+
+Also update unlimited zeros in `PAVEDB_*` environment overrides, Compose/Kubernetes
+manifests, and any control plane that generates tenant configuration. Environment
+values take precedence over YAML. Quotas written as `${VARIABLE}` references need
+manual migration at their source; the tool does not resolve or expose them.
+Do not send zero-as-deny policy to a 0.9.7 server, which interprets it as unlimited.
+No stored-data or rate-bucket migration is required, and existing usage is retained.
+
+Timeouts, chunking and worker counts are separate: `search.timeout_ms=0` still
+disables the timeout; chunk sizes must be positive and overlap may be zero within
+operator bounds. Embedder worker counts retain `auto` and their existing minimum
+of one. The quota migration does not change these values.
+
+## Metadata values stored before 0.9.8
+
+Through 0.9.7 PaveDB rewrote every string metadata value on the way in: `'`
+became `''`, each `;`, `"`, `` ` `` and `\` became a space, a NUL was dropped,
+the text was cut at the first `--`, `/*` or `*/`, and surrounding whitespace was
+trimmed. Filter values went through the same rewrite, so the two agreed with each
+other while neither matched what the client sent, and values that differed only
+in those characters collapsed into one. Metadata keys are unaffected; they keep
+their existing normalization.
+
+From 0.9.8 a value is stored and compared exactly as given, so
+`{"note": "O'Brien; said -- loudly"}` round-trips and a filter for that value
+matches it. Documents ingested earlier keep the rewritten text on disk —
+`O''Brien  said` for that example — so a filter for the original value does not
+match them, and values that already collapsed stay collapsed. Re-ingest those
+documents to filter on their real values again. Stored text, vectors and
+rankings are untouched, so a collection whose metadata never carried those
+characters needs no action.
+
 ## Running a shared instance
 
 The defaults assume one tenant. If several tenants you do not control share an
