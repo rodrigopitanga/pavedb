@@ -298,16 +298,20 @@ instance, nor correlate either with that instance's own logs.
 **F6 — the surfaces already drift both ways, so "the same CLI, remotely"
 is not deliverable.** The SDK carries `reindex`, its job controls, and
 the tenant provisioning and key methods with no `pavecli` command;
-`pavecli` carries two operations with no SDK method: `reset-metrics`
-(`DELETE /v1/admin/metrics`) and the catalog-wide
+`pavecli` carries three operations with no SDK method: `reset-metrics`
+(`DELETE /v1/admin/metrics`), the catalog-wide
 `get-query`/`replay-query`, which resolve a `query_id` without naming
 its collection (`/v1/admin/queries/{query_id}`) where the SDK reaches
-only the collection-scoped routes. Three commands have no remote
-meaning at all: `init` writes an instance's config, and the
-`admin show-key`/`rotate-key` pair reads and rewrites the admin key on
-disk. A remote shell is a subset the HTTP API shapes — generated and
-tested against the SDK's own coverage, never mirrored from `pavecli`'s
-command list.
+only the collection-scoped routes, and `list-queries`, which browses
+the catalog's `query_home` pointer rows with tenant and collection as
+optional filters. That last one is not an SDK gap to close: P1-51
+refused `GET /v1/admin/queries` on purpose, so the HTTP API lists
+queries one collection at a time and the pointer index stays local.
+Three more commands have no remote meaning at all: `init` writes an
+instance's config, and the `admin show-key`/`rotate-key` pair reads
+and rewrites the admin key on disk. A remote shell is a subset the
+HTTP API shapes — generated and tested against the SDK's own coverage,
+never mirrored from `pavecli`'s command list.
 
 ### Decisions
 
@@ -341,7 +345,8 @@ In order, all of them SDK-side:
 2. Errors carry the status class, `request_id`, and `Retry-After`, so a
    caller can separate retryable from terminal (F5).
 3. The SDK covers the endpoints `pavecli` already reaches, so the shell's
-   subset is a choice rather than an accident (F6).
+   subset is a choice rather than an accident (F6) — catalog-wide
+   `list-queries`, which has no endpoint by design, stays outside it.
 
 None of the three is CLI work and each improves the SDK on its own.
 Scheduling them, and the shell itself, is a roadmap decision in
