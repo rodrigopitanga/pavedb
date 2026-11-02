@@ -553,6 +553,16 @@ latency on every search/ingest/delete.~~
 - ~~Search modes `vector`/`boost`/`hybrid`: the operator serves them, the
   collection chooses its default, the caller may override (P1-77).~~
 - ~~Per-collection chunking (`fixed`/`none`) inside operator bounds (P1-78).~~
+- ~~General embedder worker pools with bounded concurrency across providers
+  (P1-61).~~
+- ~~SQLite chunk-text index and additive content filters: migrate
+  sidecar text into the collection database, index it with native
+  FTS5, and expose contains/phrase/prefix matching (P1-70).~~
+- ~~Add exact token boost inside the vector candidate window (P1-07).~~
+- ~~Add hybrid retrieval by fusing independent FAISS and FTS5
+  candidate lists; depends on P1-70 (P1-72).~~
+- ~~Moving-window per-tenant rate limiting (req/min, req/hour) via
+  persistent catalog `rate_limit_buckets` state (P1-28).~~
 - ~~Honor metadata priority boosts during scoring (P2-11).~~
 - Tenant admin infrastructure: API-owned tenants become catalog rows with
   lifecycle and caps that bind without a restart (P2-19).
@@ -601,8 +611,6 @@ lands where it has more impact during post-contract hardening.
 
 - Optional FAISS HNSW index using the same metric-aware collection config;
   recall and throughput are gated by VectorDBBench (P2-52).
-- ~~General embedder worker pools with bounded concurrency across providers
-  (P1-61).~~
 - Cross-tenant read grants: an owner tenant shares search on one of its
   collections with named tenants, generalizing the single shared-corpus
   pair into a grant table. Reads only; writes stay with the owner (P2-55).
@@ -610,12 +618,6 @@ lands where it has more impact during post-contract hardening.
   canonical matches are a subset of SQL survivors, with equality
   where SQL claims full support. No request-time double execution
   (P1-35).~~
-- ~~SQLite chunk-text index and additive content filters: migrate
-  sidecar text into the collection database, index it with native
-  FTS5, and expose contains/phrase/prefix matching (P1-70).~~
-- ~~Add exact token boost inside the vector candidate window (P1-07).~~
-- ~~Add hybrid retrieval by fusing independent FAISS and FTS5
-  candidate lists; depends on P1-70 (P1-72).~~
 - Result diff API: compare two search runs — added/removed/reordered
   hits (P2-42).
 - Eval assertion API: define expected results per query, batch run,
@@ -627,8 +629,6 @@ lands where it has more impact during post-contract hardening.
   verdict (P2-45).
 - Structured log retention: rolling window + purge via
   `operation_log` table (SQLite Phase 3); powers P2-13 (P2-39).
-- ~~Moving-window per-tenant rate limiting (req/min, req/hour) via
-  persistent catalog `rate_limit_buckets` state (P1-28).~~
 
 ### PaveDB v1.3 — Reach
 
