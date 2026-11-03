@@ -67,6 +67,7 @@ setup(
         "cpu": [],
         "test": [
             "pytest",
+            "pytest-xdist",
             "httpx",
             "httpx2>=2,<3",
             "datasets>=3.5.0",

@@ -207,3 +207,15 @@ def test_jobs_that_declare_a_junit_report_generate_the_file():
         assert f"--junitxml={report}" in _command(job), name
 
     assert checked == {"pytest", "pytest-full", "pytest-arm64"}
+
+
+def test_the_suite_tiers_run_on_four_workers():
+    """The shared runner has sixteen threads and the tiers run in-process
+    (TestClient, FakeEmbedder): one worker left fifteen of them idle for
+    twenty minutes (job 17708580395). The arm64 VM has two cores."""
+    config = _config()
+
+    for name in TIERS:
+        assert " -n 4 " in _command(_job(config, name)), name
+    assert " -n " not in _command(_job(config, "pytest-arm64"))
+    assert '"pytest-xdist"' in (ROOT / "setup.py").read_text(encoding="utf-8")

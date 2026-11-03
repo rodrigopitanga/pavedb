@@ -170,8 +170,12 @@ validate-release-announcement:
 pytest:
   extends: .pytest-tier
   timeout: 55m
+  # Four workers: the shared runner has sixteen threads and pytest is one
+  # process otherwise. The tiers talk to the app in-process (TestClient,
+  # FakeEmbedder) and every test writes to its own tmp_path, so the split is
+  # free; the arm64 job keeps one worker on its two-core VM.
   script:
-    - pytest -q -m "not slow" --junitxml=junit.xml --durations=25
+    - pytest -q -n 4 -m "not slow" --junitxml=junit.xml --durations=25
   # Without rules this defaulted to branch/tag pipelines only, so it never ran
   # on merge-request pipelines: every MR merged on bench alone while the suite
   # was red on the push pipeline, unread. Gate the MR here and the default
@@ -191,7 +195,7 @@ pytest-full:
   extends: .pytest-tier
   timeout: 75m
   script:
-    - pytest -q --junitxml=junit.xml --durations=25
+    - pytest -q -n 4 --junitxml=junit.xml --durations=25
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_COMMIT_TAG'
