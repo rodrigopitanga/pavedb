@@ -2,8 +2,25 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 # requirements-cpu.txt — CPU-only source install
-# Wraps setup.py[cpu] with the PyTorch CPU wheel index.
+# Wraps setup.py[cpu] with the PyTorch CPU wheel.
 # Usage: pip install -r requirements-cpu.txt
---index-url https://download.pytorch.org/whl/cpu
---extra-index-url https://pypi.org/simple
+#
+# PyPI is the index, and the CPU wheel arrives through --find-links, because
+# pip queries every configured index for every project it resolves. Named as
+# an --index-url, download.pytorch.org answered 68 lookups for this closure,
+# 51 of them 403 — it carries torch, not fastapi, anyio or scipy — one
+# serial round trip each. That is the step bench job 17794168368 never got
+# out of: /whl/cpu/annotated-doc/, /whl/cpu/anyio/ and /whl/cpu/scipy/ timed
+# out between 04:56 and 05:16 and the job token expired at 71.4m, with no
+# benchmark started. One project page costs 2 requests there instead, and
+# the other 64 projects resolve on PyPI. Swapping the two index lines would
+# have changed nothing: pip reads both of them for every project either way.
+#
+# The wheel stays the CPU one. At equal version a +cpu local label outranks
+# PyPI's plain wheel (PEP 440), and that page carries torch-<ver>+cpu for
+# manylinux_2_28 aarch64 and x86_64, the arches CI installs on: both configs
+# resolve torch 2.15.0+cpu and no nvidia-* package. Dropping the page rather
+# than moving it is what would pull CUDA in — PyPI alone resolves 15 of them.
+--index-url https://pypi.org/simple
+--find-links https://download.pytorch.org/whl/cpu/torch/
 .[cpu]

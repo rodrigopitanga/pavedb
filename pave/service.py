@@ -1506,6 +1506,7 @@ def ingest_documents_batch(
                 code = "tenant_chunk_limit_reached"
             else:
                 code = "collection_limit_reached"
+
             for result_index in prepared_indexes:
                 results[result_index] = {
                     "ok": False,
