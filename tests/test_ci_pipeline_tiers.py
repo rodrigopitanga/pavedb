@@ -59,12 +59,29 @@ def _env(pipeline):
     return env
 
 
+# The tier rules use only `$VAR`, `==`, `!=`, `null`, `&&` and `||`. The rest
+# of GitLab's expression syntax is refused rather than guessed at, because the
+# fallback for an unrecognized clause is a bare variable lookup: `$CI_COMMIT_TAG
+# =~ /^v/` would resolve as the variable named `CI_COMMIT_TAG =~ /^v/`, which is
+# never set, so the clause would read as never-matched. A regex rule added to a
+# tier — the idiom ten of the pipeline's twenty-one rules already use — would
+# then put that tier on a pipeline type with every check below still green,
+# which is the one edit this file exists to catch.
+_UNSUPPORTED = (
+    "rule expression {expr!r} uses GitLab syntax these checks cannot evaluate; "
+    "teach _clause/_runs the operator or re-express the rule"
+)
+
+
 def _value(token, env):
     token = token.strip()
     if token == "null":
         return None
     if token.startswith("$"):
-        return env.get(token[1:])
+        name = token[1:]
+        if not name.isidentifier():
+            raise NotImplementedError(_UNSUPPORTED.format(expr=token))
+        return env.get(name)
     return token.strip("\"'")
 
 
@@ -78,9 +95,16 @@ def _clause(expr, env):
 
 
 def _runs(job, env):
-    """First matching rule wins, as GitLab evaluates them."""
+    """First matching rule wins, as GitLab evaluates them, and `&&` binds
+    tighter than `||`. Parentheses regroup that, so they are refused."""
     for rule in job["rules"]:
-        if all(_clause(part, env) for part in rule["if"].split("&&")):
+        expr = rule["if"]
+        if "(" in expr or ")" in expr:
+            raise NotImplementedError(_UNSUPPORTED.format(expr=expr))
+        if any(
+            all(_clause(part, env) for part in conjunction.split("&&"))
+            for conjunction in expr.split("||")
+        ):
             return rule.get("when", "on_success") != "never"
     return False
 
@@ -105,6 +129,41 @@ def test_each_pipeline_type_runs_exactly_one_suite_tier(pipeline, expected):
     config = _config()
     env = _env(pipeline)
     assert {name for name in TIERS if _runs(_job(config, name), env)} == expected
+
+
+def test_a_rule_these_checks_cannot_read_goes_red_instead_of_never_matching():
+    """A tier that gains a regex rule has to surface here, not pass quietly.
+
+    Scored as never-matched, `$CI_COMMIT_TAG =~ /^v/` on the fast tier leaves
+    the mapping above green while that tier runs on every tag beside the full
+    suite — the full suite would no longer be the only thing gating a release.
+    """
+    tier = {"rules": [{"if": "$CI_COMMIT_TAG =~ /^v/"}]}
+
+    with pytest.raises(NotImplementedError):
+        _runs(tier, _env("tag"))
+
+
+def test_rules_joined_with_or_are_grouped_the_way_gitlab_groups_them():
+    """`&&` binds tighter than `||`, so a rule pair rewritten as the one
+    equivalent rule still selects the same pipeline types."""
+
+    def selects(expr):
+        tier = {"rules": [{"if": expr}]}
+        return {name for name in PIPELINES if _runs(tier, _env(name))}
+
+    release_path = "$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH || $CI_COMMIT_TAG"
+    assert selects(release_path) == {"default branch", "tag"}
+
+    mixed = (
+        "$CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH"
+        " || $CI_COMMIT_TAG"
+    )
+    assert selects(mixed) == {
+        "branch without an open merge request",
+        "branch with an open merge request",
+        "tag",
+    }
 
 
 def test_the_merge_path_is_fast_and_the_release_path_is_the_full_suite():
