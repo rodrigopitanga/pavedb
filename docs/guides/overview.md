@@ -79,8 +79,8 @@ Three things decide whether a deployment is sound:
   and log. One supported local entry point owns it at a time. Back it up as a
   unit; it is the whole state.
 - **Health.** `/health/live` answers without touching the model;
-  `/health/ready` verifies the data directory is writable. Point your
-  orchestrator at the second one.
+  `/health/ready` verifies the data directory is writable and the catalog
+  answers. Point your orchestrator at `/health/ready`.
 
 The [production checklist](running-it.md#production-checklist) turns these
 into steps.

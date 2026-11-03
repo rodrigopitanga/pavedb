@@ -143,15 +143,17 @@ batch boundary.
 | Endpoint | Checks | Use for |
 |---|---|---|
 | `/health/live` | the process answers; does not touch the model | liveness |
-| `/health/ready` | the data directory is writable | readiness |
+| `/health/ready` | the data directory is writable; the catalog answers | readiness |
 | `/health` | overall status | humans |
 | `/health/metrics` | operational counters | scraping |
 
-`/health`, `/health/live` and `/health/ready` need no credentials, so
-none of them reports the running version or the vector backend it
-verified. `/health/metrics` carries both and needs the admin key under
-`auth.mode=static`, which is the quickest way to confirm an instance is
-running the version and the store you think it is.
+`/health`, `/health/live` and `/health/ready` need no credentials, so none
+of them names the running version or the vector backend. `/health/ready`
+still reports its two check results, under `writable` and
+`vector_backend_init`, and answers 503 when either one fails.
+`/health/metrics` names the version and the store and needs the admin key
+under `auth.mode=static`, which is the quickest way to confirm an instance
+is running the version and the store you think it is.
 
 Point an orchestrator at `/health/ready`. `/health/live` will answer while the
 data directory is unwritable, which is exactly when you do not want traffic.
