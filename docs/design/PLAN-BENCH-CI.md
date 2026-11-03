@@ -57,9 +57,18 @@ The `bench` job runs in a `benchmark` stage between `test`
 and `security`:
 
 - **Trigger**: MR pipelines, default branch, tags.
+- **Runner**: the `m4-colima` tag, under
+  `resource_group: bench`. The threshold is a property of
+  the machine: 2000 ms was calibrated on GitLab SaaS runners
+  (search p99 ~280 ms), while the shared xeon group runner
+  measures ~2.3 s for the same 200-query run and fails the
+  gate on every merge request. A gate that times a busy host
+  measures the host, so the job names the runner it was
+  calibrated against and takes it one run at a time.
 - **Server**: ephemeral (fresh data_dir per run).
 - **Lighter defaults**: 200 queries (not 1200), 30s stress
-  (not 90s), lower concurrency — CI runners are shared.
+  (not 90s), lower concurrency — the gate has to fit a CI
+  job budget, not a lab run.
 - **Artifacts**: `benchmarks/results/` saved for 4 weeks.
 - **Tuning**: all variables overridable via GitLab CI/CD
   Settings → Variables without code changes.

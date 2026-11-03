@@ -238,9 +238,17 @@ bench:
   stage: benchmark
   # The p99 SLO was calibrated on GitLab SaaS runners (search p99 ~280ms).
   # The shared xeon group runner measures ~2.3s for the same run and fails
-  # it, so the latency gate runs on our own idle runner, like the release jobs.
+  # it, so the latency gate runs on our own runner — the one pytest-arm64
+  # already uses, idle between tags.
   tags:
     - m4-colima
+  # Pinning the gate to one runner only helps while that runner is idle, and
+  # no job here is interruptible: a second push to an open MR leaves the
+  # superseded bench job running while the new one starts, now on the same
+  # box. One timed run at a time, project-wide — contention is what the gate
+  # kept measuring on the shared runner (2026-10-21: three concurrent jobs on
+  # one host, with !85's bench red on the latency gate).
+  resource_group: bench
   variables:
     # Cold local runners download the model on first run; give startup headroom.
     BENCH_STARTUP_TIMEOUT_S: "120"
