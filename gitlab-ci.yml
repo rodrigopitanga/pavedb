@@ -294,10 +294,15 @@ bench:
   # can fail on its own: on 2026-11-03 the first GET lost its DNS lookup and
   # the job ended inside download_artifacts at 4.1m, before a single query was
   # timed (job 17704770842, then "no files in benchmarks/results/" because the
-  # benchmark never ran). An empty list removes that step and claims nothing
-  # about the lookup. `needs: []` would empty it too, and would also release
-  # the gate from the stage it is sequenced behind, so a red suite would stop
-  # blocking it.
+  # benchmark never ran). On 2026-11-04 job 17718725194 was redirected to the
+  # artifact CDN instead and stalled there 26m20s over pytest's 34 KB archive
+  # before falling back to the coordinator, then ended on an expired token
+  # during the dependency install, again with no query timed — sibling runs on
+  # this runner that went straight to the coordinator spent 1.2-4.3s on the
+  # same step. An empty list removes that step and claims nothing about the
+  # lookup or the CDN it can be redirected to. `needs: []` would empty it too,
+  # and would also release the gate from the stage it is sequenced behind, so
+  # a red suite would stop blocking it.
   dependencies: []
   before_script:
     - apt-get update -qq

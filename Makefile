@@ -1008,9 +1008,11 @@ _bench-with-server:
 	srv_pid=""; \
 	keep_data_dir=0; \
 	bench_status=0; \
+	startup_deadline=$$((SECONDS + $(BENCH_STARTUP_TIMEOUT_S))); \
 	if [ -n "$(BENCH_SERVER_URL)" ]; then \
 	  bench_url="$(BENCH_SERVER_URL)"; \
-	  if ! curl -fsS "$$bench_url/health/live" >/dev/null 2>&1; then \
+	  if ! curl -q -fsS --connect-timeout 2 --max-time 2 \
+	      "$$bench_url/health/live" >/dev/null 2>&1; then \
 	    echo "ERROR: BENCH_SERVER_URL is not reachable: $$bench_url"; \
 	    exit 1; \
 	  fi; \
@@ -1038,7 +1040,8 @@ _bench-with-server:
 	  PAVEDB_SERVER__PORT=$(_ephemeral_port) \
 	  $(PYTHON_BIN) -m $(PKG_INTERNAL).main >"$$log_file" 2>&1 & \
 	  srv_pid=$$!; \
-	elif curl -fsS "$$bench_url/health/live" >/dev/null 2>&1; then \
+	elif curl -q -fsS --connect-timeout 2 --max-time 2 \
+	    "$$bench_url/health/live" >/dev/null 2>&1; then \
 	  echo "==> Using active server on $$bench_url"; \
 	else \
 	  managed=1; \
@@ -1065,17 +1068,40 @@ _bench-with-server:
 	  srv_pid=$$!; \
 	fi; \
 	cleanup() { \
+	  exit_status=$$?; \
+	  trap - EXIT; \
+	  trap '' INT TERM; \
 	  if [ "$$managed" = "1" ]; then \
-	    if kill -0 "$$srv_pid" >/dev/null 2>&1; then \
+	    if [ -n "$$srv_pid" ] && kill -0 "$$srv_pid" >/dev/null 2>&1; then \
 	      kill "$$srv_pid" >/dev/null 2>&1 || true; \
-	      wait "$$srv_pid" >/dev/null 2>&1 || true; \
+	      stop_deadline=$$((SECONDS + 5)); \
+	      while kill -0 "$$srv_pid" >/dev/null 2>&1 && \
+	          [ "$$SECONDS" -lt "$$stop_deadline" ]; do sleep 0.1; done; \
+	      if kill -0 "$$srv_pid" >/dev/null 2>&1; then \
+	        echo "ERROR: benchmark server did not stop in 5s; sending KILL."; \
+	        keep_data_dir=1; \
+	        if [ "$$exit_status" = "0" ]; then exit_status=1; fi; \
+	        kill -KILL "$$srv_pid" >/dev/null 2>&1 || true; \
+	        stop_deadline=$$((SECONDS + 1)); \
+	        while kill -0 "$$srv_pid" >/dev/null 2>&1 && \
+	            [ "$$SECONDS" -lt "$$stop_deadline" ]; do sleep 0.1; done; \
+	      fi; \
+	      if kill -0 "$$srv_pid" >/dev/null 2>&1; then \
+	        echo "ERROR: benchmark server PID $$srv_pid still alive after KILL."; \
+	      else \
+	        wait "$$srv_pid" >/dev/null 2>&1 || true; \
+	      fi; \
 	    else \
 	      srv_status=0; \
-	      wait "$$srv_pid" >/dev/null 2>&1 || srv_status=$$?; \
+	      if [ -n "$$srv_pid" ]; then \
+	        wait "$$srv_pid" >/dev/null 2>&1 || srv_status=$$?; \
+	      fi; \
 	      if [ "$$srv_status" != "0" ]; then \
 	        keep_data_dir=1; \
+	        if [ "$$exit_status" = "0" ]; then exit_status=$$srv_status; fi; \
 	      fi; \
 	    fi; \
+	    if [ "$$exit_status" != "0" ]; then keep_data_dir=1; fi; \
 	    if [ "$$keep_data_dir" = "1" ]; then \
 	      echo "==> Preserving ephemeral server state at $$data_dir"; \
 	      echo "==> Server log: $$log_file"; \
@@ -1092,15 +1118,35 @@ _bench-with-server:
 	      rm -rf "$$data_dir"; \
 	    fi; \
 	  fi; \
+	  exit "$$exit_status"; \
 	}; \
-	trap cleanup EXIT INT TERM; \
+	trap cleanup EXIT; \
+	trap 'exit 130' INT; \
+	trap 'exit 143' TERM; \
 	if [ "$$managed" = "1" ]; then \
-	  for i in $$(seq 1 $(BENCH_STARTUP_TIMEOUT_S)); do \
-	    if curl -fsS "$$bench_url/health/live" >/dev/null 2>&1; then \
+	  while :; do \
+	    if ! kill -0 "$$srv_pid" >/dev/null 2>&1; then \
+	      srv_status=0; \
+	      wait "$$srv_pid" >/dev/null 2>&1 || srv_status=$$?; \
+	      srv_pid=""; \
+	      keep_data_dir=1; \
+	      echo "ERROR: benchmark server exited before becoming ready" \
+	        "(status $$srv_status)."; \
+	      tail -n 80 "$$log_file" || true; \
+	      if [ "$$srv_status" = "0" ]; then srv_status=1; fi; \
+	      exit "$$srv_status"; \
+	    fi; \
+	    probe_timeout=$$((startup_deadline - SECONDS)); \
+	    if [ "$$probe_timeout" -le 0 ]; then break; fi; \
+	    if [ "$$probe_timeout" -gt 2 ]; then probe_timeout=2; fi; \
+	    if curl -q -fsS --connect-timeout 2 --max-time "$$probe_timeout" \
+	        "$$bench_url/health/live" >/dev/null 2>&1 && \
+	        [ "$$SECONDS" -lt "$$startup_deadline" ] && \
+	        kill -0 "$$srv_pid" >/dev/null 2>&1; then \
 	      ready=1; \
 	      break; \
 	    fi; \
-	    sleep 1; \
+	    if [ "$$SECONDS" -lt "$$startup_deadline" ]; then sleep 1; fi; \
 	  done; \
 	  if [ "$${ready:-0}" != "1" ]; then \
 	    keep_data_dir=1; \
@@ -1132,7 +1178,7 @@ _bench-with-server:
 
 .PHONY: bench-latency bench-latency-run
 bench-latency: install-dev
-	@summary=$$(mktemp /tmp/pavedb-bench-summary.XXXXXX); \
+	@summary=$$(mktemp "$${TMPDIR:-/tmp}/pavedb-bench-summary.XXXXXX"); \
 	for filt in $$(echo "$(LAT_FILTERS)" | tr ',' ' '); do \
 	  echo ""; \
 	  echo "==> Latency: filtering=$$filt"; \
@@ -1141,7 +1187,9 @@ bench-latency: install-dev
 	    _filt=$$filt \
 	    _summary_file=$$summary \
 	    _ts="$(_ts)" \
-	    _bench-with-server; \
+	    _bench-with-server || { \
+	      status=$$?; rm -f "$$summary"; exit "$$status"; \
+	    }; \
 	done; \
 	rows=$$(awk 'END { print NR + 0 }' "$$summary"); \
 	if [ "$$rows" -gt 1 ]; then \
@@ -1226,14 +1274,14 @@ bench-stress-run:
 	if [ "$(BENCH_SAVE)" = "1" ]; then \
 	  echo "==> Saving: yes (ts=$(_ts), tag=$$tag, suite=$(STR_SUITE))"; \
 	  mkdir -p $(_results_dir); \
-	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/stress.py \
+	  PYTHONPATH=. $(PYTHON_BIN) -u benchmarks/stress.py \
 	    --url $(_url) --duration $(STR_LENGTH) \
 	    --concurrency $(STR_CONCUR) \
 	    $$suite_arg $$api_arg $$err_arg \
-	    | tee $(_results_dir)/stress-$(_ts)_$$tag$$suite_tag.txt; \
+	    2>&1 | tee $(_results_dir)/stress-$(_ts)_$$tag$$suite_tag.txt; \
 	else \
 	  echo "==> Saving: no (ts=$(_ts), tag=$$tag, suite=$(STR_SUITE))"; \
-	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/stress.py \
+	  PYTHONPATH=. $(PYTHON_BIN) -u benchmarks/stress.py \
 	    --url $(_url) --duration $(STR_LENGTH) \
 	    --concurrency $(STR_CONCUR) \
 	    $$suite_arg $$api_arg $$err_arg; \

@@ -23,11 +23,12 @@ server never caused, which is indistinguishable from the regression it
 exists to catch, so the group name is pinned to a value rather than to the
 ref.
 
-The same goes for what the job fetches before it starts. `dependencies` is
+The same holds for what the job fetches before it starts. `dependencies` is
 invisible in the job text when it is left out, and leaving it out is how the
 gate came to download the test stage's artifacts on every run — a round trip
-`make benchmark` has no use for, and the one job 17704770842 died inside
-without timing a query.
+`make benchmark` has no use for. Job 17704770842 died inside without timing
+a query; job 17718725194 spent 26 minutes inside before it reached its
+first command.
 """
 
 from __future__ import annotations
@@ -100,11 +101,12 @@ def test_the_gate_fetches_nothing_before_it_measures():
 
 def test_the_gate_still_waits_for_the_stage_it_runs_behind():
     """`needs: []` empties the download too, and also cuts the job loose from
-    stage order: the gate would start alongside the suite instead of after
-    it, and a red suite would stop holding it back. Stage order is the only
-    thing sequencing this job, so nothing may replace it."""
+    stage order: the gate would start alongside the suite instead of after it,
+    and a red suite would stop holding it back. Stage order is the only thing
+    sequencing this job, so nothing may replace it."""
     config = _config()
     bench = config["bench"]
+    stages = config["stages"]
 
     assert "needs" not in bench
-    assert config["stages"].index(bench["stage"]) > config["stages"].index("test")
+    assert stages.index(bench["stage"]) > stages.index("test")

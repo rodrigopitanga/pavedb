@@ -179,5 +179,22 @@ data_dir and prints the `$TMPDIR` path of its log; with `BENCH_SAVE=1` the log
 is copied in beside the results too, which is the only copy that outlives a CI
 container.
 
+Health probes have a two-second request/connect limit. Managed startup uses
+an elapsed `BENCH_STARTUP_TIMEOUT_S` budget (30 seconds locally, 120 in CI),
+including probe time, and fails early if the server exits. Teardown gives only
+the server started by the harness five seconds after TERM, then sends KILL
+and checks for exit for one more second. Startup and teardown failures save
+the server log as above; cleanup retains an earlier failure status.
+
+Stress keeps its 60-second HTTP I/O timeout and gives the complete setup
+(header, coverage discovery, and seeding) 120 seconds. `STR_LENGTH` still
+sets only the worker duration. Workers have 30 seconds to drain and five
+seconds to finish cancellation; unfinished or failed workers fail the run.
+The complete coverage pass has 120 seconds, collection cleanup 30 seconds,
+and HTTP client close five seconds. These deadlines fail the benchmark;
+they do not skip operations or relax the error-rate gate. Phase progress,
+elapsed times, and failures are flushed through `tee`, with stderr included
+in the saved stress report. Failed managed runs retain their server log.
+
 Generated outputs are gitignored: keep them local or publish them as CI
 artifacts; commit only curated benchmark comparisons to documentation.

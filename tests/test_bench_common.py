@@ -15,9 +15,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
+import signal
+import socket
 import subprocess
 import sys
+import textwrap
+import time
 from pathlib import Path
 
 import httpx
@@ -157,6 +162,7 @@ def _failed_bench_run(tmp_path, **env_overrides):
     shutil.copy(_REPO_ROOT / "Makefile", tmp_path / "Makefile")
     env = dict(os.environ)
     env.pop("BENCH_SAVE", None)
+    env["TMPDIR"] = str(tmp_path)
     env.update(env_overrides)
     proc = subprocess.run(
         [
@@ -172,6 +178,7 @@ def _failed_bench_run(tmp_path, **env_overrides):
         capture_output=True,
         text=True,
         env=env,
+        timeout=10,
     )
     kept = sorted((tmp_path / "benchmarks" / "results").glob("server-*.log"))
     return proc, kept
@@ -197,10 +204,200 @@ def test_preserving_the_log_does_not_change_what_the_run_exits_with(tmp_path):
     plain, none_kept = _failed_bench_run(tmp_path / "plain")
 
     assert saving.returncode == plain.returncode != 0
-    assert "did not become ready in 1s" in saving.stdout
-    assert "did not become ready in 1s" in plain.stdout
+    assert "exited before becoming ready (status 127)" in saving.stdout
+    assert "exited before becoming ready (status 127)" in plain.stdout
     assert len(kept) == 1
     # Without BENCH_SAVE there is no results dir to put it in; local runs
     # read the $TMPDIR path the recipe already prints and keep the tree clean.
     assert none_kept == []
     assert not (tmp_path / "plain" / "benchmarks").exists()
+
+
+# Exercise the real recipe with a stdlib server: no service import or model load.
+@pytest.fixture
+def bench_harness(tmp_path):
+    make = _gnu_make()
+    if make is None or shutil.which("curl") is None:
+        pytest.skip("GNU Make >= 4 and curl required")
+    recipe = (_REPO_ROOT / "Makefile").read_text()
+    recipe += "\n_fixture-run bench-latency-run bench-stress-run:\n"
+    recipe += '\t@echo "fixture-run $@ $(_filt)"\n'
+    recipe += "\t@exit $(FIXTURE_STATUS)\n"
+    (tmp_path / "Makefile").write_text(recipe)
+    server = tmp_path / "server.py"
+    server.write_text(textwrap.dedent('''\
+        import os
+        import signal
+        import time
+        from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+        from pathlib import Path
+
+        if os.environ.get("FIXTURE_IGNORE_TERM") == "1":
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if os.environ.get("FIXTURE_HANG") == "1":
+                    print("accepted health request", flush=True)
+                    time.sleep(60)
+                self.send_response(200)
+                self.end_headers()
+
+        server = ThreadingHTTPServer(
+            ("127.0.0.1", int(os.environ["PAVEDB_SERVER__PORT"])), Handler
+        )
+        print("fixture server started", flush=True)
+        Path("server.pid").write_text(str(os.getpid()))
+        server.serve_forever()
+    '''))
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    env = dict(os.environ, TMPDIR=str(tmp_path), NO_PROXY="127.0.0.1")
+    groups = []
+
+    def kill_group(pid):
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+    def run(target="_bench-with-server", **variables):
+        options = {
+            "PYTHON": sys.executable,
+            "PYTHON_BIN": f"{sys.executable} {server}",
+            "BENCH_FORCE_EPHEMERAL": "1",
+            "BENCH_STARTUP_TIMEOUT_S": "3",
+            "BENCH_SAVE": "1",
+            "_ephemeral_port": str(port),
+            "_run_target": "_fixture-run",
+            "FIXTURE_STATUS": "0",
+        }
+        options.update(variables)
+        command = [make, "--no-print-directory", "-o", "install-dev", target]
+        command += [f"{key}={value}" for key, value in options.items()]
+        started = time.monotonic()
+        proc = subprocess.Popen(
+            command, cwd=tmp_path, env=env, start_new_session=True,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        groups.append(proc.pid)
+        try:
+            output, _ = proc.communicate(timeout=12)
+        except subprocess.TimeoutExpired:
+            kill_group(proc.pid)
+            proc.communicate(timeout=3)
+            pytest.fail("benchmark harness exceeded the 12s fixture watchdog")
+        return proc.returncode, output, time.monotonic() - started
+
+    yield run, env, port, server
+    # Clean up after assertions, so a leaked server cannot pass the death checks.
+    for pid in groups:
+        kill_group(pid)
+
+
+@pytest.mark.parametrize("ignore_term", [False, True])
+def test_nonresponding_managed_health_is_bounded_and_preserves_logs(
+    bench_harness, tmp_path, ignore_term,
+):
+    run, env, _, _ = bench_harness
+    env["FIXTURE_HANG"] = "1"
+    env["FIXTURE_IGNORE_TERM"] = "1" if ignore_term else "0"
+    status, output, elapsed = run()
+
+    assert status != 0
+    allowance = 6 if ignore_term else 0
+    assert elapsed < 4.5 + allowance, output  # 3s startup and scheduling slack.
+    assert "did not become ready in 3s" in output
+    assert re.search(r"_bench-with-server\] Error 1\b", output)
+    assert "fixture-run" not in output
+    (log,) = (tmp_path / "benchmarks/results").glob("server-*.log")
+    assert "accepted health request" in log.read_text()
+    pid = int((tmp_path / "server.pid").read_text())
+    with pytest.raises(ProcessLookupError):
+        os.kill(pid, 0)
+
+
+@pytest.mark.parametrize("failure", ["0", "23"])
+def test_term_resistant_server_has_bounded_cleanup(
+    bench_harness, tmp_path, failure,
+):
+    run, env, _, _ = bench_harness
+    env["FIXTURE_IGNORE_TERM"] = "1"
+    status, output, elapsed = run(FIXTURE_STATUS=failure)
+
+    assert status != 0
+    assert elapsed < 9, output  # Startup, 5s TERM grace, 1s KILL grace, slack.
+    assert "sending KILL" in output
+    # GNU make maps the inner target's failure to 2; cleanup must retain it.
+    expected = "1" if failure == "0" else "2"
+    assert re.search(r"_bench-with-server\] Error " + expected + r"\b", output)
+    (log,) = (tmp_path / "benchmarks/results").glob("server-*.log")
+    assert "fixture server started" in log.read_text()
+    with pytest.raises(ProcessLookupError):
+        os.kill(int((tmp_path / "server.pid").read_text()), 0)
+
+
+def test_healthy_benchmark_keeps_all_variants_and_cleans_up(bench_harness, tmp_path):
+    run, _, _, _ = bench_harness
+    status, output, _ = run(target="benchmark")
+
+    assert status == 0, output
+    for variant in ("none", "exact", "wildcard", "mixed"):
+        assert f"fixture-run bench-latency-run {variant}" in output
+    assert "fixture-run bench-stress-run" in output
+    assert not list(tmp_path.glob("pavedb-bench.*"))
+    assert not list((tmp_path / "benchmarks/results").glob("server-*.log"))
+    with pytest.raises(ProcessLookupError):
+        os.kill(int((tmp_path / "server.pid").read_text()), 0)
+
+
+@pytest.mark.parametrize("command, code", [("/nonexistent/python", 127), ("true", 0)])
+def test_latency_startup_failure_reaches_the_benchmark_caller(
+    bench_harness, command, code,
+):
+    run, _, _, _ = bench_harness
+    status, output, elapsed = run(
+        target="benchmark", PYTHON_BIN=command,
+        BENCH_STARTUP_TIMEOUT_S="30",
+    )
+
+    assert status != 0
+    assert elapsed < 3, output
+    assert f"exited before becoming ready (status {code})" in output
+    assert "fixture-run" not in output
+
+
+@pytest.mark.parametrize("configured", [False, True])
+@pytest.mark.parametrize("hang", [False, True])
+def test_external_probes_are_bounded_and_leave_server_owned_by_caller(
+    bench_harness, tmp_path, configured, hang,
+):
+    run, env, port, server = bench_harness
+    external_env = dict(env, PAVEDB_SERVER__PORT=str(port))
+    external_env["FIXTURE_HANG"] = "1" if hang else "0"
+    external = subprocess.Popen(
+        [sys.executable, str(server)], cwd=tmp_path, env=external_env,
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    try:
+        deadline = time.monotonic() + 3
+        while not (tmp_path / "server.pid").exists():
+            assert external.poll() is None
+            assert time.monotonic() < deadline
+            time.sleep(0.01)
+        url = f"http://127.0.0.1:{port}"
+        variables = {"BENCH_SERVER_URL" if configured else "_default_url": url}
+        status, output, elapsed = run(
+            BENCH_FORCE_EPHEMERAL="0", PYTHON_BIN="/nonexistent/python",
+            **variables,
+        )
+        assert (status != 0) == hang, output
+        assert elapsed < 4.5, output
+        assert external.poll() is None
+        assert ("fixture-run _fixture-run" in output) != hang
+        if configured or not hang:
+            assert "starting ephemeral" not in output
+    finally:
+        external.kill()
+        external.wait(timeout=3)

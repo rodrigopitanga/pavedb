@@ -1360,6 +1360,39 @@ async def _print_coverage_gap(client: httpx.AsyncClient) -> None:
 # ---------------------------------------------------------------------------
 # Main driver
 # ---------------------------------------------------------------------------
+# HTTPX's 60s timeout is per I/O, not a budget for setup or a multi-request op.
+SETUP_TIMEOUT_S = 120
+DRAIN_TIMEOUT_S = 30
+CANCEL_TIMEOUT_S = 5
+COVERAGE_TIMEOUT_S = 120
+CLEANUP_TIMEOUT_S = 30
+CLOSE_TIMEOUT_S = 5
+
+
+async def _run_phase(name, operation, timeout):
+    started = time.perf_counter()
+    print(f"==> stress {name}: started (deadline {timeout:g}s)", flush=True)
+    try:
+        result = await asyncio.wait_for(operation, timeout)
+    except asyncio.TimeoutError as exc:
+        elapsed = time.perf_counter() - started
+        message = f"stress {name}: deadline {timeout:g}s exceeded after {elapsed:.2f}s"
+        print(f"ERROR: {message}", flush=True)
+        raise RuntimeError(message) from exc
+    except BaseException as exc:
+        elapsed = time.perf_counter() - started
+        print(
+            f"ERROR: stress {name}: {type(exc).__name__}: {exc} "
+            f"after {elapsed:.2f}s", flush=True,
+        )
+        raise
+    print(
+        f"==> stress {name}: completed in {time.perf_counter() - started:.2f}s",
+        flush=True,
+    )
+    return result
+
+
 async def run_stress(
     base_url: str,
     duration_secs: int,
@@ -1378,15 +1411,24 @@ async def run_stress(
     world = World()
     headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
 
-    async with httpx.AsyncClient(
+    client = httpx.AsyncClient(
         base_url=base_url, timeout=60.0, headers=headers
-    ) as client:
-        await print_run_header(client, base_url, "stress")
-        await _print_coverage_gap(client)
+    )
+
+    async def setup():
+        await _run_phase(
+            "setup: header", print_run_header(client, base_url, "stress"),
+            SETUP_TIMEOUT_S,
+        )
+        await _run_phase(
+            "setup: coverage discovery", _print_coverage_gap(client), SETUP_TIMEOUT_S
+        )
         # Seed a few collections so workers have something to target
-        print(f"Seeding initial collections...")
+        seeded_at = time.perf_counter()
+        print("==> stress setup: seeding initial collections", flush=True)
         for i in range(3):
             name = f"s-seed{i}"
+            print(f"  -> seed collection {name}", flush=True)
             r = await _post_with_retries(
                 client,
                 f"{API_PREFIX}/collections/{TENANT}/{name}",
@@ -1397,6 +1439,7 @@ async def run_stress(
             for j in range(3):
                 docid = f"seed_{i}_{j}"
                 text = SAMPLE_TEXTS[j % len(SAMPLE_TEXTS)]
+                print(f"  -> seed document {name}/{docid}", flush=True)
                 r = await _post_with_retries(
                     client,
                     f"{API_PREFIX}/collections/{TENANT}/{name}/documents",
@@ -1406,25 +1449,41 @@ async def run_stress(
                 _ensure_ok(r, "seed ingest")
                 await world.add_doc(name, docid)
 
-        print(f"Seeded 3 collections with 3 docs each.")
+        print(
+            "==> stress setup: seeded 3 collections with 3 docs each "
+            f"in {time.perf_counter() - seeded_at:.2f}s", flush=True,
+        )
+
+    async def cleanup():
+        failures = []
+        for name in await world.snapshot_collections():
+            try:
+                r = await client.delete(f"{API_PREFIX}/collections/{TENANT}/{name}")
+                if r.status_code != 404:
+                    _ensure_ok(r, f"cleanup collection {name}")
+            except Exception as exc:
+                failures.append(exc)
+        if failures:
+            raise failures[0]
+
+    failed = False
+    try:
+        await _run_phase("setup", setup(), SETUP_TIMEOUT_S)
         print(
             f"Running stress test for {duration_secs}s with "
-            f"concurrency={concurrency} suite={suite}..."
+            f"concurrency={concurrency} suite={suite}...", flush=True,
         )
         print()
 
         sem = asyncio.Semaphore(concurrency)
         stop = asyncio.Event()
-        ops_started = 0
 
         async def worker():
-            nonlocal ops_started
             while not stop.is_set():
                 async with sem:
                     if stop.is_set():
                         break
                     op = _pick_operation(operations)
-                    ops_started += 1
                     await op(client, world, stats)
 
         t_start = time.perf_counter()
@@ -1432,43 +1491,77 @@ async def run_stress(
         # Launch workers (more than concurrency so the semaphore is always saturated)
         tasks = [asyncio.create_task(worker()) for _ in range(concurrency * 3)]
 
-        # Run for the specified duration
-        await asyncio.sleep(duration_secs)
-        stop.set()
+        try:
+            # The configured duration still applies only to the workload.
+            await asyncio.sleep(duration_secs)
+            stop.set()
+            print("==> stress workers: draining", flush=True)
+            _, pending = await asyncio.wait(tasks, timeout=DRAIN_TIMEOUT_S)
+        finally:
+            stop.set()
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            results = await _run_phase(
+                "worker cancellation",
+                asyncio.gather(*tasks, return_exceptions=True),
+                CANCEL_TIMEOUT_S,
+            )
 
-        # Let in-flight operations finish (up to 30s grace)
-        _, pending = await asyncio.wait(tasks, timeout=30)
-        for t in pending:
-            t.cancel()
+        if pending:
+            raise RuntimeError(
+                f"stress workers: drain deadline {DRAIN_TIMEOUT_S:g}s exceeded "
+                f"({len(pending)} unfinished workers)"
+            )
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
 
         elapsed = time.perf_counter() - t_start
+        print(f"==> stress workload: completed in {elapsed:.2f}s", flush=True)
 
-        # Coverage pass: run any op that was never picked during the timed phase.
-        seen_ops = {r.op for r in stats.results}
-        missed = [(op, name) for op, name, _ in operations if name not in seen_ops]
-        if missed:
-            missed_names = ", ".join(name for _op, name in missed)
-            print(
-                f"Coverage pass ({len(missed)} op(s) not seen): "
-                f"{missed_names}"
-            )
+        async def coverage():
+            # Run every missed op within one elapsed budget for the whole pass.
+            seen_ops = {r.op for r in stats.results}
+            missed = [(op, name) for op, name, _ in operations if name not in seen_ops]
+            if missed:
+                missed_names = ", ".join(name for _op, name in missed)
+                print(
+                    f"Coverage pass ({len(missed)} op(s) not seen): "
+                    f"{missed_names}", flush=True,
+                )
             for op, name in missed:
                 before = len(stats.results)
                 t_cov = time.perf_counter()
-                print(f"  -> coverage op: {name}")
+                print(f"  -> coverage op: {name}", flush=True)
                 await op(client, world, stats)
                 cov_ms = (time.perf_counter() - t_cov) * 1000
                 recorded = len(stats.results) > before
                 status = "recorded" if recorded else "no-result"
-                print(f"  <- coverage op: {name} [{status}] {cov_ms:.1f}ms")
+                print(
+                    f"  <- coverage op: {name} [{status}] {cov_ms:.1f}ms", flush=True
+                )
 
-        # Cleanup: delete all test collections
-        print("Cleaning up...")
-        for name in await world.snapshot_collections():
+        await _run_phase("coverage", coverage(), COVERAGE_TIMEOUT_S)
+
+    except BaseException:
+        failed = True
+        raise
+    finally:
+        # Always attempt both phases, including after a partially completed seed.
+        # Their diagnostics must not replace the original benchmark failure.
+        teardown_error = None
+        for name, operation, timeout in (
+            ("cleanup", cleanup, CLEANUP_TIMEOUT_S),
+            ("client close", client.aclose, CLOSE_TIMEOUT_S),
+        ):
             try:
-                await client.delete(f"{API_PREFIX}/collections/{TENANT}/{name}")
-            except Exception:
-                pass
+                await _run_phase(name, operation(), timeout)
+            except Exception as exc:
+                if teardown_error is None:
+                    teardown_error = exc
+        if teardown_error is not None and not failed:
+            raise teardown_error
 
     # ---------------------------------------------------------------------------
     # Report
