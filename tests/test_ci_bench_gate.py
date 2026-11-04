@@ -14,6 +14,12 @@ requests get a group each and time the box side by side. Either half missing
 shows up as a gate that fails for reasons the server never caused, which is
 indistinguishable from the regression it exists to catch, so both halves are
 pinned to a value rather than to each other.
+
+The same goes for what the job fetches before it starts. `dependencies` is
+invisible in the job text when it is left out, and leaving it out is how the
+gate came to download the test stage's artifacts on every run — a round trip
+`make benchmark` has no use for, and the one job 17704770842 died inside
+without timing a query.
 """
 
 from __future__ import annotations
@@ -53,3 +59,25 @@ def test_the_latency_gate_runs_on_the_runner_it_was_calibrated_on():
 def test_only_one_latency_run_is_timed_at_a_time():
     """Two bench jobs on one runner measure each other, not the server."""
     assert _config()["bench"]["resource_group"] == RESOURCE_GROUP
+
+
+def test_the_gate_fetches_nothing_before_it_measures():
+    """`make benchmark` builds from the checkout and serves itself. The test
+    stage's junit.xml and .pytest_cache are triage output, and the release
+    title and notes it publishes where the announce jobs run already have a
+    consumer: those jobs name `validate-release-announcement` in their own
+    `dependencies`. None of it buys the measurement anything, and fetching it
+    can fail on its own."""
+    assert _config()["bench"]["dependencies"] == []
+
+
+def test_the_gate_still_waits_for_the_stage_it_runs_behind():
+    """`needs: []` empties the download too, and also cuts the job loose from
+    stage order: the gate would start alongside the suite instead of after
+    it, and a red suite would stop holding it back. Stage order is the only
+    thing sequencing this job, so nothing may replace it."""
+    config = _config()
+    bench = config["bench"]
+
+    assert "needs" not in bench
+    assert config["stages"].index(bench["stage"]) > config["stages"].index("test")

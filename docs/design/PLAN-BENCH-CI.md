@@ -70,6 +70,14 @@ and `security`:
   (not 90s), lower concurrency — the gate has to fit a CI
   job budget, not a lab run.
 - **Artifacts**: `benchmarks/results/` saved for 4 weeks.
+  Nothing is downloaded: `dependencies: []` drops the
+  test stage's junit.xml and `.pytest_cache`, and, where
+  the announce jobs run, the release title and notes those
+  jobs fetch for themselves. The benchmark reads none of
+  it, and GitLab fetches all of it before the job starts
+  whenever the key is left out. The job still runs after
+  the test stage — that ordering is stage order, not
+  `needs`, so a red suite keeps the gate from starting.
 - **Tuning**: all variables overridable via GitLab CI/CD
   Settings → Variables without code changes.
 

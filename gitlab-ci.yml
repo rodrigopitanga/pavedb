@@ -256,6 +256,22 @@ bench:
   variables:
     # Cold local runners download the model on first run; give startup headroom.
     BENCH_STARTUP_TIMEOUT_S: "120"
+  # Nothing in this job reads a prior stage's artifacts: `make benchmark`
+  # builds from the checkout and starts its own ephemeral server, while the
+  # test stage publishes the suite's junit.xml and .pytest_cache for triage
+  # and, where the announce jobs run, the release title and notes those jobs
+  # fetch for themselves by naming `validate-release-announcement` in their
+  # own `dependencies` — that key takes job names, not paths. Left undeclared,
+  # GitLab fetches every one of them before `before_script` runs — a round
+  # trip to the instance this job has no other reason to make, and one that
+  # can fail on its own: on 2026-11-03 the first GET lost its DNS lookup and
+  # the job ended inside download_artifacts at 4.1m, before a single query was
+  # timed (job 17704770842, then "no files in benchmarks/results/" because the
+  # benchmark never ran). An empty list removes that step and claims nothing
+  # about the lookup. `needs: []` would empty it too, and would also release
+  # the gate from the stage it is sequenced behind, so a red suite would stop
+  # blocking it.
+  dependencies: []
   before_script:
     - apt-get update -qq
     - apt-get install -y -qq curl git make
