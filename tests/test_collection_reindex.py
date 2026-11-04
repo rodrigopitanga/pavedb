@@ -15,6 +15,17 @@ from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
 
+# Waits sized for a starved CI runner, not an idle host (P3-56). A reindex
+# job here is ~1.5s of real work and the suite as a whole normally finishes
+# in under four minutes; on a contended runner both stretch by an order of
+# magnitude -- job 17679513723 reached 55% of the suite in 40m and two of
+# these tests went red on the way. Reproduced under local load: the jobs
+# still run to completion, they just need more than 5s. The assertions are
+# unchanged; only the patience is.
+_JOB_WAIT_S = 60.0
+_ENCODE_WAIT_S = 30.0
+
+
 @pytest.fixture(autouse=True)
 def _configured_target(cfg):
     # A reindex target must be a configured instance (B90).
@@ -23,13 +34,15 @@ def _configured_target(cfg):
 
 
 def _wait_for_job(get_job, *statuses: str) -> dict:
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + _JOB_WAIT_S
     while time.monotonic() < deadline:
         job = get_job()
         if job["status"] in statuses:
             return job
         time.sleep(0.01)
-    raise AssertionError(f"reindex job did not reach {statuses}: {get_job()}")
+    raise AssertionError(
+        f"reindex job did not reach {statuses} in {_JOB_WAIT_S}s: {get_job()}"
+    )
 
 
 def _store_with_paused_job(
@@ -44,7 +57,7 @@ def _store_with_paused_job(
     class BlockingEmbedder(FakeEmbedder):
         def encode(self, texts):
             entered.set()
-            if not release.wait(timeout=5):
+            if not release.wait(timeout=_ENCODE_WAIT_S):
                 raise RuntimeError("test embedder was not released")
             return super().encode(texts)
 
@@ -74,7 +87,7 @@ def _store_with_paused_job(
         collection,
         embed_model="fake-v2",
     )["job_id"]
-    assert entered.wait(timeout=2)
+    assert entered.wait(timeout=_ENCODE_WAIT_S)
     store.pause_reindex(job_id)
     # Let the blocked batch finish so the job settles at a persisted
     # boundary; later encodes in the test run unblocked.
@@ -155,7 +168,7 @@ def test_reindex_job_pauses_and_resumes_after_store_restart(
     class BlockingEmbedder(FakeEmbedder):
         def encode(self, texts):
             entered.set()
-            if not release.wait(timeout=5):
+            if not release.wait(timeout=_ENCODE_WAIT_S):
                 raise RuntimeError("test embedder was not released")
             return super().encode(texts)
 
@@ -186,7 +199,7 @@ def test_reindex_job_pauses_and_resumes_after_store_restart(
         "resumable",
         embed_model="fake-v2",
     )["job_id"]
-    assert entered.wait(timeout=2)
+    assert entered.wait(timeout=_ENCODE_WAIT_S)
     assert first.pause_reindex(job_id)["status"] == "pausing"
     release.set()
     paused = _wait_for_job(
