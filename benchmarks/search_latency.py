@@ -34,7 +34,10 @@ except ImportError:
     raise SystemExit("httpx required: pip install httpx")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import print_run_header  # type: ignore[import]  # noqa: E402
+from common import (  # type: ignore[import]  # noqa: E402
+    host_load,
+    print_run_header,
+)
 
 API_PREFIX = "/v1"
 
@@ -479,6 +482,7 @@ async def run_benchmark(
         )
         if violation is not None:
             print(f"\n{violation}")
+            print(_slo_tail_report(latencies, slo_p99_ms))
             return None
 
         return latencies
@@ -497,6 +501,40 @@ def _latency_slo_violation(
         f"SLO VIOLATION: p99={p99:.1f}ms"
         f" > {slo_p99_ms:.1f}ms"
     )
+
+
+def _slo_tail_report(
+    latencies: list[float],
+    slo_p99_ms: float,
+    slowest: int = 5,
+) -> str:
+    """Describe the tail that broke the gate, under the verdict.
+
+    p99 over the gate's 200 samples interpolates between the third- and
+    second-worst, at a hundredth of the gap, so a lone slow request barely
+    moves it: a red p99 here means at least the slowest concurrency wave
+    stalled together. Whether the server stalled it or the box it shares
+    did is the first question, and the results table stops at p95/p99/max —
+    it says neither how many samples cleared the threshold nor how far the
+    mean sits above p95. Both go here, with the host queue that decides it.
+    """
+    total = len(latencies)
+    if not total:
+        return ""
+    ranked = sorted(latencies, reverse=True)
+    over = [lat for lat in ranked if lat > slo_p99_ms]
+    lines = [
+        f"    over SLO  : {len(over)} of {total} samples"
+        f" ({100 * len(over) / total:.1f}%)",
+        "    slowest   : "
+        + ", ".join(f"{lat:.1f}ms" for lat in ranked[:slowest]),
+        f"    mean/p95  : {sum(latencies) / total:.1f}ms"
+        f" / {percentile(latencies, 95):.1f}ms",
+    ]
+    load = host_load()
+    if load:
+        lines.append(f"    host load : {load}")
+    return "\n".join(lines)
 
 
 def main():

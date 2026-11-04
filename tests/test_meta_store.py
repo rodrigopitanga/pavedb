@@ -7,6 +7,8 @@ import json
 import sqlite3
 import threading
 import time
+import traceback
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -436,6 +438,231 @@ def test_catalog_metrics_bounds_latency_samples(tmp_path):
     db.close()
 
 
+# What the drain is allowed to cost. close() tears its SQLite handles down
+# outside _state_cv, and the last write handle to a WAL database checkpoints
+# and unlinks -wal/-shm on the way out: that is fsync work, 0.1-1.3s here on
+# an idle machine and open-ended on a runner whose disk is busy. A join sized
+# to that cost times the disk instead of the drain, so this bound is a
+# liveness guard only — a close() that is genuinely stuck still fails, in
+# bounded time, with the drain state in the message — while the ordering
+# contract below is asserted through handshakes rather than through a
+# deadline.
+_DRAIN_TIMEOUT_S = 30.0
+
+# How long the guard keeps its hold without a release. Every exit path
+# below releases it, and _join_once sets the release before it joins, so
+# the window this can elapse in ends there: what fits inside it is the
+# close() handshake and the drain-entry wait, two bounds, and the deepest
+# failure this file catches — a close() wedged before it announces the
+# drain — spends one of them. A guard that times out at the same deadline
+# the body is waiting on reports this test's clock instead of the drain
+# finding, so it is given twice that window, which a third body bound
+# added ahead of the release would still not reach.
+_GUARD_HOLD_S = _DRAIN_TIMEOUT_S * 4
+
+
+def _drain_state(db) -> str:
+    """Drain-loop state for a failure message, read without the lock."""
+    state = (
+        f"closing={db._closing} readers={db._active_readers} "
+        f"writers={db._active_writers} rconn={db._conn is not None} "
+        f"wconn={db._wconn is not None}"
+    )
+    if isinstance(db, CollectionDB):
+        state += f" log_conn={db._log_conn is not None}"
+    return state
+
+
+@contextmanager
+def _inflight_reader(db):
+    with db._reader() as conn:
+        yield conn
+
+
+@contextmanager
+def _inflight_writer(db):
+    # Callers enter the connection as well, so the guard is held across a
+    # transaction — the shape close() has to drain in production.
+    with db._writer() as conn, conn:
+        yield conn
+
+
+@contextmanager
+def _inflight_query_log_writer(db):
+    # The third handle's own guard, held the way log_query() holds it. The
+    # drain reaches it through the same _active_writers count as _writer(),
+    # and nothing else here puts it in flight: a query-log write that
+    # stopped being counted would let close() tear the handle down under it.
+    with db._query_log_writer() as conn, conn:
+        yield conn
+
+
+def _assert_close_drains(db, hold) -> None:
+    """close() blocks while *hold* is in flight, then clears every handle.
+
+    *hold* is the guard under test as a context manager over *db*. The
+    handshake: hold the guard open, call close() from another thread, prove
+    close() reached its drain loop with the guard still held and nothing torn
+    down, release, then require close() to finish and leave no connection
+    behind. Nothing here asserts how long the drain or the teardown take.
+    """
+    entered = threading.Event()
+    release = threading.Event()
+    close_called = threading.Event()
+    close_done = threading.Event()
+    errors: list[str] = []
+    threads: list[threading.Thread] = []
+    joined = False
+    join_elapsed = 0.0
+
+    def _spawn(target, name: str) -> threading.Thread:
+        # daemon: a close() that never drains has to fail this test, not
+        # wedge interpreter shutdown and take the whole run's report with it.
+        thread = threading.Thread(target=target, name=name, daemon=True)
+        threads.append(thread)
+        thread.start()
+        return thread
+
+    def _hold_guard():
+        try:
+            with hold(db) as conn:
+                conn.execute("SELECT 1")
+                entered.set()
+                if not release.wait(timeout=_GUARD_HOLD_S):
+                    # Dropping the guard on a timeout would hand close() the
+                    # drain the test never granted it, and the run would go
+                    # green without having tested anything. Reaching this at
+                    # all means a body bound outlived _GUARD_HOLD_S, so say
+                    # that rather than blame the release.
+                    raise AssertionError(
+                        f"guard held {_GUARD_HOLD_S}s without a release"
+                    )
+        except Exception:  # reported by the main thread, not this one
+            errors.append(
+                f"{threading.current_thread().name}: {traceback.format_exc()}"
+            )
+
+    def _close():
+        close_called.set()
+        try:
+            db.close()
+        except Exception:  # pragma: no cover - regression capture
+            errors.append(
+                f"{threading.current_thread().name}: {traceback.format_exc()}"
+            )
+        finally:
+            close_done.set()
+
+    def _await(event: threading.Event, missing: str) -> None:
+        """Wait out one handshake, reporting a dead thread over the wait.
+
+        A thread that raised has already recorded its traceback and will
+        never set the event the main thread is waiting on. Without this the
+        wait burns the whole liveness bound and then reports the symptom —
+        "guard never opened" for a `_reader()` that refuses to open — while
+        the exception that explains it sits unread in *errors*.
+        """
+        deadline = time.monotonic() + _DRAIN_TIMEOUT_S
+        while not event.wait(timeout=0.005):
+            assert not errors, "\n".join(errors)
+            assert time.monotonic() < deadline, f"{missing}: {_drain_state(db)}"
+
+    def _join_once() -> list[str]:
+        """Release the guard and wait every thread out, at most once.
+
+        Returns the names still running. The bound is one _DRAIN_TIMEOUT_S
+        measured from the release and shared by every thread, which is what
+        the verdict below reports; a budget each would mean a wedged guard
+        and a wedged close() cost two. And it is spent here and nowhere
+        else: cleanup on that failure must not spend another one waiting for
+        threads it has already been told are wedged.
+        """
+        nonlocal joined, join_elapsed
+        if not joined:
+            joined = True
+            release.set()
+            started = time.monotonic()
+            deadline = started + _DRAIN_TIMEOUT_S
+            for thread in threads:
+                thread.join(timeout=max(0.0, deadline - time.monotonic()))
+            join_elapsed = time.monotonic() - started
+        return [thread.name for thread in threads if thread.is_alive()]
+
+    def _cleanup(*, keep_finding: bool) -> None:
+        """Free the handles on the way out, without overwriting the finding."""
+        if _join_once():
+            # Only when every thread is accounted for: close() on a guard that
+            # is still held blocks forever by design, and cleanup must stay
+            # bounded.
+            return
+        try:
+            db.close()
+        except Exception:
+            # The body already asserted on whatever close() does here. Raising
+            # from cleanup would replace that assertion with this frame — in
+            # the junit message CI triages from, not just in the console — so
+            # it is reported only when the body had no finding of its own.
+            if not keep_finding:
+                raise
+
+    try:
+        _spawn(_hold_guard, "guard")
+        _await(entered, "guard never opened")
+
+        _spawn(_close, "closer")
+        _await(close_called, "close() was never called")
+
+        # Wait for close() to reach the drain loop rather than sleeping past
+        # it: both classes set _closing under _state_cv before their first
+        # wait and clear it only once the guard count reaches zero. A close()
+        # that drains nothing ends this wait through close_done instead, and
+        # fails the assertion under it.
+        deadline = time.monotonic() + _DRAIN_TIMEOUT_S
+        while not db._closing and not close_done.is_set():
+            assert not errors, "\n".join(errors)
+            assert time.monotonic() < deadline, (
+                f"close() never began draining: {_drain_state(db)}"
+            )
+            time.sleep(0.005)
+
+        # Before the ordering verdict: a close() that raised on the way in
+        # ends the wait above through close_done, and its traceback is the
+        # finding, not "close() returned with the guard in flight".
+        assert not errors, "\n".join(errors)
+        assert close_done.is_set() is False, (
+            f"close() returned with the guard in flight: {_drain_state(db)}"
+        )
+        assert db._conn is not None, "read handle dropped before the drain"
+        assert db._wconn is not None, "write handle dropped before the drain"
+        if isinstance(db, CollectionDB):
+            # The third handle needs this check and not only the None
+            # below: a close() that releases the query log early — it is
+            # only telemetry, so why wait — satisfies that one on its way
+            # past an in-flight _query_log_writer(), so the use-after-close
+            # reads as a pass. An early teardown of exactly this handle
+            # passed both CollectionDB cases without the assertion.
+            assert db._log_conn is not None, (
+                "query-log handle dropped before the drain"
+            )
+
+        stuck = _join_once()
+        assert not stuck, (
+            f"{', '.join(stuck)} still running {join_elapsed:.1f}s after the "
+            f"release: {_drain_state(db)}"
+        )
+        assert not errors, "\n".join(errors)
+        assert close_done.is_set() is True
+        assert db._conn is None
+        assert db._wconn is None
+        if isinstance(db, CollectionDB):
+            assert db._log_conn is None
+    except BaseException:
+        _cleanup(keep_finding=True)
+        raise
+    else:
+        _cleanup(keep_finding=False)
+
+
 @pytest.mark.parametrize(
     ("db_cls", "path_fn"),
     [
@@ -446,46 +673,7 @@ def test_catalog_metrics_bounds_latency_samples(tmp_path):
 def test_close_waits_for_inflight_writer(tmp_path, db_cls, path_fn):
     db = db_cls()
     db.open(path_fn(tmp_path))
-
-    writer_entered = threading.Event()
-    release_writer = threading.Event()
-    close_done = threading.Event()
-    close_errors: list[Exception] = []
-
-    def _writer():
-        with db._writer() as conn, conn:
-            conn.execute("SELECT 1")
-            writer_entered.set()
-            assert release_writer.wait(timeout=1.0)
-
-    def _closer():
-        try:
-            db.close()
-        except Exception as exc:  # pragma: no cover - regression capture
-            close_errors.append(exc)
-        finally:
-            close_done.set()
-
-    writer_thread = threading.Thread(target=_writer)
-    writer_thread.start()
-    assert writer_entered.wait(timeout=1.0)
-
-    closer_thread = threading.Thread(target=_closer)
-    closer_thread.start()
-    time.sleep(0.05)
-
-    assert close_done.is_set() is False
-
-    release_writer.set()
-    writer_thread.join(timeout=1.0)
-    closer_thread.join(timeout=1.0)
-
-    assert not close_errors
-    assert close_done.is_set() is True
-    assert db._conn is None
-    assert db._wconn is None
-    if isinstance(db, CollectionDB):
-        assert db._log_conn is None
+    _assert_close_drains(db, _inflight_writer)
 
 
 @pytest.mark.parametrize(
@@ -498,46 +686,15 @@ def test_close_waits_for_inflight_writer(tmp_path, db_cls, path_fn):
 def test_close_waits_for_inflight_reader(tmp_path, db_cls, path_fn):
     db = db_cls()
     db.open(path_fn(tmp_path))
+    _assert_close_drains(db, _inflight_reader)
 
-    reader_entered = threading.Event()
-    release_reader = threading.Event()
-    close_done = threading.Event()
-    close_errors: list[Exception] = []
 
-    def _reader():
-        with db._reader() as conn:
-            conn.execute("SELECT 1")
-            reader_entered.set()
-            assert release_reader.wait(timeout=1.0)
-
-    def _closer():
-        try:
-            db.close()
-        except Exception as exc:  # pragma: no cover - regression capture
-            close_errors.append(exc)
-        finally:
-            close_done.set()
-
-    reader_thread = threading.Thread(target=_reader)
-    reader_thread.start()
-    assert reader_entered.wait(timeout=1.0)
-
-    closer_thread = threading.Thread(target=_closer)
-    closer_thread.start()
-    time.sleep(0.05)
-
-    assert close_done.is_set() is False
-
-    release_reader.set()
-    reader_thread.join(timeout=1.0)
-    closer_thread.join(timeout=1.0)
-
-    assert not close_errors
-    assert close_done.is_set() is True
-    assert db._conn is None
-    assert db._wconn is None
-    if isinstance(db, CollectionDB):
-        assert db._log_conn is None
+def test_close_waits_for_inflight_query_log_writer(tmp_path):
+    # Unparametrized: the query log is the collection's third handle and
+    # CatalogDB has no counterpart to hold.
+    db = CollectionDB()
+    db.open(_meta_db(tmp_path))
+    _assert_close_drains(db, _inflight_query_log_writer)
 
 
 @pytest.mark.parametrize("legacy_name", ["catalog.json", "meta.json"])

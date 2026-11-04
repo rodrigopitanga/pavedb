@@ -3,21 +3,23 @@
 
 """What the bench latency gate needs from the pipeline to mean anything.
 
-The p99 ceiling is a property of the host that times the run, and this job
-names no runner, so the number has to hold on the slowest host that can pick
-it up: 2000 ms was calibrated where search p99 is ~280 ms (GitLab SaaS), and
-the shared group runner measures ~2.3 s for the same 200-query run, which is
-red before any regression exists. The ceiling is sized for that host and
-pinned to a value here, so a red gate stays a statement about the server
-rather than about the host.
+The p99 ceiling is a property of the host that times the run. The job is
+pinned to m4-colima, the runner pytest-arm64 already uses and leaves idle
+between tags, but the ceiling still has to hold for the slowest host that
+could pick the job up if that pin ever comes off: 2000 ms was calibrated
+where search p99 is ~280 ms (GitLab SaaS), and the shared group runner
+measures ~2.3 s for the same 200-query run, which is red before any
+regression exists. The ceiling is sized for that host and pinned to a
+value here, so a red gate stays a statement about the server rather than
+about the host.
 
-The gate runs wherever a project runner is free, so one timed run at a time
-is the only thing keeping it off a busy host. No job here is interruptible:
-with no resource group, a second push to an open merge request leaves the
-superseded bench job timing the same box as the new one; a per-ref group
-serializes that push, but two open merge requests get a group each and time
-the box side by side. Contention shows up as a gate that fails for reasons
-the server never caused, which is indistinguishable from the regression it
+Pinning the runner does not by itself keep two timed runs off it at once.
+`default.interruptible` retires only what one ref supersedes: a second push
+to an open merge request cancels its own superseded bench job, but two open
+merge requests are two refs and would still time m4-colima side by side. A
+per-ref resource group would give each of them a group of its own, which
+changes nothing; contention shows up as a gate that fails for reasons the
+server never caused, which is indistinguishable from the regression it
 exists to catch, so the group name is pinned to a value rather than to the
 ref.
 

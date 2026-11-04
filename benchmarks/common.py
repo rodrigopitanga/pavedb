@@ -52,6 +52,23 @@ def local_hw() -> str:
     return f"{cpu}, {cores} cores, {ram_str} RAM"
 
 
+def host_load() -> str | None:
+    """Return a one-line load-average summary, or None where unavailable.
+
+    Docker does not namespace /proc/loadavg, so in CI this is the queue of
+    the whole host, neighbours included. It is the one number that separates
+    a latency gate the server made red from one a job sharing the box made
+    red, and the saved report is the only place a later reader can find it.
+    """
+    try:
+        one, five, fifteen = os.getloadavg()
+    except (AttributeError, OSError):  # not on this platform
+        return None
+    cores = os.cpu_count() or 0
+    per_core = f" ({one / cores:.2f}/core over {cores})" if cores else ""
+    return f"1m {one:.2f}{per_core}, 5m {five:.2f}, 15m {fifteen:.2f}"
+
+
 async def print_run_header(
     client: "httpx.AsyncClient",
     base_url: str,
@@ -91,6 +108,9 @@ async def print_run_header(
     print(f"==> Benchmark: {bench_name}")
     print(f"    ts        : {ts}")
     print(f"    runner    : {runner}  |  {local_hw()}")
+    load = host_load()
+    if load:
+        print(f"    host load : {load}")
     print(f"    server    : {srv_line}")
     if srv_hw:
         label = "  [bench client ≠ server]" if is_remote else ""

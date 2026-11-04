@@ -1079,6 +1079,15 @@ _bench-with-server:
 	    if [ "$$keep_data_dir" = "1" ]; then \
 	      echo "==> Preserving ephemeral server state at $$data_dir"; \
 	      echo "==> Server log: $$log_file"; \
+	      if [ "$(BENCH_SAVE)" = "1" ] && [ -f "$$log_file" ]; then \
+	        kept="$(_results_dir)/server-$$(basename "$$data_dir").log"; \
+	        if mkdir -p "$(_results_dir)" 2>/dev/null && \
+	           cp "$$log_file" "$$kept" 2>/dev/null; then \
+	          echo "==> Server log copied to $$kept"; \
+	          echo "    (the line above is a path a CI artifact can reach;"; \
+	          echo "     $$data_dir dies with the job)"; \
+	        fi; \
+	      fi; \
 	    else \
 	      rm -rf "$$data_dir"; \
 	    fi; \

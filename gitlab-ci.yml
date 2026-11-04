@@ -12,6 +12,11 @@ stages:
 image: python:3.11
 
 default:
+  # A superseded pipeline must stop: jaeger serves every job from one spinning
+  # disk, and a suite kept alive for a head nobody will merge spends 40 minutes
+  # of that disk on nothing (job 17685170110 ran to its timeout after its MR
+  # head had already moved on twice).
+  interruptible: true
   retry:
     max: 2
     when:
@@ -90,6 +95,10 @@ issue-reconcile:
 sqlite-fts:
   stage: test
   image: $PYTHON_IMAGE
+  # A two-second check that installs nothing: restoring and re-archiving the
+  # pip and model cache cost it 44s plus 67s of disk per matrix job
+  # (job 17686640107), six jobs per push.
+  cache: []
   parallel:
     matrix:
       - PYTHON_IMAGE:
@@ -142,7 +151,25 @@ validate-release-announcement:
 # installs and 53% of the suite in 25m, ~1.5x slower than the trace above).
 .pytest-tier:
   stage: test
+  # One suite at a time, project-wide. jaeger runs every job from one spinning
+  # disk; two suites and a pip install at once queue 13 deep on it and turn a
+  # 5-minute suite (SaaS job 17267767852) into a 40-minute timeout
+  # (job 17685583635). A job waiting for the group costs nothing.
+  resource_group: test-suite
+  variables:
+    # What the suite writes stays under the build dir, the venv and the temp
+    # files included, so a runner that keeps /builds in RAM keeps that much
+    # off its disk. The pip and model cache is the exception: the runner
+    # restores and re-archives it through its own store, which is not under
+    # /builds. It stays anyway, unlike on sqlite-fts above — that job caches
+    # nothing and paid 44s plus 67s for the round trip (job 17686640107),
+    # while the suite reads what the archive holds, so dropping it here would
+    # trade disk time for re-downloading the torch wheel and the model.
+    TMPDIR: $CI_PROJECT_DIR/.tmp
   before_script:
+    - mkdir -p "$TMPDIR"
+    - python -m venv .venv
+    - . .venv/bin/activate
     - python -m pip install --upgrade pip -q
     - pip install -r requirements-cpu.txt -q
     - pip install ".[test]" -q
@@ -240,7 +267,18 @@ pytest-arm64:
 
 bench:
   stage: benchmark
-  # Serialize benchmark jobs across this project.
+  # Pinned to m4-colima, the runner pytest-arm64 already uses and leaves
+  # idle between tags: the shared xeon group runner measures ~2.3s for the
+  # same 200-query run that calibrates p99 at ~280ms on GitLab SaaS, so an
+  # unpinned job inherits that slower host's timing variance for nothing
+  # (2026-10-21: three concurrent jobs on one host, with !85's bench red on
+  # the latency gate).
+  tags:
+    - m4-colima
+  # Serialize benchmark jobs across this project too: interruptible (set
+  # above, under `default`) retires only what one ref supersedes, so two
+  # open merge requests would still time m4-colima side by side without a
+  # group of their own.
   resource_group: bench
   variables:
     # Cold local runners download the model on first run; give startup headroom.
@@ -264,13 +302,14 @@ bench:
   before_script:
     - apt-get update -qq
     - apt-get install -y -qq curl git make
-  # The p99 ceiling is a property of the host that times the run, and this
-  # job names no runner, so it has to hold on the slowest host that can pick
-  # the job up. 2000 ms was calibrated where search p99 is ~280 ms (GitLab
-  # SaaS); the shared xeon group runner measures ~2.3 s for this same
-  # 200-query run, so that ceiling was red there before any regression
-  # existed. Sized for that host the way the suite budgets are: a gross
-  # regression still trips the gate, and a red still means the server.
+  # The p99 ceiling is a property of the host that times the run. The job
+  # is pinned to m4-colima above, but the ceiling stays sized for the
+  # slowest host that could still pick it up if that pin ever comes off:
+  # 2000 ms was calibrated where search p99 is ~280 ms (GitLab SaaS); the
+  # shared xeon group runner measures ~2.3 s for this same 200-query run,
+  # so that ceiling was red there before any regression existed. Sized for
+  # that host the way the suite budgets are: a gross regression still
+  # trips the gate, and a red still means the server.
   script:
     - >-
       LAT_SLO_P99_MS=${LAT_SLO_P99_MS:-4000}

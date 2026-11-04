@@ -456,6 +456,10 @@ In practical terms, the Flowlexi GitLab pipeline does:
   already covers that push, and running the suite twice per push buys
   nothing. The full suite costs more wall clock than every merge should
   pay, so it runs where coverage is mandatory rather than on each push.
+  Whichever tier runs, it runs one at a time across the project, so a
+  second pipeline's tier sits in `waiting_for_resource` instead of sharing
+  a runner's disk with the first; that wait is not charged against the
+  job's own timeout. A push that supersedes a pipeline cancels its tier.
 - **`vX.Y.Z` and `vX.Y.Z.W` tags**: publish packages to PyPI and the GitLab
   Package Registry, and publish Docker `-cpu` and `latest-cpu` images.
 - **`vX.Y.ZrcN` tags**: publish package to TestPyPI and GitLab Package

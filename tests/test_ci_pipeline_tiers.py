@@ -53,6 +53,22 @@ def _job(config, name):
     return job
 
 
+def _variables(config, job):
+    """What the job runs with: its own `variables:` win per key over the
+    pipeline-global ones, which are only defaults."""
+    return {**config["variables"], **job.get("variables", {})}
+
+
+def _archived(config, job):
+    """Which build-dir paths `cache:` keeps for the job. A job that declares
+    `cache:` replaces the default outright instead of merging into it —
+    `cache: []` is how sqlite-fts opts out of the round trip — so the job's
+    own entry wins whole, empty included."""
+    cache = job.get("cache", config["cache"])
+    paths = cache["paths"] if isinstance(cache, dict) else cache
+    return [f"$CI_PROJECT_DIR/{path}".rstrip("/") for path in paths]
+
+
 def _env(pipeline):
     env = {"CI_PIPELINE_SOURCE": "push", "CI_DEFAULT_BRANCH": "main"}
     env.update(PIPELINES[pipeline])
@@ -219,3 +235,53 @@ def test_the_suite_tiers_run_on_four_workers():
         assert " -n 4 " in _command(_job(config, name)), name
     assert " -n " not in _command(_job(config, "pytest-arm64"))
     assert '"pytest-xdist"' in (ROOT / "setup.py").read_text(encoding="utf-8")
+
+
+def test_the_suite_runs_one_at_a_time_and_writes_only_the_build_dir():
+    """jaeger serves every job from one spinning disk: two suites at once
+    thrash it into the timeout, and a runner that keeps /builds in RAM only
+    helps a job whose installs and temp files stay under it."""
+    config = _config()
+
+    assert config["default"]["interruptible"] is True
+
+    for name in TIERS:
+        job = _job(config, name)
+        assert job["resource_group"] == "test-suite"
+        assert job["variables"]["TMPDIR"] == "$CI_PROJECT_DIR/.tmp"
+
+        # The pip and model cache is the third write, and the only one the job
+        # keeps deliberately: `PIP_CACHE_DIR` and `HF_HOME` are what put its
+        # live copy under the build dir. Dropped, pip and huggingface_hub fall
+        # back to `$HOME/.cache` on the runner's disk and `cache:` archives two
+        # empty directories; pointed past what this job archives, or archived
+        # nowhere because it took sqlite-fts' `cache: []` opt-out, the suite
+        # re-downloads the torch wheel and the model every run. Either way the
+        # suite stays green, so the pair is pinned as the job resolves it, not
+        # as the pipeline-global pair both happen to be written as today: a
+        # job-level `cache:` or `variables:` wins over that, and the tier
+        # already carries a `variables:` block to be overridden in.
+        archived = _archived(config, job)
+        variables = _variables(config, job)
+        for variable in ("PIP_CACHE_DIR", "HF_HOME"):
+            directory = variables[variable]
+            assert any(
+                directory == path or directory.startswith(f"{path}/")
+                for path in archived
+            ), f"{name}: {variable} is {directory}, archived: {archived}"
+
+        steps = job["before_script"]
+        # The whole ordered contract, not just the last install: every way out
+        # of it is a quiet one. `tempfile` falls back to /tmp when TMPDIR
+        # names a directory that does not exist, so dropping the mkdir sends
+        # every temp file back to the runner's disk with the suite still
+        # green; and a pip self-upgrade above the activation writes the
+        # image's site-packages, off the build dir, just as silently.
+        installs = [
+            step for step in steps if step.startswith(("pip ", "python -m pip "))
+        ]
+        activate = steps.index(". .venv/bin/activate")
+
+        assert steps[0] == 'mkdir -p "$TMPDIR"'
+        assert steps.index("python -m venv .venv") < activate
+        assert installs and all(steps.index(step) > activate for step in installs)

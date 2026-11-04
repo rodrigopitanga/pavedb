@@ -171,7 +171,13 @@ under `benchmarks/results/` as:
 
 ```
 {latency,stress}-YYYY-MM-DD_HHmmss_<tag>.txt
+server-pavedb-bench.XXXXXX.log                 # failed runs only
 ```
+
+A run that ends non-zero against its own ephemeral server keeps that server's
+data_dir and prints the `$TMPDIR` path of its log; with `BENCH_SAVE=1` the log
+is copied in beside the results too, which is the only copy that outlives a CI
+container.
 
 Generated outputs are gitignored: keep them local or publish them as CI
 artifacts; commit only curated benchmark comparisons to documentation.
