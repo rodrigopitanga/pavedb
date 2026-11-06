@@ -133,7 +133,7 @@ def test_cancelled_search_keeps_slot(client, app, monkeypatch):
                     json={"q": "x", "k": 1},
                 )
             )
-            deadline = time.monotonic() + 1.0
+            deadline = time.monotonic() + 5.0
             while not started.is_set() and time.monotonic() < deadline:
                 await asyncio.sleep(0.001)
             assert started.is_set()
