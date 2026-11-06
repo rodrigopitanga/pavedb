@@ -35,7 +35,6 @@ from datetime import datetime, timezone as tz
 from pathlib import Path
 from typing import Any, Iterator
 
-from pave.filters import sanit_sql
 
 log = logging.getLogger(__name__)
 
@@ -1407,11 +1406,11 @@ class CollectionDB:
                 params.append(query)
 
         for key, values in filters.items():
-            safe_values = [sanit_sql(value) for value in values]
-            placeholders = ",".join("?" for _ in safe_values)
+            filter_values = [str(value) for value in values]
+            placeholders = ",".join("?" for _ in filter_values)
             if key == "docid":
                 conditions.append(f"c.docid IN ({placeholders})")
-                params.extend(safe_values)
+                params.extend(filter_values)
                 continue
             conditions.append(
                 "(EXISTS (SELECT 1 FROM chunk_meta AS cm "
@@ -1422,7 +1421,7 @@ class CollectionDB:
                 "WHERE dm.docid=c.docid AND dm.key=? "
                 f"AND dm.value IN ({placeholders}))))"
             )
-            params.extend([key, *safe_values, key, key, *safe_values])
+            params.extend([key, *filter_values, key, key, *filter_values])
 
         return " AND ".join(conditions) or "1", params
 
@@ -1659,7 +1658,7 @@ class CollectionDB:
                 for raw_value in values:
                     if not isinstance(raw_value, str):
                         continue
-                    value = sanit_sql(raw_value)
+                    value = raw_value
                     if "*" in value or value.startswith(skip_prefixes):
                         mixed_semantics = True
                         break

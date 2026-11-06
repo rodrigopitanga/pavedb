@@ -12,27 +12,7 @@ from pave.stores.base import FilterSpec, Metadata, MetadataValidationError
 
 log = logging.getLogger(__name__)
 
-_SQL_TRANS = str.maketrans({
-    ";": " ",
-    '"': " ",
-    "`": " ",
-    "\\": " ",
-    "\x00": "",
-})
 _FILTER_MATCH_MAX_DEPTH = 10
-
-
-def sanit_sql(value: Any, *, max_len: int | None = None) -> str:
-    if value is None:
-        return ""
-    text = str(value).translate(_SQL_TRANS)
-    for token in ("--", "/*", "*/"):
-        if token in text:
-            text = text.split(token, 1)[0]
-    text = text.strip()
-    if max_len is not None and max_len > 0 and len(text) > max_len:
-        text = text[:max_len]
-    return text.replace("'", "''")
 
 
 def sanit_field(name: Any) -> str:
@@ -79,7 +59,7 @@ def _sanit_meta_value(value: Any, *, path: str = "metadata") -> Any:
         ]
     if isinstance(value, (int, float, bool)) or value is None:
         return value
-    return sanit_sql(value)
+    return value if isinstance(value, str) else str(value)
 
 
 def sanit_meta_dict(
@@ -134,10 +114,7 @@ def matches_filters(
             return False
         if isinstance(have, (list, tuple, set)):
             return any(match(item, cond, depth + 1) for item in have)
-        if isinstance(cond, str):
-            safe_cond = sanit_sql(cond)
-        else:
-            safe_cond = str(cond)
+        safe_cond = str(cond)
         have_text = str(have)
         ops = {
             ">=": operator.ge,

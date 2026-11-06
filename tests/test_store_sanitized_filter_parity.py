@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 
-from pave.filters import sanit_sql
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
@@ -108,7 +107,7 @@ def test_sqlish_doc_metadata_exact_filter_matches_with_and_without_pushdown(
     assert pushed == canonical
     assert {rid for rid, _score, _meta in pushed} == {"doc1::r1", "doc1::r2"}
     assert all(
-        meta["so_urce"] == sanit_sql(exact_value)
+        meta["so_urce"] == exact_value
         for _rid, _score, meta in pushed
     )
 
@@ -132,7 +131,7 @@ def test_sqlish_chunk_metadata_exact_filter_matches_with_and_without_pushdown(
 
     assert pushed == canonical
     assert {rid for rid, _score, _meta in pushed} == {"doc1::r1"}
-    assert pushed[0][2]["na_me"] == sanit_sql(exact_value)
+    assert pushed[0][2]["na_me"] == exact_value
 
 
 def test_sqlish_chunk_metadata_wildcard_filter_matches_with_and_without_pushdown(
@@ -168,7 +167,39 @@ def test_sqlish_chunk_metadata_wildcard_filter_matches_with_and_without_pushdown
     assert seen["filters"] == {"ta_g": [f"*{wildcard_value}*"]}
     assert pushed == canonical
     assert {rid for rid, _score, _meta in pushed} == {"doc1::r1"}
-    assert pushed[0][2]["ta_g"] == sanit_sql(wildcard_value)
+    assert pushed[0][2]["ta_g"] == wildcard_value
+
+
+def test_distinct_sqlish_values_remain_distinct_in_filters(tmp_path):
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    tenant, collection = "tenant", "distinct_values"
+    values = (
+        ("doc1", "a'; -- first", "x/* first"),
+        ("doc2", "a'; -- second", "x/* second"),
+    )
+    for docid, source, tag in values:
+        store.index_records(
+            tenant,
+            collection,
+            docid,
+            [("r1", "shared token", {"tag": tag})],
+            doc_meta={"source": source},
+        )
+
+    for docid, source, tag in values:
+        for filters in ({"source": source}, {"tag": tag}):
+            pushed = _snapshot(
+                store.search(tenant, collection, "shared token", 5, filters)
+            )
+            canonical = _snapshot(
+                _search_without_pushdown(
+                    store, tenant, collection, "shared token", filters
+                )
+            )
+            assert pushed == canonical
+            assert {rid for rid, _score, _meta in pushed} == {f"{docid}::r1"}
+            assert pushed[0][2]["source"] == source
+            assert pushed[0][2]["tag"] == tag
 
 
 def test_negated_filter_keeps_chunk_metadata_overrides(tmp_path):

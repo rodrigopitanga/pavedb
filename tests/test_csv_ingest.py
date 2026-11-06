@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import pytest
-from pave.filters import sanit_sql
 from pave.service import ingest_document as svc_ingest, ServiceError
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
@@ -117,7 +116,7 @@ def test_ingest_rejects_metadata_key_sanitized_to_reserved_text(store):
     assert "reserved key 'text'" in excinfo.value.message
 
 
-def test_ingest_sanitizes_sqlish_doc_metadata_value_and_exact_filter_matches(store):
+def test_ingest_preserves_sqlish_doc_metadata_value_and_exact_filter_matches(store):
     raw_value = "x'; DROP TABLE chunk_meta; --"
     out = svc_ingest(
         store,
@@ -138,7 +137,7 @@ def test_ingest_sanitizes_sqlish_doc_metadata_value_and_exact_filter_matches(sto
         filters={"so urce": raw_value},
     )
     assert len(hits) == 1
-    assert hits[0].meta["so_urce"] == sanit_sql(raw_value)
+    assert hits[0].meta["so_urce"] == raw_value
 
 
 def test_doc_metadata_key_space_collapses_to_underscore(store):

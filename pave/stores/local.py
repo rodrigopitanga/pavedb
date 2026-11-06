@@ -48,7 +48,7 @@ from pave.backends import FaissBackend
 from pave.embedders import Embedder, EmbedderConfig, EmbedderUnavailableError
 import pave.embedders.factory as embedder_factory_mod
 from pave.filters import (
-    lookup_meta, matches_filters, sanit_field, sanit_meta_dict, sanit_sql,
+    lookup_meta, matches_filters, sanit_field, sanit_meta_dict,
 )
 from pave.metadb import (
     COLLECTION_CONFIG_FILENAME,
@@ -4381,8 +4381,7 @@ class LocalStore:
                 for value in values:
                     if not isinstance(value, str):
                         return False
-                    safe_value = sanit_sql(value)
-                    if "*" in safe_value or safe_value.startswith(skip_prefixes):
+                    if "*" in value or value.startswith(skip_prefixes):
                         return False
                 sql_params += (
                     len(values) if key == "docid" else 2 * len(values) + 3
