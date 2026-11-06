@@ -368,6 +368,81 @@ def test_request_gives_up_after_the_fifth_throttled_attempt(monkeypatch):
     assert slept == [7, 7, 7, 7]
 
 
+@pytest.mark.parametrize("during_read", [False, True])
+def test_request_retries_get_timeout_then_succeeds(monkeypatch, during_read):
+    import io
+
+    gl = issue_key_sync.GitLab.__new__(issue_key_sync.GitLab)
+    gl.api_url, gl.project_id, gl.token = "http://x", "1", "t"
+    calls = []
+    slept = []
+
+    class TimedOutResponse(io.BytesIO):
+        def read(self, *args):
+            raise TimeoutError("read timed out")
+
+    def urlopen(req, timeout):
+        calls.append(req)
+        if len(calls) == 1:
+            if during_read:
+                return TimedOutResponse()
+            raise TimeoutError("open timed out")
+        return io.BytesIO(b'{"ok": true}')
+
+    monkeypatch.setattr(issue_key_sync.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(issue_key_sync.time, "sleep", slept.append)
+
+    assert gl.request("GET", "/projects/1/issues/2/notes") == {"ok": True}
+    assert len(calls) == 2
+    assert slept == [1]
+
+
+def test_request_get_timeout_exhausts_with_context(monkeypatch):
+    gl = issue_key_sync.GitLab.__new__(issue_key_sync.GitLab)
+    gl.api_url, gl.project_id, gl.token = "http://x", "1", "t"
+    calls = []
+    slept = []
+
+    def urlopen(req, timeout):
+        calls.append(req)
+        raise TimeoutError("read timed out")
+
+    monkeypatch.setattr(issue_key_sync.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(issue_key_sync.time, "sleep", slept.append)
+
+    with pytest.raises(
+        RuntimeError, match="GitLab API GET /projects/1/issues/2/notes failed"
+    ):
+        gl.request("GET", "/projects/1/issues/2/notes")
+    assert len(calls) == 5
+    assert slept == [1, 2, 4, 8]
+
+
+def test_request_does_not_retry_ambiguous_post_timeout(monkeypatch):
+    import io
+
+    gl = issue_key_sync.GitLab.__new__(issue_key_sync.GitLab)
+    gl.api_url, gl.project_id, gl.token = "http://x", "1", "t"
+    calls = []
+    slept = []
+
+    class TimedOutResponse(io.BytesIO):
+        def read(self, *args):
+            raise TimeoutError("read timed out")
+
+    def urlopen(req, timeout):
+        calls.append(req)
+        return TimedOutResponse()
+
+    monkeypatch.setattr(issue_key_sync.urllib.request, "urlopen", urlopen)
+    monkeypatch.setattr(issue_key_sync.time, "sleep", slept.append)
+
+    with pytest.raises(RuntimeError, match="GitLab API POST /projects/1/notes failed"):
+        gl.request("POST", "/projects/1/notes", {"body": "once"})
+    assert len(calls) == 1
+    assert slept == []
+
+
 def test_retry_after_delay_ignores_a_past_date():
     import email.utils
 

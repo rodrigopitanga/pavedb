@@ -121,6 +121,12 @@ class GitLab:
                     time.sleep(2**attempt)
                     continue
                 raise RuntimeError(f"GitLab API {method} {path} failed: {exc}") from exc
+            except TimeoutError as exc:
+                if method == "GET" and attempt < 4:
+                    last = exc
+                    time.sleep(2**attempt)
+                    continue
+                raise RuntimeError(f"GitLab API {method} {path} failed: {exc}") from exc
         raise RuntimeError(f"GitLab API {method} {path} failed after retries: {last}")
 
     def paged(self, path: str) -> list[dict[str, object]]:
