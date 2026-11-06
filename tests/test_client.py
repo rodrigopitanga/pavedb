@@ -102,6 +102,37 @@ def test_provider_accepts_target_and_tenant(tmp_path):
     assert not os.path.exists(ephemeral_path)
 
 
+@pytest.mark.parametrize("tenant", ["../escape", "Acme", "a/b", "a\\b", ""])
+def test_provider_rejects_invalid_tenant_before_store_creation(tmp_path, tenant):
+    path = tmp_path / "data"
+    with pytest.raises(InvalidRequest) as excinfo:
+        provider(path, tenant=tenant)
+    assert excinfo.value.code == "invalid_tenant_name"
+    assert not path.exists()
+
+    with pytest.raises(InvalidRequest) as ephemeral_error:
+        provider(None, tenant=tenant)
+    assert ephemeral_error.value.code == "invalid_tenant_name"
+
+
+@pytest.mark.parametrize("tenant", ["../escape", "", False, 0])
+def test_local_client_rejects_invalid_tenant_override(tmp_path, tenant):
+    with provider(tmp_path / "data") as db:
+        with pytest.raises(InvalidRequest) as excinfo:
+            db.collection("books", tenant=tenant)
+        assert excinfo.value.code == "invalid_tenant_name"
+
+
+def test_local_client_empty_tenant_delete_preserves_default_collection(tmp_path):
+    with provider(tmp_path / "data", tenant="acme") as db:
+        db.create_collection("books")
+        assert db.collection("books", tenant=None).tenant == "acme"
+        with pytest.raises(InvalidRequest) as excinfo:
+            db.delete_collection("books", tenant="")
+        assert excinfo.value.code == "invalid_tenant_name"
+        assert [collection.name for collection in db.list_collections()] == ["books"]
+
+
 def test_provider_target_beats_ambient_config_data_dir(tmp_path, monkeypatch):
     ambient_data = tmp_path / "ambient-data"
     config = tmp_path / "config.yml"

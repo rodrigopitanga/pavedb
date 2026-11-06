@@ -147,6 +147,15 @@ _MAX_DOCID_BYTES = 200
 _COLLECTION_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 
 
+def _validate_tenant_name(value: str) -> str:
+    if not isinstance(value, str) or not _COLLECTION_NAME_RE.fullmatch(value):
+        raise ServiceError(
+            "invalid_tenant_name",
+            "tenant name must match ^[a-z0-9][a-z0-9-]{0,62}$",
+        )
+    return value
+
+
 def _has_control_chars(value: str) -> bool:
     for ch in value:
         cat = unicodedata.category(ch)

@@ -31,6 +31,7 @@ from pave.data_dir_lease import DataDirInUseError, DataDirLease
 from pave.embedders import LazyEmbedder
 from pave.service import (
     ServiceError,
+    _validate_tenant_name,
     cancel_reindex_job as svc_cancel_reindex_job,
     create_collection as svc_create_collection,
     delete_collection as svc_delete_collection,
@@ -111,6 +112,13 @@ def _translate_service_error(exc: ServiceError) -> PaveError:
     return cls(exc.code, exc.message)
 
 
+def _checked_tenant(tenant: str) -> str:
+    try:
+        return _validate_tenant_name(tenant)
+    except ServiceError as exc:
+        raise _translate_service_error(exc) from exc
+
+
 def _batch_item_with_vector(document: object) -> dict[str, Any]:
     # pavesdk.batch_item drops `vector`; re-attach it for BYOV batches.
     item = batch_item(document)
@@ -174,6 +182,7 @@ class LocalClient(BaseClient):
         store: BaseStore | None = None,
         _ephemeral: bool = False,
     ) -> None:
+        _checked_tenant(tenant)
         self.path = os.fspath(path)
         self.tenant = tenant
         self._ephemeral = _ephemeral
@@ -193,8 +202,12 @@ class LocalClient(BaseClient):
             raise
         self._closed = False
 
+    def _tenant(self, tenant: str | None) -> str:
+        return _checked_tenant(self.tenant if tenant is None else tenant)
+
     @classmethod
     def _ephemeral(cls, *, tenant: str = "default") -> LocalClient:
+        _checked_tenant(tenant)
         path = tempfile.mkdtemp(prefix="pavedb-")
         return cls(path, tenant=tenant, _ephemeral=True)
 

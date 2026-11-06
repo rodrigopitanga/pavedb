@@ -1060,6 +1060,24 @@ def test_cli_rejects_a_malformed_collection_ref(ref, capsys):
     assert "expected TENANT/COLLECTION" in capsys.readouterr().err
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["get-collection", "../books"],
+        ["get-collection", "Acme/books"],
+        ["list-collections", "../escape"],
+        ["list-queries", "--tenant", "a\\b"],
+        ["list-embedders", "--tenant", "a b"],
+    ],
+)
+def test_cli_rejects_invalid_tenant_names(argv, capsys):
+    from pave.cli import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(argv)
+    assert "tenant name must match" in capsys.readouterr().err
+
+
 def test_cli_rejects_the_old_two_argument_form(capsys):
     from pave.cli import build_parser
 

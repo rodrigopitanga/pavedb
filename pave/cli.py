@@ -35,6 +35,7 @@ from pave.service import (
     replay_query as svc_replay_query,
     search as svc_search,
     ServiceError,
+    _validate_tenant_name,
 )
 from pave.auth import current_admin_key, rotate_admin_key
 from pave.config import get_cfg, reload_cfg
@@ -508,7 +509,14 @@ def _collection_ref(value: str) -> tuple[str, str]:
         raise argparse.ArgumentTypeError(
             f"expected TENANT/COLLECTION, got {value!r}"
         )
-    return tenant, collection
+    return _cli_tenant(tenant), collection
+
+
+def _cli_tenant(value: str) -> str:
+    try:
+        return _validate_tenant_name(value)
+    except ServiceError as exc:
+        raise argparse.ArgumentTypeError(exc.message) from exc
 
 
 class _CollectionRef(argparse.Action):
@@ -839,7 +847,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     # Filters, not an address: --collection alone matches that name in
     # every tenant, so the two stay independent options.
-    p_list_queries.add_argument("--tenant", help="Filter by tenant")
+    p_list_queries.add_argument("--tenant", type=_cli_tenant, help="Filter by tenant")
     p_list_queries.add_argument("--collection", help="Filter by collection")
     p_list_queries.add_argument(
         "--limit",
@@ -1084,6 +1092,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_list_embedders.add_argument(
         "--tenant",
+        type=_cli_tenant,
         help="Tenant namespace to echo in the response",
     )
     p_list_embedders.set_defaults(func=cmd_list_embedders)
@@ -1098,7 +1107,9 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         example="pavecli list-collections demo",
     )
-    p_list_collections.add_argument("tenant", help="Tenant namespace")
+    p_list_collections.add_argument(
+        "tenant", type=_cli_tenant, help="Tenant namespace"
+    )
     p_list_collections.set_defaults(func=cmd_list_collections)
 
     p_get_collection = _command(
