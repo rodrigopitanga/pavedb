@@ -282,6 +282,11 @@ Rules we've actually learned the hard way:
    before touching disk; otherwise a UNIQUE collision surfaces as a 500
    instead of a 409 and disk/catalog end up out of sync.
 
+Catalog-only operations, including persistent request and operation-window rate
+charges, take the state read lock through `_with_catalog_retry` before opening or
+using a catalog handle. This keeps them outside archive dump/restore's exclusive
+checkpoint, cache-flush, and replacement window.
+
 If you add a new lock or a new lock-holding path, update this section and
 the docstring on the affected lock class.
 

@@ -1150,6 +1150,109 @@ def test_local_store_rejects_interrupted_restore_backup(tmp_path):
         LocalStore(str(tmp_path), FakeEmbedder())
 
 
+@pytest.mark.parametrize("archive_operation", ["restore", "dump"])
+@pytest.mark.parametrize("operation_window", [False, True])
+def test_rate_charge_waits_for_archive(
+    tmp_path, monkeypatch, archive_operation, operation_window,
+):
+    monkeypatch.setattr(metadb.time, "time", lambda: 120.0)
+    get_cfg().set("tenants.default_max_archives_per_day", 2)
+
+    def charge(store):
+        if operation_window:
+            return store.charge_operation_window(
+                "newco", "archive", "max_archives_per_day", 86400,
+            )
+        return store.charge_rate_limit("newco", "global", {60: 2}, now=120.0)
+
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.create_collection("newco", "documents")
+    assert charge(source).allowed
+    if archive_operation == "restore":
+        archive_bytes = _archive_bytes(source)
+        store = LocalStore(str(tmp_path / "target"), FakeEmbedder())
+        store.create_collection("oldco", "documents")
+        hook = "_replace_archive_tree"
+    else:
+        store = source
+        hook = "_write_zip"
+
+    archive_entered = threading.Event()
+    release_archive = threading.Event()
+    charge_progress = threading.Event()
+    charge_blocked = threading.Event()
+    errors = []
+    decisions = []
+    original_hook = getattr(store, hook)
+    original_wait = store._state_lock._cond.wait
+    archive_path = tmp_path / "snapshot.zip"
+
+    def pause_archive(*args, **kwargs):
+        # Both hooks run after the catalog is flushed, at the unsafe window.
+        archive_entered.set()
+        assert release_archive.wait(timeout=10)
+        return original_hook(*args, **kwargs)
+
+    def observe_wait(*args, **kwargs):
+        if threading.current_thread() is charger:
+            charge_blocked.set()
+            charge_progress.set()
+        return original_wait(*args, **kwargs)
+
+    def archive():
+        try:
+            if archive_operation == "restore":
+                store.restore_archive(archive_bytes)
+            else:
+                store.dump_archive(archive_path)
+        except Exception as exc:
+            errors.append(exc)
+
+    def charge_during_archive():
+        try:
+            decisions.append(charge(store))
+        except Exception as exc:
+            errors.append(exc)
+        finally:
+            charge_progress.set()
+
+    monkeypatch.setattr(store, hook, pause_archive)
+    monkeypatch.setattr(store._state_lock._cond, "wait", observe_wait)
+    archiver = threading.Thread(target=archive, daemon=True)
+    charger = threading.Thread(target=charge_during_archive, daemon=True)
+    archiver.start()
+    try:
+        assert archive_entered.wait(timeout=10)
+        charger.start()
+        assert charge_progress.wait(timeout=10)
+        assert charge_blocked.is_set()
+        assert not decisions
+    finally:
+        release_archive.set()
+        archiver.join(timeout=10)
+        if charger.ident is not None:
+            charger.join(timeout=10)
+    assert not archiver.is_alive()
+    assert not charger.is_alive()
+    assert not errors
+    assert decisions[0].allowed
+    assert decisions[0].remaining == 0
+    assert store.list_tenants() == ["newco"]
+    assert not charge(store).allowed
+
+    # Writes after replacement must survive closing and reopening the store.
+    store.create_collection("newco", "after")
+    store.close()
+    reopened = LocalStore(str(store._data_dir), FakeEmbedder())
+    assert reopened.get_collection_detail("newco", "after") is not None
+    assert not charge(reopened).allowed
+    if archive_operation == "dump":
+        snapshot = LocalStore(str(tmp_path / "snapshot"), FakeEmbedder())
+        snapshot.restore_archive(archive_path.read_bytes())
+        assert charge(snapshot).allowed
+        assert not charge(snapshot).allowed
+
+
 def test_restore_archive_waits_for_active_collection_operation(tmp_path):
     source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
     source.create_collection("acme", "restored")

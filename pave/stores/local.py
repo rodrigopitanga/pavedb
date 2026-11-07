@@ -170,6 +170,9 @@ def _assert_writable_rid(rid: str) -> None:
 class _StoreStateLock:
     """Reentrant reader/writer lock for whole-data-dir replacement.
 
+    Catalog operations, including rate charges, hold the read side through
+    handle acquisition and use; archive dump/restore hold the write side.
+
     Read-to-write upgrade is not supported: a thread holding read_lock that
     calls write_lock will deadlock waiting for itself to release.
     """
@@ -1306,11 +1309,14 @@ class LocalStore:
         now: float | None = None,
     ) -> RateLimitDecision:
         """Charge persistent request-rate windows in the global catalog."""
-        return self._ensure_catalog().charge_rate_limit(
-            tenant,
-            operation,
-            limits,
-            now=now,
+        return self._with_catalog_retry(
+            "charge_rate_limit",
+            lambda catalog: catalog.charge_rate_limit(
+                tenant,
+                operation,
+                limits,
+                now=now,
+            ),
         )
 
     def charge_operation_window(
