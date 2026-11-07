@@ -858,6 +858,88 @@ def test_restore_archive_repairs_one_missing_config_surface(tmp_path, repair):
     assert sidecar == expected
 
 
+@pytest.mark.parametrize("partial_cleanup", [False, True])
+def test_restore_archive_survives_backup_cleanup_failure(
+    tmp_path, monkeypatch, caplog, partial_cleanup
+):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder(dim=8))
+    source.index_records(
+        "acme", "restored", "new", [("0", "restored content", {})]
+    )
+    archive_bytes = _archive_bytes(source)
+    destination_path = tmp_path / "destination"
+    destination = _sentinel_store(destination_path)
+    generation = destination.metrics_generation()
+    rmtree = shutil.rmtree
+    leftovers = []
+
+    def fail_cleanup(path, *args, **kwargs):
+        path = Path(path)
+        if path.name.startswith(
+            (".pavedb-restore-backup-", ".pavedb-restore-cleanup-")
+        ):
+            leftovers.append(path)
+            if partial_cleanup:
+                (path / "catalog.db").unlink()
+            raise PermissionError(errno.EACCES, "backup cleanup denied", str(path))
+        return rmtree(path, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(shutil, "rmtree", fail_cleanup)
+        assert restore_archive(destination, archive_bytes)["ok"] is True
+
+    assert len(leftovers) == 1
+    assert leftovers[0].is_dir()
+    assert (leftovers[0] / "catalog.db").exists() is not partial_cleanup
+    assert not list(destination_path.glob(".pavedb-restore-backup-*"))
+    assert "Archive restore succeeded, but backup cleanup failed" in caplog.text
+    assert str(leftovers[0]) in caplog.text
+    assert destination.metrics_generation() != generation
+    assert destination.search("acme", "restored", "content", k=1)[0].id == "new::0"
+    assert destination.get_collection_config("live", "sentinel") is None
+    destination.close()
+
+    recovered = LocalStore(str(destination_path), FakeEmbedder(dim=8))
+    assert recovered.search("acme", "restored", "content", k=1)[0].id == "new::0"
+    assert recovered.get_collection_config("live", "sentinel") is None
+    with sqlite3.connect(destination_path / "catalog.db") as conn:
+        assert conn.execute("PRAGMA integrity_check").fetchone() == ("ok",)
+    exported = _archive_bytes(recovered)
+    with zipfile.ZipFile(io.BytesIO(exported)) as archive:
+        assert not any(
+            name.startswith(".pavedb-restore-cleanup-") for name in archive.namelist()
+        )
+    recovered.restore_archive(exported)
+    assert recovered.search("acme", "restored", "content", k=1)[0].id == "new::0"
+    assert not list(destination_path.glob(".pavedb-restore-*-*"))
+    recovered.close()
+
+
+def test_restore_archive_rolls_back_commit_rename_failure(tmp_path, monkeypatch):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.create_collection("acme", "restored")
+    archive_bytes = _archive_bytes(source)
+    destination_path = tmp_path / "destination"
+    destination = _sentinel_store(destination_path)
+    rename = Path.rename
+
+    def fail_commit(path, target):
+        if path.name.startswith(".pavedb-restore-backup-"):
+            raise PermissionError("cannot commit restore")
+        return rename(path, target)
+
+    monkeypatch.setattr(Path, "rename", fail_commit)
+    with pytest.raises(PermissionError, match="cannot commit restore"):
+        destination.restore_archive(archive_bytes)
+
+    destination.close()
+    recovered = LocalStore(str(destination_path), FakeEmbedder(dim=8))
+    assert recovered.search("live", "sentinel", "keep", k=1)[0].id == "doc::0"
+    assert recovered.get_collection_config("acme", "restored") is None
+    assert not list(destination_path.glob(".pavedb-restore-*-*"))
+    recovered.close()
+
+
 def test_restore_archive_rolls_back_staged_install_failure(tmp_path, monkeypatch):
     source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
     source.create_collection("acme", "restored")

@@ -106,6 +106,7 @@ _COLLECTION_CACHE_DEFAULT_MAX = 64
 _EMBEDDER_CACHE_DEFAULT_MAX = 32
 _INDEX_DIRTY_FILE = ".pavedb-index-dirty"
 _RESTORE_BACKUP_PREFIX = ".pavedb-restore-backup-"
+_RESTORE_CLEANUP_PREFIX = ".pavedb-restore-cleanup-"
 _COLLECTION_ARCHIVE_FORMAT = "pavedb.collection"
 _COLLECTION_ARCHIVE_VERSION = 1
 _COLLECTION_ARCHIVE_MANIFEST = "manifest.json"
@@ -5168,6 +5169,10 @@ class LocalStore:
                 dirs[:] = [
                     name for name in dirs
                     if rel_root / name not in excluded_dirs
+                    and not (
+                        rel_root == Path(".")
+                        and name.startswith(_RESTORE_CLEANUP_PREFIX)
+                    )
                 ]
                 if not files and not dirs:
                     arcname = (
@@ -5572,6 +5577,9 @@ class LocalStore:
         backup_dir = Path(
             tempfile.mkdtemp(prefix=_RESTORE_BACKUP_PREFIX, dir=data_dir)
         )
+        cleanup_dir = backup_dir.with_name(
+            _RESTORE_CLEANUP_PREFIX + backup_dir.name[len(_RESTORE_BACKUP_PREFIX):]
+        )
         old_entries = [
             entry
             for entry in data_dir.iterdir()
@@ -5586,7 +5594,9 @@ class LocalStore:
             for entry in staged_dir.iterdir():
                 installed.append(entry.name)
                 shutil.move(str(entry), str(data_dir / entry.name))
-            self._remove_path(backup_dir)
+            # Commit before deleting anything from the old tree. The renamed
+            # backup is safe to leave behind and must not block restart.
+            backup_dir.rename(cleanup_dir)
         except Exception as exc:
             rollback_errors: list[Exception] = []
             for name in reversed(installed):
@@ -5615,6 +5625,14 @@ class LocalStore:
                     "archive restore failed and rollback is incomplete"
                 ) from exc
             raise
+        try:
+            self._remove_path(cleanup_dir)
+        except OSError:
+            log.warning(
+                f"Archive restore succeeded, but backup cleanup failed at "
+                f"{cleanup_dir}. Remove the leftover backup manually.",
+                exc_info=True,
+            )
 
     def dump_archive(
         self,
