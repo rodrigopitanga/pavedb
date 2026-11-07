@@ -7,13 +7,15 @@ import importlib
 from threading import Lock
 
 import numpy as np
+import pytest
 
 import pave.embedders.sbert_worker as worker_mod
 
 
 class _FakeConn:
-    def __init__(self, responses: list[object]):
+    def __init__(self, responses: list[object], *, polls=()):
         self._responses = list(responses)
+        self._polls = list(polls)
         self.sent: list[object] = []
         self.closed = False
 
@@ -21,6 +23,8 @@ class _FakeConn:
         self.sent.append(msg)
 
     def poll(self, timeout=None) -> bool:
+        if self._polls:
+            return self._polls.pop(0)
         return bool(self._responses)
 
     def recv(self):
@@ -107,6 +111,115 @@ def test_process_sbert_auto_worker_count_is_bounded(monkeypatch):
     assert factory._resolve_worker_count(None) == 2
     assert factory._resolve_worker_count(2) == 2
     assert factory._resolve_worker_count(0) == 1
+
+
+@pytest.mark.parametrize("method", ["encode", "encode_queries"])
+@pytest.mark.parametrize("failure", [TimeoutError, EOFError, BrokenPipeError, OSError])
+def test_terminal_failure_retires_pipe_before_next_request(
+    monkeypatch, method, failure
+):
+    stale = ("ok", [[9.0, 9.0, 9.0]])
+    failed = [
+        (
+            _FakeProc(),
+            _FakeConn(
+                [("ready", 3), stale]
+                if failure is TimeoutError
+                else [("ready", 3), failure(), stale],
+                polls=[True, False] if failure is TimeoutError else (),
+            ),
+        )
+        for _ in range(2)
+    ]
+    fresh_proc = _FakeProc()
+    fresh_conn = _FakeConn([
+        ("ready", 3),
+        ("ok", [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+        ("ok", [[7.0, 8.0, 9.0]]),
+    ])
+    pairs = iter([*failed, (fresh_proc, fresh_conn)])
+    monkeypatch.setattr(
+        worker_mod.ProcessSbertEmbedder,
+        "_spawn_worker_process",
+        lambda self: next(pairs),
+    )
+
+    with worker_mod.ProcessSbertEmbedder(
+        model_name="test-model", workers=1, query_prefix="query:"
+    ) as emb:
+        encode = getattr(emb, method)
+        with pytest.raises(failure):
+            encode(["tenant-a:slow"])
+
+        for proc, conn in failed:
+            assert conn.closed
+            assert proc.terminated == 1
+            assert proc.join_calls
+            assert conn._responses == [stale]
+        assert emb._slots[0].conn is None
+        assert emb._slots[0].proc is None
+        assert fresh_conn.sent == []
+
+        out = encode(["tenant-b:first", "tenant-b:second"])
+        assert out.dtype == np.float32
+        np.testing.assert_array_equal(out, [[1, 2, 3], [4, 5, 6]])
+        np.testing.assert_array_equal(encode(["tenant-a:next"]), [[7, 8, 9]])
+        prefix = "query:" if method == "encode_queries" else ""
+        assert fresh_conn.sent == [
+            ("encode", [prefix + "tenant-b:first", prefix + "tenant-b:second"]),
+            ("encode", [prefix + "tenant-a:next"]),
+        ]
+
+    assert fresh_conn.closed
+    assert fresh_proc.terminated == 1
+
+
+@pytest.mark.parametrize("response", [
+    None,
+    ("ok",),
+    ("unexpected", "payload"),
+    ("ok", [1.0, 2.0, 3.0]),
+    ("ok", [[1.0, 2.0]]),
+    ("ok", [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
+    ("ok", [["invalid", 2.0, 3.0]]),
+])
+def test_invalid_response_retires_worker(monkeypatch, response):
+    bad_proc = _FakeProc()
+    bad_conn = _FakeConn([("ready", 3), response, ("ok", [[9, 9, 9]])])
+    good_conn = _FakeConn([("ready", 3), ("ok", [[1, 2, 3]])])
+    pairs = iter([(bad_proc, bad_conn), (_FakeProc(), good_conn)])
+    monkeypatch.setattr(
+        worker_mod.ProcessSbertEmbedder,
+        "_spawn_worker_process",
+        lambda self: next(pairs),
+    )
+
+    with worker_mod.ProcessSbertEmbedder(model_name="test-model", workers=1) as emb:
+        with pytest.raises(RuntimeError, match="invalid response"):
+            emb.encode(["first"])
+        assert bad_conn.closed
+        assert bad_proc.terminated == 1
+        np.testing.assert_array_equal(emb.encode(["second"]), [[1, 2, 3]])
+        assert good_conn.sent == [("encode", ["second"])]
+
+
+def test_worker_error_response_keeps_pipe_synchronized(monkeypatch):
+    proc = _FakeProc()
+    conn = _FakeConn([
+        ("ready", 3), ("error", "inference failed"), ("ok", [[1, 2, 3]])
+    ])
+    monkeypatch.setattr(
+        worker_mod.ProcessSbertEmbedder,
+        "_spawn_worker_process",
+        lambda self: (proc, conn),
+    )
+
+    with worker_mod.ProcessSbertEmbedder(model_name="test-model", workers=1) as emb:
+        with pytest.raises(RuntimeError, match="encode failed: inference failed"):
+            emb.encode(["first"])
+        assert not conn.closed
+        assert proc.terminated == 0
+        np.testing.assert_array_equal(emb.encode(["second"]), [[1, 2, 3]])
 
 
 def test_process_sbert_distributes_encode_calls_across_workers(monkeypatch):

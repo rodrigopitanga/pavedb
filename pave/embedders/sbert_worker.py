@@ -271,10 +271,6 @@ class ProcessSbertEmbedder:
         slot.proc = proc
         slot.conn = conn
 
-    def _restart_slot_locked(self, slot: _WorkerSlot) -> None:
-        self._shutdown_slot_locked(slot)
-        self._start_slot_locked(slot)
-
     def _ensure_slot_locked(self, slot: _WorkerSlot) -> None:
         if slot.proc is None or slot.conn is None or not slot.proc.is_alive():
             self._start_slot_locked(slot)
@@ -328,18 +324,29 @@ class ProcessSbertEmbedder:
                         "SBERT worker did not answer within "
                         f"{_REQUEST_TIMEOUT_S:.0f}s"
                     )
-                status, payload = slot.conn.recv()
+                response = slot.conn.recv()
             except (BrokenPipeError, EOFError, OSError, TimeoutError):
+                # A late reply must never be consumed by another request.
+                self._shutdown_slot_locked(slot)
                 if attempt == 0:
-                    self._restart_slot_locked(slot)
                     continue
                 raise
 
-            if status == "ok":
-                return np.asarray(payload, dtype=np.float32)
-            if status == "error":
-                raise RuntimeError(f"SBERT worker encode failed: {payload}")
-            raise RuntimeError(f"SBERT worker returned unknown status: {status}")
+            try:
+                status, payload = response
+                if status == "ok":
+                    vectors = np.asarray(payload, dtype=np.float32)
+                    if vectors.shape != (len(texts), self.dim):
+                        raise ValueError(f"unexpected vector shape: {vectors.shape}")
+                    return vectors
+                if status != "error":
+                    raise ValueError(f"unknown status: {status}")
+            except (TypeError, ValueError) as exc:
+                self._shutdown_slot_locked(slot)
+                raise RuntimeError(
+                    f"SBERT worker returned invalid response: {exc}"
+                ) from exc
+            raise RuntimeError(f"SBERT worker encode failed: {payload}")
         raise RuntimeError("SBERT worker encode exhausted retries")
 
     def warm(self) -> None:
