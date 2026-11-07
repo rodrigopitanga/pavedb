@@ -3,10 +3,85 @@
 
 import asyncio
 import json
+import logging
+import logging.config
 import os
+import stat
 import pytest
 import pave.log as ops_log
 from pave.auth import AuthContext
+from pave.main import _uvicorn_access_log_config
+
+
+@pytest.mark.parametrize("destination", ["file", "stdout"])
+@pytest.mark.parametrize(
+    "target",
+    ["/v1/search", "/v1/search?q=private+search&token=secret",
+     "/v1/search%3Fpath?q=private%20search"],
+)
+def test_access_log_omits_query_string(destination, target, tmp_path, capsys):
+    path = tmp_path / "access.log"
+    config = _uvicorn_access_log_config(str(path) if destination == "file" else None)
+    configurator = logging.config.DictConfigurator(config)
+    # Resolve the configured classes just as dictConfig does, without changing
+    # the process-wide loggers used by the rest of the suite.
+    config = configurator.config
+    config["formatters"]["access"] = configurator.configure_formatter(
+        config["formatters"]["access"]
+    )
+    handler = configurator.configure_handler(config["handlers"]["access"])
+    args = ("127.0.0.1:1234", "GET", target, "1.1", 200)
+    record = logging.LogRecord(
+        "uvicorn.access", logging.INFO, "", 0,
+        '%s - "%s %s HTTP/%s" %d', args, None,
+    )
+    try:
+        handler.handle(record)
+        handler.flush()
+    finally:
+        handler.close()
+    output = path.read_text() if destination == "file" else capsys.readouterr().out
+    assert f'GET {target.split("?", 1)[0]} HTTP/1.1' in output
+    assert "127.0.0.1:1234" in output
+    assert "200 OK" in output
+    assert "?" not in output
+    assert "private" not in output
+    assert "secret" not in output
+    assert record.args == args
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file permissions")
+@pytest.mark.parametrize("existing", [False, True])
+def test_access_log_is_owner_only_and_appends(existing, tmp_path):
+    path = tmp_path / "access.log"
+    if existing:
+        path.write_text("existing entry\n")
+        path.chmod(0o666)
+    old_umask = os.umask(0)
+    try:
+        handler = ops_log.AccessFileHandler(path, encoding="utf-8")
+    finally:
+        os.umask(old_umask)
+    try:
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+        handler.handle(logging.makeLogRecord({"msg": "new entry"}))
+    finally:
+        handler.close()
+    expected = "existing entry\nnew entry\n" if existing else "new entry\n"
+    assert path.read_text() == expected
+
+
+@pytest.mark.skipif(not hasattr(os, "O_NOFOLLOW"), reason="requires O_NOFOLLOW")
+def test_access_log_rejects_symlink(tmp_path):
+    target = tmp_path / "target"
+    target.write_text("untouched")
+    target.chmod(0o644)
+    path = tmp_path / "access.log"
+    path.symlink_to(target)
+    with pytest.raises(OSError):
+        ops_log.AccessFileHandler(path)
+    assert target.read_text() == "untouched"
+    assert stat.S_IMODE(target.stat().st_mode) == 0o644
 
 
 @pytest.fixture(autouse=True)

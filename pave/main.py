@@ -1067,13 +1067,16 @@ def _wrap_banner_fields(
     return lines
 
 
-def _uvicorn_access_log_config(path: str) -> dict:
+def _uvicorn_access_log_config(path: str | None = None) -> dict:
     log_config = copy.deepcopy(uvicorn.config.LOGGING_CONFIG)
-    log_config["handlers"]["access"] = {
-        "formatter": "access",
-        "class": "logging.FileHandler",
-        "filename": path,
-    }
+    log_config["formatters"]["access"]["()"] = "pave.log.AccessFormatter"
+    if path is not None:
+        log_config["handlers"]["access"] = {
+            "formatter": "access",
+            "class": "pave.log.AccessFileHandler",
+            "filename": path,
+            "encoding": "utf-8",
+        }
     return log_config
 
 
@@ -1220,14 +1223,14 @@ def main_srv(argv=None):
 
     # Access log routing
     _acc_val = str(_acc_dest).strip().lower() if _acc_dest else ""
-    _access_log_config = None
+    _access_log_config = _uvicorn_access_log_config()
     if _acc_val and _acc_val not in ("null", "none"):
         if _acc_val != "stdout":
             try:
                 access_path = os.path.expanduser(str(_acc_dest))
                 access_dir = os.path.dirname(access_path)
                 if access_dir:
-                    os.makedirs(access_dir, exist_ok=True)
+                    os.makedirs(access_dir, mode=0o700, exist_ok=True)
                 _access_log_config = _uvicorn_access_log_config(access_path)
             except OSError as exc:
                 log.warning(

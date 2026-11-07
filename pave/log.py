@@ -4,9 +4,43 @@
 from __future__ import annotations
 
 import asyncio, functools, json, logging, os, sys, threading, time
+from copy import copy
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+from uvicorn.logging import AccessFormatter as UvicornAccessFormatter
+
+
+class AccessFormatter(UvicornAccessFormatter):
+    """Keep query parameters out of HTTP access records."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        record = copy(record)
+        client, method, target, version, status = record.args
+        record.args = (client, method, target.split("?", 1)[0], version, status)
+        return super().format(record)
+
+
+class AccessFileHandler(logging.FileHandler):
+    """Open access logs owner-only, including existing files and reopenings."""
+
+    def _open(self):
+        def opener(path, flags):
+            fd = os.open(path, flags | getattr(os, "O_NOFOLLOW", 0), 0o600)
+            try:
+                if hasattr(os, "fchmod"):
+                    os.fchmod(fd, 0o600)
+            except OSError:
+                os.close(fd)
+                raise
+            return fd
+
+        return open(
+            self.baseFilename, self.mode, encoding=self.encoding,
+            errors=self.errors, opener=opener,
+        )
+
 
 _dest: str | None = None
 _handle = None

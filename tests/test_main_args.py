@@ -141,12 +141,13 @@ def test_main_srv_routes_access_log_to_file(monkeypatch, tmp_path):
     log_config = calls["kwargs"]["log_config"]
     access_handler = log_config["handlers"]["access"]
     assert calls["kwargs"]["access_log"] is True
-    assert access_handler["class"] == "logging.FileHandler"
+    assert access_handler["class"] == "pave.log.AccessFileHandler"
     assert access_handler["filename"] == str(access_log)
+    assert log_config["formatters"]["access"]["()"] == "pave.log.AccessFormatter"
     assert access_log.parent.is_dir()
 
 
-def test_main_srv_leaves_stdout_access_log_on_uvicorn_default(
+def test_main_srv_redacts_stdout_access_log(
     monkeypatch, tmp_path
 ):
     calls = _capture_server_run(monkeypatch)
@@ -160,7 +161,9 @@ def test_main_srv_leaves_stdout_access_log_on_uvicorn_default(
     main_mod.main_srv(["--home", str(home)])
 
     assert calls["kwargs"]["access_log"] is True
-    assert "log_config" not in calls["kwargs"]
+    config = calls["kwargs"]["log_config"]
+    assert config["handlers"]["access"]["stream"] == "ext://sys.stdout"
+    assert config["formatters"]["access"]["()"] == "pave.log.AccessFormatter"
 
 
 @pytest.mark.parametrize(

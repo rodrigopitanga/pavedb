@@ -97,17 +97,21 @@ instrumented — they are infrastructure ops, not business events.
 
 ## Uvicorn access log
 
-Independent of the ops stream. Uvicorn's access log defaults to on; configure
-it separately from `ops_log`.
+Independent of the ops stream. Access logging defaults to off; configure it
+separately from `ops_log`.
 
 ```yaml
 log:
-  access_log: null     # null (default, keep uvicorn default) | stdout | /path
+  access_log: null     # null (default, off) | stdout | /path
 ```
 
-`null` / not set: leave uvicorn's access log at its default (on).
-`stdout`: no change — uvicorn already writes access log to stdout.
-`/path`: attach a `FileHandler` to the `uvicorn.access` logger.
+`null` / not set: disable access logging.
+`stdout`: write access entries to stdout.
+`/path`: append to an owner-only file (mode `0600`, including existing files).
+A new log parent directory uses mode `0700`; symlink files are rejected where
+supported.
+Both destinations omit query strings, including search text and credentials,
+while retaining the client address, HTTP method, path, version, and status.
 
 ---
 
