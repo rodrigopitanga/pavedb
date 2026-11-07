@@ -1024,7 +1024,28 @@ def test_cli_init_creates_empty_explicit_home(cli_env, tmp_path, capsys):
     assert home.is_dir()
     assert config.is_file()
     assert tenants.is_file()
+    assert config.stat().st_mode & 0o777 == 0o600
+    assert tenants.stat().st_mode & 0o777 == 0o600
     assert data_dir.is_dir()
+
+
+def test_cli_init_force_replaces_insecure_files(cli_env, tmp_path, capsys):
+    pvcli, _, _ = cli_env
+    home = tmp_path / "instance"
+    home.mkdir()
+    for name in ("config.yml", "tenants.yml"):
+        path = home / name
+        path.write_text("stale", encoding="utf-8")
+        path.chmod(0o644)
+
+    pvcli.main_cli(["init", str(home), "--force"])
+    out = json.loads(capsys.readouterr().out)
+
+    assert out["written"] == ["config", "tenants"]
+    for name in ("config.yml", "tenants.yml"):
+        path = home / name
+        assert path.stat().st_mode & 0o777 == 0o600
+        assert path.read_text(encoding="utf-8") != "stale"
 
 
 def test_cli_init_writes_default_instance_files(cli_env, monkeypatch, tmp_path, capsys):

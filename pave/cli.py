@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 from __future__ import annotations
-import argparse, json, pathlib, sys
+import argparse, json, os, pathlib, sys, tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pave.embedders import LazyEmbedder, get_embedder
@@ -138,8 +138,24 @@ def _write_text(path: pathlib.Path, text: str, *, force: bool) -> bool:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() and not force:
         return False
-    path.write_text(text, encoding="utf-8")
-    return True
+    handle = tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=path.parent, delete=False,
+    )
+    temp_path = pathlib.Path(handle.name)
+    try:
+        with handle:
+            temp_path.chmod(0o600)
+            handle.write(text)
+        if force:
+            temp_path.replace(path)
+        else:
+            try:
+                os.link(temp_path, path)
+            except FileExistsError:
+                return False
+        return True
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 def cmd_init(args):
