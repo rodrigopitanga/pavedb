@@ -10,6 +10,7 @@ from starlette.staticfiles import StaticFiles
 from pathlib import Path
 from urllib.parse import quote
 import copy
+import html as _html
 
 from pave.version import (
     CONTACT_EMAIL,
@@ -346,7 +347,7 @@ def attach_ui(app: FastAPI):
 
     @app.get("/ui/search", include_in_schema=False)
     def ui_search():
-        inst_name = _display_name(cfg)
+        inst_name = _html.escape(_display_name(cfg), quote=True)
         return get_swagger_ui_html(
             openapi_url="/openapi-search.json",
             title=f"{inst_name} • Search",
@@ -355,7 +356,7 @@ def attach_ui(app: FastAPI):
 
     @app.get("/ui/data", include_in_schema=False)
     def ui_data():
-        inst_name = _display_name(cfg)
+        inst_name = _html.escape(_display_name(cfg), quote=True)
         return get_swagger_ui_html(
             openapi_url="/openapi-data.json",
             title=f"{inst_name} • Data",
@@ -364,7 +365,7 @@ def attach_ui(app: FastAPI):
 
     @app.get("/ui/admin", include_in_schema=False)
     def ui_admin():
-        inst_name = _display_name(cfg)
+        inst_name = _html.escape(_display_name(cfg), quote=True)
         return get_swagger_ui_html(
             openapi_url="/openapi-admin.json",
             title=f"{inst_name} • Admin",
@@ -377,8 +378,8 @@ def attach_ui(app: FastAPI):
     @app.get("/ui", include_in_schema=False)
     def ui_home():
         # instance strings
-        display_name = _display_name(cfg)
-        inst_desc = cfg.get("instance.desc")
+        display_name = _html.escape(_display_name(cfg), quote=True)
+        inst_desc = _html.escape(str(cfg.get("instance.desc") or ""), quote=True)
         try:
             html = tmpl_path.read_text(encoding="utf-8")
         except Exception:

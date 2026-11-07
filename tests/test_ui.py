@@ -2,7 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import inspect
+from pathlib import Path
 
+import pytest
 from pydantic import BaseModel
 
 import pave.schemas as schemas
@@ -51,6 +53,39 @@ def test_ui_renders_instance_strings(client, app, cfg):
     r2 = client.get("/ui")
     assert "PV-Changed" in r2.text
     assert "D-Changed" in r2.text
+
+@pytest.mark.parametrize("fallback", [False, True])
+def test_ui_escapes_instance_strings(client, cfg, monkeypatch, fallback):
+    if fallback:
+        read_text = Path.read_text
+
+        def missing_template(path, *args, **kwargs):
+            if path.name == "ui.html":
+                raise FileNotFoundError(path)
+            return read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", missing_template)
+
+    cfg.set("instance.name", '\'"><script>alert("x")</script> R&D')
+    cfg.set("instance.desc", '<img src=x onerror="bad()"> & details')
+    escaped_name = (
+        "&#x27;&quot;&gt;&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; R&amp;D"
+    )
+    for path in ("/ui", "/ui/search", "/ui/data", "/ui/admin"):
+        response = client.get(path)
+        assert response.status_code == 200
+        assert '<script>alert("x")</script>' not in response.text
+        assert escaped_name in response.text
+
+    response = client.get("/ui")
+    assert '<img src=x' not in response.text
+    assert (
+        '&lt;img src=x onerror=&quot;bad()&quot;&gt; &amp; details'
+        in response.text
+    )
+    cfg.set("instance.desc", None)
+    assert client.get("/ui").status_code == 200
+
 
 def test_openapi_split_and_security(client, app):
     r = client.get("/openapi-search.json")
