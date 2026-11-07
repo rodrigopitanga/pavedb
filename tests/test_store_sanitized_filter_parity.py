@@ -221,3 +221,28 @@ def test_negated_filter_keeps_chunk_metadata_overrides(tmp_path):
 
     assert pushed == canonical
     assert [rid for rid, _score, _meta in pushed] == ["doc1::r1"]
+
+
+@pytest.mark.parametrize("values", [["high", 5], [5, "high"]])
+def test_mixed_type_filter_values_match_without_pushdown(tmp_path, values):
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    tenant, collection = "tenant", "mixed_type_values"
+    store.index_records(
+        tenant,
+        collection,
+        "doc1",
+        [
+            ("r1", "shared token", {"rank": "high"}),
+            ("r2", "shared token", {"rank": 5}),
+            ("r3", "shared token", {"rank": "low"}),
+        ],
+    )
+    filters = {"rank": values}
+
+    pushed = _snapshot(store.search(tenant, collection, "shared", 5, filters))
+    canonical = _snapshot(
+        _search_without_pushdown(store, tenant, collection, "shared", filters)
+    )
+
+    assert pushed == canonical
+    assert {rid for rid, _score, _meta in pushed} == {"doc1::r1", "doc1::r2"}

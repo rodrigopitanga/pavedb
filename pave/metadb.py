@@ -1657,7 +1657,8 @@ class CollectionDB:
                 mixed_semantics = False
                 for raw_value in values:
                     if not isinstance(raw_value, str):
-                        continue
+                        mixed_semantics = True
+                        break
                     value = raw_value
                     if "*" in value or value.startswith(skip_prefixes):
                         mixed_semantics = True
