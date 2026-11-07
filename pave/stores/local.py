@@ -1256,22 +1256,21 @@ class LocalStore:
         self,
         tenant: str,
         name: str,
-        cfg: CollectionConfig | None = None,
+        cfg: CollectionConfig,
         display_name: str | None = None,
         max_collections: int = 0,
     ) -> None:
-        resolved = cfg or self._default_collection_config()
         self._with_catalog_retry(
             "register_collection",
             lambda catalog: catalog.register_collection(
                 tenant,
                 name,
                 display_name=display_name,
-                backend_type=resolved["backend_type"],
-                backend_config=resolved["backend_config"],
-                embedder_type=resolved["embedder_type"],
-                embed_model=resolved["embed_model"],
-                embed_config=resolved["embedder_config"],
+                backend_type=cfg["backend_type"],
+                backend_config=cfg["backend_config"],
+                embedder_type=cfg["embedder_type"],
+                embed_model=cfg["embed_model"],
+                embed_config=cfg["embedder_config"],
                 pavedb_version=VERSION,
                 collection_schema_version=COLLECTION_SCHEMA_VERSION,
                 max_collections=max_collections,
@@ -1332,6 +1331,20 @@ class LocalStore:
             return None
         return self.charge_rate_limit(tenant, op, {window_seconds: cap})
 
+    def _recover_collection_config(
+        self, tenant: str, collection: str
+    ) -> CollectionConfig | None:
+        directory = Path(self._base_path(tenant, collection))
+        if not directory.is_dir():
+            return None
+        config = CatalogDB._recovery_config(directory)
+        if config is None:
+            raise CollectionConfigRecoveryError(
+                "catalog recovery requires collection config: "
+                f"{self._collection_config_path(tenant, collection)}"
+            )
+        return config
+
     def _collection_config_for_load(
         self,
         tenant: str,
@@ -1341,17 +1354,21 @@ class LocalStore:
             "get_collection_config",
             lambda catalog: catalog.get_collection_config(tenant, collection),
         )
-        cfg = self._effective_collection_config(stored)
+        recovered = (
+            self._recover_collection_config(tenant, collection)
+            if stored is None else None
+        )
+        cfg = self._effective_collection_config(stored or recovered)
         if stored is None:
-            # No row means this call is what brings the collection into
-            # existence, so the per-tenant cap applies exactly as it does on
-            # an explicit create. It used to take the 0 = unlimited default,
-            # which is how read paths minted collections past the quota (B33).
+            # Recovery restores an existing collection; only a new one
+            # consumes the creation quota (B33).
             self._register_catalog_collection(
                 tenant,
                 collection,
                 cfg,
-                max_collections=self._tenant_max_collections(tenant),
+                max_collections=(
+                    self._tenant_max_collections(tenant) if recovered is None else 0
+                ),
             )
         return cfg
 
@@ -1747,7 +1764,9 @@ class LocalStore:
         except Exception:
             return None  # the locked load reports catalog trouble itself
         if stored is None:
-            return None
+            stored = self._recover_collection_config(tenant, collection)
+            if stored is None:
+                return None
         return self._prebuild_embedder(self._effective_collection_config(stored))
 
     def _load_or_init(
@@ -2022,6 +2041,8 @@ class LocalStore:
                         tenant, name,
                     )
                 )
+                if stored is None:
+                    stored = self._recover_collection_config(tenant, name)
                 is_new = stored is None
                 if stored is not None:
                     existing = self._effective_collection_config(stored)
@@ -2092,7 +2113,9 @@ class LocalStore:
                     name,
                     requested,
                     display_name=display_name,
-                    max_collections=self._tenant_max_collections(tenant),
+                    max_collections=(
+                        self._tenant_max_collections(tenant) if is_new else 0
+                    ),
                 )
             except Exception:
                 if is_new:
@@ -2250,9 +2273,8 @@ class LocalStore:
 
             # Catalog updates stay inside the two-collection lock so a
             # concurrent delete/create on either name can't race the
-            # register-then-rename pair (which is what surfaced as
+            # recovery-then-rename pair (which is what surfaced as
             # "catalog row missing" and spurious UNIQUE collisions).
-            self._register_catalog_collection(tenant, old_name)
             self._with_catalog_retry(
                 "move_collection",
                 lambda catalog: catalog.move_collection(
@@ -4155,7 +4177,7 @@ class LocalStore:
             chunk_count = len(rids_to_add)
 
             if chunk_count:
-                self._register_catalog_collection(tenant, collection)
+                self._collection_config_for_load(tenant, collection)
             if byov:
                 self._save(tenant, collection)
         return IndexResult(indexed_chunks=chunk_count, purged_chunks=purged)
@@ -4302,7 +4324,7 @@ class LocalStore:
                 )
 
             if all_rids:
-                self._register_catalog_collection(tenant, collection)
+                self._collection_config_for_load(tenant, collection)
 
         return results
 

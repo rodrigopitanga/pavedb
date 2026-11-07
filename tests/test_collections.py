@@ -507,6 +507,80 @@ def test_catalog_backfills_legacy_custom_embedder_config(tmp_path):
     assert recovered.search("acme", "legacy", "legacy", k=1)[0].id == "doc::0"
 
 
+@pytest.mark.parametrize("operation", ["load", "create", "ingest"])
+def test_missing_catalog_row_recovers_live_collection(tmp_path, operation):
+    _set_sbert_instance("custom", "custom-model")
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "docs", embedder="custom")
+    store.index_records("acme", "docs", "doc", [("doc::0", "original", {})])
+    expected = store.get_collection_config("acme", "docs")
+    sidecar = tmp_path / "t_acme" / "c_docs" / "collection.json"
+    original = sidecar.read_bytes()
+    store.create_collection("acme", "other")
+    get_cfg().set("tenants.default_max_collections", 1)
+    # Keep the catalog open and bootstrapped: startup recovery cannot help.
+    store._catalog.unregister_collection("acme", "docs")
+    if operation != "ingest":
+        store._evict_collection_cache_entry(("acme", "docs"))
+
+    if operation == "create":
+        store.create_collection("acme", "docs")
+    elif operation == "ingest":
+        store.index_records("acme", "docs", "new", [("new::0", "new", {})])
+    else:
+        store.search("acme", "docs", "original", k=1)
+
+    actual = store.get_collection_config("acme", "docs")
+    assert {key: actual[key] for key in COLLECTION_CONFIG_FIELDS} == {
+        key: expected[key] for key in COLLECTION_CONFIG_FIELDS
+    }
+    assert sidecar.read_bytes() == original
+    assert store.search("acme", "docs", "original", k=1)[0].id == "doc::0"
+
+
+def test_missing_catalog_row_rejects_embedder_change_without_deleting_data(tmp_path):
+    _set_sbert_instance("custom", "custom-model")
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "docs", embedder="custom")
+    store.index_records("acme", "docs", "doc", [("doc::0", "original", {})])
+    store._evict_collection_cache_entry(("acme", "docs"))
+    store._catalog.unregister_collection("acme", "docs")
+
+    with pytest.raises(ValueError, match="different embedder config"):
+        store.create_collection("acme", "docs", embedder="native")
+
+    assert store.search("acme", "docs", "original", k=1)[0].id == "doc::0"
+    assert store.get_collection_config("acme", "docs")["embed_model"] == "custom-model"
+
+
+@pytest.mark.parametrize("operation", ["load", "create"])
+@pytest.mark.parametrize("payload", [None, "{", "{}"])
+def test_missing_catalog_row_refuses_unrecoverable_config(
+    tmp_path, operation, payload
+):
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection("acme", "docs")
+    store.index_records("acme", "docs", "doc", [("doc::0", "original", {})])
+    store._evict_collection_cache_entry(("acme", "docs"))
+    store._catalog.unregister_collection("acme", "docs")
+    directory = tmp_path / "t_acme" / "c_docs"
+    sidecar = directory / "collection.json"
+    if payload is None:
+        sidecar.unlink()
+    else:
+        sidecar.write_text(payload, encoding="utf-8")
+    before = {p: p.read_bytes() for p in directory.rglob("*") if p.is_file()}
+
+    with pytest.raises(CollectionConfigRecoveryError, match="collection config"):
+        if operation == "create":
+            store.create_collection("acme", "docs")
+        else:
+            store.search("acme", "docs", "original", k=1)
+
+    assert store.get_collection_config("acme", "docs") is None
+    assert {p: p.read_bytes() for p in directory.rglob("*") if p.is_file()} == before
+
+
 def test_local_store_accepts_injected_catalog_db(tmp_path):
     cat_db = CatalogDB()
     store = LocalStore(str(tmp_path), FakeEmbedder(), cat_db=cat_db)
