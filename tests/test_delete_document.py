@@ -88,9 +88,11 @@ def test_delete_document_cli(tmp_path, monkeypatch):
 
     cfg = get_cfg()
     chunking = cfg.get("chunking")
+    ingest = cfg.get("ingest")
     monkeypatch.setattr(cfg, "_cfg", {
         "data_dir": str(tmp_path),
         "chunking": chunking,
+        "ingest": ingest,
         "vector_store": {"type": "faiss"},
         "embedder": {
             "default": "native",

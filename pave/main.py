@@ -625,10 +625,6 @@ def build_app(cfg) -> FastAPI:
     # cap. Uploads are allowed the configured ingest ceiling; an unlimited
     # ingest limit (0) leaves them unbounded, as documented.
     _body_mb = cfg.get("server.max_request_body_mb")
-    try:
-        _body_mb = max(float(_body_mb or 0), 0.0)
-    except (TypeError, ValueError):
-        _body_mb = 0.0
     app.state.max_body_bytes = int(_body_mb * 1024 * 1024)
     _ingest_bytes = ingest_upload_limit_bytes()
     app.state.max_upload_body_bytes = (

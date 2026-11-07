@@ -6,7 +6,9 @@ from copy import deepcopy
 from dataclasses import dataclass
 import json
 import logging
+import math
 import os, re, threading
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -396,9 +398,47 @@ def _validate_search(cfg: dict[str, Any]) -> None:
         )
 
 
+_SIZE_LIMIT_KEYS = (
+    "ingest.max_file_size_mb",
+    "ingest.max_batch_size_mb",
+    "server.max_request_body_mb",
+)
+
+
+def _validate_size_limit(path: str, value: Any) -> None:
+    if value is None and path == "ingest.max_batch_size_mb":
+        return
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or (isinstance(value, float) and not math.isfinite(value))
+        or value < 0
+        or (value > 0 and value * 1024 * 1024 < 1)
+        or value > sys.float_info.max / (1024 * 1024)
+    ):
+        raise ValueError(
+            f"{path} must be a finite nonnegative MB value "
+            f"(at least one byte if positive); got {value!r}"
+        )
+
+
+def _validate_size_limit_update(path: str, value: Any) -> None:
+    for limit_path in _SIZE_LIMIT_KEYS:
+        if path == limit_path:
+            _validate_size_limit(limit_path, value)
+        elif limit_path.startswith(path + "."):
+            nested = value
+            for part in limit_path[len(path) + 1 :].split("."):
+                nested = nested.get(part) if isinstance(nested, dict) else None
+            _validate_size_limit(limit_path, nested)
+
+
 def _validate_config(cfg: dict[str, Any]) -> None:
     _validate_search(cfg)
     _validate_chunking(cfg)
+    for path in _SIZE_LIMIT_KEYS:
+        section, name = path.split(".")
+        _validate_size_limit(path, cfg[section][name])
 
 
 CHUNKING_STRATEGIES = ("fixed", "none")
@@ -482,6 +522,7 @@ class Config:
             data: dict[str, Any] | None = None,
             path: str | Path | None = None):
         self._lock = threading.RLock()
+        self._path_prefix = ""
         if data is None:
             if path is None:
                 path = _default_config_path()
@@ -580,6 +621,7 @@ class Config:
 
     def set(self, path: str, value: Any) -> None:
         with self._lock:
+            _validate_size_limit_update(self._path_prefix + path, value)
             self._set_into(self._cfg, path, value)
 
     def as_dict(self) -> dict[str, Any]:
@@ -619,6 +661,7 @@ class Config:
                 child = Config({})
                 # point child to the same backing dict (no copy)
                 child._cfg = v
+                child._path_prefix = self._path_prefix + item + "."
                 return child
             return v
 

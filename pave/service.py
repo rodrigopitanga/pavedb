@@ -951,10 +951,7 @@ def _default_docid(filename: str) -> str:
 
 def _ingest_size_limit_bytes() -> int:
     raw = get_cfg().get("ingest.max_file_size_mb")
-    try:
-        max_mb = float(raw or 0)
-    except (TypeError, ValueError):
-        max_mb = 0.0
+    max_mb = float(raw)
     if max_mb <= 0:
         return 0
     return int(max_mb * 1024 * 1024)
@@ -974,10 +971,7 @@ def _ingest_batch_size_limit_bytes() -> int:
     if raw is None:
         # Unset means "one batch may carry one document's worth of text".
         return _ingest_size_limit_bytes()
-    try:
-        max_mb = float(raw)
-    except (TypeError, ValueError):
-        return _ingest_size_limit_bytes()
+    max_mb = float(raw)
     if max_mb <= 0:
         return 0
     return int(max_mb * 1024 * 1024)
