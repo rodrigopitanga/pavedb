@@ -619,7 +619,11 @@ def _coll_cfg(store, tenant: str, collection: str):
 
 def _is_identity_collection(store, tenant: str, collection: str) -> bool:
     cfg = _coll_cfg(store, tenant, collection)
-    return cfg is not None and str(cfg.get("embedder_type") or "").lower() == "identity"
+    if cfg is None:
+        # Ingest may create the collection implicitly. Check the embedder it
+        # would receive before allowing text through the bulk index path.
+        cfg = resolve_default_embedder().instances[0].spec
+    return str(cfg.get("embedder_type") or "").lower() == "identity"
 
 
 def _get_collection_vector_dim(store, tenant: str, collection: str) -> int | None:
@@ -1409,7 +1413,11 @@ def ingest_documents_batch(
         isinstance(item.get("vector"), list) for item in items
     )
     batch_index = getattr(store, "index_documents", None)
-    if has_any_vector or not callable(batch_index):
+    if (
+        has_any_vector
+        or _is_identity_collection(store, tenant, collection)
+        or not callable(batch_index)
+    ):
         return _ingest_documents_batch_serial(store, tenant, collection, items)
 
     from pave.filters import sanit_meta_dict

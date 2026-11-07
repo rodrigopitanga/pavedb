@@ -10,6 +10,9 @@ Identity collections are vector-only; embedding collections are permissive
 import json
 
 import pytest
+from fastapi.testclient import TestClient
+
+import pave.main as main_mod
 
 
 def _mk_identity(client, tenant="acme", name="vecs", dim=4):
@@ -221,6 +224,48 @@ def test_batch_vector_ingest_round_trip(client):
         json={"v": [0.0, 1.0, 0.0, 0.0], "k": 2},
     )
     assert r.json()["matches"][0]["meta"]["docid"] == "B"
+
+
+def test_batch_text_on_identity_collection_is_rejected(client):
+    tenant, name = _mk_identity(client)
+    r = client.post(
+        f"/v1/collections/{tenant}/{name}/documents:batch",
+        json={"documents": [
+            {"text": "not allowed", "docid": "A"},
+            {"text": "also not allowed", "docid": "B"},
+        ]},
+    )
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["succeeded"] == 0
+    assert body["failed"] == 2
+    assert [item["code"] for item in body["documents"]] == [
+        "vectors_only", "vectors_only"
+    ]
+    assert client.get(
+        f"/v1/collections/{tenant}/{name}/documents/A"
+    ).status_code == 404
+
+
+def test_batch_text_cannot_create_default_identity_collection(cfg):
+    cfg.set("embedder.instances.native", {
+        "type": "identity", "config": {"dim": 4},
+    })
+    app = main_mod.build_app(cfg)
+    with TestClient(app, base_url="http://localhost") as client:
+        r = client.post(
+            "/v1/collections/acme/newvecs/documents:batch",
+            json={"documents": [{"text": "not allowed", "docid": "A"}]},
+        )
+        assert r.status_code == 201, r.text
+        assert r.json()["documents"][0]["code"] == "vectors_only"
+        single = client.post(
+            "/v1/collections/acme/newvecs/documents",
+            json={"text": "not allowed", "docid": "A"},
+        )
+        assert single.status_code == 400, single.text
+        assert single.json()["code"] == "vectors_only"
+        assert app.state.store.get_collection_config("acme", "newvecs") is None
 
 
 def test_oversized_identity_dim_is_a_clean_400(client):
