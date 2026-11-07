@@ -7,7 +7,9 @@ import io
 import json
 import shutil
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 
@@ -16,6 +18,7 @@ from pave.metadb import (
     COLLECTION_SCHEMA_VERSION,
     CollectionExistsError,
     CollectionLimitError,
+    TenantChunkLimitError,
 )
 from pave.stores.local import LocalStore
 from pave.version import VERSION
@@ -228,10 +231,150 @@ def test_collection_archive_resolves_embedder_before_replacement(tmp_path):
         "acme", "books", "sentinel", [("0", "keep me", {})]
     )
 
-    with pytest.raises(ValueError, match="no compatible destination embedder"):
+    with pytest.raises(ValueError, match="not configured"):
         destination.restore_collection_archive("acme", "books", archive_bytes)
 
     assert destination.get_document("acme", "books", "sentinel") is not None
+
+
+@pytest.mark.parametrize("embedder_type", ["sbert", "openai"])
+@pytest.mark.parametrize("replace", [False, True])
+def test_tenant_archive_rejects_unconfigured_model(
+    client, cfg, tmp_path, embedder_type, replace,
+):
+    cfg.set("embedder.instances.native.type", embedder_type)
+    cfg.set("embedder.instances.native.model", "unconfigured-model")
+    cfg.set(
+        "embedder.instances.native.config",
+        {"dim": 64} if embedder_type == "openai" else {},
+    )
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.index_records("source", "books", "new", [("0", "archive", {})])
+    archive = _archive_bytes(source, "source", "books")
+    cfg.set("embedder.instances.native.model", "fake")
+    store = client.app.state.store
+    if replace:
+        store.index_records("acme", "books", "old", [("0", "keep", {})])
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", "root")
+    cfg.set("auth.api_keys", {"acme": "tenant-key"})
+
+    response = client.request(
+        "PUT" if replace else "POST",
+        "/v1/collections/acme/books/archive",
+        headers={"Authorization": "Bearer tenant-key"},
+        files={"file": ("books.zip", archive, "application/zip")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "collection_archive_invalid"
+    assert "not configured" in response.json()["error"]
+    if replace:
+        assert store.get_document("acme", "books", "old") is not None
+    else:
+        assert store.get_collection_detail("acme", "books") is None
+
+
+@pytest.mark.parametrize("replace", [False, True])
+@pytest.mark.parametrize("override", [False, True])
+@pytest.mark.parametrize(
+    ("field", "limit", "code"),
+    [
+        ("max_chunks_per_collection", 1, "chunk_limit_reached"),
+        ("max_chunks_per_tenant", 2, "tenant_chunk_limit_reached"),
+    ],
+)
+def test_tenant_archive_enforces_chunk_limits(
+    client, cfg, tmp_path, replace, override, field, limit, code,
+):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.index_records(
+        "source", "books", "new", [("0", "one", {}), ("1", "two", {})],
+    )
+    archive = _archive_bytes(source, "source", "books")
+    store = client.app.state.store
+    store.index_records("acme", "other", "keep", [("0", "other", {})])
+    if replace:
+        store.index_records("acme", "books", "old", [("0", "keep", {})])
+    config_key = f"tenants.{'acme.' if override else 'default_'}{field}"
+    cfg.set(config_key, limit)
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", "root")
+    cfg.set("auth.api_keys", {"acme": "tenant-key"})
+
+    response = client.request(
+        "PUT" if replace else "POST",
+        "/v1/collections/acme/books/archive",
+        headers={"Authorization": "Bearer tenant-key"},
+        files={"file": ("books.zip", archive, "application/zip")},
+    )
+
+    assert response.status_code == 429
+    assert response.json()["code"] == code
+    assert store.get_document("acme", "other", "keep") is not None
+    if replace:
+        assert store.get_document("acme", "books", "old") is not None
+    else:
+        assert store.get_collection_detail("acme", "books") is None
+
+
+def test_collection_restore_replacement_uses_incoming_chunk_count(tmp_path, cfg):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.index_records("source", "books", "new", [("0", "new", {})])
+    archive = _archive_bytes(source, "source", "books")
+    destination = LocalStore(str(tmp_path / "destination"), FakeEmbedder())
+    destination.index_records(
+        "acme", "books", "old", [("0", "one", {}), ("1", "two", {})],
+    )
+    destination.index_records("acme", "other", "keep", [("0", "other", {})])
+    cfg.set("tenants.default_max_chunks_per_collection", 1)
+    cfg.set("tenants.default_max_chunks_per_tenant", 2)
+
+    destination.restore_collection_archive("acme", "books", archive, replace=True)
+
+    assert destination.tenant_chunk_count("acme") == 2
+    assert destination.get_document("acme", "books", "new") is not None
+    assert destination.get_document("acme", "books", "old") is None
+
+
+def test_collection_restore_accepts_model_less_vectors(tmp_path):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.create_collection(
+        "source", "vectors", embedder_type="identity", embedder_config={"dim": 2},
+    )
+    source.index_records(
+        "source", "vectors", "doc", [("0", "", {})], vectors=[[1.0, 0.0]],
+    )
+    archive = _archive_bytes(source, "source", "vectors")
+    destination = LocalStore(str(tmp_path / "destination"), FakeEmbedder())
+
+    destination.restore_collection_archive("acme", "vectors", archive)
+
+    assert destination.get_document("acme", "vectors", "doc") is not None
+    assert destination.tenant_chunk_count("acme") == 1
+
+
+def test_concurrent_restores_share_the_tenant_chunk_budget(tmp_path, cfg):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.index_records("source", "books", "new", [("0", "new", {})])
+    archive = _archive_bytes(source, "source", "books")
+    destination = LocalStore(str(tmp_path / "destination"), FakeEmbedder())
+    cfg.set("tenants.default_max_chunks_per_tenant", 1)
+    start = Barrier(2)
+
+    def restore(name):
+        start.wait(timeout=5)
+        try:
+            destination.restore_collection_archive("acme", name, archive)
+        except TenantChunkLimitError:
+            return False
+        return True
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(restore, ["one", "two"]))
+
+    assert sorted(results) == [False, True]
+    assert destination.tenant_chunk_count("acme") == 1
 
 
 def test_collection_archive_rolls_back_catalog_publish_failure(

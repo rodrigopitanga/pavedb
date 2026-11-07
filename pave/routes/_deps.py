@@ -48,6 +48,8 @@ def archive_restore_error(exc: Exception, request: Request, rid, *, error):
             "collection_exists": 409,
             "collection_not_found": 404,
             "collection_limit_reached": 429,
+            "chunk_limit_reached": 429,
+            "tenant_chunk_limit_reached": 429,
         }
         return error(
             status.get(exc.code, 400), exc.code, exc.message,

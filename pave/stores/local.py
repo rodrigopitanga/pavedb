@@ -172,6 +172,8 @@ class _StoreStateLock:
 
     Catalog operations, including rate charges, hold the read side through
     handle acquisition and use; archive dump/restore hold the write side.
+    Collection restore also holds it while checking and installing the corpus
+    so concurrent restores cannot spend the same tenant chunk budget.
 
     Read-to-write upgrade is not supported: a thread holding read_lock that
     calls write_lock will deadlock waiting for itself to release.
@@ -565,8 +567,9 @@ class LocalStore:
         Returns (0, 0) where no cap is set, which is the default: an uncapped
         tenant pays for none of the counting.
 
-        Counted before the caller takes `collection`'s write lock, never
-        under it: `_read_doc_chunk_counts` takes the read lock of every
+        Counted before the caller takes `collection`'s write lock, unless
+        it holds the exclusive state lock (archive restore):
+        `_read_doc_chunk_counts` takes the read lock of every
         collection it visits, and an ingest holding A's write lock while
         asking for B's read lock deadlocks against one doing the reverse.
         The cost is that two concurrent ingests into different collections of
@@ -5309,7 +5312,7 @@ class LocalStore:
     def _preflight_collection_archive(
         self,
         collection_dir: Path,
-    ) -> tuple[dict[str, Any], CollectionConfig, list[tuple[str, str]]]:
+    ) -> tuple[dict[str, Any], CollectionConfig, list[tuple[str, str]], int]:
         allowed_roots = {
             _COLLECTION_ARCHIVE_MANIFEST,
             COLLECTION_CONFIG_FILENAME,
@@ -5394,6 +5397,7 @@ class LocalStore:
         try:
             metadata.open(collection_dir / "meta.db")
             metadata.verify_text_indexes()
+            _, chunk_count = metadata.get_doc_chunk_counts()
             metadata.checkpoint_wal()
         except Exception:
             raise ValueError(
@@ -5427,6 +5431,7 @@ class LocalStore:
                 else None
             ),
         )
+        embedder_factory_mod.require_configured_model(get_cfg(), config)
         try:
             embedder_factory_mod.runtime_embedder_spec_for_vector(
                 get_cfg(),
@@ -5454,7 +5459,7 @@ class LocalStore:
             str,
         ):
             raise ValueError("collection archive creation time is invalid")
-        return manifest, config, query_homes
+        return manifest, config, query_homes, chunk_count
 
     def _close_collection_for_restore(
         self,
@@ -5875,12 +5880,15 @@ class LocalStore:
             except zipfile.BadZipFile as exc:
                 raise ValueError("invalid collection archive") from exc
 
-            manifest, config, query_homes = self._preflight_collection_archive(
-                extract_dir
+            manifest, config, query_homes, chunk_count = (
+                self._preflight_collection_archive(extract_dir)
             )
             collection_meta = manifest["collection"]
 
-            with self._collection_write_lock(tenant, collection):
+            with (
+                self._state_lock.write_lock(),
+                self._collection_write_lock(tenant, collection),
+            ):
                 data_dir = Path(self._data_dir).resolve()
                 target = Path(self._base_path(tenant, collection)).resolve()
                 if not target.is_relative_to(data_dir):
@@ -5899,6 +5907,22 @@ class LocalStore:
                 if replace and not exists:
                     raise CollectionNotFoundError(
                         f"collection '{tenant}/{collection}' does not exist"
+                    )
+                # The state write lock keeps other collections stable while
+                # counting them. Replacement spends only the incoming corpus.
+                tenant_cap, elsewhere = self._tenant_chunk_budget(
+                    tenant, collection,
+                )
+                if tenant_cap > 0 and elsewhere + chunk_count > tenant_cap:
+                    raise TenantChunkLimitError(
+                        f"tenant '{tenant}' would exceed its chunk limit "
+                        f"({tenant_cap}) across its collections"
+                    )
+                max_chunks = self._tenant_limit(tenant, "max_chunks_per_collection")
+                if max_chunks > 0 and chunk_count > max_chunks:
+                    raise ChunkLimitError(
+                        f"collection '{tenant}/{collection}' would exceed "
+                        f"its chunk limit ({max_chunks})"
                     )
                 target.parent.mkdir(parents=True, exist_ok=True)
                 self._assert_no_collection_restore_backup(target)

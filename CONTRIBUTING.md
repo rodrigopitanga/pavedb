@@ -287,6 +287,10 @@ charges, take the state read lock through `_with_catalog_retry` before opening o
 using a catalog handle. This keeps them outside archive dump/restore's exclusive
 checkpoint, cache-flush, and replacement window.
 
+Collection archive restore holds the state write lock while checking destination
+chunk quotas and installing the collection, so concurrent restores cannot consume
+the same remaining tenant budget. Extraction and archive preflight run outside it.
+
 If you add a new lock or a new lock-holding path, update this section and
 the docstring on the affected lock class.
 

@@ -1912,6 +1912,10 @@ def restore_collection_archive(
         raise ServiceError("collection_not_found", str(exc)) from exc
     except CollectionLimitError as exc:
         raise ServiceError("collection_limit_reached", str(exc)) from exc
+    except ChunkLimitError as exc:
+        raise ServiceError("chunk_limit_reached", str(exc)) from exc
+    except TenantChunkLimitError as exc:
+        raise ServiceError("tenant_chunk_limit_reached", str(exc)) from exc
     return {
         "ok": True,
         "tenant": tenant,
