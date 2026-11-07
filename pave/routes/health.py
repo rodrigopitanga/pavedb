@@ -32,7 +32,6 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
 
     def readiness_check(request: Request):
         details = {
-            "vector_store": cfg.get("vector_store.type"),
             "writable": False,
             "vector_backend_init": False,
         }
@@ -68,7 +67,6 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
         details["ok"] = bool(
             details["writable"] and details["vector_backend_init"]
         )
-        details["version"] = version
         return details
 
     def store_metrics(store: BaseStore) -> dict[str, int | float]:
@@ -90,14 +88,14 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
     @router.get(
         "/health",
         summary="Health check",
-        description="Returns ready or degraded, plus the running version.",
+        description="Returns ready or degraded.",
         tags=["Health"],
     )
     def health(request: Request):
         d = readiness_check(request)
         status = "ready" if d.get("ok") else "degraded"
         return trace(
-            {"ok": d["ok"], "status": status, "version": version},
+            {"ok": d["ok"], "status": status},
             request,
         )
 
@@ -109,7 +107,7 @@ def build_health_router(cfg, version: str, trace) -> APIRouter:
     )
     def health_live(request: Request):
         return trace(
-            {"ok": True, "status": "live", "version": version},
+            {"ok": True, "status": "live"},
             request,
         )
 

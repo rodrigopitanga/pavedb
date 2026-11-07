@@ -3986,7 +3986,7 @@
   "paths": {
     "/health": {
       "get": {
-        "description": "Returns ready or degraded, plus the running version.",
+        "description": "Returns ready or degraded.",
         "operationId": "health_health_get",
         "responses": {
           "200": {

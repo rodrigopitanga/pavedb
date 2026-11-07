@@ -1,38 +1,47 @@
-# (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import os
 from concurrent.futures import ThreadPoolExecutor
 
+import pytest
+
 from pave.main import VERSION
 
 
-def test_health_endpoints(client):
-    r = client.get("/health/live")
-    assert r.status_code == 200 and r.json()["ok"] is True
+@pytest.mark.parametrize("failure", [None, "filesystem", "catalog"])
+def test_anonymous_health_omits_runtime_details(client, cfg, app, monkeypatch, failure):
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", "root")
 
-    r2 = client.get("/health")
-    assert r2.status_code == 200 and "version" in r2.json()
+    def fail(*args, **kwargs):
+        raise OSError("probe unavailable")
 
-    r3 = client.get("/health/ready")
-    assert r3.status_code in (200, 503)
-    assert "vector_store" in r3.json()
+    if failure == "filesystem":
+        monkeypatch.setattr("pave.routes.health.tempfile.mkstemp", fail)
+    elif failure == "catalog":
+        monkeypatch.setattr(app.state.store, "catalog_probe", fail)
 
-def test_health_defaults(client):
-    r = client.get("/health")
-    assert r.status_code == 200
-    j = r.json()
-    assert j["ok"] in (True, False)
-    assert j["version"] == VERSION
-
-def test_health_ready_contains_effective_fields(client):
-    r = client.get("/health/ready")
-    assert r.status_code in (200, 503)
-    j = r.json()
-    assert "data_dir" not in j
-    assert j.get("vector_store") == "faiss"
-    assert "writable" in j and isinstance(j["writable"], bool)
-    assert "vector_backend_init" in j and isinstance(j["vector_backend_init"], bool)
+    ready = failure is None
+    expected = {
+        "/health/live": (200, {"ok": True, "status": "live"}),
+        "/health": (200, {"ok": ready, "status": "ready" if ready else "degraded"}),
+        "/health/ready": (
+            200 if ready else 503,
+            {
+                "ok": ready,
+                "writable": failure != "filesystem",
+                "vector_backend_init": failure != "catalog",
+            },
+        ),
+    }
+    for path, (status_code, payload) in expected.items():
+        response = client.get(path, headers={"X-Request-ID": "health-probe"})
+        assert response.status_code == status_code
+        body = response.json()
+        assert body.pop("request_id") == "health-probe"
+        assert isinstance(body.pop("latency_ms"), (int, float))
+        assert body == payload
 
 
 def test_health_ready_writable_under_concurrent_probes(client, cfg):
@@ -68,3 +77,9 @@ def test_metrics_require_admin_when_static_auth(client, cfg):
 
         admin = client.get(path, headers={"Authorization": "Bearer root"})
         assert admin.status_code == 200
+        if path == "/health/metrics":
+            assert admin.json()["version"] == VERSION
+            assert admin.json()["vector_store"] == "faiss"
+        else:
+            assert f'version="{VERSION}"' in admin.text
+            assert 'vector_store="faiss"' in admin.text
