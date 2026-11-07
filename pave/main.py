@@ -903,6 +903,7 @@ def build_app(cfg) -> FastAPI:
                     "embedder_unavailable": 503,
                     "collection_not_found": 404,
                     "vectors_only": 400,
+                    "invalid_vector": 400,
                     "dim_mismatch": 400,
                     "invalid_collection_name": 400,
                     "invalid_content_filter": 400,

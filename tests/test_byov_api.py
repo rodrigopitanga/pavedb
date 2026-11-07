@@ -7,6 +7,10 @@ Identity collections are vector-only; embedding collections are permissive
 (accept text OR a raw vector). See MEMORIES "BYOV / raw-vector mode".
 """
 
+import json
+
+import pytest
+
 
 def _mk_identity(client, tenant="acme", name="vecs", dim=4):
     r = client.post(
@@ -91,6 +95,48 @@ def test_dim_mismatch_ingest_and_search_are_400(client):
     )
     assert r.status_code == 400, r.text
     assert r.json()["code"] == "dim_mismatch"
+
+
+@pytest.mark.parametrize(
+    "value", [float("nan"), float("inf"), -float("inf"), 1e40, -1e40, 1e38]
+)
+def test_out_of_range_vector_ingest_is_rejected(client, value):
+    tenant, name = _mk_identity(client)
+    vector = [1.0, value, 0.0, 0.0]
+    r = client.post(
+        f"/v1/collections/{tenant}/{name}/documents",
+        content=json.dumps({"vector": vector, "docid": "bad"}),
+        headers={"content-type": "application/json"},
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["code"] == "invalid_vector"
+
+    r = client.post(
+        f"/v1/collections/{tenant}/{name}/documents:batch",
+        content=json.dumps({"documents": [
+            {"vector": vector, "docid": "bad-batch"},
+            {"vector": [1.0, 0.0, 0.0, 0.0], "docid": "good"},
+        ]}),
+        headers={"content-type": "application/json"},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["failed"] == 1
+    assert r.json()["documents"][0]["code"] == "invalid_vector"
+    assert r.json()["succeeded"] == 1
+
+
+@pytest.mark.parametrize(
+    "value", [float("nan"), float("inf"), -float("inf"), 1e40, -1e40, 1e38]
+)
+def test_out_of_range_vector_search_is_rejected(client, value):
+    tenant, name = _mk_identity(client)
+    r = client.post(
+        f"/v1/collections/{tenant}/{name}/search",
+        content=json.dumps({"v": [1.0, value, 0.0, 0.0]}),
+        headers={"content-type": "application/json"},
+    )
+    assert r.status_code == 400, r.text
+    assert r.json()["code"] == "invalid_vector"
 
 
 def test_embedding_collection_dim_mismatch_is_400(client):

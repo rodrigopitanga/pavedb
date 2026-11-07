@@ -28,6 +28,9 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 import time as _time
+
+import numpy as np
+
 from pave.config import SEARCH_MODES, get_cfg, get_logger
 from pave.embedders import EmbedderUnavailableError
 from pave.metadb import (
@@ -632,6 +635,16 @@ def _get_collection_vector_dim(store, tenant: str, collection: str) -> int | Non
     return int(raw) if raw is not None else None
 
 
+def _validate_raw_vector(vector: list[float]) -> None:
+    max_component = float(np.finfo(np.float32).max)
+    if not all(
+        -max_component <= value <= max_component for value in vector
+    ) or sum(value * value for value in vector) > max_component:
+        raise ServiceError(
+            "invalid_vector", "vector magnitude must be finite in float32"
+        )
+
+
 def delete_collection(store, tenant: str, name: str) -> ServiceResult:
     try:
         resolved_name = _validate_collection_name(name)
@@ -1158,6 +1171,7 @@ def ingest_text(
             ):
                 raise ServiceError("vectors_only", "collection accepts vectors only")
             if vector is not None:
+                _validate_raw_vector(vector)
                 expected_dim = _get_collection_vector_dim(
                     store,
                     tenant,
@@ -1640,6 +1654,7 @@ def search(store, tenant: str, collection: str, q: str | None, k: int = 5,
         ):
             raise ServiceError("vectors_only", "collection accepts vectors only")
         if v is not None:
+            _validate_raw_vector(v)
             expected_dim = _get_collection_vector_dim(
                 store,
                 tenant,

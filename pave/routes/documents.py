@@ -298,6 +298,7 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
                     "unsupported_or_invalid_document": 400,
                     "chunk_too_large": 400,
                     "vectors_only": 400,
+                    "invalid_vector": 400,
                     "dim_mismatch": 400,
                     "chunk_limit_reached": 429,
                     "collection_limit_reached": 429,
