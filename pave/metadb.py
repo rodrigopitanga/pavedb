@@ -35,6 +35,8 @@ from datetime import datetime, timezone as tz
 from pathlib import Path
 from typing import Any, Iterator
 
+from pave.filesystem import create_private_file, mkdir_private
+
 
 log = logging.getLogger(__name__)
 
@@ -656,7 +658,8 @@ class CollectionDB:
                     "supported — remove JSON files first."
                 )
         if not read_only:
-            parent.mkdir(parents=True, exist_ok=True)
+            mkdir_private(parent)
+            create_private_file(path)
         self.path = path
         with self._state_cv:
             self._rconn = self._open_conn(
@@ -1794,7 +1797,8 @@ class CatalogDB:
 
     def open(self, path: Path) -> None:
         path = path.resolve()
-        path.parent.mkdir(parents=True, exist_ok=True)
+        mkdir_private(path.parent)
+        create_private_file(path)
         self.path = path
         with self._state_cv:
             self._rconn = self._open_conn(path)
@@ -2545,7 +2549,7 @@ class CatalogDB:
 
     def bootstrap(self, data_dir: Path) -> tuple[int, int]:
         data_dir = data_dir.resolve()
-        data_dir.mkdir(parents=True, exist_ok=True)
+        mkdir_private(data_dir)
         discovered = self.discover_collection_dirs(data_dir)
 
         seeded = 0

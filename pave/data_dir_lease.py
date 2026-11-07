@@ -4,9 +4,15 @@
 from __future__ import annotations
 
 import errno
+import logging
 import os
 from pathlib import Path
 from typing import BinaryIO
+
+from pave.filesystem import create_private_file, mkdir_private
+
+
+log = logging.getLogger(__name__)
 
 DATA_DIR_LOCK_NAME = ".pavedb.lock"
 
@@ -26,7 +32,14 @@ class DataDirLease:
     def acquire(self) -> DataDirLease:
         if self._handle is not None:
             return self
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        mkdir_private(self.data_dir)
+        if os.name == "posix" and self.data_dir.stat().st_mode & 0o077:
+            log.warning(
+                f"Data directory {self.data_dir} permits access by other users; "
+                "existing permissions are unchanged. Restrict it to mode 0700 "
+                "or protect it with an owner-only parent directory."
+            )
+        create_private_file(self.path)
         handle = self.path.open("a+b")
         try:
             if os.name == "nt":

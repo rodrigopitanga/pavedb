@@ -64,6 +64,29 @@ database and query log. There is no external database.
 That makes backups simple — take the directory as a unit — and it makes the
 directory the thing to protect.
 
+On POSIX, newly created instance homes and data directories use mode `0700`,
+including missing parent directories. This applies to CLI init, server startup
+and embedded clients. Init writes `config.yml` and `tenants.yml` as `0600`;
+new catalog and collection databases also start as `0600`, before SQLite opens
+them. SQLite derives new WAL and shared-memory file permissions from the database.
+The private data directory also protects vector indexes and other persisted
+content. Newly restored archive directories and files are restricted to `0700`
+and `0600` before installation, even under an existing accessible data root.
+PaveDB does not change the process umask.
+
+Existing directories and databases keep their permissions and ownership, including
+intentional group access. Local startup warns when the data directory itself
+allows group or other access; an owner-only ancestor can already protect it.
+For an older installation, stop every local owner, review the configured paths
+and restrict the instance home and data root to `0700`, and credential files to
+`0600`. Restrict existing database files and any remaining `-wal`/`-shm` files
+to `0600` as well. Init without `--force` preserves existing configuration;
+`--force` replaces it with templates, so do not use it merely to repair modes.
+Ancestors must not allow untrusted users to replace these paths. Review ACLs and
+backup/export destinations separately. Windows permission bits do not provide
+these POSIX guarantees: restrict the directories and files to the service account
+with Windows ACLs before use.
+
 Each canonical local data directory has one supported local owner. `pavesrv`,
 direct `pavecli` store commands, and a persistent local Python client take the
 same non-blocking ownership lease. A second supported owner fails before

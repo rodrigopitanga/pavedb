@@ -18,6 +18,7 @@ import threading
 from fastapi import HTTPException, Depends, Security, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from starlette.concurrency import run_in_threadpool
+from .filesystem import mkdir_private
 from .config import cfg_bool, get_cfg, get_logger
 
 bearer = HTTPBearer(auto_error=False)
@@ -41,7 +42,7 @@ def _read_admin_key(path: Path) -> str:
 
 
 def _write_admin_key(path: Path, key: str, *, replace: bool) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_private(path.parent)
     if not replace:
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         try:

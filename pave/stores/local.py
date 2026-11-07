@@ -47,6 +47,7 @@ sqlite3.register_adapter(datetime, datetime.isoformat)
 from pave.backends import FaissBackend
 from pave.embedders import Embedder, EmbedderConfig, EmbedderUnavailableError
 import pave.embedders.factory as embedder_factory_mod
+from pave.filesystem import make_private_tree, mkdir_private
 from pave.filters import (
     lookup_meta, matches_filters, sanit_field, sanit_meta_dict,
 )
@@ -1805,7 +1806,7 @@ class LocalStore:
         )
         # After the catalog registration, not before: a registration refused
         # by the collection quota must not leave a directory behind (B33).
-        os.makedirs(self._base_path(tenant, collection), exist_ok=True)
+        mkdir_private(Path(self._base_path(tenant, collection)))
         if (
             prebuilt is not None
             and prebuilt[0] == embedder_factory_mod.vector_space_key(coll_cfg)
@@ -5730,8 +5731,9 @@ class LocalStore:
                     validate_destination=True,
                     scratch_dir=True,
                 )
+                make_private_tree(extract_dir)
                 self._assert_no_restore_backup(data_dir_path)
-                data_dir_path.mkdir(parents=True, exist_ok=True)
+                mkdir_private(data_dir_path)
                 self._flush_caches()
                 self._replace_archive_tree(data_dir_path, extract_dir)
                 self._ensure_catalog().rotate_metrics_generation()
@@ -5949,7 +5951,7 @@ class LocalStore:
                         f"collection '{tenant}/{collection}' would exceed "
                         f"its chunk limit ({max_chunks})"
                     )
-                target.parent.mkdir(parents=True, exist_ok=True)
+                mkdir_private(target.parent)
                 self._assert_no_collection_restore_backup(target)
                 install_root = Path(
                     tempfile.mkdtemp(
@@ -5967,6 +5969,7 @@ class LocalStore:
                             "UPDATE query_log SET tenant=?, collection=?",
                             (tenant, collection),
                         )
+                    make_private_tree(staged)
                 except Exception:
                     with suppress(OSError):
                         self._remove_path(install_root)

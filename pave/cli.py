@@ -40,6 +40,7 @@ from pave.service import (
 from pave.auth import current_admin_key, rotate_admin_key
 from pave.config import get_cfg, reload_cfg
 from pave.data_dir_lease import DataDirInUseError, DataDirLease
+from pave.filesystem import mkdir_private
 from pave import metrics
 from pave.runtime_paths import (
     DEFAULT_HOME,
@@ -135,7 +136,7 @@ def _prepare_runtime(args) -> None:
 
 
 def _write_text(path: pathlib.Path, text: str, *, force: bool) -> bool:
-    path.parent.mkdir(parents=True, exist_ok=True)
+    mkdir_private(path.parent)
     if path.exists() and not force:
         return False
     handle = tempfile.NamedTemporaryFile(
@@ -185,8 +186,8 @@ def cmd_init(args):
     tenants_path = pathlib.Path(paths.tenants)
     home_path = pathlib.Path(paths.home)
     data_dir = pathlib.Path(paths.data_dir)
-    home_path.mkdir(parents=True, exist_ok=True)
-    data_dir.mkdir(parents=True, exist_ok=True)
+    mkdir_private(home_path)
+    mkdir_private(data_dir)
     for label, path, text in (
         ("config", config_path, config_text),
         ("tenants", tenants_path, tenants_text),
