@@ -138,26 +138,20 @@ def _file_admin_key(cfg) -> str | None:
     if not raw_path:
         return None
     path = Path(raw_path)
-    with _ADMIN_KEY_CACHE_LOCK:
-        try:
-            st = path.stat()
-            signature = (
-                str(path), st.st_dev, st.st_ino, st.st_mtime_ns,
-                st.st_ctime_ns, st.st_size, st.st_mode,
-            )
-            if _ADMIN_KEY_CACHE.get("signature") == signature:
-                return _ADMIN_KEY_CACHE["value"]  # type: ignore[return-value]
-            value = _read_admin_key(path)
-        except (OSError, RuntimeError, UnicodeError) as exc:
-            failure = (str(path), type(exc).__name__, str(exc))
+    try:
+        # In-place rewrites can preserve mtime and even share a ctime tick.
+        value = _read_admin_key(path)
+    except (OSError, RuntimeError, UnicodeError) as exc:
+        failure = (str(path), type(exc).__name__, str(exc))
+        with _ADMIN_KEY_CACHE_LOCK:
             if _ADMIN_KEY_CACHE.get("failure") != failure:
                 log.error("admin key file unavailable %s: %s", path, exc)
             _ADMIN_KEY_CACHE.clear()
             _ADMIN_KEY_CACHE["failure"] = failure
-            return None
+        return None
+    with _ADMIN_KEY_CACHE_LOCK:
         _ADMIN_KEY_CACHE.clear()
-        _ADMIN_KEY_CACHE.update(signature=signature, value=value)
-        return value
+    return value
 
 @dataclass
 class AuthContext:

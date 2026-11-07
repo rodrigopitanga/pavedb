@@ -4,6 +4,8 @@
 import json
 import os
 import stat
+from concurrent.futures import ThreadPoolExecutor
+from threading import Event
 
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
@@ -77,7 +79,7 @@ def test_rotate_invalidates_old_key(tmp_path, monkeypatch):
     assert new_response.status_code == 200
 
 
-def test_admin_key_is_read_only_when_file_changes(tmp_path, monkeypatch):
+def test_admin_key_is_reread_when_file_changes(tmp_path, monkeypatch):
     cfg = _config()
     key = auth_mod.ensure_admin_key(cfg, tmp_path)
     reads = 0
@@ -91,11 +93,11 @@ def test_admin_key_is_read_only_when_file_changes(tmp_path, monkeypatch):
     monkeypatch.setattr(auth_mod, "_read_admin_key", counted_read)
     assert auth_mod._file_admin_key(cfg) == key
     assert auth_mod._file_admin_key(cfg) == key
-    assert reads == 1
+    assert reads == 2
 
     new = auth_mod.rotate_admin_key(cfg, tmp_path)
     assert auth_mod._file_admin_key(cfg) == new
-    assert reads == 3  # rotation validates the old file before replacing it
+    assert reads == 4  # rotation validates the old file before replacing it
 
 
 def test_in_place_admin_key_rotation_with_preserved_mtime(tmp_path):
@@ -113,6 +115,37 @@ def test_in_place_admin_key_rotation_with_preserved_mtime(tmp_path):
     assert after.st_size == before.st_size
     assert after.st_mtime_ns == before.st_mtime_ns
     assert auth_mod._file_admin_key(cfg) == new
+
+
+def test_concurrent_admin_key_reads_do_not_wait_on_each_other(
+    tmp_path, monkeypatch
+):
+    cfg = _config()
+    key = auth_mod.ensure_admin_key(cfg, tmp_path)
+    original = auth_mod._read_admin_key
+    first_started = Event()
+    second_started = Event()
+    release_first = Event()
+
+    def controlled_read(path):
+        if not first_started.is_set():
+            first_started.set()
+            assert release_first.wait(timeout=5)
+        else:
+            second_started.set()
+        return original(path)
+
+    monkeypatch.setattr(auth_mod, "_read_admin_key", controlled_read)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(auth_mod._file_admin_key, cfg)
+        try:
+            assert first_started.wait(timeout=5)
+            second = executor.submit(auth_mod._file_admin_key, cfg)
+            assert second_started.wait(timeout=5)
+        finally:
+            release_first.set()
+        assert first.result(timeout=5) == key
+        assert second.result(timeout=5) == key
 
 
 @pytest.mark.parametrize("failure", ["missing", "wide_mode", "invalid_utf8"])
