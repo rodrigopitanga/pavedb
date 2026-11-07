@@ -38,7 +38,7 @@ def test_admin_list_tenants_requires_admin(tmp_path):
     except Exception:
         pass
 
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     app.state.store.create_collection("acme", "docs")
 
     r = client.get("/v1/admin/tenants")
@@ -89,7 +89,7 @@ def test_tenant_list_embedders_uses_tenant_auth(tmp_path):
     except Exception:
         pass
 
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
 
     r = client.get(
         "/v1/embedders/acme",

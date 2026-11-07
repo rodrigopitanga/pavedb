@@ -40,7 +40,8 @@ Two modes, and only one of them belongs in production.
 - `auth.mode=static` — bearer tokens. `auth.api_keys` maps a tenant name to its
   token; `auth.global_key` is the admin credential that spans tenants.
 - `auth.mode=none` — no credentials at all. Refused outside dev mode, and forced
-  onto loopback when it is allowed.
+  onto loopback when it is allowed. Requests must use `localhost` or
+  `127.0.0.1` as the Host; a browser Origin must match that address and port.
 
 The server refusing to start unauthenticated is a feature, not an obstacle. If
 startup fails with a message about `auth.mode=none`, it just prevented you from

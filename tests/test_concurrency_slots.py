@@ -79,7 +79,7 @@ def test_search_share_caps_one_tenant_below_instance_cap(app, monkeypatch):
     acme = {"Authorization": "Bearer acmetoken"}
     other = {"Authorization": "Bearer othertoken"}
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     c.post("/v1/collections/acme/sharesearch", headers=acme)
     c.post("/v1/collections/other/sharesearch", headers=other)
 
@@ -128,7 +128,7 @@ def test_timed_out_search_releases_share_once(app, monkeypatch):
         finally:
             drained.set()
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     c.post("/v1/collections/acme/sharetimeout", headers=headers)
 
     monkeypatch.setattr(app.state, "max_searches_per_tenant", 3)
@@ -185,7 +185,7 @@ def test_timed_out_search_keeps_tenant_slot(app, monkeypatch):
             drained.set()
 
     headers = {"Authorization": "Bearer acmetoken"}
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     c.post("/v1/collections/acme/tenantslotcol", headers=headers)
 
     monkeypatch.setattr(app.state, "search_timeout_s", 0.05)
@@ -241,7 +241,7 @@ def test_cancelled_ingest_keeps_ingest_slot(client, app, monkeypatch):
     async def cancel_request():
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test"
+            transport=transport, base_url="http://localhost"
         ) as async_client:
             request = asyncio.create_task(
                 async_client.post(

@@ -253,7 +253,7 @@ def test_healthy_suites_run_all_operations(app, monkeypatch, suite, capsys):
     # remaining operation in the normal coverage pass without random races.
     monkeypatch.setattr(stress, "_pick_operation", lambda ops: stress.op_health_live)
     stats = asyncio.run(stress.run_stress(
-        "http://fixture", 0.02, 2, max_error_pct=1, suite=suite,
+        "http://localhost", 0.02, 2, max_error_pct=1, suite=suite,
     ))
     assert stats is not None, capsys.readouterr().out
     assert stats.results

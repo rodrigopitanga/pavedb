@@ -116,7 +116,7 @@ def app(temp_data_dir):
 
 @pytest.fixture()
 def client(app):
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     try:
         yield client
     finally:

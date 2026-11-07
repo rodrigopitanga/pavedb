@@ -9,6 +9,7 @@ import copy
 import logging
 import os
 import platform
+import re
 import signal
 import subprocess
 import sys
@@ -105,6 +106,52 @@ _ASGI_CONTEXT_ENV = "_PAVEDB_ASGI_CONTEXT"
 
 class _BodyTooLarge(Exception):
     """Raised from the receive chain when a streamed body passes the cap."""
+
+
+_LOOPBACK_HOST = re.compile(r"(?:localhost|127\.0\.0\.1)(?::([0-9]{1,5}))?", re.I)
+
+
+class DevHostOriginMiddleware:
+    """Keep unauthenticated development requests on the loopback origin."""
+
+    def __init__(self, app, cfg) -> None:
+        self.app = app
+        self.cfg = cfg
+
+    async def __call__(self, scope, receive, send):
+        if (
+            scope["type"] != "http"
+            or str(self.cfg.get("auth.mode")).strip().lower() != "none"
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        headers = scope.get("headers") or ()
+        hosts = [v.decode("latin-1") for k, v in headers if k.lower() == b"host"]
+        origins = [v.decode("latin-1") for k, v in headers if k.lower() == b"origin"]
+        valid = len(hosts) == 1 and _LOOPBACK_HOST.fullmatch(hosts[0])
+        if valid:
+            host_port = hosts[0].rsplit(":", 1)
+            port = int(host_port[1]) if len(host_port) == 2 else None
+            valid = port is None or 0 < port <= 65535
+        if valid and origins:
+            valid = (
+                len(origins) == 1
+                and origins[0].lower()
+                == f"{scope.get('scheme', 'http')}://{hosts[0]}".lower()
+            )
+        if not valid:
+            response = JSONResponse(
+                {
+                    "ok": False,
+                    "code": "invalid_origin",
+                    "error": "invalid Host or Origin",
+                },
+                status_code=403,
+            )
+            await response(scope, _closed_receive, send)
+            return
+        await self.app(scope, receive, send)
 
 
 async def _closed_receive() -> dict:
@@ -530,6 +577,7 @@ def build_app(cfg) -> FastAPI:
     # is already on the scope when a body is rejected, and the rejection is
     # still counted by the metrics middleware.
     app.add_middleware(BodySizeLimitMiddleware)
+    app.add_middleware(DevHostOriginMiddleware, cfg=cfg)
 
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):

@@ -65,7 +65,7 @@ def test_live_health_does_not_load_embedder(monkeypatch, tmp_path):
     monkeypatch.setattr(m, "get_embedder", fail_get_embedder, raising=True)
 
     app = m.build_app(cfg)
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://localhost") as client:
         r = client.get("/health/live")
 
     assert r.status_code == 200
@@ -88,7 +88,7 @@ def test_warmup_default_false_skips_embedder(monkeypatch, tmp_path):
     monkeypatch.setattr(m, "get_embedder", fail_get_embedder, raising=True)
 
     app = m.build_app(cfg)
-    with TestClient(app):
+    with TestClient(app, base_url="http://localhost"):
         pass
 
 
@@ -109,7 +109,7 @@ def test_warmup_default_auto_skips_dev_embedder(monkeypatch, tmp_path):
     monkeypatch.setattr(m, "get_embedder", fail_get_embedder, raising=True)
 
     app = m.build_app(cfg)
-    with TestClient(app):
+    with TestClient(app, base_url="http://localhost"):
         pass
 
 
@@ -130,7 +130,7 @@ def test_warmup_default_auto_warms_prod_embedder(monkeypatch, tmp_path):
     calls = []
     app = m.build_app(cfg)
     app.state.store.warm = lambda: calls.append("warm")
-    with TestClient(app):
+    with TestClient(app, base_url="http://localhost"):
         pass
 
     assert calls == ["warm"]
@@ -213,7 +213,7 @@ def test_lifespan_flushes_metrics_on_shutdown(monkeypatch, tmp_path):
 
     app = m.build_app(cfg)
     app.state.store.close = lambda: calls.append("close")
-    with TestClient(app):
+    with TestClient(app, base_url="http://localhost"):
         assert calls == []
 
     assert calls == ["flush", "close"]

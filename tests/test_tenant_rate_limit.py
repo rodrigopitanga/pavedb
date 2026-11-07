@@ -29,7 +29,7 @@ def test_tenant_rate_limited_returns_429(app, monkeypatch):
     monkeypatch.setitem(app.state.tenant_limits, "acme", 1)
     monkeypatch.setitem(app.state.tenant_active, "acme", 1)
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     r = c.post(
         "/v1/collections/acme/rlcol/search",
         json={"q": "x", "k": 1},
@@ -49,7 +49,7 @@ def test_admin_bypasses_tenant_limit(app, monkeypatch):
     monkeypatch.setitem(app.state.tenant_limits, "acme", 1)
     monkeypatch.setitem(app.state.tenant_active, "acme", 1)
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     c.post("/v1/collections/acme/adminbypass")
     r = c.post(
         "/v1/collections/acme/adminbypass/search",
@@ -70,7 +70,7 @@ def test_shared_scope_search_honours_tenant_limit(app, monkeypatch):
     monkeypatch.setitem(app.state.tenant_limits, "acme", 1)
     monkeypatch.setitem(app.state.tenant_active, "acme", 1)
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     headers = {"Authorization": "Bearer acmetoken"}
     r = c.post("/v1/search", json={"q": "x", "k": 1}, headers=headers)
     assert r.status_code == 429
@@ -98,7 +98,7 @@ def test_admin_bypasses_shared_scope_tenant_limit(app, monkeypatch):
         monkeypatch.setitem(app.state.tenant_limits, tenant, 1)
         monkeypatch.setitem(app.state.tenant_active, tenant, 1)
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     r = c.post("/v1/search", json={"q": "x", "k": 1})
     assert r.status_code != 429
     g = c.get("/v1/search", params={"q": "x", "k": 1})
@@ -117,7 +117,7 @@ def test_unconfigured_tenant_uses_default(app, monkeypatch):
     # Simulate one request already active for this tenant.
     monkeypatch.setitem(app.state.tenant_active, "acme", 1)
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     r = c.post(
         "/v1/collections/acme/rlcol2/search",
         json={"q": "x", "k": 1},
@@ -141,7 +141,7 @@ def test_unconfigured_tenant_no_default_unlimited(app, monkeypatch):
     # Even with a high active count, unlimited means no 429.
     monkeypatch.setitem(app.state.tenant_active, "acme", 9999)
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     r = c.post(
         "/v1/collections/acme/unlimited-rl/search",
         json={"q": "x", "k": 1},
@@ -159,7 +159,7 @@ def test_moving_window_request_limit_returns_429(app, monkeypatch):
     monkeypatch.setitem(app.state.tenant_rate_limits, "acme", {60: 2, 3600: 0})
     monkeypatch.setattr(app.state, "tenant_rate_clock", lambda: 120.0)
 
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     headers = {"Authorization": "Bearer acmetoken"}
     first = client.get("/v1/collections/acme", headers=headers)
     second = client.get("/v1/collections/acme", headers=headers)
@@ -187,7 +187,7 @@ def test_moving_window_limits_are_isolated_by_tenant(app, monkeypatch):
     monkeypatch.setattr(app.state, "tenant_default_rate_limits", {60: 1, 3600: 0})
     monkeypatch.setattr(app.state, "tenant_rate_clock", lambda: 120.0)
 
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     acme = {"Authorization": "Bearer acmetoken"}
     other = {"Authorization": "Bearer othertoken"}
     assert client.get("/v1/collections/acme", headers=acme).status_code != 429
@@ -199,7 +199,7 @@ def test_admin_bypasses_moving_window_request_limit(app, monkeypatch):
     monkeypatch.setattr(app.state, "tenant_default_rate_limits", {60: 1, 3600: 1})
     monkeypatch.setattr(app.state, "tenant_rate_clock", lambda: 120.0)
 
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     first = client.get("/v1/collections/public")
     second = client.get("/v1/collections/public")
 
@@ -218,7 +218,7 @@ def test_concurrency_refusal_does_not_charge_moving_window(app, monkeypatch):
     monkeypatch.setitem(app.state.tenant_limits, "acme", 1)
     monkeypatch.setitem(app.state.tenant_active, "acme", 1)
 
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     headers = {"Authorization": "Bearer acmetoken"}
     refused = client.get("/v1/collections/acme", headers=headers)
     assert refused.status_code == 429

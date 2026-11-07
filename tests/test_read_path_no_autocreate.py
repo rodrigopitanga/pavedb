@@ -58,14 +58,14 @@ def test_startup_creates_the_configured_common_corpus(temp_data_dir):
 
     app = main_mod.build_app(cfg)
     main_mod.metrics_initialize(app.state.store)
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     try:
         assert _names(client, "globalco") == ["shared"]
         r = client.post("/v1/search", json={"q": "anything", "k": 3})
         assert r.status_code == 200, r.text
         # Idempotent: a second worker/restart converges on the same row.
         second = main_mod.build_app(cfg)
-        assert _names(TestClient(second), "globalco") == ["shared"]
+        assert _names(TestClient(second, base_url="http://localhost"), "globalco") == ["shared"]
     finally:
         client.close()
 

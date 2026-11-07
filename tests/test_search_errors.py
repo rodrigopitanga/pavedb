@@ -125,7 +125,7 @@ def test_cancelled_search_keeps_slot(client, app, monkeypatch):
     async def cancel_request():
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(
-            transport=transport, base_url="http://test"
+            transport=transport, base_url="http://localhost"
         ) as async_client:
             request = asyncio.create_task(
                 async_client.post(

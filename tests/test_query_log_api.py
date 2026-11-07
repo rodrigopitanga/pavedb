@@ -189,7 +189,7 @@ def test_get_query_log_not_found(client):
 def test_admin_get_query_log_entry_by_bare_id(app, cfg):
     open_client = svc_client = None
     try:
-        open_client = TestClient(app)
+        open_client = TestClient(app, base_url="http://localhost")
         collection = "adminqlog"
         open_client.post(f"/v1/collections/acme/{collection}")
         open_client.post(
@@ -208,7 +208,7 @@ def test_admin_get_query_log_entry_by_bare_id(app, cfg):
         cfg.set("auth.global_key", "adminkey")
         cfg.set("auth.api_keys", {"acme": "acmekey"})
 
-        svc_client = TestClient(app)
+        svc_client = TestClient(app, base_url="http://localhost")
         unauthorized = svc_client.get(f"/v1/admin/queries/{query_id}")
         assert unauthorized.status_code == 401
 
@@ -378,7 +378,7 @@ def test_admin_query_ops_include_owner_and_query_id(app, cfg, tmp_path):
     import pave.log as ops_log
 
     collection = "audited"
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     try:
         client.post(f"/v1/collections/acme/{collection}")
         client.post(
@@ -427,7 +427,7 @@ def test_admin_query_ops_do_not_repeat_the_query_home_lookup(app, cfg, monkeypat
         return resolve(store, query_id)
 
     collection = "lookupcount"
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     try:
         client.post(f"/v1/collections/acme/{collection}")
         client.post(
@@ -469,7 +469,7 @@ def test_admin_query_ops_survive_an_unresolvable_owner(
         raise RuntimeError("catalog unavailable")
 
     path = tmp_path / "ops.jsonl"
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     try:
         cfg.set("auth.mode", "static")
         cfg.set("auth.global_key", "adminkey")

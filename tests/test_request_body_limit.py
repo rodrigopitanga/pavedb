@@ -20,7 +20,7 @@ def guarded(cfg):
     cfg.set("auth.mode", "static")
     cfg.set("auth.global_key", "test-key")
     app = main_mod.build_app(cfg)
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://localhost")
     try:
         yield client
     finally:

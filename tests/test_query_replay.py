@@ -242,7 +242,7 @@ def _seed_query(client, tenant, collection, body=b"hello"):
 
 
 def test_replay_forbidden_for_foreign_tenant(app, cfg):
-    open_client = TestClient(app)
+    open_client = TestClient(app, base_url="http://localhost")
     collection = "foreignreplay"
     qid = _seed_query(open_client, "acme", collection)
 
@@ -250,7 +250,7 @@ def test_replay_forbidden_for_foreign_tenant(app, cfg):
     cfg.set("auth.global_key", None)
     cfg.set("auth.api_keys", {"acme": "acmekey", "other": "otherkey"})
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     r = c.post(
         f"/v1/collections/acme/{collection}/queries/{qid}/replay",
         headers={"Authorization": "Bearer otherkey"},
@@ -260,7 +260,7 @@ def test_replay_forbidden_for_foreign_tenant(app, cfg):
 
 
 def test_replay_allowed_for_owning_tenant(app, cfg):
-    open_client = TestClient(app)
+    open_client = TestClient(app, base_url="http://localhost")
     collection = "owningreplay"
     qid = _seed_query(open_client, "acme", collection)
 
@@ -268,7 +268,7 @@ def test_replay_allowed_for_owning_tenant(app, cfg):
     cfg.set("auth.global_key", None)
     cfg.set("auth.api_keys", {"acme": "acmekey"})
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     r = c.post(
         f"/v1/collections/acme/{collection}/queries/{qid}/replay",
         headers={"Authorization": "Bearer acmekey"},
@@ -278,7 +278,7 @@ def test_replay_allowed_for_owning_tenant(app, cfg):
 
 
 def test_replay_allowed_for_admin_across_tenants(app, cfg):
-    open_client = TestClient(app)
+    open_client = TestClient(app, base_url="http://localhost")
     collection = "adminreplay"
     qid = _seed_query(open_client, "acme", collection)
 
@@ -286,7 +286,7 @@ def test_replay_allowed_for_admin_across_tenants(app, cfg):
     cfg.set("auth.global_key", "adminkey")
     cfg.set("auth.api_keys", {"other": "otherkey"})
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     r = c.post(
         f"/v1/collections/acme/{collection}/queries/{qid}/replay",
         headers={"Authorization": "Bearer adminkey"},
@@ -296,7 +296,7 @@ def test_replay_allowed_for_admin_across_tenants(app, cfg):
 
 
 def test_admin_replay_query_by_bare_id(app, cfg):
-    open_client = TestClient(app)
+    open_client = TestClient(app, base_url="http://localhost")
     collection = "adminbareidreplay"
     qid = _seed_query(open_client, "acme", collection)
 
@@ -304,7 +304,7 @@ def test_admin_replay_query_by_bare_id(app, cfg):
     cfg.set("auth.global_key", "adminkey")
     cfg.set("auth.api_keys", {"other": "otherkey"})
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     r = c.post(
         f"/v1/admin/queries/{qid}/replay",
         headers={"Authorization": "Bearer adminkey"},
@@ -317,7 +317,7 @@ def test_admin_replay_query_by_bare_id(app, cfg):
 
 
 def test_replay_honours_tenant_rate_limit(app, cfg, monkeypatch):
-    open_client = TestClient(app)
+    open_client = TestClient(app, base_url="http://localhost")
     collection = "ratelimitreplay"
     qid = _seed_query(open_client, "acme", collection)
 
@@ -327,7 +327,7 @@ def test_replay_honours_tenant_rate_limit(app, cfg, monkeypatch):
     monkeypatch.setitem(app.state.tenant_limits, "acme", 1)
     monkeypatch.setitem(app.state.tenant_active, "acme", 1)
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     r = c.post(
         f"/v1/collections/acme/{collection}/queries/{qid}/replay",
         headers={"Authorization": "Bearer acmekey"},
@@ -338,7 +338,7 @@ def test_replay_honours_tenant_rate_limit(app, cfg, monkeypatch):
 
 
 def test_admin_replay_honours_owner_tenant_rate_limit(app, cfg, monkeypatch):
-    open_client = TestClient(app)
+    open_client = TestClient(app, base_url="http://localhost")
     collection = "adminratelimitreplay"
     qid = _seed_query(open_client, "acme", collection)
 
@@ -348,7 +348,7 @@ def test_admin_replay_honours_owner_tenant_rate_limit(app, cfg, monkeypatch):
     monkeypatch.setitem(app.state.tenant_limits, "acme", 1)
     monkeypatch.setitem(app.state.tenant_active, "acme", 1)
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     r = c.post(
         f"/v1/admin/queries/{qid}/replay",
         headers={"Authorization": "Bearer adminkey"},
@@ -364,7 +364,7 @@ def test_admin_replay_does_not_spend_owner_moving_window_budget(
     monkeypatch,
 ):
     """An admin replay borrows the slot but never the tenant's rpm budget."""
-    open_client = TestClient(app)
+    open_client = TestClient(app, base_url="http://localhost")
     collection = "adminwindowreplay"
     qid = _seed_query(open_client, "acme", collection)
 
@@ -374,7 +374,7 @@ def test_admin_replay_does_not_spend_owner_moving_window_budget(
     monkeypatch.setitem(app.state.tenant_rate_limits, "acme", {60: 1, 3600: 0})
     monkeypatch.setattr(app.state, "tenant_rate_clock", lambda: 120.0)
 
-    c = TestClient(app)
+    c = TestClient(app, base_url="http://localhost")
     headers = {"Authorization": "Bearer adminkey"}
     first = c.post(f"/v1/admin/queries/{qid}/replay", headers=headers)
     second = c.post(f"/v1/admin/queries/{qid}/replay", headers=headers)
