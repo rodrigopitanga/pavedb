@@ -314,3 +314,182 @@ def test_restore_collection_archive_clears_reindex_jobs(
         "failed",
     )
     assert finished["status"] == "succeeded", finished
+
+
+_SENSITIVE_ERROR = (
+    "Incorrect API key: sk-test-ABCD...WXYZ; Bearer secret-fragment; "
+    "proxy https://embed.private.example:8443 cache /srv/private/models/cache"
+)
+_PUBLIC_ERROR = "reindex operation failed; see the server log for this job"
+
+
+@pytest.fixture
+def redaction_job(client, app, cfg, monkeypatch):
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", "root")
+    cfg.set("auth.api_keys", {"acme": "tenant-key"})
+    client.headers["Authorization"] = "Bearer tenant-key"
+    store = app.state.store.impl
+    store.create_collection("acme", "books")
+    store.index_records("acme", "books", "doc", [("0", "passage", {})])
+    monkeypatch.setattr(store, "_launch_reindex_job", lambda job_id: None)
+    job = store.start_reindex("acme", "books", embed_model="fake-v2")
+    return store, job["job_id"]
+
+
+def _assert_private_job(client, store, job_id, status):
+    response = client.get(f"/v1/collections/acme/books/reindex/{job_id}")
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == status
+    assert response.json()["error"] == _PUBLIC_ERROR
+    assert store._get_reindex_job_internal(job_id)["error"] == _PUBLIC_ERROR
+    return response.json()
+
+
+@pytest.mark.parametrize("status", ["failed", "paused", "cancelled", "committing"])
+def test_historical_reindex_errors_are_private(
+    client, redaction_job, status,
+):
+    store, job_id = redaction_job
+    store._ensure_catalog().update_reindex_job(
+        job_id, status=status, error=_SENSITIVE_ERROR,
+    )
+    response = client.get(f"/v1/collections/acme/books/reindex/{job_id}")
+    assert response.status_code == 200
+    assert response.json()["error"] == _PUBLIC_ERROR
+    # Reading the public view does not rewrite historical catalog state.
+    assert store._get_reindex_job_internal(job_id)["error"] == _SENSITIVE_ERROR
+    if status == "cancelled":
+        cancelled = client.delete(
+            f"/v1/collections/acme/books/reindex/{job_id}",
+        )
+        assert cancelled.status_code == 200
+        assert cancelled.json()["error"] == _PUBLIC_ERROR
+
+
+def test_reindex_provider_failure_is_private_and_retryable(
+    client, redaction_job, monkeypatch, caplog,
+):
+    store, job_id = redaction_job
+
+    class BrokenEmbedder(FakeEmbedder):
+        def encode(self, texts):
+            raise RuntimeError(_SENSITIVE_ERROR)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            store, "_get_embedder_for_config", lambda *a, **k: BrokenEmbedder(),
+        )
+        store._run_reindex_job(job_id)
+    job = _assert_private_job(client, store, job_id, "failed")
+    assert job["completed_chunks"] == 0
+    assert job["finished_at"] is not None
+    assert "EmbedderUnavailableError" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert "frame " in caplog.text
+    assert "sk-test" not in caplog.text
+    assert "secret-fragment" not in caplog.text
+    assert "embed.private" not in caplog.text
+    assert "/srv/private" not in caplog.text
+
+    store.resume_reindex(job_id)
+    store._run_reindex_job(job_id)
+    done = store.get_reindex_job(job_id)
+    assert done["status"] == "succeeded"
+    assert done["error"] is None
+
+
+@pytest.mark.parametrize("action", ["start", "resume", "cancel"])
+@pytest.mark.parametrize("exception", [RuntimeError, ValueError, FileNotFoundError])
+def test_reindex_control_failures_are_private(
+    client, redaction_job, monkeypatch, caplog, action, exception,
+):
+    store, job_id = redaction_job
+
+    def fail(*args, **kwargs):
+        raise exception(_SENSITIVE_ERROR)
+
+    if action == "start":
+        store.cancel_reindex(job_id)
+        monkeypatch.setattr(store, "_launch_reindex_job", fail)
+        response = client.post(
+            "/v1/collections/acme/books/reindex", json={"embed_model": "fake-v2"},
+        )
+        jobs = store._ensure_catalog().list_reindex_jobs()
+        job_id = next(job["job_id"] for job in jobs if job["job_id"] != job_id)
+        status = "cancelled"
+    elif action == "resume":
+        store.pause_reindex(job_id)
+        monkeypatch.setattr(store, "_launch_reindex_job", fail)
+        response = client.post(
+            f"/v1/admin/reindex/{job_id}/resume",
+            headers={"Authorization": "Bearer root"},
+        )
+        status = "failed"
+    else:
+        monkeypatch.setattr(store, "_cleanup_reindex_job_dir", fail)
+        response = client.delete(f"/v1/collections/acme/books/reindex/{job_id}")
+        status = "failed"
+    assert response.status_code in {400, 404, 409, 500}
+    assert _SENSITIVE_ERROR not in response.text
+    _assert_private_job(client, store, job_id, status)
+    assert exception.__name__ in caplog.text
+    assert "sk-test" not in caplog.text
+    assert "secret-fragment" not in caplog.text
+
+
+def test_reindex_install_failure_is_private_and_rolls_back(
+    client, redaction_job, monkeypatch, caplog,
+):
+    store, job_id = redaction_job
+    original = store._set_collection_embedder_config
+
+    def fail_target(tenant, collection, config):
+        if config["embed_model"] == "fake-v2":
+            raise PermissionError(13, _SENSITIVE_ERROR, "/srv/private/index")
+        return original(tenant, collection, config)
+
+    monkeypatch.setattr(store, "_set_collection_embedder_config", fail_target)
+    store._run_reindex_job(job_id)
+    _assert_private_job(client, store, job_id, "paused")
+    assert store.get_collection_detail("acme", "books")["embed_model"] != "fake-v2"
+    assert "PermissionError errno=13" in caplog.text
+    assert "/srv/private" not in caplog.text
+    assert "sk-test" not in caplog.text
+
+
+def test_reindex_recovery_failure_is_private(
+    client, redaction_job, monkeypatch, caplog,
+):
+    store, job_id = redaction_job
+    store._ensure_catalog().update_reindex_job(job_id, status="committing")
+    (store._reindex_job_dir(job_id) / "index").mkdir(parents=True)
+
+    def fail(*args):
+        raise PermissionError(13, _SENSITIVE_ERROR, "/srv/private/index")
+
+    monkeypatch.setattr(store, "_set_collection_embedder_config", fail)
+    with pytest.raises(RuntimeError, match="reindex recovery failed"):
+        store._recover_reindex_jobs()
+    _assert_private_job(client, store, job_id, "committing")
+    assert "PermissionError errno=13" in caplog.text
+    assert "sk-test" not in caplog.text
+    assert "/srv/private" not in caplog.text
+
+
+def test_reindex_worker_cleanup_failure_is_private(
+    client, redaction_job, monkeypatch, caplog,
+):
+    store, job_id = redaction_job
+    store._ensure_catalog().update_reindex_job(job_id, status="cancelling")
+
+    def fail(*args):
+        raise PermissionError(13, _SENSITIVE_ERROR, "/srv/private/index")
+
+    monkeypatch.setattr(store, "_cleanup_reindex_job_dir", fail)
+    store._fail_reindex_job(job_id, RuntimeError(_SENSITIVE_ERROR))
+    _assert_private_job(client, store, job_id, "failed")
+    assert "RuntimeError" in caplog.text
+    assert "PermissionError errno=13" in caplog.text
+    assert "sk-test" not in caplog.text
+    assert "/srv/private" not in caplog.text

@@ -51,6 +51,7 @@ from pave.embedders.factory import (
     resolve_default_embedder,
     resolve_embedder_spec,
 )
+from pave.log import exception_diagnostic
 from pave.metrics import (
     inc as m_inc,
     inc_labeled as m_inc_labeled,
@@ -484,10 +485,11 @@ def start_collection_reindex(
             "error_type": "invalid",
         }
     except FileNotFoundError as exc:
+        log.warning(f"Reindex resource missing: {exception_diagnostic(exc)}")
         return {
             "ok": False,
             "code": "collection_not_found",
-            "error": str(exc),
+            "error": "collection does not exist",
             "error_type": "not_found",
         }
     except ReindexJobConflictError as exc:
@@ -498,7 +500,7 @@ def start_collection_reindex(
             "error_type": "conflict",
         }
     except EmbedderUnavailableError as exc:
-        log.warning("reindex embedder_unavailable: %s", exc)
+        log.warning(f"Reindex embedder unavailable: {exception_diagnostic(exc)}")
         return {
             "ok": False,
             "code": "embedder_unavailable",
@@ -506,16 +508,17 @@ def start_collection_reindex(
             "error_type": "unavailable",
         }
     except ValueError as exc:
+        log.warning(f"Reindex request failed: {exception_diagnostic(exc)}")
         return {
             "ok": False,
             "code": "reindex_invalid",
-            "error": str(exc),
+            "error": "invalid reindex request",
             "error_type": "invalid",
         }
     except Exception as exc:
         log.warning(
             f"start_collection_reindex failed tenant={tenant} "
-            f"coll={collection}: {exc}"
+            f"coll={collection}: {exception_diagnostic(exc)}"
         )
         return {
             "ok": False,
@@ -530,22 +533,25 @@ def _reindex_job_action(store, job_id: str, action: str) -> ServiceResult:
         operation = getattr(store, action)
         return {"ok": True, **operation(job_id)}
     except FileNotFoundError as exc:
+        log.warning(f"Reindex resource missing: {exception_diagnostic(exc)}")
         return {
             "ok": False,
             "code": "reindex_job_not_found",
-            "error": str(exc),
+            "error": "reindex job does not exist",
             "error_type": "not_found",
         }
     except (ReindexJobStateError, ValueError) as exc:
+        log.warning(f"Reindex action refused: {exception_diagnostic(exc)}")
         return {
             "ok": False,
             "code": "reindex_state_conflict",
-            "error": str(exc),
+            "error": "reindex job cannot perform this action in its current state",
             "error_type": "conflict",
         }
     except Exception as exc:
         log.warning(
-            f"reindex job action failed job={job_id} action={action}: {exc}"
+            f"reindex job action failed job={job_id} action={action}: "
+            f"{exception_diagnostic(exc)}"
         )
         return {
             "ok": False,

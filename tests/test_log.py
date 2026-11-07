@@ -13,6 +13,23 @@ from pave.auth import AuthContext
 from pave.main import _uvicorn_access_log_config
 
 
+def test_exception_diagnostic_omits_traceback_filename_and_message():
+    code = compile(
+        "raise PermissionError(13, 'provider secret')",
+        "/srv/private/sk-test-secret/provider.py",
+        "exec",
+    )
+    with pytest.raises(PermissionError) as raised:
+        exec(code, {})
+
+    detail = ops_log.exception_diagnostic(raised.value)
+    assert "PermissionError errno=13" in detail
+    assert "frame 2 line 1" in detail
+    assert "private" not in detail
+    assert "sk-test-secret" not in detail
+    assert "provider secret" not in detail
+
+
 @pytest.mark.parametrize("destination", ["file", "stdout"])
 @pytest.mark.parametrize(
     "target",

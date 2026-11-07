@@ -27,7 +27,12 @@ name a different vector space. Identity/BYOV is not a text reindex target.
 
 `CatalogDB.reindex_jobs` stores the source and target collection config, a
 source-content digest, progress counters, timestamps, status, and the last
-error. At most one unfinished job exists for a collection. States are:
+error. Public job errors use a fixed message, including for older catalog rows
+that stored raw exceptions. New failures persist only that safe message. Server
+logs identify the job and operation, exception chain types, OS error numbers and
+traceback frame line numbers; filenames, exception messages, provider payloads
+and runtime locals are omitted because they can contain credentials. At most one
+unfinished job exists for a collection. States are:
 
 ```text
 queued -> running -> committing -> succeeded

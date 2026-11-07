@@ -89,6 +89,7 @@ from pave.stores.base import (
 from pave.config import SEARCH_MODES, get_cfg, get_logger
 from pave.preprocess import ChunkingError, resolve_chunking
 from pave.data_dir_lease import DATA_DIR_LOCK_NAME
+from pave.log import exception_diagnostic
 from pave.metrics import inc_labeled as m_inc_labeled
 from pave.version import VERSION
 
@@ -113,6 +114,7 @@ _COLLECTION_ARCHIVE_MANIFEST = "manifest.json"
 _COLLECTION_RESTORE_BACKUP_PREFIX = ".pavedb-collection-restore-backup-"
 _REINDEX_DIR = ".pavedb-reindex"
 _REINDEX_BATCH_SIZE = 32
+_REINDEX_ERROR = "reindex operation failed; see the server log for this job"
 
 _RRF_K = 60
 _PREFILTER_MAX_SELECTIVITY = 0.1
@@ -2335,7 +2337,8 @@ class LocalStore:
             },
             "total_chunks": int(job.get("total_chunks") or 0),
             "completed_chunks": int(job.get("completed_chunks") or 0),
-            "error": job.get("error"),
+            # Historical rows may contain raw provider or filesystem errors.
+            "error": _REINDEX_ERROR if job.get("error") else None,
             "created_at": job.get("created_at"),
             "updated_at": job.get("updated_at"),
             "started_at": job.get("started_at"),
@@ -2427,13 +2430,17 @@ class LocalStore:
         try:
             self._launch_reindex_job(job_id)
         except Exception as exc:
+            log.warning(
+                f"Reindex launch failed job={job_id}: "
+                f"{exception_diagnostic(exc)}"
+            )
             self._with_catalog_retry(
                 "cancel_unlaunched_reindex_job",
                 lambda catalog: catalog.update_reindex_job(
                     job_id,
                     expected_statuses=("queued",),
                     status="cancelled",
-                    error=str(exc),
+                    error=_REINDEX_ERROR,
                     set_finished=True,
                 ),
             )
@@ -2498,13 +2505,17 @@ class LocalStore:
                 try:
                     self._launch_reindex_job(job_id)
                 except Exception as exc:
+                    log.warning(
+                        f"Reindex resume failed job={job_id}: "
+                        f"{exception_diagnostic(exc)}"
+                    )
                     self._with_catalog_retry(
                         "fail_unlaunched_reindex_job",
                         lambda catalog: catalog.update_reindex_job(
                             job_id,
                             expected_statuses=("queued",),
                             status="failed",
-                            error=str(exc),
+                            error=_REINDEX_ERROR,
                             set_finished=True,
                         ),
                     )
@@ -2538,13 +2549,17 @@ class LocalStore:
                 try:
                     self._cleanup_reindex_job_dir(job_id)
                 except Exception as exc:
+                    log.warning(
+                        f"Reindex cancellation failed job={job_id}: "
+                        f"{exception_diagnostic(exc)}"
+                    )
                     self._with_catalog_retry(
                         "fail_cancel_reindex_job",
                         lambda catalog: catalog.update_reindex_job(
                             job_id,
                             expected_statuses=("cancelling",),
                             status="failed",
-                            error=str(exc),
+                            error=_REINDEX_ERROR,
                             set_finished=True,
                         ),
                     )
@@ -2956,6 +2971,10 @@ class LocalStore:
             if not changed:
                 raise RuntimeError("reindex job lost its commit claim")
         except Exception as exc:
+            log.warning(
+                f"Reindex installation failed job={job_id}: "
+                f"{exception_diagnostic(exc)}"
+            )
             target_backend = self._emb.pop(key, None)
             if target_backend is not None:
                 discard = getattr(target_backend, "discard", None)
@@ -2986,7 +3005,7 @@ class LocalStore:
                     job_id,
                     expected_statuses=("committing",),
                     status="paused",
-                    error=str(exc),
+                    error=_REINDEX_ERROR,
                 ),
             )
             if rolled_back:
@@ -2995,15 +3014,21 @@ class LocalStore:
         self._remove_path(job_dir)
 
     def _fail_reindex_job(self, job_id: str, exc: Exception) -> None:
+        log.warning(
+            f"Reindex worker failed job={job_id}: "
+            f"{exception_diagnostic(exc)}"
+        )
         with suppress(Exception):
             job = self._get_reindex_job_internal(job_id)
             status = str(job["status"])
-            reported_exc = exc
             if status == "cancelling":
                 try:
                     self._cleanup_reindex_job_dir(job_id)
                 except Exception as cleanup_exc:
-                    reported_exc = cleanup_exc
+                    log.warning(
+                        f"Reindex cleanup failed job={job_id}: "
+                        f"{exception_diagnostic(cleanup_exc)}"
+                    )
                     next_status = "failed"
                 else:
                     next_status = "cancelled"
@@ -3022,11 +3047,7 @@ class LocalStore:
                     job_id,
                     expected_statuses=(status,),
                     status=next_status,
-                    error=(
-                        None
-                        if next_status == "cancelled"
-                        else str(reported_exc)
-                    ),
+                    error=None if next_status == "cancelled" else _REINDEX_ERROR,
                     clear_error=next_status == "cancelled",
                     set_finished=next_status in {"failed", "cancelled"},
                 ),
@@ -3153,13 +3174,17 @@ class LocalStore:
                     ),
                 )
             except Exception as exc:
+                log.warning(
+                    f"Reindex recovery failed job={job_id}: "
+                    f"{exception_diagnostic(exc)}"
+                )
                 with suppress(Exception):
                     self._with_catalog_retry(
                         "recover_reindex_job",
                         lambda catalog: catalog.update_reindex_job(
                             job_id,
                             expected_statuses=("committing",),
-                            error=f"reindex recovery failed: {exc}",
+                            error=_REINDEX_ERROR,
                         ),
                     )
                 raise RuntimeError(

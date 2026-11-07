@@ -12,6 +12,35 @@ from typing import Any
 from uvicorn.logging import AccessFormatter as UvicornAccessFormatter
 
 
+def exception_diagnostic(exc: BaseException) -> str:
+    """Describe a failure chain without provider payloads or runtime locals.
+
+    Exception messages can contain arbitrary credentials, including fragments
+    that cannot be reliably matched against configuration or a token pattern.
+    Keep types, OS error numbers and frame line numbers for operator diagnosis.
+    Traceback filenames can also contain credentials, so omit them.
+    """
+    failures = []
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        detail = type(exc).__name__
+        if isinstance(exc, OSError) and isinstance(exc.errno, int):
+            detail += f" errno={exc.errno}"
+        frames = []
+        tb = exc.__traceback__
+        while tb is not None:
+            frames.append(f"frame {len(frames) + 1} line {tb.tb_lineno}")
+            tb = tb.tb_next
+        if frames:
+            detail += " at " + " -> ".join(frames)
+        failures.append(detail)
+        exc = exc.__cause__ or (
+            None if exc.__suppress_context__ else exc.__context__
+        )
+    return " caused by ".join(failures)
+
+
 class AccessFormatter(UvicornAccessFormatter):
     """Keep query parameters out of HTTP access records."""
 
