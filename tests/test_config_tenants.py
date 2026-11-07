@@ -290,6 +290,29 @@ def test_null_api_key_in_config_revokes_sidecar_key(monkeypatch, tmp_path):
     assert cfg.get("auth.api_keys") == {"acme": "rotated-key", "beta": "beta-key"}
 
 
+def test_null_api_key_in_env_map_revokes_sidecar_key(monkeypatch, tmp_path):
+    sidecar = tmp_path / "tenants.yml"
+    _write(
+        sidecar,
+        "auth:\n"
+        "  api_keys:\n"
+        "    acme: sidecar-key\n"
+        "    beta: beta-key\n",
+    )
+    config_path = tmp_path / "config.yml"
+    _write(config_path, f"auth:\n  tenants_file: {sidecar}\n")
+    monkeypatch.setenv("PAVEDB_AUTH__API_KEYS", '{"acme":null}')
+
+    cfg = Config(path=config_path)
+
+    assert cfg.get("auth.api_keys") == {"beta": "beta-key"}
+
+    monkeypatch.setenv("PAVEDB_AUTH__API_KEYS__ACME", "rotated-key")
+    cfg = Config(path=config_path)
+
+    assert cfg.get("auth.api_keys") == {"acme": "rotated-key", "beta": "beta-key"}
+
+
 def test_env_override_matches_config_key_case_insensitively(
     monkeypatch, tmp_path
 ):

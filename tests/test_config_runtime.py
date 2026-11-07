@@ -71,6 +71,28 @@ def test_list_valued_env_overrides_are_split(monkeypatch, tmp_path):
     assert cfg.get("log.watch") == ["pave.routes", "pave.cli"]
 
 
+def test_api_keys_env_json_map_and_nested_override(monkeypatch, tmp_path):
+    monkeypatch.setenv("PAVEDB_AUTH__API_KEYS__ACME", "rotated-key")
+    monkeypatch.setenv(
+        "PAVEDB_AUTH__API_KEYS", '{"acme":"old-key","beta":"beta-key"}'
+    )
+
+    cfg = Config(path=tmp_path / "missing.yml")
+
+    assert cfg.get("auth.api_keys") == {
+        "acme": "rotated-key",
+        "beta": "beta-key",
+    }
+
+
+@pytest.mark.parametrize("value", ["secret", "[]", "null", "{invalid}"])
+def test_api_keys_env_requires_json_object(monkeypatch, tmp_path, value):
+    monkeypatch.setenv("PAVEDB_AUTH__API_KEYS", value)
+
+    with pytest.raises(ValueError, match="PAVEDB_AUTH__API_KEYS must be a JSON object"):
+        Config(path=tmp_path / "missing.yml")
+
+
 def test_insane_chunking_bounds_are_rejected(monkeypatch, tmp_path):
     config_path = tmp_path / "config.yml"
     config_path.write_text(

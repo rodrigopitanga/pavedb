@@ -267,10 +267,19 @@ def _resolve_env_in_obj(obj: Any) -> Any:
 
 def _env_to_dict() -> dict[str, Any]:
     envmap: dict[str, Any] = {}
+    api_keys_env = _ENV_PREFIX + "AUTH__API_KEYS"
+    if api_keys_env in os.environ:
+        try:
+            api_keys = json.loads(os.environ[api_keys_env])
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{api_keys_env} must be a JSON object") from exc
+        if not isinstance(api_keys, dict):
+            raise ValueError(f"{api_keys_env} must be a JSON object")
+        envmap["auth"] = {"api_keys": api_keys}
     for k, v in os.environ.items():
         if not k.startswith(_ENV_PREFIX):
             continue
-        if k in _RUNTIME_ENV_VARS:
+        if k in _RUNTIME_ENV_VARS or k == api_keys_env:
             continue
         path = k[len(_ENV_PREFIX):].lower().split("__")
         cur = envmap
@@ -522,6 +531,10 @@ class Config:
             for tenant in _revoked_api_keys(file_cfg):
                 merged_keys.pop(tenant, None)
         merged = _merge_env(merged, env_cfg)
+        merged_keys = merged.get("auth", {}).get("api_keys")
+        if isinstance(merged_keys, dict):
+            for tenant in _revoked_api_keys(env_cfg):
+                merged_keys.pop(tenant, None)
         for key in _PATH_KEYS:
             parts = key.split(".")
             cur: Any = merged
