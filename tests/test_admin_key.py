@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 import json
+import os
 import stat
 
 from fastapi import Depends, FastAPI
@@ -74,6 +75,74 @@ def test_rotate_invalidates_old_key(tmp_path, monkeypatch):
     new_response = client.get("/", headers={"Authorization": f"Bearer {new}"})
     assert old_response.status_code == 403
     assert new_response.status_code == 200
+
+
+def test_admin_key_is_read_only_when_file_changes(tmp_path, monkeypatch):
+    cfg = _config()
+    key = auth_mod.ensure_admin_key(cfg, tmp_path)
+    reads = 0
+    original = auth_mod._read_admin_key
+
+    def counted_read(path):
+        nonlocal reads
+        reads += 1
+        return original(path)
+
+    monkeypatch.setattr(auth_mod, "_read_admin_key", counted_read)
+    assert auth_mod._file_admin_key(cfg) == key
+    assert auth_mod._file_admin_key(cfg) == key
+    assert reads == 1
+
+    new = auth_mod.rotate_admin_key(cfg, tmp_path)
+    assert auth_mod._file_admin_key(cfg) == new
+    assert reads == 3  # rotation validates the old file before replacing it
+
+
+def test_in_place_admin_key_rotation_with_preserved_mtime(tmp_path):
+    cfg = _config()
+    old = auth_mod.ensure_admin_key(cfg, tmp_path)
+    assert auth_mod._file_admin_key(cfg) == old
+
+    path = tmp_path / "admin.key"
+    before = path.stat()
+    new = "x" * len(old)
+    path.write_text(f"{new}\n", encoding="utf-8")
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+
+    after = path.stat()
+    assert after.st_size == before.st_size
+    assert after.st_mtime_ns == before.st_mtime_ns
+    assert auth_mod._file_admin_key(cfg) == new
+
+
+@pytest.mark.parametrize("failure", ["missing", "wide_mode", "invalid_utf8"])
+def test_unavailable_admin_key_does_not_block_tenant(
+    tmp_path, monkeypatch, failure
+):
+    cfg = _config()
+    admin_key = auth_mod.ensure_admin_key(cfg, tmp_path)
+    cfg.set("auth.api_keys", {"acme": "tenant-key"})
+    app = FastAPI()
+
+    @app.get("/")
+    def endpoint(ctx=Depends(auth_mod.auth_ctx)):
+        return {"admin": ctx.is_admin}
+
+    monkeypatch.setattr(auth_mod, "get_cfg", lambda: cfg)
+    client = TestClient(app)
+    path = tmp_path / "admin.key"
+    if failure == "missing":
+        path.unlink()
+    elif failure == "wide_mode":
+        path.chmod(0o644)
+    else:
+        path.write_bytes(b"\xff")
+
+    tenant = client.get("/", headers={"Authorization": "Bearer tenant-key"})
+    admin = client.get("/", headers={"Authorization": f"Bearer {admin_key}"})
+    assert tenant.status_code == 200
+    assert tenant.json() == {"admin": False}
+    assert admin.status_code == 403
 
 
 def test_failed_rotation_leaves_existing_key_intact(tmp_path, monkeypatch):

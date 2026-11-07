@@ -13,6 +13,7 @@ import secrets
 import stat
 import sys
 import tempfile
+import threading
 # typing imports removed
 from fastapi import HTTPException, Depends, Security, Request, Response
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -123,12 +124,40 @@ def rotate_admin_key(cfg, home: str | Path) -> str:
     key = secrets.token_urlsafe(32)
     _write_admin_key(path, key, replace=True)
     cfg.set("auth.admin_key_file", str(path))
+    with _ADMIN_KEY_CACHE_LOCK:
+        _ADMIN_KEY_CACHE.clear()
     return key
 
 
+_ADMIN_KEY_CACHE_LOCK = threading.Lock()
+_ADMIN_KEY_CACHE: dict[str, object] = {}
+
+
 def _file_admin_key(cfg) -> str | None:
-    path = cfg.get("auth.admin_key_file")
-    return _read_admin_key(Path(path)) if path else None
+    raw_path = cfg.get("auth.admin_key_file")
+    if not raw_path:
+        return None
+    path = Path(raw_path)
+    with _ADMIN_KEY_CACHE_LOCK:
+        try:
+            st = path.stat()
+            signature = (
+                str(path), st.st_dev, st.st_ino, st.st_mtime_ns,
+                st.st_ctime_ns, st.st_size, st.st_mode,
+            )
+            if _ADMIN_KEY_CACHE.get("signature") == signature:
+                return _ADMIN_KEY_CACHE["value"]  # type: ignore[return-value]
+            value = _read_admin_key(path)
+        except (OSError, RuntimeError, UnicodeError) as exc:
+            failure = (str(path), type(exc).__name__, str(exc))
+            if _ADMIN_KEY_CACHE.get("failure") != failure:
+                log.error("admin key file unavailable %s: %s", path, exc)
+            _ADMIN_KEY_CACHE.clear()
+            _ADMIN_KEY_CACHE["failure"] = failure
+            return None
+        _ADMIN_KEY_CACHE.clear()
+        _ADMIN_KEY_CACHE.update(signature=signature, value=value)
+        return value
 
 @dataclass
 class AuthContext:
