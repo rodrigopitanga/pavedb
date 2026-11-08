@@ -7,6 +7,10 @@ pavecli [OPTION]... COMMAND [ARG]...
 .fi
 .SH DESCRIPTION
 PaveDB CLI
+.PP
+Successful results go to stdout; service and file errors go to stderr as
+JSON. Usage errors go to stderr with exit status 2. Use \- for stdin with
+ingest\-batch and restore\-archive.
 .SH OPTIONS
 .TP
 .B \-h, \-\-help
@@ -176,7 +180,7 @@ JSON object, e.g. {"strategy":"fixed","size":800,"overlap":100} or
 .PP
 Example:
 .nf
-pavecli create\-collection demo/books \-\-display\-name "Books"
+pavecli create\-collection \-\-display\-name "Books" demo/books
 .fi
 .SS ingest
 Preprocess and index a TXT, CSV, or PDF file into a collection.
@@ -218,7 +222,7 @@ Defaults to all non\-meta columns
 .PP
 Example:
 .nf
-pavecli ingest demo/books ./book.txt \-\-docid book\-1 \-\-metadata '{"lang":"en"}'
+pavecli ingest \-\-docid book\-1 \-\-metadata '{"lang":"en"}' demo/books ./book.txt
 .fi
 .SS ingest\-batch
 Index a JSON batch of raw\-text documents.
@@ -235,11 +239,12 @@ show this help message and exit
 Tenant and collection, e.g. demo/books
 .TP
 .B file
-JSON batch input file
+JSON batch file, or \- for stdin
 .PP
-Example:
+Examples:
 .nf
 pavecli ingest\-batch demo/books ./documents.json
+pavecli ingest\-batch demo/books \- < documents.json
 .fi
 .SS ingest\-text
 Index one raw\-text document.
@@ -267,7 +272,7 @@ JSON object attached to the document
 .PP
 Example:
 .nf
-pavecli ingest\-text demo/books "Captain Nemo" \-\-docid note\-1
+pavecli ingest\-text \-\-docid note\-1 demo/books "Captain Nemo"
 .fi
 .SS search
 Run ranked search over a collection and print the response envelope.
@@ -307,7 +312,7 @@ value
 .PP
 Example:
 .nf
-pavecli search demo/books "captain nemo" \-k 3
+pavecli search \-k 3 demo/books "captain nemo"
 .fi
 .SS list\-queries
 List logged query IDs, optionally scoped to a tenant or collection.
@@ -537,7 +542,7 @@ New human\-readable collection label
 .PP
 Example:
 .nf
-pavecli update\-collection demo/books \-\-display\-name "Books"
+pavecli update\-collection \-\-display\-name "Books" demo/books
 .fi
 .SS delete\-document
 Remove one document and its chunks from a collection.
@@ -583,7 +588,7 @@ Destination ZIP file path
 Examples:
 .nf
 pavecli dump\-archive \-\-output pavedb\-data.zip
-pavecli dump\-archive demo/books \-\-output books.zip
+pavecli dump\-archive \-\-output books.zip demo/books
 .fi
 .SS restore\-archive
 Offline only; stop the server first. With tenant/collection, creates
@@ -603,7 +608,7 @@ show this help message and exit
 Destination collection; omit for an instance archive
 .TP
 .B file
-Archive zip file path
+Archive zip file, or \- for stdin
 .TP
 .B \-\-replace
 Overwrite an existing collection instead of creating it
@@ -612,6 +617,7 @@ Examples:
 .nf
 pavecli restore\-archive pavedb\-data.zip
 pavecli restore\-archive demo/books books.zip
+pavecli restore\-archive \- < pavedb\-data.zip
 .fi
 .SS reset\-metrics
 Clear the shared runtime metrics in the configured catalog database.
@@ -734,7 +740,7 @@ JSON object with target embedder settings
 .PP
 Example:
 .nf
-pavecli reindex demo/books \-\-embedder v2
+pavecli reindex \-\-embedder v2 demo/books
 .fi
 .SS reindex\-status
 Show durable reindex progress, or list all retained jobs.

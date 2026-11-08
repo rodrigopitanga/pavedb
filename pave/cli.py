@@ -96,11 +96,12 @@ def _close_owned_store() -> None:
     store_lease = None
 
 
-def _dump(out, pretty: bool = True):
+def _dump(out, pretty: bool = True, *, file=None):
+    file = file or sys.stdout
     if pretty:
-        print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True))
+        print(json.dumps(out, ensure_ascii=False, indent=2, sort_keys=True), file=file)
     else:
-        print(json.dumps(out, ensure_ascii=False))
+        print(json.dumps(out, ensure_ascii=False), file=file)
 
 
 def _exit_code_for_result(out) -> int:
@@ -109,8 +110,17 @@ def _exit_code_for_result(out) -> int:
     return 0
 
 
-def _read(path: str) -> bytes:
-    return pathlib.Path(path).read_bytes()
+def _read(path: str, *, allow_stdin: bool = False) -> bytes:
+    try:
+        if path == "-" and allow_stdin:
+            return sys.stdin.buffer.read()
+        return pathlib.Path(path).read_bytes()
+    except OSError as exc:
+        raise ServiceError("file_read_failed", f"cannot read {path}: {exc}") from exc
+
+
+class _CLIUsageError(Exception):
+    pass
 
 
 def _parse_json_object_arg(raw: str | None, option: str) -> dict | None:
@@ -168,7 +178,7 @@ def _write_text(path: pathlib.Path, text: str, *, force: bool) -> bool:
 
 def cmd_init(args):
     if args.root and args.home:
-        raise SystemExit("use either positional ROOT or global --home, not both")
+        raise _CLIUsageError("use either positional ROOT or global --home, not both")
     home = args.root or args.home
     paths = resolve_runtime_paths(
         home=home,
@@ -177,7 +187,9 @@ def cmd_init(args):
         data_dir=args.data_dir,
     )
     if not (paths.config and paths.tenants and paths.data_dir):
-        raise SystemExit("init requires a home root or explicit config/tenants/data-dir")
+        raise _CLIUsageError(
+            "init requires a home root or explicit config/tenants/data-dir"
+        )
 
     config_text = render_config_template(
         data_dir=paths.data_dir,
@@ -275,8 +287,8 @@ def cmd_ingest(args):
 
 def cmd_ingest_batch(args):
     try:
-        payload = json.loads(_read(args.file).decode("utf-8"))
-    except json.JSONDecodeError as exc:
+        payload = json.loads(_read(args.file, allow_stdin=True).decode("utf-8"))
+    except (json.JSONDecodeError, UnicodeDecodeError) as exc:
         return {
             "ok": False,
             "code": "invalid_batch_json",
@@ -465,7 +477,7 @@ def cmd_dump_archive(args):
     return out
 
 def cmd_restore_archive(args):
-    content = _read(args.file)
+    content = _read(args.file, allow_stdin=args.cmd == "restore-archive")
     if args.collection:
         return svc_restore_collection_archive(
             _get_store(), args.tenant, args.collection, content,
@@ -610,6 +622,7 @@ def _command(
     return subparsers.add_parser(
         name,
         parents=parents or [],
+        allow_abbrev=False,
         help=help,
         description=description,
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -687,6 +700,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p = argparse.ArgumentParser(
         prog="pavecli",
+        allow_abbrev=False,
         description="PaveDB CLI",
         usage="%(prog)s [OPTION]... COMMAND [ARG]...",
         epilog=runtime_note + (f"\n\n{notice}" if notice else "")
@@ -802,7 +816,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Create a collection, optionally with display and embedder "
             "configuration."
         ),
-        example='pavecli create-collection demo/books --display-name "Books"',
+        example='pavecli create-collection --display-name "Books" demo/books',
     )
     _add_collection_ref(
         p_create,
@@ -856,8 +870,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Index a file into a collection.",
         description="Preprocess and index a TXT, CSV, or PDF file into a collection.",
         example=(
-            "pavecli ingest demo/books ./book.txt --docid book-1 "
-            "--metadata '{\"lang\":\"en\"}'"
+            "pavecli ingest --docid book-1 "
+            "--metadata '{\"lang\":\"en\"}' demo/books ./book.txt"
         ),
     )
     _add_collection_ref(p_ingest)
@@ -888,11 +902,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Index raw-text documents into a collection.",
         description="Index a JSON batch of raw-text documents.",
         example=(
-            "pavecli ingest-batch demo/books ./documents.json"
+            "pavecli ingest-batch demo/books ./documents.json",
+            "pavecli ingest-batch demo/books - < documents.json",
         ),
     )
     _add_collection_ref(p_ingest_batch)
-    p_ingest_batch.add_argument("file", help="JSON batch input file")
+    p_ingest_batch.add_argument("file", help="JSON batch file, or - for stdin")
     p_ingest_batch.set_defaults(func=cmd_ingest_batch)
 
     p_ingest_text = _command(
@@ -901,7 +916,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Index raw text into a collection.",
         description="Index one raw-text document.",
         example=(
-            'pavecli ingest-text demo/books "Captain Nemo" --docid note-1'
+            'pavecli ingest-text --docid note-1 demo/books "Captain Nemo"'
         ),
     )
     _add_collection_ref(p_ingest_text)
@@ -924,7 +939,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Run ranked search over a collection and print the response "
             "envelope."
         ),
-        example='pavecli search demo/books "captain nemo" -k 3',
+        example='pavecli search -k 3 demo/books "captain nemo"',
     )
     _add_collection_ref(p_search)
     p_search.add_argument("query", help="Natural-language search query")
@@ -1099,7 +1114,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Update collection metadata such as the display name, without "
             "re-indexing."
         ),
-        example='pavecli update-collection demo/books --display-name "Books"',
+        example='pavecli update-collection --display-name "Books" demo/books',
     )
     _add_collection_ref(p_update_collection)
     p_update_collection.add_argument(
@@ -1133,7 +1148,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         example=(
             "pavecli dump-archive --output pavedb-data.zip",
-            "pavecli dump-archive demo/books --output books.zip",
+            "pavecli dump-archive --output books.zip demo/books",
         ),
     )
     _add_collection_ref(
@@ -1155,6 +1170,7 @@ def build_parser() -> argparse.ArgumentParser:
         example=(
             "pavecli restore-archive pavedb-data.zip",
             "pavecli restore-archive demo/books books.zip",
+            "pavecli restore-archive - < pavedb-data.zip",
         ),
     )
     _add_collection_ref(
@@ -1162,7 +1178,7 @@ def build_parser() -> argparse.ArgumentParser:
         optional=True,
         help="Destination collection; omit for an instance archive",
     )
-    p_restore.add_argument("file", help="Archive zip file path")
+    p_restore.add_argument("file", help="Archive zip file, or - for stdin")
     p_restore.add_argument(
         "--replace",
         action="store_true",
@@ -1247,7 +1263,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Offline only; start a reindex job and show progress until it "
             "finishes. Ctrl-C pauses the job after its current batch."
         ),
-        example="pavecli reindex demo/books --embedder v2",
+        example="pavecli reindex --embedder v2 demo/books",
     )
     _add_collection_ref(p_reindex)
     p_reindex.add_argument(
@@ -1312,11 +1328,13 @@ def main_cli(argv=None):
             target = subcommands[name]
         target.print_help()
         return 0
-    if args.cmd != "init":
-        _prepare_runtime(args)
     try:
         try:
+            if args.cmd != "init":
+                _prepare_runtime(args)
             out = args.func(args)
+        except _CLIUsageError as exc:
+            p.error(str(exc))
         except ServiceError as exc:
             out = {"ok": False, "code": exc.code, "error": exc.message}
         except DataDirInUseError as exc:
@@ -1330,7 +1348,11 @@ def main_cli(argv=None):
     if isinstance(out, RawCLIOutput):
         sys.stdout.buffer.write(out.content)
         return 0
-    _dump(out, pretty=not args.compact)
+    _dump(
+        out,
+        pretty=not args.compact,
+        file=sys.stderr if _exit_code_for_result(out) else sys.stdout,
+    )
     if isinstance(out, dict) and out.get("code") == "reindex_paused":
         return 130
     return _exit_code_for_result(out)

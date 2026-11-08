@@ -3,8 +3,10 @@
 
 import json
 import importlib
+import io
 import zipfile
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from pave.config import get_cfg
@@ -92,6 +94,57 @@ def test_cli_ingest_batch_indexes_raw_text_documents(cli_env, capsys):
         coll,
         2,
     ) in store.calls
+
+
+def test_cli_ingest_batch_reads_stdin(cli_env, monkeypatch, capsys):
+    pvcli, store, _ = cli_env
+    data = b'[{"text": "Captain Nemo", "docid": "NOTE-1"}]'
+    monkeypatch.setattr(pvcli.sys, "stdin", SimpleNamespace(buffer=io.BytesIO(data)))
+
+    pvcli.main_cli(["create-collection", "acme/books"])
+    capsys.readouterr()
+    assert pvcli.main_cli(["ingest-batch", "acme/books", "-"]) == 0
+    assert json.loads(capsys.readouterr().out)["succeeded"] == 1
+    assert ("index_documents", "acme", "books", 1) in store.calls
+
+
+def test_cli_ingest_batch_rejects_non_utf8_stdin(cli_env, monkeypatch, capsys):
+    pvcli, _, _ = cli_env
+    monkeypatch.setattr(pvcli.sys, "stdin", SimpleNamespace(buffer=io.BytesIO(b"\xff")))
+
+    assert pvcli.main_cli(["ingest-batch", "acme/books", "-"]) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert json.loads(output.err)["code"] == "invalid_batch_json"
+
+
+def test_cli_errors_use_stderr(cli_env, tmp_path, capsys):
+    pvcli, _, _ = cli_env
+
+    assert pvcli.main_cli(["ingest-batch", "acme/books", str(tmp_path / "no")]) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert json.loads(output.err)["code"] == "file_read_failed"
+
+    invalid = tmp_path / "invalid.json"
+    invalid.write_text("{", encoding="utf-8")
+    assert pvcli.main_cli(["ingest-batch", "acme/books", str(invalid)]) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert json.loads(output.err)["code"] == "invalid_batch_json"
+
+
+def test_cli_admin_key_failure_does_not_write_stdout(cli_env, monkeypatch, capsys):
+    pvcli, _, _ = cli_env
+
+    def unavailable(*_args):
+        raise RuntimeError("key unavailable")
+
+    monkeypatch.setattr(pvcli, "current_admin_key", unavailable)
+    assert pvcli.main_cli(["admin", "show-key"]) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert json.loads(output.err)["code"] == "admin_key_unavailable"
 
 
 def test_cli_ingest_text_indexes_raw_text_document(cli_env, capsys):
@@ -273,7 +326,7 @@ def test_cli_create_collection_rejects_malformed_embedder_config(cli_env, capsys
             "{",
         ]
     )
-    out = json.loads(capsys.readouterr().out)
+    out = json.loads(capsys.readouterr().err)
 
     assert rc == 1
     assert out["ok"] is False
@@ -325,7 +378,7 @@ def test_cli_create_collection_rejects_invalid_name(cli_env, capsys):
     pvcli, store, _ = cli_env
 
     rc = pvcli.main_cli(["create-collection", "acme/Human Docs"])
-    out = json.loads(capsys.readouterr().out)
+    out = json.loads(capsys.readouterr().err)
 
     assert rc == 1
     assert out["ok"] is False
@@ -406,7 +459,7 @@ def test_cli_search_returns_matches(cli_env, tmp_path):
 def test_cli_search_rejects_non_object_filters(cli_env, capsys):
     pvcli, _, _ = cli_env
     rc = pvcli.main_cli(["search", "acme/c", "q", "--filters", "[1, 2]"])
-    out = json.loads(capsys.readouterr().out)
+    out = json.loads(capsys.readouterr().err)
     assert rc == 1
     assert out["ok"] is False
     assert out["code"] == "invalid_filters"
@@ -598,7 +651,7 @@ def test_cli_get_query_missing_returns_exit_code_1(cli_query_env, capsys):
     pvcli, _, _ = cli_query_env
 
     rc = pvcli.main_cli(["get-query", "missing-query-id"])
-    out = json.loads(capsys.readouterr().out)
+    out = json.loads(capsys.readouterr().err)
 
     assert rc == 1
     assert out["ok"] is False
@@ -659,7 +712,7 @@ def test_cli_replay_query_missing_returns_exit_code_1(
     pvcli, _, _ = cli_query_env
 
     rc = pvcli.main_cli(["replay-query", "missing-query-id"])
-    out = json.loads(capsys.readouterr().out)
+    out = json.loads(capsys.readouterr().err)
 
     assert rc == 1
     assert out["ok"] is False
@@ -837,7 +890,7 @@ def test_cli_get_chunk_content_missing_returns_exit_code_1(
     pvcli, _, _ = cli_query_env
 
     rc = pvcli.main_cli(["get-chunk-content", "acme/docs", "missing"])
-    out = json.loads(capsys.readouterr().out)
+    out = json.loads(capsys.readouterr().err)
 
     assert rc == 1
     assert out["ok"] is False
@@ -920,6 +973,58 @@ def test_cli_restore_archive_without_collection_restores_instance(
 
     assert json.loads(capsys.readouterr().out)["ok"] is True
     assert ("restore_archive", source.stat().st_size) in store.calls
+
+
+def test_cli_restore_archive_reads_stdin(cli_env, tmp_path, monkeypatch, capsys):
+    pvcli, store, _ = cli_env
+    source = tmp_path / "data.zip"
+    with zipfile.ZipFile(source, "w") as zf:
+        zf.writestr("sample.txt", "hello")
+    monkeypatch.setattr(
+        pvcli.sys, "stdin", SimpleNamespace(buffer=io.BytesIO(source.read_bytes()))
+    )
+
+    assert pvcli.main_cli(["restore-archive", "-"]) == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+    assert ("restore_archive", source.stat().st_size) in store.calls
+
+
+def test_cli_restore_archive_missing_file_is_json_error(cli_env, tmp_path, capsys):
+    pvcli, _, _ = cli_env
+
+    assert pvcli.main_cli(["restore-archive", str(tmp_path / "missing.zip")]) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert json.loads(output.err)["code"] == "file_read_failed"
+
+
+@pytest.mark.parametrize("args", [
+    ["--compa", "list-tenants"],
+    ["create-collection", "acme/books", "--display-nam", "Books"],
+    ["admin", "show-key", "--hel"],
+])
+def test_cli_rejects_abbreviated_options(cli_env, args, capsys):
+    pvcli, _, _ = cli_env
+
+    with pytest.raises(SystemExit) as exc:
+        pvcli.main_cli(args)
+    assert exc.value.code == 2
+    assert capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("args", [
+    ["--home", "other", "init", "root"],
+    ["init", "--config", "config.yml"],
+])
+def test_cli_init_usage_errors_exit_two(cli_env, args, capsys):
+    pvcli, _, _ = cli_env
+
+    with pytest.raises(SystemExit) as exc:
+        pvcli.main_cli(args)
+    assert exc.value.code == 2
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert "error:" in output.err
 
 
 def test_cli_list_tenants(cli_env, tmp_path, capsys, monkeypatch):
@@ -1184,7 +1289,7 @@ def test_cli_move_collection_takes_two_refs(cli_env, capsys):
 
     capsys.readouterr()
     rc = pvcli.main_cli(["move-collection", "acme/books", "beta/books"])
-    out = json.loads(capsys.readouterr().out)
+    out = json.loads(capsys.readouterr().err)
     assert rc == 1
     assert out["code"] == "move_invalid"
     assert not any(

@@ -249,7 +249,7 @@ def test_cli_show_key_requires_an_existing_key(tmp_path, capsys):
     rc = cli_mod.main_cli(["--home", str(tmp_path), "admin", "show-key"])
 
     assert rc == 1
-    assert json.loads(capsys.readouterr().out)["code"] == "admin_key_unavailable"
+    assert json.loads(capsys.readouterr().err)["code"] == "admin_key_unavailable"
     assert not (tmp_path / "admin.key").exists()
 
 

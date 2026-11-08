@@ -16,6 +16,8 @@ utility: subcommands and descriptive long options are useful extensions.
   are single letters. Descriptive long options extend POSIX syntax.
 - **Values:** Examples separate options and values. `argparse` also accepts
   attached forms; the examples use the clearer separated form.
+- **Option names:** Long options require their complete spelling at every
+  command level.
 - **Order:** Instance selectors precede the command. Command options may
   follow operands, as in `search demo/books query -k 3`. Scripts should place
   options before operands to follow the POSIX guideline.
@@ -23,13 +25,15 @@ utility: subcommands and descriptive long options are useful extensions.
   beginning with `-` can be passed as operands.
 - **Discovery:** `-h`/`--help` and `-V`/`--version` exit without opening the
   store. R2-92 owns the help text and man page.
+- **Input:** `ingest-batch` and `restore-archive` accept `-` to read bytes from
+  standard input. `ingest` requires a named file for source metadata.
 - **Output:** Structured results, including mutation receipts, are JSON;
   `get-chunk-content`, `admin show-key`, and `admin rotate-key` emit raw
-  bytes. `--compact` removes JSON indentation. The receipt is intentional
-  output for scripts despite the Unix silence rule.
+  bytes on success. Service and file errors emit JSON to stderr. `--compact`
+  removes JSON indentation. The receipt is intentional output for scripts
+  despite the Unix silence rule.
 - **Status:** Success returns 0, service failures return 1, and argparse
-  usage errors return 2. `init` is the exception: its own two usage errors
-  raise `SystemExit` with a plain message and exit 1.
+  usage errors return 2, including `init` usage errors.
 - **Side effects:** Mutations have explicit verbs. `init --force` is
   required to overwrite existing config files.
 
@@ -68,3 +72,6 @@ utility: subcommands and descriptive long options are useful extensions.
    `pavecli restore-archive missing.zip` prints a Python traceback instead
    of an error object. Convert the failure into the same JSON error shape
    and status 1 when the stdin work in finding 3 touches this helper.
+
+The findings above were implemented under
+[R2-104](https://gitlab.com/flowlexi/pavedb/-/work_items/356).

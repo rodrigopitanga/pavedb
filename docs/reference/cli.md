@@ -5,6 +5,9 @@
 
 Command reference for `pavecli`, the local PaveDB administration and
 data-loading tool.
+Successful results go to stdout; service and file errors go to stderr
+as JSON. Usage errors go to stderr with exit status 2.
+`ingest-batch` and `restore-archive` accept `-` for stdin.
 
 Generated from `pave.cli.build_parser`. Regenerate with `make docs-refresh`.
 
@@ -13,8 +16,8 @@ Generated from `pave.cli.build_parser`. Regenerate with `make docs-refresh`.
 ```bash
 pavecli init
 pavecli create-collection demo/books
-pavecli ingest demo/books ./book.txt --docid book-1
-pavecli search demo/books "captain nemo" -k 3
+pavecli ingest --docid book-1 demo/books ./book.txt
+pavecli search -k 3 demo/books "captain nemo"
 ```
 
 ## Usage
@@ -175,7 +178,7 @@ pavecli create-collection [-h] [--display-name DISPLAY_NAME]
 ### Example
 
 ```bash
-pavecli create-collection demo/books --display-name "Books"
+pavecli create-collection --display-name "Books" demo/books
 ```
 
 ### Arguments And Options
@@ -214,7 +217,7 @@ pavecli ingest [-h] [--docid DOCID] [--metadata METADATA]
 ### Example
 
 ```bash
-pavecli ingest demo/books ./book.txt --docid book-1 --metadata '{"lang":"en"}'
+pavecli ingest --docid book-1 --metadata '{"lang":"en"}' demo/books ./book.txt
 ```
 
 ### Arguments And Options
@@ -240,16 +243,17 @@ Index a JSON batch of raw-text documents.
 pavecli ingest-batch [-h] tenant/collection file
 ```
 
-### Example
+### Examples
 
 ```bash
 pavecli ingest-batch demo/books ./documents.json
+pavecli ingest-batch demo/books - < documents.json
 ```
 
 ### Arguments And Options
 
 - `tenant/collection` (required): Tenant and collection, e.g. demo/books
-- `file` (required): JSON batch input file
+- `file` (required): JSON batch file, or - for stdin
 
 ## `ingest-text`
 
@@ -265,7 +269,7 @@ pavecli ingest-text [-h] [--docid DOCID] [--metadata METADATA]
 ### Example
 
 ```bash
-pavecli ingest-text demo/books "Captain Nemo" --docid note-1
+pavecli ingest-text --docid note-1 demo/books "Captain Nemo"
 ```
 
 ### Arguments And Options
@@ -291,7 +295,7 @@ pavecli search [-h] [-k K] [--mode {vector,boost,hybrid}]
 ### Example
 
 ```bash
-pavecli search demo/books "captain nemo" -k 3
+pavecli search -k 3 demo/books "captain nemo"
 ```
 
 ### Arguments And Options
@@ -530,7 +534,7 @@ pavecli update-collection [-h] --display-name DISPLAY_NAME
 ### Example
 
 ```bash
-pavecli update-collection demo/books --display-name "Books"
+pavecli update-collection --display-name "Books" demo/books
 ```
 
 ### Arguments And Options
@@ -576,7 +580,7 @@ pavecli dump-archive [-h] [--output OUTPUT] [tenant/collection]
 
 ```bash
 pavecli dump-archive --output pavedb-data.zip
-pavecli dump-archive demo/books --output books.zip
+pavecli dump-archive --output books.zip demo/books
 ```
 
 ### Arguments And Options
@@ -601,12 +605,13 @@ pavecli restore-archive [-h] [--replace] [tenant/collection] file
 ```bash
 pavecli restore-archive pavedb-data.zip
 pavecli restore-archive demo/books books.zip
+pavecli restore-archive - < pavedb-data.zip
 ```
 
 ### Arguments And Options
 
 - `tenant/collection` (optional): Destination collection; omit for an instance archive
-- `file` (required): Archive zip file path
+- `file` (required): Archive zip file, or - for stdin
 - `--replace` (optional): Overwrite an existing collection instead of creating it
 
 ## `reset-metrics`
@@ -720,7 +725,7 @@ pavecli reindex [-h] [--embedder EMBEDDER]
 ### Example
 
 ```bash
-pavecli reindex demo/books --embedder v2
+pavecli reindex --embedder v2 demo/books
 ```
 
 ### Arguments And Options

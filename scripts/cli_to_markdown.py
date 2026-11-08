@@ -196,6 +196,9 @@ def render_markdown(
         "",
         "Command reference for `pavecli`, the local PaveDB administration and",
         "data-loading tool.",
+        "Successful results go to stdout; service and file errors go to stderr",
+        "as JSON. Usage errors go to stderr with exit status 2.",
+        "`ingest-batch` and `restore-archive` accept `-` for stdin.",
         "",
         "Generated from `pave.cli.build_parser`. Regenerate with "
         "`make docs-refresh`.",
@@ -205,8 +208,8 @@ def render_markdown(
         "```bash",
         "pavecli init",
         "pavecli create-collection demo/books",
-        "pavecli ingest demo/books ./book.txt --docid book-1",
-        'pavecli search demo/books "captain nemo" -k 3',
+        "pavecli ingest --docid book-1 demo/books ./book.txt",
+        'pavecli search -k 3 demo/books "captain nemo"',
         "```",
         "",
         "## Usage",
@@ -342,6 +345,12 @@ def render_manpage(parser: argparse.ArgumentParser | None = None) -> str:
         ".fi",
         ".SH DESCRIPTION",
         *_roff_paragraph(parser.description),
+        ".PP",
+        *_roff_paragraph(
+            "Successful results go to stdout; service and file errors go "
+            "to stderr as JSON. Usage errors go to stderr with exit status 2. "
+            "Use - for stdin with ingest-batch and restore-archive."
+        ),
         ".SH OPTIONS",
         *_man_options(parser),
         ".SH COMMANDS",

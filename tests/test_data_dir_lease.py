@@ -125,7 +125,7 @@ def test_cli_refuses_busy_data_dir_and_releases_its_lease(tmp_path, capsys):
     rc = cli.main_cli(
         ["--compact", "--data-dir", str(data_dir), "list-tenants"]
     )
-    result = json.loads(capsys.readouterr().out)
+    result = json.loads(capsys.readouterr().err)
     assert rc == 1
     assert result["code"] == "data_dir_in_use"
 
