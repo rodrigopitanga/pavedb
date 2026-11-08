@@ -179,6 +179,7 @@ help:
 	echo "Benchmarks:"; \
 	echo "  $${B}benchmark$${R}       Run latency + stress (reuse :8086, else fresh ephemeral per bench; flags: BENCH_FORCE_EPHEMERAL=1, BENCH_SERVER_URL=URL)"; \
 	echo "  bench-latency    Search latency (LAT_LENGTH=queries/variant, LAT_CONCUR, LAT_FILTERS=x,y)"; \
+	echo "  bench-latency-rate-limited  Latency including tenant rate-limit writes"; \
 	echo "  bench-stress     Stress test (STR_LENGTH=seconds, STR_CONCUR, STR_SUITE=base|critical|full)"; \
 	echo "  bench-stress-full Full-suite stress test (alias for STR_SUITE=full bench-stress)"; \
 	echo "    BENCH_WARMUP_DEFAULT=true warms the benchmark server"; \
@@ -1001,6 +1002,19 @@ _bench-with-server:
 	  echo "ERROR: BENCH_SERVER_URL and BENCH_FORCE_EPHEMERAL=1 are mutually exclusive."; \
 	  exit 1; \
 	fi; \
+	bench_auth_mode=none; \
+	if [ "$(_bench_rate_limit)" = "1" ]; then \
+	  if [ "$(BENCH_FORCE_EPHEMERAL)" != "1" ]; then \
+	    echo "ERROR: rate-limit benchmark requires an ephemeral server."; \
+	    exit 1; \
+	  fi; \
+	  bench_auth_mode=static; \
+	  export PAVEDB_AUTH__GLOBAL_KEY=bench-admin-token; \
+	  export PAVEDB_AUTH__TENANTS_FILE=null; \
+	  export PAVEDB_AUTH__API_KEYS='{"bench":"bench-rate-limit-token"}'; \
+	  export PAVEDB_TENANTS__DEFAULT_MAX_RPM=$$(($(LAT_LENGTH) + 100)); \
+	  export PAVEDB_TENANTS__DEFAULT_MAX_RPH=0; \
+	fi; \
 	bench_url="$(_default_url)"; \
 	managed=0; \
 	data_dir=""; \
@@ -1041,7 +1055,7 @@ _bench-with-server:
 	  PAVEDB_DEV=1 \
 	  PAVEDB_EMBEDDER__WARMUP_DEFAULT=$(BENCH_WARMUP_DEFAULT) \
 	  PAVEDB_DATA_DIR="$$data_dir" \
-	  PAVEDB_AUTH__MODE=none \
+	  PAVEDB_AUTH__MODE="$$bench_auth_mode" \
 	  PAVEDB_EMBEDDER__INSTANCES__NATIVE__MODEL=$(BENCH_EMBEDDER_MODEL) \
 	  PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__RUNTIME=$(BENCH_EMBEDDER_RUNTIME) \
 	  PAVEDB_EMBEDDER__INSTANCES__NATIVE__CONFIG__DEVICE=$(BENCH_EMBEDDER_DEVICE) \
@@ -1204,12 +1218,18 @@ _bench-with-server:
 	  exit "$$bench_status"; \
 	fi
 
+.PHONY: bench-latency-rate-limited
+bench-latency-rate-limited: install-dev
+	@$(MAKE) -o install-dev BENCH_FORCE_EPHEMERAL=1 \
+	  BENCH_API_KEY=bench-rate-limit-token BENCH_TENANT_MAX_CONCURRENT=0 \
+	  _bench_rate_limit=1 _latency_suffix=-rate-limited bench-latency
+
 .PHONY: bench-latency bench-latency-run
 bench-latency: install-dev
 	@summary=$$(mktemp "$${TMPDIR:-/tmp}/pavedb-bench-summary.XXXXXX"); \
 	for filt in $$(echo "$(LAT_FILTERS)" | tr ',' ' '); do \
 	  echo ""; \
-	  echo "==> Latency: filtering=$$filt"; \
+	  echo "==> Latency$(_latency_suffix): filtering=$$filt"; \
 	  $(MAKE) -o install-dev \
 	    _run_target=bench-latency-run \
 	    _filt=$$filt \
@@ -1243,6 +1263,10 @@ bench-latency-run:
 	api_arg=""; \
 	summary_arg=""; \
 	slo_arg=""; \
+	rate_arg=""; \
+	if [ "$(_bench_rate_limit)" = "1" ]; then \
+	  rate_arg="--require-rate-limit"; \
+	fi; \
 	if [ -n "$(BENCH_API_KEY)" ]; then api_arg="--api-key $(BENCH_API_KEY)"; fi; \
 	if [ -n "$(_summary_file)" ]; then \
 	  summary_arg="--summary-line $(_summary_file)"; \
@@ -1263,15 +1287,15 @@ bench-latency-run:
 	    --url $(_url) --queries $(LAT_LENGTH) \
 	    --concurrency $(LAT_CONCUR) \
 	    --filtering $(_filt) \
-	    $$api_arg $$summary_arg $$slo_arg \
-	    | tee $(_results_dir)/latency-$(_ts)_$$tag-$(_filt).txt; \
+	    $$api_arg $$summary_arg $$slo_arg $$rate_arg \
+	    | tee $(_results_dir)/latency-$(_ts)_$$tag-$(_filt)$(_latency_suffix).txt; \
 	else \
 	  echo "==> Saving: no (ts=$(_ts), tag=$$tag)"; \
 	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/search_latency.py \
 	    --url $(_url) --queries $(LAT_LENGTH) \
 	    --concurrency $(LAT_CONCUR) \
 	    --filtering $(_filt) \
-	    $$api_arg $$summary_arg $$slo_arg; \
+	    $$api_arg $$summary_arg $$slo_arg $$rate_arg; \
 	fi
 
 .PHONY: bench-stress bench-stress-full bench-stress-run

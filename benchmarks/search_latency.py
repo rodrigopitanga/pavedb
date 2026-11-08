@@ -238,6 +238,7 @@ async def search(
     query: str,
     filters: dict | None = None,
     mode: str = "vector",
+    require_rate_limit: bool = False,
 ) -> tuple[float, bool | None, str, list[dict]]:
     """Return (latency_ms, ok, detail, hits).
 
@@ -257,6 +258,15 @@ async def search(
         return latency_ms, None, "rate_limited", []
     if r.status_code >= 400:
         return latency_ms, False, _parse_error(r), []
+    if require_rate_limit:
+        try:
+            limit = int(r.headers["X-RateLimit-Limit"])
+            window = int(r.headers["X-RateLimit-Window"])
+            remaining = int(r.headers["X-RateLimit-Remaining"])
+        except (KeyError, ValueError):
+            return latency_ms, False, "missing request-rate limit headers", []
+        if limit <= 0 or window != 60 or not 0 <= remaining < limit:
+            return latency_ms, False, "invalid request-rate limit headers", []
     return latency_ms, True, "", r.json().get("matches", [])
 
 
@@ -271,6 +281,7 @@ async def run_benchmark(
     mode: str = "vector",
     summary_line: str | None = None,
     slo_p99_ms: float = 0,
+    require_rate_limit: bool = False,
 ) -> list[float] | None:
     bench_start = time.perf_counter()
     tenant = "bench"
@@ -287,11 +298,15 @@ async def run_benchmark(
     if mode != "vector":
         label = f"{mode}_{label}"
 
+    if require_rate_limit:
+        label = f"rate_limited_{label}"
+
     async with httpx.AsyncClient(
         base_url=base_url, timeout=30.0, headers=headers
     ) as client:
         await print_run_header(
-            client, base_url, "search_latency"
+            client, base_url, "search_latency_rate_limited"
+            if require_rate_limit else "search_latency"
         )
         print(
             f"Setting up collection {tenant}/{collection}..."
@@ -304,7 +319,7 @@ async def run_benchmark(
             print(f"Setup failed: {exc}")
             if debug:
                 print(traceback.format_exc())
-            return []
+            return None if require_rate_limit else []
         print(f"Indexed {len(SAMPLE_DOCS)} documents.")
         print(
             f"Running {num_queries} queries "
@@ -320,6 +335,7 @@ async def run_benchmark(
                 return await search(
                     client, tenant, collection,
                     query, filters=filt, mode=mode,
+                    require_rate_limit=require_rate_limit,
                 )
 
         query_list = [
@@ -476,6 +492,13 @@ async def run_benchmark(
                         f"|0|0|0|0|0|0\n"
                     )
 
+        if require_rate_limit and (
+            not latencies or errors or rate_limited
+        ):
+            print("RATE-LIMIT COVERAGE VIOLATION: every query must succeed "
+                  "with request-rate limit headers")
+            return None
+
         violation = _latency_slo_violation(
             latencies,
             slo_p99_ms,
@@ -597,6 +620,11 @@ def main():
             " 0 = disabled."
         ),
     )
+    parser.add_argument(
+        "--require-rate-limit",
+        action="store_true",
+        help="Require every query to succeed through a per-minute tenant limit",
+    )
     args = parser.parse_args()
 
     result = asyncio.run(run_benchmark(
@@ -609,6 +637,7 @@ def main():
         mode=args.mode,
         summary_line=args.summary_line,
         slo_p99_ms=args.slo_p99_ms,
+        require_rate_limit=args.require_rate_limit,
     ))
     if result is None:
         sys.exit(1)

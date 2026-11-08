@@ -326,7 +326,7 @@ bench:
       STR_LENGTH=${STR_LENGTH:-30}
       STR_CONCUR=${STR_CONCUR:-4}
       TORCH_WHEEL_CPU=1
-      make benchmark
+      make benchmark bench-latency-rate-limited
   artifacts:
     when: always
     paths:

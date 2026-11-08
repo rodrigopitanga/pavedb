@@ -110,3 +110,7 @@ def test_the_gate_still_waits_for_the_stage_it_runs_behind():
 
     assert "needs" not in bench
     assert stages.index(bench["stage"]) > stages.index("test")
+
+
+def test_gate_runs_both_bypass_and_tenant_latency():
+    assert "make benchmark bench-latency-rate-limited" in _bench_script()

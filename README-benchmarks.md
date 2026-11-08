@@ -17,6 +17,9 @@ make benchmark
 make bench-latency
 make bench-stress
 
+# include the persistent tenant rate-limit charge (fresh ephemeral server)
+make bench-latency-rate-limited LAT_SLO_P99_MS=2000
+
 # force ephemeral mode even if :8086 is active
 BENCH_FORCE_EPHEMERAL=1 make benchmark
 

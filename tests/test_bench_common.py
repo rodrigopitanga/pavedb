@@ -14,6 +14,7 @@ step could not be taken from the artifact. These pin the queue into it.
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import re
 import shutil
@@ -226,6 +227,7 @@ def bench_harness(tmp_path):
     (tmp_path / "Makefile").write_text(recipe)
     server = tmp_path / "server.py"
     server.write_text(textwrap.dedent('''\
+        import json
         import os
         import signal
         import time
@@ -256,6 +258,10 @@ def bench_harness(tmp_path):
             ("127.0.0.1", int(os.environ["PAVEDB_SERVER__PORT"])), Handler
         )
         print("fixture server started", flush=True)
+        Path("server-env.json").write_text(json.dumps({
+            key: value for key, value in os.environ.items()
+            if key.startswith("PAVEDB_")
+        }))
         Path("server.pid").write_text(str(os.getpid()))
         step_clock("startup")
         time.sleep(float(os.environ.get("FIXTURE_READY_DELAY", "0")))
@@ -305,6 +311,23 @@ def bench_harness(tmp_path):
     # Clean up after assertions, so a leaked server cannot pass the death checks.
     for pid in groups:
         kill_group(pid)
+
+
+def test_rate_limit_variant_configures_a_non_admin_tenant(bench_harness, tmp_path):
+    run, _env, _port, _server = bench_harness
+    code, output, _elapsed = run(
+        "bench-latency-rate-limited", LAT_LENGTH="200", LAT_FILTERS="none",
+    )
+    assert code == 0, output
+    config = json.loads((tmp_path / "server-env.json").read_text())
+    assert config["PAVEDB_AUTH__MODE"] == "static"
+    assert json.loads(config["PAVEDB_AUTH__API_KEYS"]) == {
+        "bench": "bench-rate-limit-token",
+    }
+    assert config["PAVEDB_AUTH__GLOBAL_KEY"] != "bench-rate-limit-token"
+    assert config["PAVEDB_TENANTS__DEFAULT_MAX_RPM"] == "300"
+    assert config["PAVEDB_TENANTS__DEFAULT_MAX_RPH"] == "0"
+    assert config["PAVEDB_TENANTS__DEFAULT_MAX_CONCURRENT"] == "0"
 
 
 @pytest.fixture(params=[0, 300, -300], ids=["steady", "forward", "backward"])

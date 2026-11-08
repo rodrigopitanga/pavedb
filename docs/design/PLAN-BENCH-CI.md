@@ -32,6 +32,9 @@ LAT_SLO_P99_MS=1500 STR_MAX_ERROR_PCT=1 make benchmark
 # Latency only, save results, gate at 2s
 LAT_SLO_P99_MS=2000 BENCH_SAVE=1 make bench-latency
 
+# Tenant rate-limit charge included (always starts an ephemeral server)
+LAT_SLO_P99_MS=2000 BENCH_SAVE=1 make bench-latency-rate-limited
+
 # Stress only, fail on any errors
 STR_MAX_ERROR_PCT=0.1 make bench-stress
 ```
@@ -48,8 +51,8 @@ python benchmarks/stress.py \
 ```
 
 Exit code 1 on violation, 0 otherwise. When no threshold
-is set (or set to 0), scripts always exit 0 (current
-behavior preserved).
+is set (or set to 0), SLO checks are disabled. The authenticated
+variant still fails on setup, query, or rate-limit coverage errors.
 
 ## CI Job
 
@@ -77,6 +80,14 @@ and `security`:
   threshold by variable (see Tuning below) rather than moving
   the job to a faster box.
 - **Server**: ephemeral (fresh data_dir per run).
+- **Rate-limit coverage**: after the existing admin-bypass latency and stress
+  runs, `bench-latency-rate-limited` repeats the latency variants with static
+  auth and a non-admin `bench` tenant. Its per-minute cap is `LAT_LENGTH + 100`,
+  leaving headroom for setup and cleanup; concurrent and hourly caps are off.
+  The same p99 ceiling includes each request's persistent catalog charge.
+  Every query must succeed with moving-window rate-limit headers, otherwise
+  the run fails even if its successful samples meet the latency ceiling.
+  Reports carry a `-rate-limited` suffix for comparison with the bypass run.
 - **Lighter defaults**: 200 queries (not 1200), 30s stress
   (not 90s), lower concurrency — the gate has to fit a CI
   job budget, not a lab run.

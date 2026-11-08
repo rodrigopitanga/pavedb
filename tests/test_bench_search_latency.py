@@ -210,3 +210,79 @@ def test_slo_violation_prints_the_tail_under_the_verdict(monkeypatch, capsys):
     assert "    slowest   : " in out
     assert "    mean/p95  : " in out
     assert "    host load : 1m 11.42 (0.71/core over 16)" in out
+
+
+@pytest.mark.parametrize("response", [
+    httpx.Response(200, json={"matches": []}),  # admin bypass
+    httpx.Response(200, json={"matches": []}, headers={
+        "X-RateLimit-Limit": "8", "X-RateLimit-Remaining": "7",
+    }),  # concurrency headers alone do not prove a catalog charge
+    httpx.Response(429, json={"code": "tenant_rate_limited"}),
+    httpx.Response(500, json={"code": "internal_error"}),
+])
+def test_required_rate_limit_rejects_incomplete_measurement(monkeypatch, response):
+    real_client = httpx.AsyncClient
+
+    def client(**kwargs):
+        searches = 0
+
+        def handler(request):
+            nonlocal searches
+            if request.url.path.endswith("/search"):
+                searches += 1
+                if searches == 1:
+                    return httpx.Response(200, json={"matches": []}, headers={
+                        "X-RateLimit-Limit": "102",
+                        "X-RateLimit-Remaining": "90",
+                        "X-RateLimit-Window": "60",
+                    })
+                return response
+            return httpx.Response(200, json={})
+        return real_client(transport=httpx.MockTransport(handler), **kwargs)
+
+    monkeypatch.setattr(search_latency.httpx, "AsyncClient", client)
+    result = asyncio.run(search_latency.run_benchmark(
+        "http://pavedb.test", 2, 2, require_rate_limit=True,
+    ))
+    assert result is None
+
+
+def test_tenant_benchmark_times_persistent_charges(app, monkeypatch, tmp_path):
+    cfg = app.state.cfg
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", "admin-token")
+    cfg.set("auth.api_keys", {"bench": "tenant-token"})
+    monkeypatch.setitem(app.state.tenant_rate_limits, "bench", {60: 104, 3600: 0})
+    monkeypatch.setattr(app.state, "tenant_default_limit", 0)
+    real_client = httpx.AsyncClient
+    real_charge = app.state.tenant_rate_limiter
+    charges = []
+
+    def charge(*args, **kwargs):
+        decision = real_charge(*args, **kwargs)
+        charges.append(decision)
+        return decision
+
+    def client(**kwargs):
+        return real_client(transport=httpx.ASGITransport(app=app), **kwargs)
+
+    monkeypatch.setattr(app.state, "tenant_rate_limiter", charge)
+    monkeypatch.setattr(search_latency.httpx, "AsyncClient", client)
+    summary = tmp_path / "summary.txt"
+    result = asyncio.run(search_latency.run_benchmark(
+        "http://localhost", 4, 2, api_key="tenant-token",
+        require_rate_limit=True, summary_line=str(summary),
+    ))
+    assert result is not None and len(result) == 4
+    # Collection creation, ten uploads, four searches, collection deletion.
+    assert len(charges) == 16
+    assert all(decision.allowed for decision in charges)
+    assert len({decision.remaining for decision in charges}) == len(charges)
+    assert summary.read_text().startswith("rate_limited_search_mixed|4|4|")
+
+    # The same authenticated path still enforces the p99 gate.
+    result = asyncio.run(search_latency.run_benchmark(
+        "http://localhost", 4, 2, api_key="tenant-token",
+        require_rate_limit=True, slo_p99_ms=0.001,
+    ))
+    assert result is None
