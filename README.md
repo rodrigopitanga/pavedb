@@ -405,7 +405,7 @@ production — and your code barely changes along the way:
    job_id=$(curl -fsS -X POST \
      -H "Authorization: Bearer $PAVEDB_TOKEN" \
      -H "Content-Type: application/json" \
-     -d '{"embed_model":"sentence-transformers/all-MiniLM-L6-v2"}' \
+     -d '{"embedder":"v2"}' \
      "$PAVEDB_URL/v1/admin/collections/acme/books/reindex" \
      | jq -r .job_id)
 

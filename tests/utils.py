@@ -620,6 +620,7 @@ class SpyStore:
         tenant: str,
         collection: str,
         *,
+        embedder: str | None = None,
         embedder_type: str | None = None,
         embed_model: str | None = None,
         embedder_config: dict[str, Any] | None = None,
@@ -628,6 +629,7 @@ class SpyStore:
         return self.impl.start_reindex(
             tenant,
             collection,
+            embedder=embedder,
             embedder_type=embedder_type,
             embed_model=embed_model,
             embedder_config=embedder_config,

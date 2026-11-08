@@ -138,6 +138,45 @@ def test_admin_reindex_rebuilds_vectors_and_updates_collection(client):
     assert search.json()["matches"][0]["id"].startswith("verne::")
 
 
+def test_admin_reindex_accepts_embedder_selector(client):
+    assert client.post("/v1/collections/acme/books").status_code == 201
+    started = client.post(
+        "/v1/admin/collections/acme/books/reindex",
+        json={"embedder": "v2"},
+    )
+
+    assert started.status_code == 202, started.text
+    job_id = started.json()["job_id"]
+    job = _wait_for_job(
+        lambda: client.get(f"/v1/admin/reindex/{job_id}").json(),
+        "succeeded",
+        "failed",
+    )
+    assert job["status"] == "succeeded", job
+    assert job["target"]["embed_model"] == "fake-v2"
+    assert client.get("/v1/collections/acme/books/detail").json()[
+        "embed_model"
+    ] == "fake-v2"
+
+
+@pytest.mark.parametrize(
+    "target",
+    [
+        {"embedder": "missing"},
+        {"embedder": "v2", "embed_model": "fake-v2"},
+        {"embedder": "native"},
+    ],
+)
+def test_admin_reindex_rejects_invalid_selector(client, target):
+    assert client.post("/v1/collections/acme/books").status_code == 201
+    response = client.post(
+        "/v1/admin/collections/acme/books/reindex",
+        json=target,
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["code"] == "reindex_invalid"
+
+
 def test_reindex_requires_admin_key(client, cfg):
     cfg.set("auth.mode", "static")
     cfg.set("auth.global_key", "root")

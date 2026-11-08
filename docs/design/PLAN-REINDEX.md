@@ -20,9 +20,11 @@ durable job because encoding can outlive one request or server process.
 | `POST` | `/v1/admin/reindex/{job_id}/resume` | Resume a paused or failed job |
 | `DELETE` | `/v1/admin/reindex/{job_id}` | Cancel and discard staged vectors |
 
-The create body uses the same `embedder_type`, `embed_model`, and
-`embedder_config` vocabulary as collection creation. The resolved target must
-name a different vector space. Identity/BYOV is not a text reindex target.
+The create body accepts the same `embedder` selector shorthand or the detailed
+`embedder_type`, `embed_model`, and `embedder_config` fields as collection
+creation. A selector cannot be combined with detailed fields. The resolved
+target must name a different vector space. Identity/BYOV is not a text
+reindex target.
 
 ## Job model
 

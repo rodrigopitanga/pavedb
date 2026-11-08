@@ -2374,6 +2374,7 @@ class LocalStore:
         tenant: str,
         collection: str,
         *,
+        embedder: str | None = None,
         embedder_type: str | None = None,
         embed_model: str | None = None,
         embedder_config: EmbedderConfig | None = None,
@@ -2401,6 +2402,7 @@ class LocalStore:
                     "identity/BYOV collections have no source text to reindex"
                 )
             requested = self._resolve_collection_config(
+                embedder=embedder,
                 embedder_type=embedder_type,
                 embed_model=embed_model,
                 embedder_config=embedder_config,

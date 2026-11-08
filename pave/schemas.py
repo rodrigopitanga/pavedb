@@ -519,6 +519,15 @@ class UpdateCollectionBody(BaseModel):
 
 class ReindexCollectionBody(BaseModel):
     """New embedder vector space for a collection reindex job."""
+    embedder: str | None = Field(
+        default=None,
+        description=(
+            "Configured embedder selector shorthand: instance key, type, "
+            "type:model, or full vector-space key. Cannot be combined with "
+            "the detailed embedder fields."
+        ),
+        examples=["v2"],
+    )
     embedder_type: str | None = Field(
         default=None,
         description="Embedding backend to use for the rebuilt index.",
@@ -538,7 +547,8 @@ class ReindexCollectionBody(BaseModel):
     @model_validator(mode="after")
     def require_target(self) -> "ReindexCollectionBody":
         if (
-            self.embedder_type is None
+            self.embedder is None
+            and self.embedder_type is None
             and self.embed_model is None
             and self.embedder_config is None
         ):

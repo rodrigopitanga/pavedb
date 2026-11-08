@@ -462,6 +462,7 @@ def start_collection_reindex(
     tenant: str,
     collection: str,
     *,
+    embedder: str | None = None,
     embedder_type: str | None = None,
     embed_model: str | None = None,
     embedder_config: EmbedderConfig | None = None,
@@ -472,6 +473,7 @@ def start_collection_reindex(
         job = store.start_reindex(
             tenant,
             resolved_collection,
+            embedder=embedder,
             embedder_type=embedder_type,
             embed_model=embed_model,
             embedder_config=embedder_config,

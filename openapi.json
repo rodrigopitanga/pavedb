@@ -3080,6 +3080,21 @@
             ],
             "title": "Embed Model"
           },
+          "embedder": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Configured embedder selector shorthand: instance key, type, type:model, or full vector-space key. Cannot be combined with the detailed embedder fields.",
+            "examples": [
+              "v2"
+            ],
+            "title": "Embedder"
+          },
           "embedder_config": {
             "anyOf": [
               {

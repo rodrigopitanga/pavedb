@@ -511,6 +511,7 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
             store,
             tenant,
             name,
+            embedder=body.embedder,
             embedder_type=body.embedder_type,
             embed_model=body.embed_model,
             embedder_config=body.embedder_config,
