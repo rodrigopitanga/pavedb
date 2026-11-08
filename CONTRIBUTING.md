@@ -165,7 +165,10 @@ policy applies to PaveDB and the standalone PaveDB SDK repositories.
 - Bugs and feature requests can be filed on GitHub; code review and merges happen
   through GitLab merge requests.
 - Do not close referenced issues from a branch or open MR. Mention the issue key
-  in commits/MRs and let CI close it after merge.
+  in the trailing `(KEY)` or `(KEY, KEY)` commit subject; default-branch CI
+  closes it after merge, including scheduled reconciliation. No closing trailer
+  is required. For roadmap `P` keys, the task title must also be fully struck
+  through in `ROADMAP.md`; partial work stays open.
 - To claim a task, open an issue titled `claim: <task ID>` and describe the
 approach.
 - Good first issues live under the `bite-sized` label. Submit a draft PR

@@ -218,6 +218,139 @@ def test_plain_key_gets_note_but_only_exact_trailer_closes():
     assert closing_keys(f"{trailer}\n\nMore context") == set()
 
 
+@pytest.mark.parametrize("mode", ["merge", "reconcile", "mr"])
+@pytest.mark.parametrize(
+    "key, task, trailer, should_close",
+    [
+        ("P2-21", "Storage limit / tenant", False, False),
+        ("P2-21", "Storage limit / tenant", True, False),
+        ("P2-21", "~~Storage limit~~ / tenant", True, False),
+        ("P2-21", "~~Storage~~ limit / ~~tenant~~", True, False),
+        ("P2-21", "~~Storage limit / tenant~~", False, True),
+        ("P2-21", "~~Storage limit / tenant~~", True, True),
+        ("P1-66", "", True, False),  # Missing roadmap row is not completion.
+        ("B20", "", False, True),
+        ("B20", "", True, True),
+        ("R6-91", "", False, True),
+        ("R6-91", "", True, True),
+        ("R2-104", "", False, True),
+        ("R7-86", "", False, True),
+    ],
+)
+def test_sync_and_reconcile_share_closure_policy(
+    monkeypatch, tmp_path, mode, key, task, trailer, should_close
+):
+    roadmap = tmp_path / "ROADMAP.md"
+    roadmap.write_text(
+        "| ID | Task | Source |\n"
+        "| --- | --- | --- |\n"
+        f"| P2-21 | {task} | v1.0 |\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(issue_key_sync, "ROADMAP", roadmap)
+    message = f"[fix] Deliver slice ({key})"
+    if trailer:
+        message += f"\n\nCloses: {key}"
+    sha = "a" * 40
+
+    class GL(_RoadmapGL):
+        def __init__(self):
+            super().__init__()
+            self.notes = []
+            self.issue = {"iid": 39, "title": f"{key}: Task", "state": "opened"}
+
+        def paged(self, path):
+            return self.notes if path.endswith("/notes") else []
+
+        def request(self, method, path, data=None):
+            super().request(method, path, data)
+            if method == "POST" and path.endswith("/notes"):
+                self.notes.append(data)
+            if method == "PUT" and data.get("state_event") == "close":
+                self.issue["state"] = "closed"
+            return {}
+
+    gl = GL()
+    monkeypatch.setattr(issue_key_sync, "GitLab", lambda: gl)
+    monkeypatch.setattr(issue_key_sync, "validate_review_keys", lambda gl: None)
+    monkeypatch.setattr(issue_key_sync, "issue_map", lambda gl: {key: gl.issue})
+    monkeypatch.setattr(issue_key_sync, "sync_roadmap_issues", lambda *args: None)
+    monkeypatch.setattr(issue_key_sync, "local_commit_texts", lambda: {sha: message})
+    monkeypatch.setattr(issue_key_sync, "mr_texts", lambda gl: {sha: message})
+    monkeypatch.setattr(
+        issue_key_sync, "sh", lambda *args: f"{sha}\x00{message}\n\x01"
+    )
+    monkeypatch.setenv("CI_DEFAULT_BRANCH", "main")
+    monkeypatch.setenv("CI_COMMIT_BRANCH", "" if mode == "mr" else "main")
+    monkeypatch.setenv("CI_MERGE_REQUEST_IID", "7" if mode == "mr" else "")
+    monkeypatch.setenv("CI_PIPELINE_SOURCE", "push")
+    monkeypatch.delenv("ISSUE_SYNC_RECONCILE", raising=False)
+
+    for _ in range(2):
+        assert issue_key_sync.sync(reconcile_requested=mode == "reconcile") == 0
+    closes = [data for method, _, data in gl.requests if method == "PUT"]
+    expected_close = should_close and mode != "mr"
+    assert closes == ([{"state_event": "close"}] if expected_close else [])
+    if expected_close:
+        assert sum(note["body"].startswith("Closed by:") for note in gl.notes) == 1
+    elif mode == "reconcile":
+        # A reopened, incomplete task stays open without new notes each week.
+        assert gl.requests == []
+    else:
+        assert len(gl.notes) == 1  # Plain references still get an idempotent note.
+
+
+def test_reconcile_reads_bodies_and_selects_latest_closing_commit(monkeypatch):
+    records = [
+        ("newest", "[fix] Follow-up (B20)"),
+        ("closer", "[fix] Finish\n\nCloses: B20\nCloses: F2-10"),
+        ("older", "[fix] Earlier\n\nCloses: B20"),
+        ("context", "[doc] Example\n\nCloses: G3\n\nMore context"),
+    ]
+    calls = []
+
+    def log(*args):
+        calls.append(args)
+        return "\n".join(f"{sha}\x00{text}\n\x01" for sha, text in records)
+
+    monkeypatch.setattr(issue_key_sync, "sh", log)
+    monkeypatch.setattr(issue_key_sync, "roadmap_rows", lambda: [])
+    assert issue_key_sync.main_fixes("main") == (
+        {
+            "B20": ("newest", "[fix] Follow-up (B20)"),
+            "F2-10": ("closer", "[fix] Finish"),
+        },
+        {"B20": ("newest", "[fix] Follow-up (B20)")},
+    )
+    assert calls == [("git", "log", "main", "--format=%H%x00%B%x01")]
+
+
+@pytest.mark.parametrize("state", ["opened", "closed"])
+def test_reconcile_uses_legacy_subject_only_for_closed_issue_backfill(
+    monkeypatch, state
+):
+    class GL(_RoadmapGL):
+        def paged(self, path):
+            return []
+
+    gl = GL()
+    monkeypatch.setattr(
+        issue_key_sync,
+        "main_fixes",
+        lambda branch: ({}, {"B20": ("a" * 40, "[fix] Legacy (B20)")}),
+    )
+    issue = {"iid": 20, "state": state, "closed_by": {"username": "dev"}}
+
+    assert issue_key_sync.reconcile(gl, {"B20": issue}, "main") == 0
+    if state == "closed":
+        assert len(gl.requests) == 1
+        method, path, data = gl.requests[0]
+        assert (method, path) == ("POST", "/projects/1/issues/20/notes")
+        assert data["body"].startswith("Closed by: [`aaaaaaaa`]")
+    else:
+        assert gl.requests == []
+
+
 def test_review_key_validation_warns_for_reserved_suffix_gaps(capsys):
     titles = [f"R4-{number:02d}: done" for number in range(1, 66)]
     titles.append("R2-67: done")

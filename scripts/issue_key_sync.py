@@ -24,9 +24,9 @@ import urllib.request
 # Issue keys: R review, P PaveDB feature, B/F/G bug/Flymmatik/Patchgram.
 # Shared by commit notes, exact close trailers, and issue titles so public key
 # recognition cannot drift between those paths.
-_KEY_BODY = r"R[1-6]-\d{2}|P\d+-[A-Za-z0-9]+|[BFG]\d+(?:-[A-Za-z0-9]+)?"
+_KEY_BODY = r"R[1-9]\d*-\d+|P\d+-[A-Za-z0-9]+|[BFG]\d+(?:-[A-Za-z0-9]+)?"
 PUBLIC_KEY_RE = re.compile(rf"\b(?:{_KEY_BODY})\b")
-REVIEW_KEY_RE = re.compile(r"^(R[1-6])-(\d{2}):")
+REVIEW_KEY_RE = re.compile(r"^(R[1-9]\d*)-(\d+):")
 ROADMAP = Path(__file__).resolve().parents[1] / "ROADMAP.md"
 TYPE_LABELS = {"FEAT", "REV", "BUG"}
 ZERO_SHA = "0" * 40
@@ -219,7 +219,7 @@ def mr_texts(gl: GitLab) -> dict[str, str]:
     Issue keys are sourced only from commit messages, never the MR title
     or description: a key merely referenced in the description (a deferred
     item, an "earlier wave" list, a context note) must not get a sync note
-    or be auto-closed. Only a key in a landed commit counts as done.
+    or be auto-closed. A trailing subject key identifies the completed issue.
     """
     iid = os.environ.get("CI_MERGE_REQUEST_IID", "")
     if not iid:
@@ -387,6 +387,10 @@ def roadmap_rows() -> list[dict[str, str]]:
         data = {headers[i]: clean_cell(cells[i]) for i in range(len(headers))}
         issue_id = data.get("ID", "")
         if re.fullmatch(r"P\d+-[A-Za-z0-9]+", issue_id):
+            task = cells[headers.index("Task")] if "Task" in headers else ""
+            data["Status"] = (
+                "complete" if re.fullmatch(r"~~(?:(?!~~).)+~~", task) else "open"
+            )
             rows.append(data)
     return rows
 
@@ -613,28 +617,48 @@ def sync_roadmap_issues(gl: GitLab, issues: dict[str, dict[str, object]]) -> Non
         print("Updated roadmap issues: " + ", ".join(updated))
 
 
-def main_subject_fixes(default_branch: str) -> dict[str, tuple[str, str]]:
-    """key -> (sha, subject) for every subject-key fix on the default branch.
+def closure_keys(text: str, completed: set[str]) -> set[str]:
+    """Accept subject keys and optional trailers; require completed P scope."""
+    return {
+        key
+        for key in subject_keys(text) | closing_keys(text)
+        if not key.startswith("P") or key in completed
+    }
 
-    One local ``git log`` pass over the default branch (no network, no
-    per-issue work). Needs full history: shallow CI clones only see the tip,
-    so the reconcile job must fetch depth 0 (see gitlab-ci.yml issue-reconcile).
+
+def completed_roadmap_keys() -> set[str]:
+    return {row["ID"] for row in roadmap_rows() if row["Status"] == "complete"}
+
+
+def main_fixes(
+    default_branch: str,
+) -> tuple[dict[str, tuple[str, str]], dict[str, tuple[str, str]]]:
+    """Closing commits and subject fixes from one history scan.
+
+    Requires full history (GIT_DEPTH: 0 in the reconciliation job) and commit
+    bodies: subject keys authorize closure without a trailer; completed
+    roadmap scope is also required for P keys.
     """
     out = ""
     for ref in (default_branch, f"origin/{default_branch}", f"gitlab/{default_branch}"):
         try:
-            out = sh("git", "log", ref, "--format=%H%x00%s")
+            out = sh("git", "log", ref, "--format=%H%x00%B%x01")
             break
         except (OSError, subprocess.CalledProcessError):
             continue
-    fixes: dict[str, tuple[str, str]] = {}
-    for line in out.splitlines():
-        if "\x00" not in line:
+    completed = completed_roadmap_keys()
+    closers: dict[str, tuple[str, str]] = {}
+    subjects: dict[str, tuple[str, str]] = {}
+    for record in out.split("\x01"):
+        if "\x00" not in record:
             continue
-        sha, subject = line.split("\x00", 1)
-        for key in subject_keys(subject):
-            fixes.setdefault(key, (sha, subject))  # newest wins
-    return fixes
+        sha, text = record.strip("\n").split("\x00", 1)
+        subject = text.splitlines()[0] if text else ""
+        for key in closure_keys(text, completed):
+            closers.setdefault(key, (sha, subject))  # newest wins
+        for key in subject_keys(text):
+            subjects.setdefault(key, (sha, subject))
+    return closers, subjects
 
 
 def reconcile(gl: GitLab, issues: dict[str, dict[str, object]], default_branch: str) -> int:
@@ -644,7 +668,7 @@ def reconcile(gl: GitLab, issues: dict[str, dict[str, object]], default_branch: 
     calls. Reuses the already-fetched ``issues`` map — the only added cost is
     one local ``git log``.
     """
-    fixes = main_subject_fixes(default_branch)
+    fixes, subject_fixes = main_fixes(default_branch)
     closed: list[str] = []
     unmapped: list[str] = []
     for key, issue in issues.items():
@@ -656,15 +680,16 @@ def reconcile(gl: GitLab, issues: dict[str, dict[str, object]], default_branch: 
             # cache "already has closed-by" if the issue count grows.
             if has_closed_by(gl, issue_iid, key):
                 continue
-            if key in fixes:
-                add_closed_by(gl, issue_iid, key, fixes[key][0])
+            fix = fixes.get(key) or subject_fixes.get(key)
+            if fix:
+                add_closed_by(gl, issue_iid, key, fix[0])
                 continue
             closer = (issue.get("closed_by") or {}).get("username") or "unknown"
             add_note(
                 gl,
                 issue_iid,
-                f"Closed by: @{closer}, with no fix commit on "
-                f"`{default_branch}` naming {key}.",
+                f"Closed by: @{closer}, with no eligible fixing commit on "
+                f"`{default_branch}` for {key}.",
                 closed_by_marker(key),
             )
             unmapped.append(key)
@@ -689,20 +714,17 @@ def reconcile(gl: GitLab, issues: dict[str, dict[str, object]], default_branch: 
     print("Reconcile closed: " + (", ".join(sorted(closed)) if closed else "nothing"))
     if unmapped:
         print(
-            "Closed without a fix commit on the default branch: "
+            "Closed without an eligible fixing commit on the default branch: "
             + ", ".join(sorted(unmapped))
         )
     return 0
 
 
 def selfcheck() -> int:
-    assert subject_keys("[cli] Reject non-object --filters early (R3-26)") == {"R3-26"}
-    assert subject_keys("mentions R2-68 midway, fixes (R3-77)") == {"R3-77"}
-    assert subject_keys("R3-26: something") == set()  # issue-title form, not commit
-    assert subject_keys("[fix] no key here") == set()
-    assert subject_keys("[fix] archive (B15)\n\nbody (R9-99)") == {"B15"}
-    assert subject_keys("[fix] slots (B54, B55, B56)") == {"B54", "B55", "B56"}
-    assert subject_keys("[api] archive (refs P1-54, P1-55)") == set()
+    assert closure_keys("[cli] Reject non-object --filters (R3-26)", set()) == {"R3-26"}
+    assert closure_keys("[fix] Bounds (B95, R2-104, R7-86)", set()) == {"B95", "R2-104", "R7-86"}
+    assert closure_keys("[doc] Reference (refs B95)\n\nbody (R2-104)", set()) == set()
+    assert closing_keys("[cli] Reject non-object --filters (R3-26)") == set()
     assert closing_keys("subj\n\nbody\n\nCloses: B15") == {"B15"}
     assert closing_keys("subj\n\nno trailer") == set()
     print("selfcheck ok")
@@ -732,11 +754,11 @@ def sync(*, reconcile_requested: bool = False) -> int:
     commit_refs = mr_texts(gl) if mr_iid else local_commit_texts()
     if on_default:
         sync_roadmap_issues(gl, issues)
+    completed = completed_roadmap_keys() if on_default else set()
     matched: set[str] = set()
 
     for sha, text in commit_refs.items():
-        closes = closing_keys(text)
-        subject = subject_keys(text)
+        closes = closure_keys(text, completed)
         for key in sorted(public_keys(text)):
             issue = issues.get(key)
             if not issue:
@@ -755,12 +777,7 @@ def sync(*, reconcile_requested: bool = False) -> int:
                 body = f"Commit {short} references {key}.\n\n{commit_url(sha)}"
             add_note(gl, issue_iid, body, marker)
             matched.add(key)
-            # Close when the commit's SUBJECT names this key (the repo
-            # convention) or an explicit `Closes:` trailer does. Restores the
-            # auto-close that the 2026-08-01 trailer-only gate silently broke,
-            # without closing on incidental body mentions.
-            close_it = key in subject or key in closes
-            if on_default and close_it and issue.get("state") != "closed":
+            if on_default and key in closes and issue.get("state") != "closed":
                 add_closed_by(gl, issue_iid, key, sha)
                 gl.request(
                     "PUT",
