@@ -404,6 +404,8 @@ production — and your code barely changes along the way:
    `POST .../$job_id/pause` and `POST .../$job_id/resume` control a job at
    persisted batch boundaries; `DELETE .../$job_id` cancels it. Paused jobs
    survive restart and refuse to resume if the source corpus changed.
+   `GET /v1/admin/reindex` returns a `jobs` list with all retained jobs across
+   tenants, oldest first, so a lost job ID can be recovered with the admin key.
 
 ## 📚 Reference
 

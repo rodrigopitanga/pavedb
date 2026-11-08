@@ -2352,6 +2352,64 @@
         "title": "ListQueryLogsResponse",
         "type": "object"
       },
+      "ListReindexJobsResponse": {
+        "description": "Durable reindex jobs across all tenants and collections.",
+        "properties": {
+          "jobs": {
+            "description": "All retained reindex jobs, oldest first.",
+            "items": {
+              "$ref": "#/components/schemas/ReindexJobResponse"
+            },
+            "title": "Jobs",
+            "type": "array"
+          },
+          "latency_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total server-side time for this request, in ms.",
+            "examples": [
+              12.4
+            ],
+            "title": "Latency Ms"
+          },
+          "ok": {
+            "const": true,
+            "default": true,
+            "description": "Always true on a success response.",
+            "examples": [
+              true
+            ],
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "request_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Correlation id echoed for this request.",
+            "examples": [
+              "req-5f3a-b812"
+            ],
+            "title": "Request Id"
+          }
+        },
+        "required": [
+          "jobs"
+        ],
+        "title": "ListReindexJobsResponse",
+        "type": "object"
+      },
       "ListTenantsResponse": {
         "description": "All known tenants.",
         "properties": {
@@ -5140,6 +5198,63 @@
         "summary": "Replay any logged search",
         "tags": [
           "Query Admin"
+        ]
+      }
+    },
+    "/v1/admin/reindex": {
+      "get": {
+        "description": "Returns all retained reindex jobs across tenants, oldest first; requires the admin key.",
+        "operationId": "list_reindex_jobs_v1_admin_reindex_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListReindexJobsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Unauthorized"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "List reindex jobs",
+        "tags": [
+          "Instance Admin"
         ]
       }
     },

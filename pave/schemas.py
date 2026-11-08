@@ -629,6 +629,14 @@ class ReindexJobResponse(OkResponse):
     )
 
 
+class ListReindexJobsResponse(OkResponse):
+    """Durable reindex jobs across all tenants and collections."""
+
+    jobs: list[ReindexJobResponse] = Field(
+        description="All retained reindex jobs, oldest first.",
+    )
+
+
 class CreateCollectionResponse(OkResponse):
     """A newly created collection."""
     tenant: str = Field(

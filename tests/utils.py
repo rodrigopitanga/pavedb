@@ -645,6 +645,10 @@ class SpyStore:
         self.calls.append(("resume_reindex", job_id))
         return self.impl.resume_reindex(job_id)
 
+    def list_reindex_jobs(self) -> list[dict[str, Any]]:
+        self.calls.append(("list_reindex_jobs",))
+        return self.impl.list_reindex_jobs()
+
     def cancel_reindex(self, job_id: str) -> dict[str, Any]:
         self.calls.append(("cancel_reindex", job_id))
         return self.impl.cancel_reindex(job_id)

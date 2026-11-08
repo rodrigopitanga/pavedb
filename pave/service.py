@@ -565,6 +565,20 @@ def get_reindex_job(store, job_id: str) -> ServiceResult:
     return _reindex_job_action(store, job_id, "get_reindex_job")
 
 
+def list_reindex_jobs(store) -> ServiceResult:
+    """Discover durable jobs without requiring a previously saved job ID."""
+    try:
+        return {"ok": True, "jobs": store.list_reindex_jobs()}
+    except Exception as exc:
+        log.warning(f"list_reindex_jobs failed: {exception_diagnostic(exc)}")
+        return {
+            "ok": False,
+            "code": "reindex_failed",
+            "error": _INTERNAL_ERROR,
+            "error_type": "failed",
+        }
+
+
 def pause_reindex_job(store, job_id: str) -> ServiceResult:
     return _reindex_job_action(store, job_id, "pause_reindex")
 

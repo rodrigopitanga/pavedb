@@ -19,6 +19,7 @@ from pave.schemas import (
     EmbedderInventoryResponse,
     GetQueryLogResponse,
     QueryReplayResponse,
+    ListReindexJobsResponse,
     ListTenantsResponse,
     MoveCollectionBody,
     MoveCollectionResponse,
@@ -36,6 +37,7 @@ from pave.service import (
     get_query_log_entry_scoped as svc_get_query_log_entry_scoped,
     get_reindex_job as svc_get_reindex_job,
     list_embedders as svc_list_embedders,
+    list_reindex_jobs as svc_list_reindex_jobs,
     list_tenants as svc_list_tenants,
     move_collection as svc_move_collection,
     pause_reindex_job as svc_pause_reindex_job,
@@ -514,6 +516,34 @@ def build_admin_router(error, resp, get_rid, trace, do_search) -> APIRouter:
             embedder_config=body.embedder_config,
         )
         return reindex_response(result, request, rid)
+
+    @router.get(
+        "/admin/reindex",
+        summary="List reindex jobs",
+        description=(
+            "Returns all retained reindex jobs across tenants, oldest first; "
+            "requires the admin key."
+        ),
+        response_model=ListReindexJobsResponse,
+        responses=resp(401, 403, 500),
+        tags=["Instance Admin"],
+    )
+    @ops_event("list_reindex_jobs", coll=None, request_id="rid")
+    def list_reindex_jobs(
+        request: Request,
+        rid: str | None = Depends(get_rid),
+        ctx: AuthContext = Depends(auth_ctx),
+        store: BaseStore = Depends(current_store),
+    ):
+        if not ctx.is_admin:
+            return error(
+                403,
+                "admin_required",
+                "admin access required",
+                request=request,
+                request_id=rid,
+            )
+        return reindex_response(svc_list_reindex_jobs(store), request, rid)
 
     @router.get(
         "/admin/reindex/{job_id}",

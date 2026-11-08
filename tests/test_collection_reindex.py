@@ -158,6 +158,62 @@ def test_reindex_requires_admin_key(client, cfg):
     assert response.json()["code"] == "admin_required"
 
 
+def test_list_reindex_jobs_survives_restart(
+    client, app, temp_data_dir, monkeypatch,
+):
+    empty = client.get("/v1/admin/reindex")
+    assert empty.status_code == 200
+    assert empty.json()["jobs"] == []
+
+    store = app.state.store.impl
+    monkeypatch.setattr(store, "_launch_reindex_job", lambda job_id: None)
+    expected = {}
+    for tenant, status in (("acme", "paused"), ("other", "succeeded")):
+        store.create_collection(tenant, "books")
+        started = client.post(
+            f"/v1/admin/collections/{tenant}/books/reindex",
+            json={"embed_model": "fake-v2"},
+        )
+        assert started.status_code == 202
+        job_id = started.json()["job_id"]
+        store._ensure_catalog().update_reindex_job(job_id, status=status)
+        expected[job_id] = (tenant, status)
+
+    store.close()
+    app.state.store = LocalStore(str(temp_data_dir), FakeEmbedder())
+    response = client.get("/v1/admin/reindex")
+    assert response.status_code == 200, response.text
+    jobs = response.json()["jobs"]
+    assert {job["job_id"]: (job["tenant"], job["status"]) for job in jobs} == expected
+    assert [job["created_at"] for job in jobs] == sorted(
+        job["created_at"] for job in jobs
+    )
+    for job in jobs:
+        detail = client.get(f"/v1/admin/reindex/{job['job_id']}")
+        assert detail.status_code == 200
+        assert all(
+            detail.json()[key] == value
+            for key, value in job.items()
+            if key not in {"request_id", "latency_ms"}
+        )
+
+
+@pytest.mark.parametrize("token, status", [(None, 401), ("tenant-key", 403)])
+def test_list_reindex_jobs_requires_admin(client, cfg, app, monkeypatch, token, status):
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", "root")
+    cfg.set("auth.api_keys", {"acme": "tenant-key"})
+
+    def forbidden_read():
+        pytest.fail("unauthorized listing reached the store")
+
+    monkeypatch.setattr(app.state.store.impl, "list_reindex_jobs", forbidden_read)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    response = client.get("/v1/admin/reindex", headers=headers)
+    assert response.status_code == status
+    assert response.json()["ok"] is False
+
+
 def test_reindex_job_pauses_and_resumes_after_store_restart(
     temp_data_dir,
     monkeypatch,
@@ -344,6 +400,40 @@ def _assert_private_job(client, store, job_id, status):
     assert response.json()["error"] == _PUBLIC_ERROR
     assert store._get_reindex_job_internal(job_id)["error"] == _PUBLIC_ERROR
     return response.json()
+
+
+def test_list_reindex_jobs_redacts_historical_errors(client, redaction_job):
+    store, job_id = redaction_job
+    store._ensure_catalog().update_reindex_job(
+        job_id, status="failed", error=_SENSITIVE_ERROR,
+        source_digest="internal-corpus-digest",
+    )
+    response = client.get(
+        "/v1/admin/reindex", headers={"Authorization": "Bearer root"},
+    )
+    assert response.status_code == 200
+    job, = response.json()["jobs"]
+    assert job["job_id"] == job_id
+    assert job["error"] == _PUBLIC_ERROR
+    assert "source_config" not in job
+    assert "source_digest" not in job
+    assert _SENSITIVE_ERROR not in response.text
+    assert store._get_reindex_job_internal(job_id)["error"] == _SENSITIVE_ERROR
+
+
+def test_list_reindex_jobs_catalog_failure_is_private(
+    client, app, monkeypatch, caplog,
+):
+    def fail():
+        raise RuntimeError(_SENSITIVE_ERROR)
+
+    monkeypatch.setattr(app.state.store.impl._ensure_catalog(), "list_reindex_jobs", fail)
+    response = client.get("/v1/admin/reindex")
+    assert response.status_code == 500
+    assert response.json()["ok"] is False
+    assert response.json()["code"] == "reindex_failed"
+    assert _SENSITIVE_ERROR not in response.text
+    assert "secret-fragment" not in caplog.text
 
 
 @pytest.mark.parametrize("status", ["failed", "paused", "cancelled", "committing"])

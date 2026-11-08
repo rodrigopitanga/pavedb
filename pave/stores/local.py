@@ -2361,6 +2361,14 @@ class LocalStore:
             self._get_reindex_job_internal(job_id)
         )
 
+    def list_reindex_jobs(self) -> list[dict[str, Any]]:
+        """Return public progress for all durable jobs in creation order."""
+        jobs = self._with_catalog_retry(
+            "list_reindex_jobs",
+            lambda catalog: catalog.list_reindex_jobs(),
+        )
+        return [self._public_reindex_job(job) for job in jobs]
+
     def start_reindex(
         self,
         tenant: str,

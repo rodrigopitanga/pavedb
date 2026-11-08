@@ -14,6 +14,7 @@ durable job because encoding can outlive one request or server process.
 | Method | Path | Effect |
 |---|---|---|
 | `POST` | `/v1/admin/collections/{tenant}/{name}/reindex` | Create and start a job |
+| `GET` | `/v1/admin/reindex` | List all retained jobs, oldest first |
 | `GET` | `/v1/admin/reindex/{job_id}` | Read durable state and chunk progress |
 | `POST` | `/v1/admin/reindex/{job_id}/pause` | Pause after a persisted batch |
 | `POST` | `/v1/admin/reindex/{job_id}/resume` | Resume a paused or failed job |
