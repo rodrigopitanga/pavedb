@@ -196,6 +196,72 @@ def test_cli_create_collection_accepts_embedder_selector(cli_env, capsys):
     assert ("create_collection", "acme", "selected") in store.calls
 
 
+def test_cli_reindex_follows_job_and_exposes_status(cli_query_env, capsys):
+    pvcli, store, _ = cli_query_env
+    cfg = get_cfg()
+    cfg.set("embedder.instances.v2.type", "sbert")
+    cfg.set("embedder.instances.v2.model", "fake-v2")
+    pvcli.main_cli(["create-collection", "acme/books"])
+    capsys.readouterr()
+
+    assert pvcli.main_cli(["reindex", "acme/books", "--embedder", "v2"]) == 0
+    job = json.loads(capsys.readouterr().out)
+    assert job["status"] == "succeeded"
+    assert ("start_reindex", "acme", "books") in store.calls
+    assert ("get_reindex_job", job["job_id"]) in store.calls
+
+    assert pvcli.main_cli(["reindex-status", job["job_id"]]) == 0
+    assert json.loads(capsys.readouterr().out)["job_id"] == job["job_id"]
+    assert pvcli.main_cli(["reindex-status"]) == 0
+    assert json.loads(capsys.readouterr().out)["jobs"][0]["job_id"] == job["job_id"]
+
+
+def test_cli_reindex_pauses_on_interrupt(cli_env, monkeypatch, capsys):
+    pvcli, _, _ = cli_env
+    job = {
+        "ok": True, "job_id": "job-1", "status": "running",
+        "completed_chunks": 1, "total_chunks": 3,
+    }
+    monkeypatch.setattr(pvcli, "svc_start_collection_reindex", lambda *a, **kw: job)
+    monkeypatch.setattr(pvcli, "svc_get_reindex_job", lambda *a: job)
+    monkeypatch.setattr(
+        pvcli, "svc_pause_reindex_job",
+        lambda *a: {**job, "status": "paused"},
+    )
+    monkeypatch.setattr(
+        pvcli.time, "sleep", lambda _seconds: (_ for _ in ()).throw(KeyboardInterrupt)
+    )
+
+    assert pvcli.main_cli(["reindex", "acme/books", "--embed-model", "v2"]) == 130
+    out = json.loads(capsys.readouterr().out)
+    assert out["status"] == "paused"
+    assert out["resume_hint"] == "pavecli reindex-resume job-1"
+
+
+def test_cli_reindex_resume_and_cancel_use_service(cli_env, monkeypatch, capsys):
+    pvcli, _, _ = cli_env
+    calls = []
+    monkeypatch.setattr(
+        pvcli, "svc_resume_reindex_job",
+        lambda _store, job_id: calls.append(("resume", job_id)) or {"ok": True},
+    )
+    monkeypatch.setattr(
+        pvcli, "svc_cancel_reindex_job",
+        lambda _store, job_id: calls.append(("cancel", job_id)) or {"ok": True},
+    )
+    monkeypatch.setattr(
+        pvcli, "svc_get_reindex_job",
+        lambda _store, job_id: {
+            "ok": True, "job_id": job_id, "status": "succeeded",
+            "completed_chunks": 1, "total_chunks": 1,
+        },
+    )
+
+    assert pvcli.main_cli(["reindex-resume", "job-1"]) == 0
+    assert pvcli.main_cli(["reindex-cancel", "job-1"]) == 0
+    assert calls == [("resume", "job-1"), ("cancel", "job-1")]
+
+
 def test_cli_create_collection_rejects_malformed_embedder_config(cli_env, capsys):
     pvcli, store, _ = cli_env
 

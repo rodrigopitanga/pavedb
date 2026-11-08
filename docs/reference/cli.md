@@ -85,6 +85,10 @@ PaveDB home page: https://pavedb.org
 | `list-embedders` | List configured embedder instances. |
 | `list-collections` | List collections for a tenant. |
 | `get-collection` | Fetch collection details. |
+| `reindex` | Rebuild collection vectors and follow the job. |
+| `reindex-status` | Show one reindex job or list all jobs. |
+| `reindex-resume` | Resume a paused or failed reindex job. |
+| `reindex-cancel` | Cancel a reindex job. |
 
 ## `help`
 
@@ -697,3 +701,94 @@ pavecli get-collection demo/books
 ### Arguments And Options
 
 - `tenant/collection` (required): Tenant and collection, e.g. demo/books
+
+## `reindex`
+
+Offline only; start a reindex job and show progress until it finishes. Ctrl-C pauses the
+job after its current batch.
+
+### Usage
+
+```bash
+pavecli reindex [-h] [--embedder EMBEDDER]
+                       [--embedder-type EMBEDDER_TYPE]
+                       [--embed-model EMBED_MODEL]
+                       [--embedder-config EMBEDDER_CONFIG]
+                       tenant/collection
+```
+
+### Example
+
+```bash
+pavecli reindex demo/books --embedder v2
+```
+
+### Arguments And Options
+
+- `tenant/collection` (required): Tenant and collection, e.g. demo/books
+- `--embedder` (optional): Configured embedder selector for the new vector space
+- `--embedder-type` (optional): Target embedder type
+- `--embed-model` (optional): Target embedding model
+- `--embedder-config` (optional): JSON object with target embedder settings
+
+## `reindex-status`
+
+Show durable reindex progress, or list all retained jobs.
+
+### Usage
+
+```bash
+pavecli reindex-status [-h] [job_id]
+```
+
+### Examples
+
+```bash
+pavecli reindex-status
+pavecli reindex-status JOB_ID
+```
+
+### Arguments And Options
+
+- `job_id` (optional): Reindex job ID
+
+## `reindex-resume`
+
+Resume reindexing from the persisted staged index and follow progress until it finishes.
+Ctrl-C pauses the job.
+
+### Usage
+
+```bash
+pavecli reindex-resume [-h] job_id
+```
+
+### Example
+
+```bash
+pavecli reindex-resume JOB_ID
+```
+
+### Arguments And Options
+
+- `job_id` (required): Reindex job ID
+
+## `reindex-cancel`
+
+Cancel the job and discard its staged vectors.
+
+### Usage
+
+```bash
+pavecli reindex-cancel [-h] job_id
+```
+
+### Example
+
+```bash
+pavecli reindex-cancel JOB_ID
+```
+
+### Arguments And Options
+
+- `job_id` (required): Reindex job ID

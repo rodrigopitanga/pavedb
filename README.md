@@ -387,7 +387,19 @@ production — and your code barely changes along the way:
 
 7. **Rebuild a collection's vector space.** Start an admin reindex job when a
    collection must move to another configured embedding model. The live index
-   remains unchanged until the staged replacement is complete:
+   remains unchanged until the staged replacement is complete.
+
+   With the server stopped, the local CLI follows progress in the foreground:
+
+   ```bash
+   pavecli reindex acme/books --embedder v2
+   ```
+
+   Ctrl-C pauses at the next persisted batch and prints a resume command.
+   Use `pavecli reindex-status` to find jobs, then `pavecli reindex-resume ID`
+   or `pavecli reindex-cancel ID` to control one.
+
+   With a running server, use the admin API:
 
    ```bash
    job_id=$(curl -fsS -X POST \

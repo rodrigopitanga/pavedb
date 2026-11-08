@@ -701,6 +701,97 @@ Example:
 .nf
 pavecli get\-collection demo/books
 .fi
+.SS reindex
+Offline only; start a reindex job and show progress until it finishes.
+Ctrl\-C pauses the job after its current batch.
+.PP
+.nf
+pavecli reindex [\-h] [\-\-embedder EMBEDDER]
+                       [\-\-embedder\-type EMBEDDER_TYPE]
+                       [\-\-embed\-model EMBED_MODEL]
+                       [\-\-embedder\-config EMBEDDER_CONFIG]
+                       tenant/collection
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B tenant/collection
+Tenant and collection, e.g. demo/books
+.TP
+.B \-\-embedder EMBEDDER
+Configured embedder selector for the new vector space
+.TP
+.B \-\-embedder\-type EMBEDDER_TYPE
+Target embedder type
+.TP
+.B \-\-embed\-model EMBED_MODEL
+Target embedding model
+.TP
+.B \-\-embedder\-config EMBEDDER_CONFIG
+JSON object with target embedder settings
+.PP
+Example:
+.nf
+pavecli reindex demo/books \-\-embedder v2
+.fi
+.SS reindex\-status
+Show durable reindex progress, or list all retained jobs.
+.PP
+.nf
+pavecli reindex\-status [\-h] [job_id]
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B job_id
+Reindex job ID
+.PP
+Examples:
+.nf
+pavecli reindex\-status
+pavecli reindex\-status JOB_ID
+.fi
+.SS reindex\-resume
+Resume reindexing from the persisted staged index and follow progress
+until it finishes. Ctrl\-C pauses the job.
+.PP
+.nf
+pavecli reindex\-resume [\-h] job_id
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B job_id
+Reindex job ID
+.PP
+Example:
+.nf
+pavecli reindex\-resume JOB_ID
+.fi
+.SS reindex\-cancel
+Cancel the job and discard its staged vectors.
+.PP
+.nf
+pavecli reindex\-cancel [\-h] job_id
+.fi
+.PP
+.TP
+.B \-h, \-\-help
+show this help message and exit
+.TP
+.B job_id
+Reindex job ID
+.PP
+Example:
+.nf
+pavecli reindex\-cancel JOB_ID
+.fi
 .SH PRE-1.0 NOTE
 Runtime selectors (\-\-home, \-\-config, \-\-tenants, \-\-data\-dir) are global options.
 .br

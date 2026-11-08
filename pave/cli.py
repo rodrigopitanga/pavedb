@@ -2,10 +2,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 from __future__ import annotations
-import argparse, json, os, pathlib, sys, tempfile
+import argparse, json, os, pathlib, sys, tempfile, time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pave.embedders import LazyEmbedder, get_embedder
+from pave.embedders.factory import persistable_embedder_spec, resolve_embedder_spec
 from pave.stores.base import BaseStore
 from pave.stores.local import LocalStore
 from pave.service import (
@@ -33,6 +34,12 @@ from pave.service import (
     list_embedders as svc_list_embedders,
     list_query_homes as svc_list_query_homes,
     replay_query as svc_replay_query,
+    start_collection_reindex as svc_start_collection_reindex,
+    get_reindex_job as svc_get_reindex_job,
+    pause_reindex_job as svc_pause_reindex_job,
+    resume_reindex_job as svc_resume_reindex_job,
+    cancel_reindex_job as svc_cancel_reindex_job,
+    list_reindex_jobs as svc_list_reindex_jobs,
     search as svc_search,
     ServiceError,
     _validate_tenant_name,
@@ -496,6 +503,96 @@ def cmd_get_collection(args):
         args.tenant,
         args.collection,
     )
+
+
+def cmd_reindex(args):
+    embedder_config = _parse_json_object_arg(
+        args.embedder_config, "--embedder-config"
+    )
+    if args.embedder is not None:
+        if any((
+            args.embedder_type is not None,
+            args.embed_model is not None,
+            args.embedder_config is not None,
+        )):
+            raise ServiceError(
+                "reindex_invalid",
+                "--embedder cannot be combined with detailed embedder options",
+            )
+        try:
+            spec = persistable_embedder_spec(
+                resolve_embedder_spec(get_cfg(), selector=args.embedder)
+            )
+        except ValueError as exc:
+            raise ServiceError("reindex_invalid", str(exc)) from exc
+        embedder_type = spec["embedder_type"]
+        embed_model = spec["embed_model"]
+        embedder_config = spec["embedder_config"]
+    else:
+        embedder_type = args.embedder_type
+        embed_model = args.embed_model
+
+    store = _get_store()
+    started = svc_start_collection_reindex(
+        store, args.tenant, args.collection,
+        embedder_type=embedder_type,
+        embed_model=embed_model,
+        embedder_config=embedder_config,
+    )
+    if not started.get("ok"):
+        return started
+    return _follow_reindex_job(store, started["job_id"])
+
+
+def _follow_reindex_job(store: BaseStore, job_id: str):
+    last_progress = None
+    try:
+        while True:
+            job = svc_get_reindex_job(store, job_id)
+            if not job.get("ok"):
+                return job
+            progress = (job["status"], job["completed_chunks"], job["total_chunks"])
+            if progress != last_progress:
+                print(
+                    f"reindex {job_id}: {progress[0]} "
+                    f"{progress[1]}/{progress[2]} chunks",
+                    file=sys.stderr,
+                )
+                last_progress = progress
+            if job["status"] in {"succeeded", "failed", "cancelled", "paused"}:
+                if job["status"] == "failed":
+                    job["ok"] = False
+                return job
+            time.sleep(0.2)
+    except KeyboardInterrupt:
+        paused = svc_pause_reindex_job(store, job_id)
+        if not paused.get("ok"):
+            paused = svc_get_reindex_job(store, job_id)
+        while paused.get("ok") and paused["status"] == "pausing":
+            time.sleep(0.2)
+            paused = svc_get_reindex_job(store, job_id)
+        if paused.get("ok") and paused["status"] == "paused":
+            paused["code"] = "reindex_paused"
+            paused["resume_hint"] = f"pavecli reindex-resume {job_id}"
+        return paused
+
+
+def cmd_reindex_status(args):
+    if args.job_id:
+        return svc_get_reindex_job(_get_store(), args.job_id)
+    return svc_list_reindex_jobs(_get_store())
+
+
+def cmd_reindex_resume(args):
+    store = _get_store()
+    resumed = svc_resume_reindex_job(store, args.job_id)
+    if not resumed.get("ok"):
+        return resumed
+    return _follow_reindex_job(store, args.job_id)
+
+
+def cmd_reindex_cancel(args):
+    return svc_cancel_reindex_job(_get_store(), args.job_id)
 
 
 def _command(
@@ -1142,6 +1239,60 @@ def build_parser() -> argparse.ArgumentParser:
     _add_collection_ref(p_get_collection)
     p_get_collection.set_defaults(func=cmd_get_collection)
 
+    p_reindex = _command(
+        sub,
+        "reindex",
+        help="Rebuild collection vectors and follow the job.",
+        description=(
+            "Offline only; start a reindex job and show progress until it "
+            "finishes. Ctrl-C pauses the job after its current batch."
+        ),
+        example="pavecli reindex demo/books --embedder v2",
+    )
+    _add_collection_ref(p_reindex)
+    p_reindex.add_argument(
+        "--embedder", help="Configured embedder selector for the new vector space"
+    )
+    p_reindex.add_argument("--embedder-type", help="Target embedder type")
+    p_reindex.add_argument("--embed-model", help="Target embedding model")
+    p_reindex.add_argument(
+        "--embedder-config", help="JSON object with target embedder settings"
+    )
+    p_reindex.set_defaults(func=cmd_reindex)
+
+    p_reindex_status = _command(
+        sub,
+        "reindex-status",
+        help="Show one reindex job or list all jobs.",
+        description="Show durable reindex progress, or list all retained jobs.",
+        example=("pavecli reindex-status", "pavecli reindex-status JOB_ID"),
+    )
+    p_reindex_status.add_argument("job_id", nargs="?", help="Reindex job ID")
+    p_reindex_status.set_defaults(func=cmd_reindex_status)
+
+    p_reindex_resume = _command(
+        sub,
+        "reindex-resume",
+        help="Resume a paused or failed reindex job.",
+        description=(
+            "Resume reindexing from the persisted staged index and follow "
+            "progress until it finishes. Ctrl-C pauses the job."
+        ),
+        example="pavecli reindex-resume JOB_ID",
+    )
+    p_reindex_resume.add_argument("job_id", help="Reindex job ID")
+    p_reindex_resume.set_defaults(func=cmd_reindex_resume)
+
+    p_reindex_cancel = _command(
+        sub,
+        "reindex-cancel",
+        help="Cancel a reindex job.",
+        description="Cancel the job and discard its staged vectors.",
+        example="pavecli reindex-cancel JOB_ID",
+    )
+    p_reindex_cancel.add_argument("job_id", help="Reindex job ID")
+    p_reindex_cancel.set_defaults(func=cmd_reindex_cancel)
+
     return p
 
 
@@ -1180,6 +1331,8 @@ def main_cli(argv=None):
         sys.stdout.buffer.write(out.content)
         return 0
     _dump(out, pretty=not args.compact)
+    if isinstance(out, dict) and out.get("code") == "reindex_paused":
+        return 130
     return _exit_code_for_result(out)
 
 if __name__ == "__main__":
