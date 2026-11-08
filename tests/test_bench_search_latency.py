@@ -86,6 +86,32 @@ def test_main_exits_1_on_slo_failure(monkeypatch):
     assert exc.value.code == 1
 
 
+def test_clock_jump_is_reported_when_seed_fails(monkeypatch, capsys):
+    async def fake_header(*args):
+        pass
+
+    async def fake_post(_client, url, **_kwargs):
+        if url.endswith("/documents"):
+            return httpx.Response(500, json={"code": "ingest_failed"})
+        return httpx.Response(200)
+
+    monkeypatch.setattr(search_latency, "print_run_header", fake_header)
+    monkeypatch.setattr(search_latency, "_post_with_retries", fake_post)
+    monkeypatch.setattr(search_latency, "_phase_start", lambda: (0, 0))
+    monkeypatch.setattr(search_latency.time, "monotonic_ns", lambda: 0)
+    monkeypatch.setattr(search_latency.time, "time_ns", lambda: 2_000_000_000)
+
+    result = asyncio.run(search_latency.run_benchmark("http://pavedb.test", 1, 1))
+    output = capsys.readouterr().out
+
+    assert result == []
+    assert "Setup failed: seed ingest failed" in output
+    assert "latency seed doc1: elapsed_ms=0 wall_elapsed_ms=2000" in output
+    assert "WARNING: runner clock divergence during latency seed doc1" in output
+    assert "latency setup: elapsed_ms=0 wall_elapsed_ms=2000" in output
+    assert "WARNING: runner clock divergence during latency setup" in output
+
+
 # job 17708580396 (bench, 245464bc, !90) failed on filtering=mixed at
 # p99=3088.3ms against the 2000ms gate: min 32.4ms, p50 64.1ms, p95 295.1ms,
 # max 3097.5ms, 200 queries at concurrency 8, 0 errors. Rebuilt here to those

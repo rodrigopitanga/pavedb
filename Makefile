@@ -1283,7 +1283,7 @@ bench-latency-run:
 	if [ "$(BENCH_SAVE)" = "1" ]; then \
 	  echo "==> Saving: yes (ts=$(_ts), tag=$$tag)"; \
 	  mkdir -p $(_results_dir); \
-	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/search_latency.py \
+	  PYTHONPATH=. $(PYTHON_BIN) -u benchmarks/search_latency.py \
 	    --url $(_url) --queries $(LAT_LENGTH) \
 	    --concurrency $(LAT_CONCUR) \
 	    --filtering $(_filt) \
@@ -1291,7 +1291,7 @@ bench-latency-run:
 	    | tee $(_results_dir)/latency-$(_ts)_$$tag-$(_filt)$(_latency_suffix).txt; \
 	else \
 	  echo "==> Saving: no (ts=$(_ts), tag=$$tag)"; \
-	  PYTHONPATH=. $(PYTHON_BIN) benchmarks/search_latency.py \
+	  PYTHONPATH=. $(PYTHON_BIN) -u benchmarks/search_latency.py \
 	    --url $(_url) --queries $(LAT_LENGTH) \
 	    --concurrency $(LAT_CONCUR) \
 	    --filtering $(_filt) \
