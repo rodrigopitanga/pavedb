@@ -180,11 +180,12 @@ def test_worker_exception_cannot_produce_a_success(monkeypatch, stress_client):
         asyncio.run(stress.run_stress("http://fixture", 0.01, 1, suite="fixture"))
 
 
-def test_stalled_workers_are_joined_and_fail_before_coverage(
-    monkeypatch, stress_client,
+def test_stalled_workers_report_progress_and_fail_before_coverage(
+    monkeypatch, stress_client, capsys,
 ):
     client = stress_client(lambda request: httpx.Response(200, json={}))
     monkeypatch.setattr(stress, "DRAIN_TIMEOUT_S", 0.03, raising=False)
+    monkeypatch.setattr(stress, "PROGRESS_INTERVAL_S", 0.01)
     joined = []
 
     async def stalled(client, world, stats):
@@ -195,12 +196,17 @@ def test_stalled_workers_are_joined_and_fail_before_coverage(
             joined.append(True)
 
     monkeypatch.setitem(stress.SUITES, "fixture", [(stalled, "stalled", 1)])
-    with pytest.raises(RuntimeError, match="workers.*deadline"):
+    with pytest.raises(RuntimeError, match="workers.*deadline") as exc:
         asyncio.run(asyncio.wait_for(
             stress.run_stress("http://fixture", 0.01, 1, suite="fixture"), 1
         ))
     assert joined == [True]
     assert client.is_closed
+    output = capsys.readouterr().out
+    assert "stress workload: results=0 active=1 oldest=stalled:" in output
+    assert "unfinished workers; results=0 active=1 oldest=stalled:" in str(
+        exc.value
+    )
 
 
 @pytest.mark.parametrize("phase", ["coverage", "cleanup", "client close"])

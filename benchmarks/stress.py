@@ -1367,6 +1367,7 @@ CANCEL_TIMEOUT_S = 5
 COVERAGE_TIMEOUT_S = 120
 CLEANUP_TIMEOUT_S = 30
 CLOSE_TIMEOUT_S = 5
+PROGRESS_INTERVAL_S = 5
 
 
 async def _run_phase(name, operation, timeout):
@@ -1477,26 +1478,47 @@ async def run_stress(
 
         sem = asyncio.Semaphore(concurrency)
         stop = asyncio.Event()
+        active_ops: dict[int, tuple[str, float]] = {}
 
-        async def worker():
+        async def worker(worker_id: int):
             while not stop.is_set():
                 async with sem:
                     if stop.is_set():
                         break
                     op = _pick_operation(operations)
-                    await op(client, world, stats)
+                    active_ops[worker_id] = (op.__name__, time.perf_counter())
+                    try:
+                        await op(client, world, stats)
+                    finally:
+                        active_ops.pop(worker_id, None)
+
+        def progress() -> str:
+            oldest = "none"
+            if active_ops:
+                name, started = min(active_ops.values(), key=lambda item: item[1])
+                oldest = f"{name}:{time.perf_counter() - started:.1f}s"
+            return (
+                f"results={len(stats.results)} active={len(active_ops)} "
+                f"oldest={oldest}"
+            )
 
         t_start = time.perf_counter()
 
         # Launch workers (more than concurrency so the semaphore is always saturated)
-        tasks = [asyncio.create_task(worker()) for _ in range(concurrency * 3)]
+        tasks = [
+            asyncio.create_task(worker(i)) for i in range(concurrency * 3)
+        ]
 
         try:
             # The configured duration still applies only to the workload.
-            await asyncio.sleep(duration_secs)
+            deadline = t_start + duration_secs
+            while (remaining := deadline - time.perf_counter()) > 0:
+                await asyncio.sleep(min(PROGRESS_INTERVAL_S, remaining))
+                print(f"==> stress workload: {progress()}", flush=True)
             stop.set()
-            print("==> stress workers: draining", flush=True)
+            print(f"==> stress workers: draining ({progress()})", flush=True)
             _, pending = await asyncio.wait(tasks, timeout=DRAIN_TIMEOUT_S)
+            pending_progress = progress()
         finally:
             stop.set()
             for task in tasks:
@@ -1511,7 +1533,7 @@ async def run_stress(
         if pending:
             raise RuntimeError(
                 f"stress workers: drain deadline {DRAIN_TIMEOUT_S:g}s exceeded "
-                f"({len(pending)} unfinished workers)"
+                f"({len(pending)} unfinished workers; {pending_progress})"
             )
         for result in results:
             if isinstance(result, BaseException):
