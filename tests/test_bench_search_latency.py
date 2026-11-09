@@ -97,7 +97,7 @@ def test_clock_jump_is_reported_when_seed_fails(monkeypatch, capsys):
 
     monkeypatch.setattr(search_latency, "print_run_header", fake_header)
     monkeypatch.setattr(search_latency, "_post_with_retries", fake_post)
-    monkeypatch.setattr(search_latency, "_phase_start", lambda: (0, 0))
+    monkeypatch.setattr(search_latency, "phase_start", lambda: (0, 0))
     monkeypatch.setattr(search_latency.time, "monotonic_ns", lambda: 0)
     monkeypatch.setattr(search_latency.time, "time_ns", lambda: 2_000_000_000)
 

@@ -36,7 +36,9 @@ except ImportError:
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from common import (  # type: ignore[import]  # noqa: E402
     host_load,
+    phase_start,
     print_run_header,
+    report_phase,
 )
 
 API_PREFIX = "/v1"
@@ -159,26 +161,6 @@ def percentile(data: list[float], p: float) -> float:
     return sorted_data[f] + (k - f) * (sorted_data[c] - sorted_data[f])
 
 
-def _phase_start() -> tuple[int, int]:
-    return time.monotonic_ns(), time.time_ns()
-
-
-def _phase_done(name: str, started: tuple[int, int]) -> None:
-    monotonic_ns, wall_ns = started
-    elapsed_ms = (time.monotonic_ns() - monotonic_ns) // 1_000_000
-    wall_elapsed_ms = (time.time_ns() - wall_ns) // 1_000_000
-    print(
-        f"==> latency {name}: elapsed_ms={elapsed_ms} "
-        f"wall_elapsed_ms={wall_elapsed_ms}",
-        flush=True,
-    )
-    if abs(wall_elapsed_ms - elapsed_ms) >= 1000:
-        print(
-            f"WARNING: runner clock divergence during latency {name}",
-            flush=True,
-        )
-
-
 async def _post_with_retries(
     client: httpx.AsyncClient,
     url: str,
@@ -219,7 +201,7 @@ async def setup_collection(
             f"==> latency seed {index}/{len(SAMPLE_DOCS)}: {docid}",
             flush=True,
         )
-        seed_start = _phase_start()
+        seed_start = phase_start()
         data = {"docid": docid, "metadata": json.dumps(meta)}
         try:
             resp = await _post_with_retries(
@@ -240,7 +222,7 @@ async def setup_collection(
                     f"seed ingest failed: {_parse_error(resp)}"
                 )
         finally:
-            _phase_done(f"seed {docid}", seed_start)
+            report_phase("latency", f"seed {docid}", seed_start)
 
 
 def _parse_error(resp: httpx.Response) -> str:
@@ -333,25 +315,25 @@ async def run_benchmark(
     async with httpx.AsyncClient(
         base_url=base_url, timeout=30.0, headers=headers
     ) as client:
-        phase_start = _phase_start()
+        phase_clock = phase_start()
         try:
             await print_run_header(
                 client, base_url, "search_latency_rate_limited"
                 if require_rate_limit else "search_latency"
             )
         finally:
-            _phase_done("header", phase_start)
+            report_phase("latency", "header", phase_clock)
         print(
             f"Setting up collection {tenant}/{collection}..."
         )
-        phase_start = _phase_start()
+        phase_clock = phase_start()
         try:
             try:
                 await setup_collection(
                     client, tenant, collection
                 )
             finally:
-                _phase_done("setup", phase_start)
+                report_phase("latency", "setup", phase_clock)
         except RuntimeError as exc:
             print(f"Setup failed: {exc}")
             if debug:
@@ -391,11 +373,11 @@ async def run_benchmark(
             bounded_search(q, f)
             for q, f in zip(query_list, filter_list)
         ]
-        phase_start = _phase_start()
+        phase_clock = phase_start()
         try:
             results = await asyncio.gather(*tasks)
         finally:
-            _phase_done("queries", phase_start)
+            report_phase("latency", "queries", phase_clock)
 
         latencies: list[float] = []
         errors: list[str] = []
@@ -500,13 +482,13 @@ async def run_benchmark(
             print()
 
         # Cleanup
-        phase_start = _phase_start()
+        phase_clock = phase_start()
         try:
             await client.delete(
                 f"{API_PREFIX}/collections/{tenant}/{collection}"
             )
         finally:
-            _phase_done("cleanup", phase_start)
+            report_phase("latency", "cleanup", phase_clock)
         print(
             f"\nCleaned up collection"
             f" {tenant}/{collection}"

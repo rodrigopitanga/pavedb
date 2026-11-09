@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import itertools
 import os
 import select
 import shutil
@@ -207,6 +208,83 @@ def test_stalled_workers_report_progress_and_fail_before_coverage(
     assert "unfinished workers; results=0 active=1 oldest=stalled:" in str(
         exc.value
     )
+
+
+# job 17876094614 (bench, !98) ended on an expired job token inside the
+# workload: six 5s progress intervals covered 628s of trace time, so the
+# monotonic clock the duration is budgeted on had stopped with the runner
+# while the token kept expiring. The workload sees that on its own resume.
+def test_workload_stops_when_the_runner_clock_stalls(
+    monkeypatch, stress_client, capsys,
+):
+    client = stress_client(lambda request: httpx.Response(200, json={}))
+    monkeypatch.setattr(stress, "PROGRESS_INTERVAL_S", 0.01)
+    monkeypatch.setattr(stress, "WORKLOAD_WALL_GRACE_S", 0.5)
+    monkeypatch.setattr(stress.time, "monotonic_ns", lambda: 0)
+    wall_ns = itertools.count(0, 10_000_000_000)
+    monkeypatch.setattr(stress.time, "time_ns", lambda: next(wall_ns))
+
+    async def quick(client, world, stats):
+        stats.record(stress.OpResult("quick", 1.0, True))
+        await asyncio.sleep(0)
+
+    monkeypatch.setitem(stress.SUITES, "fixture", [(quick, "quick", 1)])
+    with pytest.raises(RuntimeError, match="workload: wall deadline 5.5s") as exc:
+        asyncio.run(asyncio.wait_for(
+            stress.run_stress("http://fixture", 5, 1, suite="fixture"), 1
+        ))
+
+    assert "elapsed_ms=0 wall_elapsed_ms=" in str(exc.value)
+    output = capsys.readouterr().out
+    assert "stress workload: results=" in output
+    assert "wall_elapsed_ms=" in output
+    assert client.is_closed
+
+
+def test_workload_warns_when_a_stall_stays_under_the_wall_grace(
+    monkeypatch, stress_client, capsys,
+):
+    """A stall too small to fail the run still has to name itself."""
+    stress_client(lambda request: httpx.Response(200, json={}))
+    monkeypatch.setattr(stress, "PROGRESS_INTERVAL_S", 0.01)
+    monkeypatch.setattr(stress, "WORKLOAD_WALL_GRACE_S", 1000)
+    monkeypatch.setattr(stress.time, "monotonic_ns", lambda: 0)
+    wall_ns = itertools.count(0, 2_000_000_000)
+    monkeypatch.setattr(stress.time, "time_ns", lambda: next(wall_ns))
+
+    async def quick(client, world, stats):
+        stats.record(stress.OpResult("quick", 1.0, True))
+        await asyncio.sleep(0)
+
+    monkeypatch.setitem(stress.SUITES, "fixture", [(quick, "quick", 1)])
+    asyncio.run(asyncio.wait_for(
+        stress.run_stress("http://fixture", 0.02, 1, suite="fixture"), 5
+    ))
+
+    output = capsys.readouterr().out
+    assert "==> stress workload: elapsed_ms=0 wall_elapsed_ms=" in output
+    assert "WARNING: runner clock divergence during stress workload" in output
+
+
+def test_phase_reports_both_clocks_when_its_budget_fires(
+    monkeypatch, stress_client, capsys,
+):
+    async def handler(request):
+        await asyncio.sleep(0.03)
+        return httpx.Response(200, json={})
+
+    stress_client(handler)
+    monkeypatch.setattr(stress, "SETUP_TIMEOUT_S", 0.05, raising=False)
+    monkeypatch.setattr(stress.time, "monotonic_ns", lambda: 0)
+    monkeypatch.setattr(stress.time, "time_ns", lambda: 2_000_000_000)
+
+    with pytest.raises(RuntimeError, match="setup.*deadline"):
+        asyncio.run(asyncio.wait_for(
+            stress.run_stress("http://fixture", 0, 1), 1
+        ))
+
+    output = capsys.readouterr().out
+    assert "==> stress setup: elapsed_ms=0 wall_elapsed_ms=0" in output
 
 
 @pytest.mark.parametrize("phase", ["coverage", "cleanup", "client close"])

@@ -196,13 +196,19 @@ progress bar does not establish that warmup finished or HTTP became available.
 
 Stress keeps its 60-second HTTP I/O timeout and gives the complete setup
 (header, coverage discovery, and seeding) 120 seconds. `STR_LENGTH` still
-sets only the worker duration. Workers have 30 seconds to drain and five
-seconds to finish cancellation; unfinished or failed workers fail the run.
-The complete coverage pass has 120 seconds, collection cleanup 30 seconds,
+sets only the worker duration, and the workload holds that duration on
+both clocks: the monotonic budget every other deadline is read from stops
+with a suspended runner, so the workload fails once wall elapsed passes
+the duration plus a 60-second grace instead of running on against an
+expiring job token. Workers have 30 seconds to drain and five seconds to
+finish cancellation; unfinished or failed workers fail the run. The
+complete coverage pass has 120 seconds, collection cleanup 30 seconds,
 and HTTP client close five seconds. These deadlines fail the benchmark;
-they do not skip operations or relax the error-rate gate. Phase progress,
-elapsed times, and failures are flushed through `tee`, with stderr included
-in the saved stress report. Failed managed runs retain their server log.
+they do not skip operations or relax the error-rate gate. Every phase
+reports monotonic and wall elapsed milliseconds and warns when the two
+diverge by a second or more. Phase progress, elapsed times, and failures
+are flushed through `tee`, with stderr included in the saved stress
+report. Failed managed runs retain their server log.
 
 Generated outputs are gitignored: keep them local or publish them as CI
 artifacts; commit only curated benchmark comparisons to documentation.

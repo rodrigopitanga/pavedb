@@ -12,10 +12,49 @@ import os
 import platform
 import socket
 import sys
+import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     import httpx
+
+
+# A benchmark budget read from the monotonic clock says nothing about the job
+# time it spends: a suspended runner stops that clock and keeps the CI job's
+# token expiring, so the phase that owns the budget has to compare the two.
+CLOCK_DIVERGENCE_MS = 1000
+
+
+def phase_start() -> tuple[int, int]:
+    """Sample both clocks so a phase can report how far they drift apart."""
+    return time.monotonic_ns(), time.time_ns()
+
+
+def phase_elapsed_ms(started: tuple[int, int]) -> tuple[int, int]:
+    """Return (monotonic, wall) milliseconds elapsed since `phase_start()`."""
+    monotonic_ns, wall_ns = started
+    return (
+        (time.monotonic_ns() - monotonic_ns) // 1_000_000,
+        (time.time_ns() - wall_ns) // 1_000_000,
+    )
+
+
+def report_phase(
+    bench: str, name: str, started: tuple[int, int]
+) -> tuple[int, int]:
+    """Print both elapsed clocks for a phase and flag a runner clock jump."""
+    elapsed_ms, wall_elapsed_ms = phase_elapsed_ms(started)
+    print(
+        f"==> {bench} {name}: elapsed_ms={elapsed_ms} "
+        f"wall_elapsed_ms={wall_elapsed_ms}",
+        flush=True,
+    )
+    if abs(wall_elapsed_ms - elapsed_ms) >= CLOCK_DIVERGENCE_MS:
+        print(
+            f"WARNING: runner clock divergence during {bench} {name}",
+            flush=True,
+        )
+    return elapsed_ms, wall_elapsed_ms
 
 
 def local_hw() -> str:

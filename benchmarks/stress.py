@@ -30,7 +30,12 @@ except ImportError:
     raise SystemExit("httpx required: pip install httpx")
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from common import print_run_header  # type: ignore[import]  # noqa: E402
+from common import (  # type: ignore[import]  # noqa: E402
+    phase_elapsed_ms,
+    phase_start,
+    print_run_header,
+    report_phase,
+)
 
 # ---------------------------------------------------------------------------
 # Corpus of sample documents for ingestion
@@ -1368,30 +1373,47 @@ COVERAGE_TIMEOUT_S = 120
 CLEANUP_TIMEOUT_S = 30
 CLOSE_TIMEOUT_S = 5
 PROGRESS_INTERVAL_S = 5
+# Every budget above is read from the monotonic clock asyncio schedules on, and
+# a suspended runner stops that clock without stopping the job's token: the 30s
+# workload of job 17876094614 spent 628s of trace time inside six 5s progress
+# intervals and ended on an expired token, with no deadline reached. The
+# workload is the one phase that can see this from inside its own loop, so it
+# also holds the configured duration plus this grace in wall clock.
+WORKLOAD_WALL_GRACE_S = 60
 
 
 async def _run_phase(name, operation, timeout):
     started = time.perf_counter()
+    clocks = phase_start()
     print(f"==> stress {name}: started (deadline {timeout:g}s)", flush=True)
     try:
-        result = await asyncio.wait_for(operation, timeout)
-    except asyncio.TimeoutError as exc:
-        elapsed = time.perf_counter() - started
-        message = f"stress {name}: deadline {timeout:g}s exceeded after {elapsed:.2f}s"
-        print(f"ERROR: {message}", flush=True)
-        raise RuntimeError(message) from exc
-    except BaseException as exc:
-        elapsed = time.perf_counter() - started
+        try:
+            result = await asyncio.wait_for(operation, timeout)
+        except asyncio.TimeoutError as exc:
+            elapsed = time.perf_counter() - started
+            message = (
+                f"stress {name}: deadline {timeout:g}s exceeded "
+                f"after {elapsed:.2f}s"
+            )
+            print(f"ERROR: {message}", flush=True)
+            raise RuntimeError(message) from exc
+        except BaseException as exc:
+            elapsed = time.perf_counter() - started
+            print(
+                f"ERROR: stress {name}: {type(exc).__name__}: {exc} "
+                f"after {elapsed:.2f}s", flush=True,
+            )
+            raise
         print(
-            f"ERROR: stress {name}: {type(exc).__name__}: {exc} "
-            f"after {elapsed:.2f}s", flush=True,
+            f"==> stress {name}: completed in "
+            f"{time.perf_counter() - started:.2f}s",
+            flush=True,
         )
-        raise
-    print(
-        f"==> stress {name}: completed in {time.perf_counter() - started:.2f}s",
-        flush=True,
-    )
-    return result
+        return result
+    finally:
+        # Both clocks for every phase, reached or not: a budget that never
+        # fired is the symptom to report, not a line to leave out.
+        report_phase("stress", name, clocks)
 
 
 async def run_stress(
@@ -1503,6 +1525,7 @@ async def run_stress(
             )
 
         t_start = time.perf_counter()
+        clocks = phase_start()
 
         # Launch workers (more than concurrency so the semaphore is always saturated)
         tasks = [
@@ -1512,14 +1535,31 @@ async def run_stress(
         try:
             # The configured duration still applies only to the workload.
             deadline = t_start + duration_secs
+            wall_budget_s = duration_secs + WORKLOAD_WALL_GRACE_S
             while (remaining := deadline - time.perf_counter()) > 0:
                 await asyncio.sleep(min(PROGRESS_INTERVAL_S, remaining))
-                print(f"==> stress workload: {progress()}", flush=True)
+                elapsed_ms, wall_elapsed_ms = phase_elapsed_ms(clocks)
+                print(
+                    f"==> stress workload: {progress()} "
+                    f"elapsed_ms={elapsed_ms} wall_elapsed_ms={wall_elapsed_ms}",
+                    flush=True,
+                )
+                if wall_elapsed_ms > wall_budget_s * 1000:
+                    raise RuntimeError(
+                        f"stress workload: wall deadline {wall_budget_s:g}s "
+                        f"exceeded (elapsed_ms={elapsed_ms} "
+                        f"wall_elapsed_ms={wall_elapsed_ms}); the runner clock "
+                        "stalled against wall time during the run"
+                    )
             stop.set()
             print(f"==> stress workers: draining ({progress()})", flush=True)
             _, pending = await asyncio.wait(tasks, timeout=DRAIN_TIMEOUT_S)
             pending_progress = progress()
         finally:
+            # The workload holds the configured duration, so it reports both
+            # clocks like every other phase: a stall under the wall grace
+            # still has to raise the divergence warning.
+            report_phase("stress", "workload", clocks)
             stop.set()
             for task in tasks:
                 if not task.done():
