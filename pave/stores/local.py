@@ -1665,7 +1665,8 @@ class LocalStore:
             rebuilt.add(rids, self._encode_embedder(embedder, texts))
         if carried_rids:
             rebuilt.add(carried_rids, np.vstack(carried))
-        rebuilt.flush()
+        # A verified rebuild can be empty and still has to replace stale files.
+        rebuilt.flush(force=True)
         self._clear_index_dirty(tenant, collection)
         return rebuilt
 

@@ -316,14 +316,14 @@ class FaissBackend:
         """Drop pending persistence for a backend that is about to be removed."""
         self._discarded = True
 
-    def flush(self) -> None:
+    def flush(self, *, force: bool = False) -> None:
         if self._discarded:
             return
         persisted = self._index_file.is_file() and self._map_file.is_file()
-        if persisted and not self._dirty:
+        if persisted and not self._dirty and not force:
             return
 
-        if int(self._index.ntotal) == 0 and not self._dirty:
+        if int(self._index.ntotal) == 0 and not self._dirty and not force:
             # Empty and untouched means this instance never took ownership of
             # whatever is on disk (partial or failed load), so writing it out
             # would erase vectors nobody asked to delete.

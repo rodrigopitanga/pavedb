@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import faiss
+import numpy as np
 import pytest
 
 from pave.stores.local import LocalStore
@@ -264,3 +265,26 @@ def test_dirty_index_rebuilds_from_chunks_on_reopen(tmp_path):
     assert (index_dir / "faiss.index").is_file()
     assert (index_dir / "id_map.json").is_file()
     assert not (index_dir / ".pavedb-index-dirty").exists()
+
+
+def test_empty_rebuild_persists_before_clearing_dirty_marker(tmp_path):
+    tenant, collection = "acme", "empty_rebuild"
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection(tenant, collection)
+    index_dir = _index_dir(store, tenant, collection)
+
+    # Simulate an index flush that retained a vector after its chunk was
+    # removed from metadata. Recovery must publish the empty index pair.
+    backend = store._emb[(tenant, collection)]
+    backend.add(["orphan::0"], np.ones((1, 64), dtype=np.float32))
+    store.close()
+    marker = index_dir / ".pavedb-index-dirty"
+    marker.touch()
+    assert faiss.read_index(str(index_dir / "faiss.index")).ntotal == 1
+
+    reopened = LocalStore(str(tmp_path), FakeEmbedder())
+    assert not reopened.search(tenant, collection, "orphan", k=1)
+    assert faiss.read_index(str(index_dir / "faiss.index")).ntotal == 0
+    assert json.loads((index_dir / "id_map.json").read_text())["rid_to_id"] == {}
+    assert not marker.exists()
+    reopened.close()
