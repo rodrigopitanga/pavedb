@@ -355,9 +355,13 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
                 request=request,
                 request_id=rid,
             )
-        limited = _op_window(
-            store, request, tenant, op, field, window_seconds, rid,
-        )
+        try:
+            limited = _op_window(
+                store, request, tenant, op, field, window_seconds, rid,
+            )
+        except Exception:
+            slot.release()
+            raise
         if limited is not None:
             slot.release()
             return None, limited

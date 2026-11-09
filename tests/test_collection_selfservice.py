@@ -9,9 +9,11 @@ key working on its own collections only, under the expensive-op limits
 
 from __future__ import annotations
 
+import sqlite3
 import types
 
 import pytest
+from fastapi.testclient import TestClient
 
 from pave.config import get_cfg
 from pave.routes._deps import operation_gate
@@ -122,6 +124,65 @@ def test_operation_gate_bounds_tenant_and_instance():
     finally:
         cfg.set("archive.max_concurrent", 2)
         cfg.set("archive.max_concurrent_per_tenant", 1)
+
+
+@pytest.mark.parametrize(
+    "op,method,path,kwargs,expected",
+    [
+        ("archive", "get", "/v1/collections/acme/books/archive", {}, 200),
+        (
+            "archive", "post", "/v1/collections/acme/copy/archive",
+            {"files": {"file": ("bad.zip", b"not a zip", "application/zip")}},
+            400,
+        ),
+        (
+            "reindex", "post", "/v1/collections/acme/books/reindex",
+            {"json": {"embed_model": "unconfigured"}}, 400,
+        ),
+    ],
+)
+def test_operation_charge_failure_releases_slot(
+    app, monkeypatch, op, method, path, kwargs, expected,
+):
+    cfg = get_cfg()
+    old_instance = cfg.get(f"{op}.max_concurrent")
+    old_tenant = cfg.get(f"{op}.max_concurrent_per_tenant")
+    cfg.set(f"{op}.max_concurrent", 1)
+    cfg.set(f"{op}.max_concurrent_per_tenant", 1)
+    store = app.state.store
+    charge = store.charge_operation_window
+    calls = 0
+
+    def flaky_charge(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return charge(*args, **kwargs)
+
+    monkeypatch.setattr(store, "charge_operation_window", flaky_charge)
+    try:
+        client = TestClient(
+            app, base_url="http://localhost", raise_server_exceptions=False,
+        )
+        try:
+            assert client.post("/v1/collections/acme/books").status_code == 201
+            request = getattr(client, method)
+            first = request(path, **kwargs)
+            assert first.status_code == 500
+            gate = app.state.op_gates[op]
+            assert gate["active"] == 0
+            assert gate["per_tenant"]["acme"] == 0
+            second = request(path, **kwargs)
+            assert second.status_code == expected, second.text
+            assert calls == 2
+            assert gate["active"] == 0
+            assert gate["per_tenant"]["acme"] == 0
+        finally:
+            client.close()
+    finally:
+        cfg.set(f"{op}.max_concurrent", old_instance)
+        cfg.set(f"{op}.max_concurrent_per_tenant", old_tenant)
 
 
 def test_tenant_restore_rejects_invalid_archive_as_400(client):
