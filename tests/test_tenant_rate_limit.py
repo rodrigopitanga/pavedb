@@ -1,6 +1,7 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import pytest
 from fastapi.testclient import TestClient
 
 from pave.config import get_cfg
@@ -231,3 +232,25 @@ def test_concurrency_refusal_does_not_charge_moving_window(app, monkeypatch):
     assert first.headers["X-RateLimit-Remaining"] == "1"
     assert second.status_code != 429
     assert second.headers["X-RateLimit-Remaining"] == "0"
+
+
+def test_rate_charge_error_releases_concurrency_slot(app, monkeypatch):
+    cfg = app.state.cfg
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", None)
+    cfg.set("auth.api_keys", {"acme": "acmetoken"})
+    monkeypatch.setitem(app.state.tenant_limits, "acme", 1)
+    monkeypatch.setitem(app.state.tenant_rate_limits, "acme", {60: 1})
+
+    def fail_charge(*args, **kwargs):
+        raise RuntimeError("rate charge failed")
+
+    monkeypatch.setattr(app.state, "tenant_rate_limiter", fail_charge)
+    client = TestClient(app, base_url="http://localhost")
+    with pytest.raises(RuntimeError, match="rate charge failed"):
+        client.get(
+            "/v1/collections/acme",
+            headers={"Authorization": "Bearer acmetoken"},
+        )
+
+    assert app.state.tenant_active["acme"] == 0

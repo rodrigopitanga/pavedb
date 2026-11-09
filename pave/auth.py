@@ -411,40 +411,37 @@ async def tenant_limit_gate(
     # Order matters: the concurrent slot is reversible, the moving-window
     # charge is not, so a request refused on concurrency never spends quota.
     slot = _take_tenant_slot(request, response, state, tenant)
-
-    rate_limits = (
-        state.tenant_rate_limits.get(
-            tenant,
-            state.tenant_default_rate_limits,
-        )
-        if charge_request_rate
-        else {}
-    )
-    window_limited = any(limit > 0 for limit in rate_limits.values())
-    if window_limited:
-        decision = await run_in_threadpool(
-            state.tenant_rate_limiter,
-            tenant,
-            "global",
-            rate_limits,
-            now=state.tenant_rate_clock(),
-        )
-        if not decision.allowed:
-            if slot is not None:
-                slot.release()
-            raise _tenant_window_limit_exception(
-                tenant=tenant,
-                limit=int(decision.limit or 0),
-                window_seconds=int(decision.window_seconds or 0),
-                retry_after=int(decision.retry_after or 1),
-                path=request.url.path,
-                request_id=getattr(request.state, "request_id", None),
-            )
-        response.headers["X-RateLimit-Limit"] = str(decision.limit)
-        response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
-        response.headers["X-RateLimit-Window"] = str(decision.window_seconds)
-
     try:
+        rate_limits = (
+            state.tenant_rate_limits.get(
+                tenant,
+                state.tenant_default_rate_limits,
+            )
+            if charge_request_rate
+            else {}
+        )
+        window_limited = any(limit > 0 for limit in rate_limits.values())
+        if window_limited:
+            decision = await run_in_threadpool(
+                state.tenant_rate_limiter,
+                tenant,
+                "global",
+                rate_limits,
+                now=state.tenant_rate_clock(),
+            )
+            if not decision.allowed:
+                raise _tenant_window_limit_exception(
+                    tenant=tenant,
+                    limit=int(decision.limit or 0),
+                    window_seconds=int(decision.window_seconds or 0),
+                    retry_after=int(decision.retry_after or 1),
+                    path=request.url.path,
+                    request_id=getattr(request.state, "request_id", None),
+                )
+            response.headers["X-RateLimit-Limit"] = str(decision.limit)
+            response.headers["X-RateLimit-Remaining"] = str(decision.remaining)
+            response.headers["X-RateLimit-Window"] = str(decision.window_seconds)
+
         yield
     finally:
         if slot is not None and not slot.detached:
