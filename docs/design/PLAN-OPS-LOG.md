@@ -70,14 +70,14 @@ One JSON line per operation, written to the configured destination.
 |---|---|
 | `tenant` | known from the route or resolved query owner |
 | `collection` | known collection scope; omitted for instance/tenant operations |
-| `query_id` | query lookup or replay identifies a stored query |
+| `query_id` | admin query lookup or replay identifies a stored query |
 | `actor` | authentication context identifies an actor |
 | `request_id` | client provided one (omit entirely otherwise) |
 | `error_code` | `status == "error"` |
-| `k` | op == search |
-| `hits` | op == search |
-| `docid` | op == ingest, delete_doc |
-| `chunks` | op == ingest, status == ok |
+| `k` | op == search, search_common |
+| `hits` | op == search, search_common; status == ok |
+| `docid` | op == ingest, delete_doc, get_doc |
+| `chunks` | op == ingest, ingest_batch; status == ok |
 | `new_name` | op == move_collection |
 
 ### Operations
@@ -92,9 +92,12 @@ One JSON line per operation, written to the configured destination.
 | `move_collection` | POST `/admin/collections/{t}/{name}/move` |
 | `list_collections` | GET `/collections/{t}` |
 
-The table lists the original operation set. Admin archive, metrics reset,
-collection archive, reindex, and query lookup/replay routes also emit ops events.
-Health probes do not emit ops events.
+The table lists the original operation set. Every `/v1` route emits one event
+under its own `op` name, including collection detail and update, document and
+chunk reads, batch ingest, common-tenant search, embedder, tenant and
+query-log listings, instance and collection archive, metrics reset, reindex
+and its job controls, and query lookup/replay. The unprefixed health routes
+and the `/metrics` scrape endpoint are not instrumented.
 
 Admin query lookup/replay resolves `tenant` and `collection` from the query's
 owner and includes `query_id`. Rejected requests omit unresolved ownership;
