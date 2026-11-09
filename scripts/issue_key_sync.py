@@ -7,6 +7,7 @@ from __future__ import annotations
 import datetime
 import email.message
 import email.utils
+import hashlib
 import json
 import math
 import os
@@ -31,6 +32,8 @@ ROADMAP = Path(__file__).resolve().parents[1] / "ROADMAP.md"
 TYPE_LABELS = {"FEAT", "REV", "BUG"}
 ZERO_SHA = "0" * 40
 CHAOS_FAILURE_MARKER = "<!-- flowlexi-ci-failure: pavedb-chaos-level1 -->"
+ROADMAP_BODY_HASH = "flowlexi-roadmap-body-sha256"
+SOURCE_BULLET_RE = re.compile(r"-\s+(?:Source|Target|Effort):\s")
 RETRY_AFTER_CAP = 120
 
 
@@ -416,7 +419,69 @@ def issue_body_for_roadmap(row: dict[str, str]) -> str:
         body.append(f"- Target: {source}")
     if effort:
         body.append(f"- Effort: {effort}")
+    generated = "\n".join(body)
+    # A later sync may replace only a body that still matches this digest.
+    digest = hashlib.sha256(generated.encode("utf-8")).hexdigest()
+    body.insert(2, f"<!-- {ROADMAP_BODY_HASH}: {digest} -->")
     return "\n".join(body)
+
+
+def refresh_roadmap_source(body: str, row: dict[str, str]) -> str:
+    """Refresh source metadata without replacing an issue's curated prose."""
+    generated = issue_body_for_roadmap(row)
+    source = generated.split("## Source\n", 1)[1]
+    lines = [
+        line for line in body.splitlines()
+        if not re.fullmatch(
+            r"<!--\s*(?:flowlexi-task-id|flowlexi-source|"
+            rf"{ROADMAP_BODY_HASH}):.*?-->", line.strip()
+        )
+    ]
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    markers = generated.splitlines()[:2]
+    for index, line in enumerate(lines):
+        if line.strip() == "## Source":
+            # This rewrite owns only the generated bullets, so curated prose,
+            # snippets and subsections under Source survive the refresh.
+            end = index + 1
+            while end < len(lines) and (
+                not lines[end].strip()
+                or SOURCE_BULLET_RE.match(lines[end].strip())
+            ):
+                end += 1
+            lines[index:end] = ["## Source", source, ""]
+            break
+    else:
+        while lines and not lines[-1].strip():
+            lines.pop()
+        if lines:
+            lines.append("")
+        lines.extend(["## Source", source])
+    return "\n".join(markers + ["", *lines]).strip()
+
+
+def generated_roadmap_body(body: str, row: dict[str, str]) -> bool:
+    """Only a body with intact generation proof may be replaced wholesale."""
+    digest = marker_value(body, ROADMAP_BODY_HASH)
+    if digest:
+        original = re.sub(
+            rf"^<!-- {ROADMAP_BODY_HASH}: [^\n]+ -->\n",
+            "",
+            body,
+            count=1,
+            flags=re.MULTILINE,
+        )
+        return hashlib.sha256(original.encode("utf-8")).hexdigest() == digest
+    legacy = issue_body_for_roadmap(row)
+    legacy = re.sub(
+        rf"^<!-- {ROADMAP_BODY_HASH}: [^\n]+ -->\n",
+        "",
+        legacy,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    return body == legacy
 
 
 def ensure_label(gl: GitLab, name: str, color: str) -> None:
@@ -593,15 +658,20 @@ def sync_roadmap_issues(gl: GitLab, issues: dict[str, dict[str, object]]) -> Non
         fields: dict[str, str] = {}
         if str(existing.get("title") or "") != title:
             fields["title"] = title
-        if str(existing.get("description") or "") != body:
-            fields["description"] = body
+        existing_body = str(existing.get("description") or "")
+        next_body = (
+            body if generated_roadmap_body(existing_body, row)
+            else refresh_roadmap_source(existing_body, row)
+        )
+        if existing_body != next_body:
+            fields["description"] = next_body
         if sorted(labels) != new_labels:
             fields["labels"] = ",".join(new_labels)
         milestone = existing.get("milestone")
         existing_milestone_id = (
             str(milestone.get("id") or "") if isinstance(milestone, dict) else ""
         )
-        if milestone_id and existing_milestone_id != milestone_id:
+        if milestone_id and not existing_milestone_id:
             fields["milestone_id"] = milestone_id
         if fields:
             gl.request(

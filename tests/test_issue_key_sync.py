@@ -139,7 +139,7 @@ def test_roadmap_sync_updates_existing_metadata_and_preserves_labels(monkeypatch
         "P1-46": {
             "iid": 46,
             "title": "P1-46: Docs site - preview",
-            "description": "stale",
+            "description": issue_body_for_roadmap(P1_46),
             "labels": ["doc", "REV", "infra"],
             "milestone": {"id": 11, "title": "v1.1"},
         }
@@ -154,11 +154,213 @@ def test_roadmap_sync_updates_existing_metadata_and_preserves_labels(monkeypatch
             "/projects/1/issues/46",
             {
                 "title": "P1-46: Distribution documentation",
-                "description": issue_body_for_roadmap(P1_46),
                 "labels": "FEAT,doc,infra",
-                "milestone_id": "10",
             },
         )
+    ]
+
+
+def test_roadmap_sync_preserves_curated_body_and_assigned_milestone(monkeypatch):
+    gl = _RoadmapGL()
+    monkeypatch.setattr(issue_key_sync, "roadmap_rows", lambda: [P1_46])
+    curated = (
+        "<!-- flowlexi-task-id: P1-46 -->\n"
+        "<!-- flowlexi-source: pavedb-roadmap -->\n\n"
+        "## Description\nKeep this Done when checklist.\n\n"
+        "## Source\n- Source: old roadmap text\n- Target: v1.1\n\n"
+        "## Done when\n- Public guide checked"
+    )
+    issue = {
+        "iid": 46,
+        "title": "P1-46: Distribution documentation",
+        "description": curated,
+        "labels": ["FEAT"],
+        "milestone": {"id": 9, "title": "v0.9.9"},
+    }
+
+    sync_roadmap_issues(gl, {"P1-46": issue})
+
+    assert len(gl.requests) == 1
+    method, path, fields = gl.requests[0]
+    assert (method, path) == ("PUT", "/projects/1/issues/46")
+    assert "milestone_id" not in fields
+    assert "Keep this Done when checklist." in fields["description"]
+    assert "## Done when\n- Public guide checked" in fields["description"]
+    assert "- Source: ROADMAP.md, roadmap table row P1-46" in fields["description"]
+    assert "- Target: v1.0" in fields["description"]
+    assert fields["description"].count("flowlexi-task-id") == 1
+
+    issue["description"] = fields["description"]
+    gl.requests.clear()
+    sync_roadmap_issues(gl, {"P1-46": issue})
+    assert gl.requests == []
+
+
+def test_roadmap_sync_updates_untouched_generated_body(monkeypatch):
+    gl = _RoadmapGL()
+    previous = {**P1_46, "Why it matters": "Previous description."}
+    issue = {
+        "iid": 46,
+        "title": "P1-46: Distribution documentation",
+        "description": issue_body_for_roadmap(previous),
+        "labels": ["FEAT"],
+        "milestone": {"id": 10, "title": "v1.0"},
+    }
+    monkeypatch.setattr(issue_key_sync, "roadmap_rows", lambda: [P1_46])
+
+    sync_roadmap_issues(gl, {"P1-46": issue})
+
+    assert gl.requests == [
+        ("PUT", "/projects/1/issues/46", {
+            "description": issue_body_for_roadmap(P1_46)
+        })
+    ]
+
+
+def test_roadmap_sync_preserves_edits_to_generated_body(monkeypatch):
+    gl = _RoadmapGL()
+    previous = {**P1_46, "Why it matters": "Previous description."}
+    edited = issue_body_for_roadmap(previous).replace(
+        "Previous description.", "Curated description and acceptance criteria."
+    )
+    issue = {
+        "iid": 46,
+        "title": "P1-46: Distribution documentation",
+        "description": edited,
+        "labels": ["FEAT"],
+        "milestone": {"id": 10, "title": "v1.0"},
+    }
+    monkeypatch.setattr(issue_key_sync, "roadmap_rows", lambda: [P1_46])
+
+    sync_roadmap_issues(gl, {"P1-46": issue})
+
+    fields = gl.requests[0][2]
+    assert "Curated description and acceptance criteria." in fields["description"]
+    assert "Ship the supported documentation." not in fields["description"]
+    assert "flowlexi-roadmap-body-sha256" not in fields["description"]
+
+
+def test_roadmap_sync_keeps_curated_subsection_under_source(monkeypatch):
+    gl = _RoadmapGL()
+    monkeypatch.setattr(issue_key_sync, "roadmap_rows", lambda: [P1_46])
+    curated = (
+        "## Description\nMine.\n\n"
+        "## Source\n- Source: old roadmap text\n\n"
+        "### Decisions\n- keep this curated note"
+    )
+    issue = {
+        "iid": 46,
+        "title": "P1-46: Distribution documentation",
+        "description": curated,
+        "labels": ["FEAT"],
+        "milestone": {"id": 10, "title": "v1.0"},
+    }
+
+    sync_roadmap_issues(gl, {"P1-46": issue})
+
+    body = gl.requests[0][2]["description"]
+    assert "### Decisions\n- keep this curated note" in body
+    assert "- Source: ROADMAP.md, roadmap table row P1-46" in body
+    assert "- Source: old roadmap text" not in body
+
+    issue["description"] = body
+    gl.requests.clear()
+    sync_roadmap_issues(gl, {"P1-46": issue})
+    assert gl.requests == []
+
+
+def test_roadmap_sync_keeps_curated_prose_under_source(monkeypatch):
+    gl = _RoadmapGL()
+    monkeypatch.setattr(issue_key_sync, "roadmap_rows", lambda: [P1_46])
+    curated = (
+        "## Source\n- Source: old roadmap text\n- Effort: guesswork\n\n"
+        "Scope agreed with the pilot: docs site only.\n\n"
+        "```sh\n# regenerate the guides\nmake docs\n```"
+    )
+    issue = {
+        "iid": 46,
+        "title": "P1-46: Distribution documentation",
+        "description": curated,
+        "labels": ["FEAT"],
+        "milestone": {"id": 10, "title": "v1.0"},
+    }
+
+    sync_roadmap_issues(gl, {"P1-46": issue})
+
+    body = gl.requests[0][2]["description"]
+    assert "Scope agreed with the pilot: docs site only." in body
+    assert "```sh\n# regenerate the guides\nmake docs\n```" in body
+    assert "- Source: ROADMAP.md, roadmap table row P1-46" in body
+    assert "- Source: old roadmap text" not in body
+    assert "- Effort: guesswork" not in body
+
+    issue["description"] = body
+    gl.requests.clear()
+    sync_roadmap_issues(gl, {"P1-46": issue})
+    assert gl.requests == []
+
+
+def test_roadmap_sync_adds_source_to_bodyless_issue_once(monkeypatch):
+    gl = _RoadmapGL()
+    monkeypatch.setattr(issue_key_sync, "roadmap_rows", lambda: [P1_46])
+    issue = {
+        "iid": 46,
+        "title": "P1-46: Distribution documentation",
+        "description": "",
+        "labels": ["FEAT"],
+        "milestone": {"id": 10, "title": "v1.0"},
+    }
+
+    sync_roadmap_issues(gl, {"P1-46": issue})
+
+    body = gl.requests[0][2]["description"]
+    assert "\n\n\n" not in body
+    issue["description"] = body
+    gl.requests.clear()
+    sync_roadmap_issues(gl, {"P1-46": issue})
+    assert gl.requests == []
+
+
+@pytest.mark.parametrize("trailer", ["", "\n", "\n\n", "\n\n\n"])
+def test_roadmap_sync_appends_source_without_doubling_blank_line(
+    monkeypatch, trailer
+):
+    gl = _RoadmapGL()
+    monkeypatch.setattr(issue_key_sync, "roadmap_rows", lambda: [P1_46])
+    issue = {
+        "iid": 46,
+        "title": "P1-46: Distribution documentation",
+        "description": f"## Description\nCurated, no source section.\n{trailer}",
+        "labels": ["FEAT"],
+        "milestone": {"id": 10, "title": "v1.0"},
+    }
+
+    sync_roadmap_issues(gl, {"P1-46": issue})
+
+    body = gl.requests[0][2]["description"]
+    assert "Curated, no source section." in body
+    assert "\n\n\n" not in body
+    issue["description"] = body
+    gl.requests.clear()
+    sync_roadmap_issues(gl, {"P1-46": issue})
+    assert gl.requests == []
+
+
+def test_roadmap_sync_assigns_milestone_to_unassigned_issue(monkeypatch):
+    gl = _RoadmapGL()
+    monkeypatch.setattr(issue_key_sync, "roadmap_rows", lambda: [P1_46])
+    issue = {
+        "iid": 46,
+        "title": "P1-46: Distribution documentation",
+        "description": issue_body_for_roadmap(P1_46),
+        "labels": ["FEAT"],
+        "milestone": None,
+    }
+
+    sync_roadmap_issues(gl, {"P1-46": issue})
+
+    assert gl.requests == [
+        ("PUT", "/projects/1/issues/46", {"milestone_id": "10"})
     ]
 
 
