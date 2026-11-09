@@ -4161,21 +4161,7 @@ class LocalStore:
                         f"collection '{tenant}/{collection}' would exceed "
                         f"its chunk limit ({max_chunks})"
                     )
-            purged = self._purge_doc_locked(tenant, collection, docid)
-            if purged:
-                log.debug(
-                    "INGEST-REPLACE tenant=%s coll=%s docid=%s purged_chunks=%s",
-                    tenant,
-                    collection,
-                    docid,
-                    purged,
-                )
-
-            if not rids_to_add:
-                return IndexResult(indexed_chunks=0, purged_chunks=purged)
-
-            self._mark_index_dirty(tenant, collection)
-            if not byov:
+            if rids_to_add and not byov:
                 if embedder_selector is not None and sel_space is not None:
                     # Selector mode: the vectors stay valid while the
                     # collection's vector space is unchanged (the selector
@@ -4201,6 +4187,20 @@ class LocalStore:
                         current_embedder,
                         texts_to_encode,
                     )
+            purged = self._purge_doc_locked(tenant, collection, docid)
+            if purged:
+                log.debug(
+                    "INGEST-REPLACE tenant=%s coll=%s docid=%s purged_chunks=%s",
+                    tenant,
+                    collection,
+                    docid,
+                    purged,
+                )
+
+            if not rids_to_add:
+                return IndexResult(indexed_chunks=0, purged_chunks=purged)
+
+            self._mark_index_dirty(tenant, collection)
             assert vectors is not None
 
             # Write metadata to SQLite (inside collection_lock)
@@ -4324,6 +4324,12 @@ class LocalStore:
                         f"its chunk limit ({max_chunks})"
                     )
 
+            if all_rids and current_embedder is not embedder:
+                vectors = self._encode_embedder(
+                    current_embedder,
+                    all_texts,
+                )
+
             for docid, rids, texts, chunk_rows, safe_doc_meta in docs_to_commit:
                 purged = self._purge_doc_locked(
                     tenant,
@@ -4355,11 +4361,6 @@ class LocalStore:
 
             if all_rids:
                 self._mark_index_dirty(tenant, collection)
-                if current_embedder is not embedder:
-                    vectors = self._encode_embedder(
-                        current_embedder,
-                        all_texts,
-                    )
                 assert vectors is not None
                 backend.add(all_rids, vectors)
                 _rids = all_rids[:3]

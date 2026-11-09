@@ -3,6 +3,12 @@
 
 from __future__ import annotations
 
+import pytest
+
+from pave.embedders.base import EmbedderUnavailableError
+from pave.stores.local import LocalStore
+from utils import FakeEmbedder
+
 
 def test_json_text_document_ingest_api(client):
     create = client.post("/v1/collections/acme/jsondocs")
@@ -130,3 +136,144 @@ def test_reingest_with_bad_chunk_id_keeps_the_previous_version(tmp_path):
 
     hits = list(store.search("acme", "docs", "original", k=5).matches)
     assert [h.id for h in hits] == ["d1::0"]
+
+
+@pytest.mark.parametrize("batch", [False, True])
+def test_replacement_reencode_failure_preserves_document(
+    tmp_path, monkeypatch, batch,
+):
+    tenant, collection = "acme", "docs"
+    key = (tenant, collection)
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.index_records(
+        tenant, collection, "d1",
+        [("0", "original text", {"version": "old"})],
+        doc_meta={"source": "original"},
+    )
+    store._save(tenant, collection)
+    original_chunk = store.get_chunk_content(tenant, collection, "d1::0")
+    original_doc = store.get_document(tenant, collection, "d1")
+    original_vector = FakeEmbedder().encode(["original text"])[0].tolist()
+
+    class FailingEmbedder(FakeEmbedder):
+        def encode(self, texts):
+            raise EmbedderUnavailableError("provider unavailable")
+
+    original_encode = store._encode_embedder
+    calls = 0
+
+    def swap_after_first_encode(embedder, texts):
+        nonlocal calls
+        calls += 1
+        vectors = original_encode(embedder, texts)
+        store._collection_embedders[key] = FailingEmbedder()
+        return vectors
+
+    monkeypatch.setattr(store, "_encode_embedder", swap_after_first_encode)
+    replacement = [("0", "replacement text", {"version": "new"})]
+    with pytest.raises(EmbedderUnavailableError, match="provider unavailable"):
+        if batch:
+            store.index_documents(
+                tenant, collection,
+                [("d1", replacement, {"source": "replacement"}),
+                 ("d2", [("0", "second document", {})], {})],
+            )
+        else:
+            store.index_records(
+                tenant, collection, "d1", replacement,
+                doc_meta={"source": "replacement"},
+            )
+    assert calls == 2
+    assert store.get_document(tenant, collection, "d1") == original_doc
+    assert store.get_chunk_content(tenant, collection, "d1::0") == original_chunk
+    assert store.get_document(tenant, collection, "d2") is None
+    assert [hit.id for hit in store.search(
+        tenant, collection, "", query_vector=original_vector,
+    ).matches] == ["d1::0"]
+
+    store.close()
+    reopened = LocalStore(str(tmp_path), FakeEmbedder())
+    assert [hit.id for hit in reopened.search(
+        tenant, collection, "", query_vector=original_vector,
+    ).matches] == ["d1::0"]
+    assert reopened.get_document(tenant, collection, "d1") == original_doc
+    assert reopened.get_chunk_content(tenant, collection, "d1::0") == original_chunk
+    assert reopened.get_document(tenant, collection, "d2") is None
+
+
+@pytest.mark.parametrize("batch", [False, True])
+def test_replacement_reencode_success_replaces_old_chunks(
+    tmp_path, monkeypatch, batch,
+):
+    tenant, collection = "acme", "docs"
+    key = (tenant, collection)
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.index_records(tenant, collection, "d1", [("0", "old", {})])
+    original_encode = store._encode_embedder
+
+    def swap_after_first_encode(embedder, texts):
+        vectors = original_encode(embedder, texts)
+        store._collection_embedders[key] = FakeEmbedder()
+        return vectors
+
+    monkeypatch.setattr(store, "_encode_embedder", swap_after_first_encode)
+    if batch:
+        store.index_documents(
+            tenant, collection,
+            [("d1", [("1", "new", {})], {"source": "new"}),
+             ("d2", [("0", "second", {})], {})],
+        )
+    else:
+        store.index_records(
+            tenant, collection, "d1", [("1", "new", {})],
+            doc_meta={"source": "new"},
+        )
+    assert [chunk["rid"] for chunk in store.list_chunks(
+        tenant, collection, "d1",
+    )] == ["d1::1"]
+    assert store.get_document(tenant, collection, "d1")["metadata"]["source"] == "new"
+    assert store.get_chunk_content(tenant, collection, "d1::0") is None
+    assert store.get_chunk_content(tenant, collection, "d1::1")["content"] == b"new"
+    new_vector = FakeEmbedder().encode(["new"])[0].tolist()
+    hits = store.search(
+        tenant, collection, "", query_vector=new_vector,
+    ).matches
+    assert "d1::1" in {hit.id for hit in hits}
+    assert "d1::0" not in {hit.id for hit in hits}
+
+
+def test_selector_change_failure_preserves_old_document(tmp_path, monkeypatch):
+    from pave.stores import local as local_mod
+
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.index_records("acme", "docs", "d1", [("0", "old", {})])
+    original = store.get_document("acme", "docs", "d1")
+    selector_calls = 0
+
+    def resolve_selector(_cfg, *, selector):
+        nonlocal selector_calls
+        selector_calls += 1
+        if selector_calls == 2:
+            raise EmbedderUnavailableError("selector unavailable")
+        return FakeEmbedder()
+
+    space_calls = 0
+
+    def changed_space(_cfg):
+        nonlocal space_calls
+        space_calls += 1
+        return f"space-{space_calls}"
+
+    monkeypatch.setattr(store, "_get_embedder_for_config", resolve_selector)
+    monkeypatch.setattr(
+        local_mod.embedder_factory_mod, "vector_space_key", changed_space,
+    )
+    with pytest.raises(EmbedderUnavailableError, match="selector unavailable"):
+        store.index_records(
+            "acme", "docs", "d1", [("1", "new", {})],
+            embedder_selector="native",
+        )
+    assert store.get_document("acme", "docs", "d1") == original
+    assert [chunk["rid"] for chunk in store.list_chunks(
+        "acme", "docs", "d1",
+    )] == ["d1::0"]
