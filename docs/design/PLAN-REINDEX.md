@@ -6,8 +6,10 @@
 ## Objective
 
 Let an operator rebuild one collection's vectors against a different configured
-embedder without changing document or chunk metadata. Reindex is an admin-only,
-durable job because encoding can outlive one request or server process.
+embedder without changing document or chunk metadata. Reindex is a durable job
+because encoding can outlive one request or server process. Admins can manage
+all jobs; tenants can start, inspect, and cancel their own collection's jobs
+subject to the configured operation policy and quotas.
 
 ## HTTP surface
 
@@ -20,11 +22,19 @@ durable job because encoding can outlive one request or server process.
 | `POST` | `/v1/admin/reindex/{job_id}/resume` | Resume a paused or failed job |
 | `DELETE` | `/v1/admin/reindex/{job_id}` | Cancel and discard staged vectors |
 
+Tenant routes use `/v1/collections/{tenant}/{name}/reindex`: `POST` starts a
+job, and `GET` or `DELETE` on `/{job_id}` inspect or cancel that collection's
+job. Listing all jobs and pausing/resuming jobs remain admin operations.
+
 The create body accepts the same `embedder` selector shorthand or the detailed
 `embedder_type`, `embed_model`, and `embedder_config` fields as collection
 creation. A selector cannot be combined with detailed fields. The resolved
 target must name a different vector space. Identity/BYOV is not a text
 reindex target.
+
+The offline CLI exposes `reindex`, `reindex-status`, `reindex-resume`, and
+`reindex-cancel`. `reindex-status` lists all retained jobs when no ID is given.
+Start and resume follow progress; Ctrl-C pauses after the current batch.
 
 ## Job model
 

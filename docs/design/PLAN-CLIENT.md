@@ -67,20 +67,20 @@ The core package registers local mode through the
 `pave.localclient:provider` entry point so the client wheel does not
 directly depend on the local engine package.
 
-Sequence:
+Client foundation and remote CLI evaluation:
 
 - **P1-15 — Embedded/library mode (v1.0).** In-process
   `LocalClient` + `Collection` over `service.py`. No uvicorn.
 - **P1-24 — Python HTTP client (v1.0).** `HttpClient`
-  implementing the same `Client`/`Collection` interface — mimics
-  the library. This is the *next* item after P1-15.
+  implements the shared `BaseClient`/`Collection` interface alongside
+  the local provider.
 - **P1-75 — local data-directory ownership fence (v0.9.6).**
   One supported local entry point owns a data directory; competing server, CLI,
   or local-client opens fail before constructing `LocalStore`.
-- **P2-32 — remote CLI usability evaluation (v1.1).** Evaluated: a
-  shell over the SDK helps only callers that cannot import Python,
-  belongs in `pavedb-sdk` if it is delivered at all, and is never a
-  mode on `pavecli`.
+- **P2-32 — remote CLI usability evaluation (v1.1).** Evaluation complete;
+  remote CLI not implemented. A shell over the SDK helps only callers that
+  cannot import Python, belongs in `pavedb-sdk` if it is delivered at all,
+  and is never a mode on `pavecli`.
 
 ## Object model — handle-based
 
@@ -229,9 +229,10 @@ explicitly unsafe; neither is a supported second local owner.
 
 ## Remote CLI usability evaluation — P2-32
 
-The evaluation is complete. Remote management already works for Python
-callers, so a CLI buys a process boundary rather than a capability; the
-boundary is worth paying for only outside Python, and only after the SDK
+The evaluation is complete; a remote CLI is not implemented. Remote management
+already works for Python callers, so a CLI buys a process boundary rather
+than a capability. The boundary is worth paying for only outside Python,
+and only after the SDK
 stops discarding the search envelope. The outcome is a narrow,
 conditional yes to a separate command shell in `pavedb-sdk`, and a flat
 no to a remote mode on `pavecli`.
@@ -296,9 +297,10 @@ status, so a caller cannot separate a missing collection from a throttled
 instance, nor correlate either with that instance's own logs.
 
 **F6 — the surfaces already drift both ways, so "the same CLI, remotely"
-is not deliverable.** The SDK carries `reindex`, its job controls, and
-the tenant provisioning and key methods with no `pavecli` command;
-`pavecli` carries three operations with no SDK method: `reset-metrics`
+is not deliverable.** The SDK carries tenant provisioning and key methods
+with no `pavecli` command. The offline CLI supports `reindex`, `reindex-status`,
+`reindex-resume`, and `reindex-cancel`. `pavecli` carries three operations with
+no SDK method: `reset-metrics`
 (`DELETE /v1/admin/metrics`), the catalog-wide
 `get-query`/`replay-query`, which resolve a `query_id` without naming
 its collection (`/v1/admin/queries/{query_id}`) where the SDK reaches

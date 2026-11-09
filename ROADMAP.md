@@ -123,7 +123,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P1-53d | ~~Reference-source plumbing: module/class docstrings on public seams~~ | 🔧 | `pave/stores`, `pave/backends`, `pave/embedders`, catalog, and `pave/service.py` public functions provide source documentation for supported seams. | v1.0 |
 | P1-53e | ~~API contract snapshot + drift check~~ | 🔧 | Commit `openapi.json` as a checked-in snapshot; `docs-ref-openapi` dump + drift check (mirrors P1-53b's CLI gate) enforces the P1-43 "frozen at v1.0, additive-after" contract — breaking changes fail CI. Depends on P1-53a. | v1.0 |
 | P1-54 | ~~Per-collection archive (dump + restore)~~ | 🧱 | Admin-only `GET`/`POST` archive endpoints for a single collection. Carries `manifest.json` (PaveDB version, embedder spec, schema version), `meta.db`, FAISS index, sidecars. Restore must verify embedder spec is resolvable locally before touching disk. Same-version restore only at v1.0; cross-version waits on P3-37. Depends on P2-25. | v1.0 |
-| P1-55 | ~~Per-collection reindex~~ | 🧱 | Admin-only operation: rebuild vectors against a new embedder spec. Needs a job model (interruptible, resumable, status-trackable). Splits cleanly from PATCH (cheap label edit) and `move` (slug/path move + disk move) because it's the only one that rewrites stored vectors. See `docs/design/PLAN-REINDEX.md`. | v1.0 |
+| P1-55 | ~~Per-collection reindex~~ | 🧱 | Durable vector rebuild jobs | v1.0 |
 | P1-56 | ~~Chroma comparison benchmark~~ | 🔧 | Optional local compare bench for PaveDB vs Chroma using the same corpus, same sentence-transformers model, comparable create/upsert/delete/search operations, exact metadata filters only, and consolidated latency/stress output. Keep Chroma deps off the default install/test path. | v1.0 |
 | P1-57 | ~~Typing policy + SDK-ready type vocabulary~~ | 🧩 | Boundary-focused typing rules, named internal JSON vocabulary, and lighter test annotations without duplicating API/client schemas | v1.0 |
 | P1-58 | ~~Embedder instance registry core~~ | 🧩 | Registry-shaped config with keyed instances, `embedder.default` as instance/type/type:model/vector-key selector, useful CRITICAL failures for missing or ambiguous defaults, deterministic first compatible runtime instance, and catalog persistence limited to vector-space identity. Depends on P1-32 (done) | v1.0 |
@@ -167,8 +167,8 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-29 | ~~Public cross-language retrieval fixtures~~ | 🧩 | Recall validation | v0.5.9 |
 | P2-30 | ~~Benchmark CI gate + p99 SLO~~ | 🧩 | Latency contract | v0.5.9 |
 | P2-31 | Formalize collection independence | 🔧 | Portability contract | v1.5 |
-| P2-32 | ~~Remote CLI usability evaluation~~ | 🔧 | Evaluated: one HTTP instance per invocation through the SDK; any shell lives in `pavedb-sdk`. See [`docs/design/PLAN-CLIENT.md`](docs/design/PLAN-CLIENT.md) | v1.1 |
-| P2-33 | JS/TS client | 🧱 | Web + Node adoption | v1.3 |
+| P2-32 | ~~Remote CLI usability evaluation~~ | 🔧 | Evaluation complete; remote CLI not implemented. Any shell belongs in `pavedb-sdk`. | v1.1 |
+| P2-33 | ~~JS/TS client~~ | 🧱 | Web + Node adoption | v1.3 |
 | P2-34 | LangChain adapter | 🧱 | Framework coverage | v1.3 |
 | P2-35 | MCP server | 🧱 | AI agent integration | v1.3 |
 | P2-36 | LlamaIndex adapter | 🧱 | Framework coverage | v1.3 |
@@ -634,9 +634,8 @@ lands where it has more impact during post-contract hardening.
 
 - ~~Backend-aware filtered vector search using SQLite-selected record IDs;
   depends on P1-35 (P1-71).~~
-- JavaScript/TypeScript client: typed, bootstrapped from OpenAPI
-  spec, published to npm. Covers web frontends and Node.js backends
-  (P2-33).
+- ~~JavaScript/TypeScript client: typed, published to npm. Covers web
+  frontends and Node.js backends (P2-33).~~
 - LangChain `VectorStore` + `Retriever` adapter (covers LangGraph
   + CrewAI) (P2-34).
 - MCP server (expose search/ingest/list as MCP tools) (P2-35).
@@ -947,7 +946,7 @@ SDK needed on the agent side.
 (Assistants/Retrieval). NOT a standard others implement. Implementing compatibility
 would be cargo-culting with no adoption benefit.
 
-### What PaveDB has today (v0.5.9)
+### Integration surface status
 
 | Surface | Status | Notes |
 |---------|--------|-------|
@@ -957,7 +956,7 @@ would be cargo-culting with no adoption benefit.
 | File preprocessing | **Unique** | CSV/PDF/TXT built-in. |
 | Benchmarks + SLO | **Solid** | Latency + stress suites with CI gate (P2-30). |
 | Structured logging | **Solid** | JSON ops log with request_id, tenant, latency (P2-28). |
-| Python SDK (client) | **Planned** | v1.1 — `pave` package for HTTP + library mode. |
+| Python SDK | **Implemented** | `pavedb-sdk`: HTTP + optional `pavedb` local provider. |
 | LangChain adapter | **Planned** | v1.3 — `VectorStore` subclass. |
 | LlamaIndex adapter | **Planned** | v1.3 — `VectorStore` implementation. |
 | MCP server | **Planned** | v1.3 — tool exposure for AI agents. |
@@ -972,28 +971,24 @@ gRPC matters at >10k req/s with sub-5ms budgets. Not the current reality.
 
 - **GraphQL** — No vector store uses it. No framework expects it. Skip.
 
-### What PaveDB needs (in priority order)
+### Integration priorities
 
-#### 1. Python SDK — `pave` client package (~150 lines)
+#### 1. ~~Python SDK — `pavedb-sdk`~~
 
-A thin HTTP wrapper that maps PaveDB's REST API to Python method calls.
-This is the foundation everything else wraps.
+The HTTP client and local provider share the `BaseClient`/`Collection`
+interface. This is the implemented foundation for the remaining adapters.
 
 ```python
-from pave import PaveClient
+from pavesdk import connect
 
-client = PaveClient("http://localhost:8086", api_key="...")
-client.create_collection("tenant", "my_collection")
-client.ingest("tenant", "my_collection", file_path="data.csv")
-results = client.search("tenant", "my_collection", "example query", k=5)
+with connect("http://localhost:8086", api_key="...") as client:
+    collection = client.create_collection("my_collection", tenant="tenant")
+    collection.ingest("data.csv")
+    results = collection.search("example query", k=5)
 ```
 
-**Why:** Every vector DB ships a client SDK. Without one, PaveDB integration requires
-raw `httpx`/`requests` calls, which nobody does in 2026. This is table-stakes.
-
-**Effort:** Low. ~150 lines wrapping the existing REST endpoints.
-
-**When:** v1.1 (after API stabilizes in v1.0).
+**Status:** implemented (P1-15 / P1-24). The Python SDK's own roadmap tracks
+client follow-through as the server adds capabilities.
 
 #### 2. LangChain `VectorStore` adapter (~200 lines)
 
@@ -1095,13 +1090,10 @@ closest lightweight competitor, does not combine them.
 These are decisions in v0.5.7–v1.0 that determine whether the integration layer (v1.1+)
 is cheap or expensive:
 
-1. **Stabilize the search response schema** — If `do_search()` returns
-`{matches: [{id, score, text, meta}]}` today and changes later, every adapter breaks.
-Freeze the response shape in v0.5.7. Add new fields (`latency_ms`, `match_reason`,
-`request_id`) now, so the schema is stable by v1.0.
+1. ~~**Stabilize the search response schema**~~ — Implemented under P1-23;
+the checked-in OpenAPI snapshot guards the HTTP contract (P1-53e).
 
-2. **Document delete by ID** (P1-6) — LangChain's `delete()` method
-requires this. Without it, the LangChain adapter ships incomplete.
+2. ~~**Document delete by ID** (P1-06)~~ — Implemented; available to adapters.
 
 3. ~~**Per-collection embedding config** (v1.0)~~ — LangChain's `from_texts()`
 passes an `embedding` parameter. PaveDB must be able to accept external
@@ -1120,10 +1112,10 @@ Status: done.
 
 | Version | Deliverable | Depends on |
 |---------|------------|------------|
-| v1.0 | Python SDK (`pavedb-sdk`): HTTP + optional local provider | Stable REST API (v1.0) |
-| v1.1 | Embedded mode, batch ingest | Python client |
-| v1.1 | Evaluate remote CLI for multisite automation | Python client + Cloud management use cases |
-| v1.3 | JS/TS client (npm) | OpenAPI spec (auto-generated, then typed) |
+| v1.0 | ~~Python SDK: HTTP + local provider~~ | Stable REST API (v1.0) |
+| v1.1 | ~~Embedded mode, JSON batch ingest~~ | Multi-file batch remains deferred |
+| v1.1 | ~~Remote CLI evaluation~~; CLI not implemented | Python client |
+| v1.3 | ~~JS/TS client (npm)~~ | Typed REST API wrappers |
 | v1.3 | LangChain `VectorStore` adapter | Python client |
 | v1.3 | MCP server | Python client |
 | v1.3 | LlamaIndex adapter | Python client |
@@ -1135,11 +1127,11 @@ Status: done.
 ### What this means for the revised version milestones
 
 **v0.9** gains:
-- Freeze search response schema (add `latency_ms`, `match_reason`, `request_id`).
-- Typed return models as internal preparation.
+- ~~Freeze search response schema (add `latency_ms`, `match_reason`, `request_id`).~~
+- ~~Typed return models as internal preparation.~~
 
 **v1.1** gains:
-- Python SDK client package.
+- ~~Python SDK client package~~ (implemented ahead of this milestone).
 
 **v1.3** gains:
 - LangChain VectorStore adapter.

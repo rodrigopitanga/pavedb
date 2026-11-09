@@ -37,7 +37,11 @@ utility: subcommands and descriptive long options are useful extensions.
 - **Side effects:** Mutations have explicit verbs. `init --force` is
   required to overwrite existing config files.
 
-## Findings
+## Resolved findings
+
+The findings below describe the audited behavior before
+[R2-104](https://gitlab.com/flowlexi/pavedb/-/work_items/356).
+All five are implemented; the current contract above reflects the result.
 
 1. **Long option prefixes are accepted implicitly.** `argparse` defaults to
    `allow_abbrev=True`, so a unique prefix such as `--compa` currently means
@@ -72,6 +76,3 @@ utility: subcommands and descriptive long options are useful extensions.
    `pavecli restore-archive missing.zip` prints a Python traceback instead
    of an error object. Convert the failure into the same JSON error shape
    and status 1 when the stdin work in finding 3 touches this helper.
-
-The findings above were implemented under
-[R2-104](https://gitlab.com/flowlexi/pavedb/-/work_items/356).

@@ -504,3 +504,18 @@ def test_local_client_covers_the_097_collection_surface(tmp_path, cfg):
         with pytest.raises(NotFoundError):
             db.collection("copy").cancel_reindex(job["job_id"])
         books.cancel_reindex(job["job_id"])
+
+
+def test_local_reindex_provider_supports_selector_and_job_listing(tmp_path, cfg):
+    cfg.set("embedder.instances.v2.type", "sbert")
+    cfg.set("embedder.instances.v2.model", "fake-v2")
+    with provider(tmp_path / "db") as db:
+        db.create_collection("books", tenant="acme")
+        # Exercise provider hooks independently of the installed SDK version.
+        assert db._list_reindex_jobs() == {"jobs": []}
+        job = db._reindex("acme", "books", embedder="v2")
+        assert job["target"]["embed_model"] == "fake-v2"
+        assert [
+            (item["job_id"], item["tenant"], item["collection"])
+            for item in db._list_reindex_jobs()["jobs"]
+        ] == [(job["job_id"], "acme", "books")]

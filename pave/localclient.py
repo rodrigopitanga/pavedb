@@ -52,6 +52,7 @@ from pave.service import (
     list_documents as svc_list_documents,
     list_embedders as svc_list_embedders,
     list_query_homes as svc_list_query_homes,
+    list_reindex_jobs as svc_list_reindex_jobs,
     list_tenants as svc_list_tenants,
     move_collection as svc_move_collection,
     pause_reindex_job as svc_pause_reindex_job,
@@ -360,6 +361,9 @@ class LocalClient(BaseClient):
     ) -> dict:
         self._own_reindex_job(tenant, collection, job_id)
         return _unwrap(self._call(svc_cancel_reindex_job, job_id))
+
+    def _list_reindex_jobs(self) -> dict:
+        return _unwrap(self._call(svc_list_reindex_jobs))
 
     def _pause_reindex(self, job_id: str) -> dict:
         return _unwrap(self._call(svc_pause_reindex_job, job_id))

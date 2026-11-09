@@ -61,8 +61,6 @@ One JSON line per operation, written to the configured destination.
 |---|---|---|
 | `ts` | string | ISO 8601 UTC, millisecond precision |
 | `op` | string | see Operations below |
-| `tenant` | string | path parameter |
-| `collection` | string | path parameter; omitted for tenant-level ops |
 | `latency_ms` | float | wall time from route entry to response, 2 dp |
 | `status` | string | `"ok"` or `"error"` |
 
@@ -70,6 +68,10 @@ One JSON line per operation, written to the configured destination.
 
 | Field | Present when |
 |---|---|
+| `tenant` | known from the route or resolved query owner |
+| `collection` | known collection scope; omitted for instance/tenant operations |
+| `query_id` | query lookup or replay identifies a stored query |
+| `actor` | authentication context identifies an actor |
 | `request_id` | client provided one (omit entirely otherwise) |
 | `error_code` | `status == "error"` |
 | `k` | op == search |
@@ -90,8 +92,13 @@ One JSON line per operation, written to the configured destination.
 | `move_collection` | POST `/admin/collections/{t}/{name}/move` |
 | `list_collections` | GET `/collections/{t}` |
 
-Admin routes (`/admin/archive`, `/admin/metrics`) and health routes are not
-instrumented — they are infrastructure ops, not business events.
+The table lists the original operation set. Admin archive, metrics reset,
+collection archive, reindex, and query lookup/replay routes also emit ops events.
+Health probes do not emit ops events.
+
+Admin query lookup/replay resolves `tenant` and `collection` from the query's
+owner and includes `query_id`. Rejected requests omit unresolved ownership;
+logging does not retry resolution or replace the original error response.
 
 ---
 
