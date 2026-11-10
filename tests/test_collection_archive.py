@@ -377,6 +377,43 @@ def test_concurrent_restores_share_the_tenant_chunk_budget(tmp_path, cfg):
     assert destination.tenant_chunk_count("acme") == 1
 
 
+def test_restore_and_ingest_share_the_tenant_chunk_budget(tmp_path, cfg):
+    source = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    source.index_records(
+        "source", "books", "new",
+        [("0", "one", {}), ("1", "two", {})],
+    )
+    archive = _archive_bytes(source, "source", "books")
+    destination = LocalStore(str(tmp_path / "destination"), FakeEmbedder())
+    cfg.set("tenants.default_max_chunks_per_tenant", 2)
+    start = Barrier(2)
+
+    def ingest():
+        start.wait(timeout=10)
+        try:
+            destination.index_records(
+                "acme", "live", "doc",
+                [("0", "three", {}), ("1", "four", {})],
+            )
+        except TenantChunkLimitError:
+            return False
+        return True
+
+    def restore():
+        start.wait(timeout=10)
+        try:
+            destination.restore_collection_archive("acme", "books", archive)
+        except TenantChunkLimitError:
+            return False
+        return True
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(lambda fn: fn(), (ingest, restore)))
+
+    assert sorted(results) == [False, True]
+    assert destination.tenant_chunk_count("acme") == 2
+
+
 def test_collection_archive_rolls_back_catalog_publish_failure(
     tmp_path,
     monkeypatch,

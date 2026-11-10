@@ -548,17 +548,51 @@ class LocalStore:
         without a vacuum. Separating those bytes by kind is P2-47.
 
         *excluding* leaves one collection out, for the caller that already
-        holds that collection's own exact figures.
+        holds that collection's own exact figures. Metadata missing or
+        unreadable for a collection the catalog still registers is an error,
+        never an apparent empty budget.
         """
         names = self._with_catalog_retry(
             "list_collections",
             lambda catalog: catalog.list_collections(tenant),
         )
         return sum(
-            self._read_doc_chunk_counts(tenant, name)[1]
+            self._read_doc_chunk_counts_strict(tenant, name)[1]
             for name in names
             if name != excluding
         )
+
+    def _read_doc_chunk_counts_strict(
+        self, tenant: str, collection: str
+    ) -> tuple[int, int]:
+        """(doc_count, chunk_count), refusing to guess at an unknown count.
+
+        Held under the collection read lock so a concurrent lifecycle write
+        settles first: `delete_collection` drops the directory before it
+        unregisters the catalog row, and judging that window unlocked failed
+        an unrelated ingest. A collection the catalog no longer registers
+        holds no chunks; one still registered without readable metadata is
+        unknown, never an apparent empty budget.
+        """
+        with self._collection_read_lock(tenant, collection):
+            if not self._db_path(tenant, collection).is_file():
+                if self.get_collection_config(tenant, collection) is None:
+                    return 0, 0
+                raise RuntimeError(
+                    f"chunk count unavailable for {tenant}/{collection}"
+                )
+            counts = self._read_collection_db(
+                tenant,
+                collection,
+                op_name="tenant_chunk_counts",
+                default=None,
+                reader=lambda db: db.get_doc_chunk_counts(),
+            )
+        if counts is None:
+            raise RuntimeError(
+                f"chunk count unavailable for {tenant}/{collection}"
+            )
+        return counts
 
     def _tenant_chunk_budget(
         self,
@@ -570,20 +604,38 @@ class LocalStore:
         Returns (0, 0) where no cap is set, which is the default: an uncapped
         tenant pays for none of the counting.
 
-        Counted before the caller takes `collection`'s write lock, unless
-        it holds the exclusive state lock (archive restore):
-        `_read_doc_chunk_counts` takes the read lock of every
-        collection it visits, and an ingest holding A's write lock while
-        asking for B's read lock deadlocks against one doing the reverse.
-        The cost is that two concurrent ingests into different collections of
-        the same tenant can both read the same total and both pass, so the
-        ceiling is exact within a collection and bounded -- not exact --
-        across a tenant's collections.
+        Call before taking the collection write lock. Ingest holds the tenant
+        admission lock through its eventual write; archive restore holds the
+        exclusive state lock instead. Counts from other collections must be
+        available before either operation can admit chunks.
         """
         cap = self._tenant_limit(tenant, "max_chunks_per_tenant")
         if cap <= 0:
             return 0, 0
         return cap, self.tenant_chunk_count(tenant, excluding=collection)
+
+    @contextmanager
+    def _tenant_chunk_write_lock(
+        self, tenant: str, collection: str, adding_chunks: bool
+    ) -> Iterator[tuple[int, int]]:
+        """Serialize capped admission before taking any collection write lock.
+
+        State -> tenant -> collection is the lock order. Restore takes the
+        state write lock first, so it cannot race an admitted ingest or wait
+        for a tenant lock while holding a collection lock.
+        """
+        if not adding_chunks or self._tenant_limit(
+            tenant, "max_chunks_per_tenant"
+        ) <= 0:
+            with self._collection_write_lock(tenant, collection):
+                yield 0, 0
+            return
+        with self._state_lock.read_lock():
+            with self._borrow_collection_lock(f"t_{tenant}:quota") as lock:
+                with lock.write_lock():
+                    budget = self._tenant_chunk_budget(tenant, collection)
+                    with self._collection_write_lock(tenant, collection):
+                        yield budget
 
     def _db_path(self, tenant: str, collection: str) -> Path:
         return Path(self._base_path(tenant, collection)) / "meta.db"
@@ -4107,14 +4159,6 @@ class LocalStore:
                 doc_meta,
             )
         )
-        # An ingest carrying no record is a purge, which grows nothing and
-        # is charged against no ceiling.
-        tenant_cap, tenant_chunks_elsewhere = (
-            self._tenant_chunk_budget(tenant, collection)
-            if rids_to_add
-            else (0, 0)
-        )
-
         if byov:
             vectors = np.asarray(vectors, dtype=np.float32)
         elif not rids_to_add:
@@ -4132,15 +4176,16 @@ class LocalStore:
                 sel_space = None
                 vectors = self._encode_embedder(embedder, texts_to_encode)
 
-        with self._collection_write_lock(tenant, collection):
+        with self._tenant_chunk_write_lock(
+            tenant, collection, bool(rids_to_add)
+        ) as (tenant_cap, tenant_chunks_elsewhere):
             self._load_or_init(tenant, collection)
             col_db = self._dbs[key]
             backend = self._emb[key]
             current_embedder = self._collection_embedders[key]
             # Checked before the purge so a rejected re-ingest cannot drop
-            # the already-indexed document version. The collection write
-            # lock serializes all chunk writers, so the count cannot be
-            # raced past a billing-hard limit.
+            # the already-indexed document version. Tenant admission and
+            # collection write locks keep both counts stable through the write.
             max_chunks = self._tenant_limit(tenant, "max_chunks_per_collection")
             if rids_to_add and (max_chunks > 0 or tenant_cap > 0):
                 # One read serves both caps, and the tenant ceiling
@@ -4278,18 +4323,14 @@ class LocalStore:
             all_rids.extend(rids)
             all_texts.extend(texts)
 
-        tenant_cap, tenant_chunks_elsewhere = (
-            self._tenant_chunk_budget(tenant, collection)
-            if all_rids
-            else (0, 0)
-        )
-
         vectors = (
             self._encode_embedder(embedder, all_texts)
             if all_rids else None
         )
 
-        with self._collection_write_lock(tenant, collection):
+        with self._tenant_chunk_write_lock(
+            tenant, collection, bool(all_rids)
+        ) as (tenant_cap, tenant_chunks_elsewhere):
             self._load_or_init(tenant, collection)
             col_db = self._dbs[key]
             backend = self._emb[key]

@@ -2,11 +2,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+import sqlite3
+from threading import Event
 
 import pytest
 
 from pave.config import get_cfg
-from pave.metadb import ChunkLimitError, TenantChunkLimitError
+from pave.metadb import ChunkLimitError, CollectionDB, TenantChunkLimitError
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
@@ -133,6 +136,34 @@ def test_batch_ingest_cannot_bypass_the_tenant_ceiling(tmp_path):
     assert store.tenant_chunk_count("acme") == 1
 
 
+def test_batch_replacement_spends_only_net_chunks(tmp_path):
+    get_cfg().set("tenants.default_max_chunks_per_tenant", 3)
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.index_records("acme", "one", "d1", [("d1::0", "one", {})])
+    store.index_records("acme", "two", "d2", [("d2::0", "two", {})])
+
+    store.index_documents(
+        "acme", "one", [
+            ("d1", [("d1::0", "replacement", {})], None),
+            ("d3", [("d3::0", "new", {})], None),
+        ],
+    )
+    assert store.tenant_chunk_count("acme") == 3
+
+    with pytest.raises(TenantChunkLimitError):
+        store.index_documents(
+            "acme", "one", [
+                ("d1", [("d1::0", "too", {}), ("d1::1", "many", {})], None),
+                ("d3", [("d3::0", "also", {})], None),
+            ],
+        )
+    assert any(
+        hit.id == "d1::0"
+        for hit in store.search("acme", "one", "replacement", k=5)
+    )
+    assert store.tenant_chunk_count("acme") == 3
+
+
 def test_a_write_over_both_caps_reports_the_tenant_ceiling(tmp_path):
     # Both caps set is the documented setup, and only the tenant ceiling
     # tells the caller that no other collection has room either.
@@ -191,3 +222,156 @@ def test_concurrent_ingests_into_one_collection_cannot_exceed_it(tmp_path):
     assert outcomes.count("ok") == 3
     assert outcomes.count("limit") == 5
     assert store.tenant_chunk_count("acme") == 3
+
+
+@pytest.mark.parametrize("batch_second", [False, True])
+def test_distinct_collection_admission_is_atomic(
+    tmp_path, monkeypatch, batch_second
+):
+    get_cfg().set("tenants.default_max_chunks_per_tenant", 2)
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    for name in ("one", "two"):
+        store.index_records("acme", name, "seed", [])
+
+    first_counting = Event()
+    release_first = Event()
+    second_admitting = Event()
+    second_counting = Event()
+    original_count = store.tenant_chunk_count
+    original_lock = store._tenant_chunk_write_lock
+
+    def counted(tenant, *, excluding=None):
+        if excluding == "one":
+            first_counting.set()
+            assert release_first.wait(30)
+        else:
+            second_counting.set()
+        return original_count(tenant, excluding=excluding)
+
+    @contextmanager
+    def admission(tenant, collection, adding_chunks):
+        if collection == "two":
+            second_admitting.set()
+        with original_lock(tenant, collection, adding_chunks) as budget:
+            yield budget
+
+    monkeypatch.setattr(store, "tenant_chunk_count", counted)
+    monkeypatch.setattr(store, "_tenant_chunk_write_lock", admission)
+
+    def first():
+        store.index_records(
+            "acme", "one", "d1",
+            [("d1::0", "one", {}), ("d1::1", "two", {})],
+        )
+
+    def second():
+        try:
+            if batch_second:
+                store.index_documents(
+                    "acme", "two", [
+                        ("d2", [("d2::0", "three", {})], None),
+                        ("d3", [("d3::0", "four", {})], None),
+                    ],
+                )
+            else:
+                store.index_records(
+                    "acme", "two", "d2",
+                    [("d2::0", "three", {}), ("d2::1", "four", {})],
+                )
+            return "ok"
+        except TenantChunkLimitError:
+            return "limit"
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first_result = pool.submit(first)
+        assert first_counting.wait(30)
+        second_result = pool.submit(second)
+        try:
+            assert second_admitting.wait(30)
+            assert not second_counting.wait(0.1)
+        finally:
+            release_first.set()
+        first_result.result(timeout=30)
+        assert second_result.result(timeout=30) == "limit"
+
+    assert store.tenant_chunk_count("acme") == 2
+
+
+@pytest.mark.parametrize("missing", [False, True])
+def test_unavailable_count_refuses_admission_and_preserves_documents(
+    tmp_path, monkeypatch, missing
+):
+    get_cfg().set("tenants.default_max_chunks_per_tenant", 3)
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.index_records("acme", "one", "d1", [("d1::0", "one", {})])
+    store.index_records("acme", "two", "d2", [("d2::0", "two", {})])
+
+    if missing:
+        store._db_path("acme", "two").unlink()
+    else:
+        original_counts = CollectionDB.get_doc_chunk_counts
+        unreadable_path = store._db_path("acme", "two").resolve()
+
+        def unreadable(self):
+            if self.path == unreadable_path:
+                raise sqlite3.OperationalError("database is locked")
+            return original_counts(self)
+
+        monkeypatch.setattr(CollectionDB, "get_doc_chunk_counts", unreadable)
+
+    with pytest.raises(RuntimeError, match="chunk count unavailable"):
+        store.index_records(
+            "acme", "one", "d1",
+            [("d1::0", "replacement", {}), ("d1::1", "extra", {})],
+        )
+    assert any(
+        hit.id == "d1::0" for hit in store.search("acme", "one", "one", k=5)
+    )
+
+
+def test_concurrent_collection_delete_still_admits_an_ingest(
+    tmp_path, monkeypatch
+):
+    # delete_collection removes the collection directory before it
+    # unregisters the catalog row, so a tenant count that lists the row and
+    # then looks at the directory straddles a window where neither answer is
+    # final. Reading that window must not fail an unrelated ingest.
+    get_cfg().set("tenants.default_max_chunks_per_tenant", 2)
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.index_records("acme", "one", "d1", [("d1::0", "one", {})])
+    store.index_records("acme", "two", "d2", [("d2::0", "two", {})])
+
+    removed = Event()
+    counting = Event()
+    release = Event()
+    original_remove = LocalStore._remove_path
+    original_strict = store._read_doc_chunk_counts_strict
+
+    def paused_remove(path, *, retries=4):
+        original_remove(path, retries=retries)
+        removed.set()
+        assert release.wait(30)
+
+    def counted(tenant, collection):
+        if collection == "two":
+            counting.set()
+        return original_strict(tenant, collection)
+
+    monkeypatch.setattr(store, "_remove_path", paused_remove)
+    monkeypatch.setattr(store, "_read_doc_chunk_counts_strict", counted)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        deleting = pool.submit(store.delete_collection, "acme", "two")
+        assert removed.wait(30)
+        ingesting = pool.submit(
+            store.index_records,
+            "acme", "one", "d3", [("d3::0", "three", {})],
+        )
+        try:
+            assert counting.wait(30)
+        finally:
+            release.set()
+        deleting.result(timeout=30)
+        ingesting.result(timeout=30)
+
+    assert store.tenant_chunk_count("acme") == 2

@@ -157,7 +157,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-14 | Document versioning | 🧱 | Audit trails | v1.7 |
 | P2-19 | Tenant admin infra | 🧱 | API-owned tenants are catalog rows with lifecycle and caps; file-owned tenants stay as `tenants.yml` declares | v1.0 |
 | P2-20 | ~~Collection limit / tenant~~ | 🧩 | Billing-hard growth cap | v0.9.5 |
-| P2-21 | Storage limit / tenant | 🧩 | `max_chunks_per_tenant` bounds a tenant's chunks across its collections, 429 at ingest; cross-collection admission still open | v1.0 |
+| P2-21 | ~~Storage limit / tenant~~ | 🧩 | `max_chunks_per_tenant` bounds a tenant's chunks across its collections with atomic admission, 429 at ingest | v1.0 |
 | P2-22 | Usage stats to mothership |  | Capacity planning | v1.4 |
 | P2-23 | ~~Chunk inspector + collection browser~~ | 🔧 | List chunks, get chunk by ID, browse doc→chunk tree | v0.9 |
 | P2-24 | Delete by ID list / by query | 🧩 | Bulk ops, DX | v1.6 |
@@ -566,8 +566,8 @@ latency on every search/ingest/delete.~~
 - ~~Honor metadata priority boosts during scoring (P2-11).~~
 - Tenant admin infrastructure: API-owned tenants become catalog rows with
   lifecycle and caps that bind without a restart (P2-19).
-- Per-tenant storage limit: `max_chunks_per_tenant` bounds a tenant's chunks
-  across its collections; cross-collection admission still open (P2-21).
+- ~~Per-tenant storage limit: `max_chunks_per_tenant` bounds a tenant's chunks
+  across its collections with atomic admission (P2-21).~~
 - Tenant key management API: create, rotate and revoke keys at runtime for
   API-owned tenants (P2-38).
 
