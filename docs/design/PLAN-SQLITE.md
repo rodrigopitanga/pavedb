@@ -16,6 +16,8 @@ Roadmap ownership:
 - Phase 2 → `P1-33` (PLAN-STORE Step 5 dependency, for `P1-32`)
 - Phase 2 builds on the current `LocalStore` + `CollectionDB`
   architecture.
+- Phase 3 tenant ownership and provisioning → `P2-19` (planned)
+- Phase 3 API-owned key management → `P2-38` (planned)
 
 ---
 
@@ -577,36 +579,38 @@ log retention)
 
 ### Auth progression
 
-`tenants.yml` is the source of truth for API keys until Phase 3 ships:
+File-owned tenants keep their API keys in `tenants.yml`. Planned API-owned
+tenants use catalog-managed keys (P2-38). Neither path migrates the other's
+keys. OIDC/JWT remains an opt-in additional method (P3-17).
 
-```
-tenants.yml (now)  →  SQL key store (Phase 3)  →  + OIDC/JWT opt-in (P3-17)
-```
-
-API keys (`api_keys` table) are a permanent first-class auth method — simple
-deployments never need anything else. OIDC/JWT is additive: if
+API keys remain a permanent first-class auth method — simple deployments
+never need anything else. OIDC/JWT is additive: if
 `auth.oidc.issuer` is configured, PaveDB accepts either a valid API key or a
 valid JWT on any request. JWT validation is stateless (signature check against
 IdP public key); no new table needed for it. See ROADMAP P3-17.
 
-**YAML seed:** on first boot after Phase 3 migration, read `cfg.get('tenants')`
-and for each tenant entry INSERT OR IGNORE into `tenant_profiles`, populating
-`max_concurrent` from `tenants.<name>.max_concurrent` and the global default
-from `tenants.default_max_concurrent`. The `rate_limit_buckets` table (below)
-persists moving-window rate limiting configured by per-tenant `max_rpm` and
-`max_rph` values.
+### Tenant ownership and provisioning
 
-**Seed logic:** on first boot after Phase 3 migration, for each tenant in
-`tenants.yml`:
-- If tenant not in `api_keys` → insert with key hashed (SHA256 or bcrypt)
-- If already present → skip (SQL wins; YAML is not re-applied)
+The shipped file-owned path reads tenant lifecycle, caps, and keys from
+`tenants.yml`; later file changes remain authoritative. The planned P2-19
+admin API provisions API-owned tenants as catalog rows and manages their
+lifecycle and caps there. A tenant has exactly one owner: file-owned entries
+are never seeded into SQL or silently converted to API-owned rows. Provisioning
+here means creating technical tenant state; billing, payment, and business
+onboarding remain outside PaveDB.
 
-After seeding, `tenants.yml` is only read for limits/profile fallback until
-those migrate to `tenant_profiles`. Per-tenant limits defined in `tenants.yml`
-today (`max_rpm`, `max_rph`, `max_collections`, etc.) seed `tenant_profiles` by
-the same logic.
+The shipped file-owned caps are `max_collections`,
+`max_chunks_per_collection`, `max_chunks_per_tenant`, `max_concurrent`,
+`max_rpm`, `max_rph`, `max_archives_per_day`, and
+`max_reindex_per_month`. The tenant-wide storage ceiling counts indexed
+chunks, not bytes. The planned API-owned row exposes the applicable caps
+through the admin API; cross-collection admission already ships under P2-21
+and is enforced in the store, so API-owned caps reuse that admission once
+P2-19 lands. P2-26 adds tier templates later. Persistent
+`rate_limit_buckets` state (below) records moving-window charges; it does
+not transfer ownership of file-defined rate limits to SQL.
 
-**`api_keys` table:**
+**Planned `api_keys` table (P2-38, API-owned tenants only):**
 
 ```sql
 CREATE TABLE IF NOT EXISTS api_keys (
@@ -620,33 +624,38 @@ CREATE TABLE IF NOT EXISTS api_keys (
 CREATE INDEX IF NOT EXISTS api_keys_tenant ON api_keys (tenant);
 ```
 
-One tenant → many keys. Rotation: issue new key, revoke old row. No restart
-needed. The global bootstrap key (`PAVEDB_GLOBAL_KEY` env var) stays outside
-SQL permanently — it is the credential used to access the system before any
-tenant is provisioned.
+One API-owned tenant → many keys. Rotation issues a new key and revokes the
+old row without a restart. The instance admin key (`auth.global_key` or the
+generated key file) stays outside tenant SQL so it can provision an API-owned
+tenant before that tenant has keys.
 
-**Key management API** (future endpoints; currently tracked by P2-38):
-- `POST /admin/tenants` — provision tenant (slug, display_name, limits)
+**Tenant provisioning API** (planned under P2-19):
+- `POST /admin/tenants` — provision an API-owned tenant with its caps.
+
+**Key management API** (planned under P2-38 for API-owned tenants):
 - `POST /admin/tenants/{tenant}/keys` — generate key, returns plaintext once
 - `DELETE /admin/tenants/{tenant}/keys/{id}` — revoke key
 
 ### What gets persisted
 
-**Tenant profiles** — resource limits and tier config. Seeds from `tenants.yml`
-on first boot; SQL is source of truth thereafter. PaveDB enforces limits;
-billing/onboarding are out of scope.
+**Planned API-owned tenant rows (P2-19)** — catalog state for lifecycle and
+caps. The schema below is a proposal, not shipped DDL. File-owned tenants
+remain defined by `tenants.yml` and do not get rows here. PaveDB enforces
+declared limits; tier templates belong to P2-26.
 
 ```sql
 CREATE TABLE IF NOT EXISTS tenant_profiles (
-    tenant          TEXT PRIMARY KEY,
-    display_name    TEXT,
-    max_collections INTEGER,
-    max_storage_mb  INTEGER,
-    max_concurrent  INTEGER,   -- per-tenant concurrent request cap (0 = unlimited)
-    max_rpm         INTEGER,
-    max_rph         INTEGER,
-    tier            TEXT,
-    meta_json       TEXT   -- operator metadata: description, tags, cost-center, etc.
+    tenant                    TEXT PRIMARY KEY,
+    display_name              TEXT,
+    max_collections           INTEGER,
+    max_chunks_per_collection INTEGER,
+    max_chunks_per_tenant     INTEGER,
+    max_concurrent            INTEGER,
+    max_rpm                   INTEGER,
+    max_rph                   INTEGER,
+    max_archives_per_day      INTEGER,
+    max_reindex_per_month     INTEGER,
+    meta_json                 TEXT  -- description, tags, cost-center, etc.
 );
 ```
 

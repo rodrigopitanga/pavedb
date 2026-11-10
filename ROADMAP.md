@@ -155,7 +155,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-12 | ~~List tenants/collections API~~ | 🧩 | Ops visibility | v1.0 |
 | P2-13 | Collection log export | 🧱 | Search analytics | v1.4 |
 | P2-14 | Document versioning | 🧱 | Audit trails | v1.7 |
-| P2-19 | Tenant admin infra | 🧱 | API-owned tenants are catalog rows with lifecycle and caps; file-owned tenants stay as `tenants.yml` declares | v1.0 |
+| P2-19 | [Tenant admin infra](docs/design/PLAN-SQLITE.md#tenant-ownership-and-provisioning) | 🧱 | API-owned tenants are catalog rows with lifecycle and caps; file-owned tenants stay as `tenants.yml` declares | v1.0 |
 | P2-20 | ~~Collection limit / tenant~~ | 🧩 | Billing-hard growth cap | v0.9.5 |
 | P2-21 | ~~Storage limit / tenant~~ | 🧩 | `max_chunks_per_tenant` bounds a tenant's chunks across its collections with atomic admission, 429 at ingest | v1.0 |
 | P2-22 | Usage stats to mothership |  | Capacity planning | v1.4 |
@@ -173,7 +173,7 @@ Effort legend: 🧩 bite-sized, 🔧 medium, 🧱 foundational
 | P2-35 | MCP server | 🧱 | AI agent integration | v1.3 |
 | P2-36 | LlamaIndex adapter | 🧱 | Framework coverage | v1.3 |
 | P2-37 | Audit logs for admin actions | 🧩 | Governance trail | v1.6 |
-| P2-38 | Tenant key management API | 🔧 | Create, rotate and revoke keys at runtime for API-owned tenants; file-owned tenants keep file keys | v1.0 |
+| P2-38 | [Tenant key management API](docs/design/PLAN-SQLITE.md#tenant-ownership-and-provisioning) | 🔧 | Create, rotate and revoke keys at runtime for API-owned tenants; file-owned tenants keep file keys | v1.0 |
 | P2-39 | Structured log retention | 🔧 | Rolling window + purge via `operation_log` (SQLite Phase 3); powers P2-13 | v1.2 |
 | P2-40 | ~~Error logging at service layer~~ | 🧩 | `log.warning` on every `ok: false` return site; audit codes and choose level per error class | v0.5.9 |
 | P2-41 | ~~TXT preprocessor: character offset in chunk metadata~~ | 🧩 | Provenance contract (replace `chunk` key with `offset`) | v0.5.9 |
@@ -249,7 +249,7 @@ Substantial features are specified under `docs/design/` before implementation.
 | [Docs refresh][docs-refresh] | P3-54 | Deployment, operations, replay |
 | [`docs/design/PLAN-OPS-LOG.md`](docs/design/PLAN-OPS-LOG.md) | P2-28 | Structured log emission — ops JSON stream |
 | [`docs/design/PLAN-CLIENT.md`](docs/design/PLAN-CLIENT.md) | P1-15 / P1-24 / P1-75 / P2-32 | Local and HTTP clients, local ownership, and remote CLI evaluation |
-| [`docs/design/PLAN-SQLITE.md`](docs/design/PLAN-SQLITE.md) | P1-09 / P1-33 / P1-54 / P1-73 / P2-25 | SQLite metadata, catalog, migrations, and collection portability |
+| [`docs/design/PLAN-SQLITE.md`](docs/design/PLAN-SQLITE.md) | P1-09 / P1-33 / P1-54 / P1-73 / P2-19 / P2-25 / P2-38 | SQLite metadata, catalog, tenant ownership, migrations, and collection portability |
 | [`docs/design/PLAN-METRICS-PERSISTENCE.md`](docs/design/PLAN-METRICS-PERSISTENCE.md) | P1-50 | Worker-safe metrics |
 | [`docs/design/PLAN-STORE.md`](docs/design/PLAN-STORE.md) | P1-29/P1-29b/P1-29c/P1-31/P1-32 | Store split; P1-30 superseded by P1-29b |
 | [`docs/design/PLAN-OBSERVABILITY.md`](docs/design/PLAN-OBSERVABILITY.md) | P0-03, P1-11/14/17/23/40/41/42/43/44/45/48, P2-23/28/40/41/45 | Inspectability surface — request correlation, timing, query log, replay, chunk inspector, execution-context stamp |
