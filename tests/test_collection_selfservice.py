@@ -62,7 +62,36 @@ def test_tenant_archive_daily_window(client):
         assert second.status_code == 429
         assert second.json()["code"] == "archive_rate_limited"
     finally:
-        cfg.set("tenants.default_max_archives_per_day", 0)
+        cfg.set("tenants.default_max_archives_per_day", -1)
+
+
+@pytest.mark.parametrize(
+    "field,operation,window",
+    [("max_archives_per_day", "archive", 86400),
+     ("max_reindex_per_month", "reindex", 30 * 86400)],
+)
+def test_zero_operation_budget_denies_and_override_unlimits(
+    client, field, operation, window
+):
+    cfg = get_cfg()
+    cfg.set(f"tenants.default_{field}", 0)
+    store = client.app.state.store.impl
+    denied = store.charge_operation_window("acme", operation, field, window)
+    assert not denied.allowed
+    assert denied.retry_after == 0
+    cfg.set(f"tenants.acme.{field}", -1)
+    assert store.charge_operation_window("acme", operation, field, window) is None
+
+
+def test_zero_operation_concurrency_denies():
+    cfg = get_cfg()
+    cfg.set("archive.max_concurrent", 0)
+    request = types.SimpleNamespace(
+        app=types.SimpleNamespace(state=types.SimpleNamespace()),
+    )
+    slot, refused = operation_gate(request, "acme", "archive")
+    assert slot is None
+    assert refused[2] == 0
 
 
 def test_tenant_reindex_monthly_window_and_ownership(client):
@@ -95,7 +124,7 @@ def test_tenant_reindex_monthly_window_and_ownership(client):
         assert again.status_code == 429
         assert again.json()["code"] == "reindex_rate_limited"
     finally:
-        cfg.set("tenants.default_max_reindex_per_month", 0)
+        cfg.set("tenants.default_max_reindex_per_month", -1)
 
 
 def test_operation_gate_bounds_tenant_and_instance():

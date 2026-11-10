@@ -211,23 +211,23 @@ class BodySizeLimitMiddleware:
     def _limit_for(cls, scope) -> int:
         state = getattr(scope.get("app"), "state", None)
         if state is None:
-            return 0
+            return -1
         path = str(scope.get("path") or "")
         # Archives are unrelated to the largest accepted document. Starlette
         # spools these multipart uploads to disk; do not reject a valid backup
         # under either in-memory request ceiling.
         if cls._restores_archive(scope):
-            return 0
+            return -1
         if cls._accepts_upload(path):
-            return getattr(state, "max_upload_body_bytes", 0)
-        return getattr(state, "max_body_bytes", 0)
+            return getattr(state, "max_upload_body_bytes", -1)
+        return getattr(state, "max_body_bytes", -1)
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http" and self._restores_archive(scope):
             if not await self._authorize_archive(scope, send):
                 return
-        limit = 0 if scope["type"] != "http" else self._limit_for(scope)
-        if limit <= 0:
+        limit = -1 if scope["type"] != "http" else self._limit_for(scope)
+        if limit == -1:
             await self.app(scope, receive, send)
             return
 
@@ -623,12 +623,14 @@ def build_app(cfg) -> FastAPI:
 
     # Request body limits, read once here like every other instance-scoped
     # cap. Uploads are allowed the configured ingest ceiling; an unlimited
-    # ingest limit (0) leaves them unbounded, as documented.
+    # ingest limit (-1) leaves them unbounded, as documented.
     _body_mb = cfg.get("server.max_request_body_mb")
-    app.state.max_body_bytes = int(_body_mb * 1024 * 1024)
+    app.state.max_body_bytes = (
+        -1 if _body_mb == -1 else int(_body_mb * 1024 * 1024)
+    )
     _ingest_bytes = ingest_upload_limit_bytes()
     app.state.max_upload_body_bytes = (
-        _ingest_bytes + MULTIPART_FRAMING_BYTES if _ingest_bytes > 0 else 0
+        _ingest_bytes + MULTIPART_FRAMING_BYTES if _ingest_bytes >= 0 else -1
     )
 
     # Search limits
@@ -648,7 +650,7 @@ def build_app(cfg) -> FastAPI:
     # smaller than this pool (42), so that cap only binds once the tenant has
     # already taken all of it.
     _raw_sper = cfg.get("search.max_concurrent_per_tenant")
-    app.state.max_searches_per_tenant = int(_raw_sper or 0)
+    app.state.max_searches_per_tenant = int(_raw_sper)
     app.state.tenant_active_searches = {}
     app.state.search_lock = threading.Lock()
     app.state.search_timeout_s = _to_ms / 1000.0 if _to_ms > 0 else 0.0
@@ -665,7 +667,7 @@ def build_app(cfg) -> FastAPI:
     # staying inside its own request cap -- tenants.default_max_concurrent (42)
     # is larger than this pool (7), so that cap cannot bind on ingest.
     _raw_iper = cfg.get("ingest.max_concurrent_per_tenant")
-    app.state.max_ingests_per_tenant = int(_raw_iper or 0)
+    app.state.max_ingests_per_tenant = int(_raw_iper)
     app.state.tenant_active_ingests = {}
     # Ingest slots are now released from pool threads (detached work), so the
     # read-modify-write genuinely races without this.
@@ -678,20 +680,20 @@ def build_app(cfg) -> FastAPI:
         if isinstance(_tenants_cfg, dict)
         else None
     )
-    app.state.tenant_default_limit = int(_raw_def) if _raw_def is not None else 0
+    app.state.tenant_default_limit = int(_raw_def) if _raw_def is not None else -1
     app.state.tenant_limits = {}
     app.state.tenant_active = {}
     app.state.tenant_lock = threading.Lock()
     app.state.tenant_default_rate_limits = {
         60: int(
-            _tenants_cfg.get("default_max_rpm", 0)
+            _tenants_cfg.get("default_max_rpm", -1)
             if isinstance(_tenants_cfg, dict)
-            else 0
+            else -1
         ),
         3600: int(
-            _tenants_cfg.get("default_max_rph", 0)
+            _tenants_cfg.get("default_max_rph", -1)
             if isinstance(_tenants_cfg, dict)
-            else 0
+            else -1
         ),
     }
     app.state.tenant_rate_limits = {}
@@ -789,31 +791,31 @@ def build_app(cfg) -> FastAPI:
         max_s = state.max_searches
         # No charged tenant (admin, or no per-tenant cap in force) means no
         # share to apply, exactly as with the request cap it follows.
-        max_t = state.max_searches_per_tenant if tenant else 0
+        max_t = state.max_searches_per_tenant if tenant else -1
         per = state.tenant_active_searches
         source = None
         with state.search_lock:
             active_s = state.active_searches
             active_t = per.get(tenant, 0)
-            if max_s > 0 and active_s >= max_s:
+            if max_s >= 0 and active_s >= max_s:
                 source, active, limit = (
                     "instance-scoped search cap", active_s, max_s
                 )
-            elif max_t > 0 and active_t >= max_t:
+            elif max_t >= 0 and active_t >= max_t:
                 source, active, limit = (
                     "tenant-scoped search share", active_t, max_t
                 )
             else:
-                if max_s > 0:
+                if max_s >= 0:
                     state.active_searches = active_s + 1
-                if max_t > 0:
+                if max_t >= 0:
                     per[tenant] = active_t + 1
 
         if source is None:
             def _decrement() -> None:
-                if max_s > 0:
+                if max_s >= 0:
                     state.active_searches -= 1
-                if max_t > 0:
+                if max_t >= 0:
                     per[tenant] = max(0, per.get(tenant, 0) - 1)
 
             return ConcurrencySlot(state.search_lock, _decrement), None
@@ -1183,20 +1185,20 @@ def main_srv(argv=None):
     _i_cap = int(cfg.get("ingest.max_concurrent"))
     _tc = cfg.get("tenants") or {}
     _tcap = (
-        int(_tc.get("default_max_concurrent") or 0)
+        int(_tc.get("default_max_concurrent", -1))
         if isinstance(_tc, dict)
-        else 0
+        else -1
     )
     _ops_dest = cfg.get("log.ops_log") or "null"
     _acc_dest = cfg.get("log.access_log")
     _s_cap_label = (
-        "unlimited (0 disables gate)" if _s_cap == 0 else str(_s_cap)
+        "unlimited (-1 disables gate)" if _s_cap == -1 else str(_s_cap)
     )
     _i_cap_label = (
-        "unlimited (0 disables gate)" if _i_cap == 0 else str(_i_cap)
+        "unlimited (-1 disables gate)" if _i_cap == -1 else str(_i_cap)
     )
     _t_cap_label = (
-        "unlimited (0 disables gate)" if _tcap == 0 else str(_tcap)
+        "unlimited (-1 disables gate)" if _tcap == -1 else str(_tcap)
     )
     _inst_desc = cfg.get("instance.desc")
     log.info(" ")

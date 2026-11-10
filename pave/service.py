@@ -991,14 +991,14 @@ def _default_docid(filename: str) -> str:
 def _ingest_size_limit_bytes() -> int:
     raw = get_cfg().get("ingest.max_file_size_mb")
     max_mb = float(raw)
-    if max_mb <= 0:
-        return 0
+    if max_mb == -1:
+        return -1
     return int(max_mb * 1024 * 1024)
 
 
 def _enforce_ingest_size_limit(size_bytes: int) -> None:
     limit_bytes = _ingest_size_limit_bytes()
-    if limit_bytes > 0 and size_bytes > limit_bytes:
+    if limit_bytes >= 0 and size_bytes > limit_bytes:
         raise ServiceError(
             "file_too_large",
             f"file exceeds the {int(limit_bytes / (1024 * 1024))} MB limit",
@@ -1011,14 +1011,14 @@ def _ingest_batch_size_limit_bytes() -> int:
         # Unset means "one batch may carry one document's worth of text".
         return _ingest_size_limit_bytes()
     max_mb = float(raw)
-    if max_mb <= 0:
-        return 0
+    if max_mb == -1:
+        return -1
     return int(max_mb * 1024 * 1024)
 
 
 def _enforce_batch_size_limit(total_bytes: int) -> None:
     limit_bytes = _ingest_batch_size_limit_bytes()
-    if limit_bytes > 0 and total_bytes > limit_bytes:
+    if limit_bytes >= 0 and total_bytes > limit_bytes:
         raise ServiceError(
             "file_too_large",
             f"batch exceeds the {int(limit_bytes / (1024 * 1024))} MB limit",
@@ -1026,7 +1026,7 @@ def _enforce_batch_size_limit(total_bytes: int) -> None:
 
 
 def ingest_upload_limit_bytes() -> int:
-    """Largest document a file upload may carry, in bytes; 0 is unlimited.
+    """Largest document a file upload may carry, in bytes; -1 is unlimited.
 
     A multipart upload holds exactly one document, so the HTTP layer sizes
     its pre-auth guard from this and the wire cap cannot drift away from the

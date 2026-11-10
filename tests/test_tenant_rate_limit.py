@@ -20,6 +20,48 @@ def test_build_app_loads_default_and_tenant_rate_limits():
     assert configured.state.tenant_rate_limits["acme"] == {60: 10, 3600: 1000}
 
 
+def test_zero_rate_window_denies_without_charging_other_window(app):
+    store = app.state.store.impl
+    denied = store.charge_rate_limit("zero-budget", "global", {60: 0, 3600: 2})
+    assert not denied.allowed
+    assert denied.limit == 0
+    assert denied.retry_after == 0
+    allowed = store.charge_rate_limit("zero-budget", "global", {3600: 2})
+    assert allowed.allowed
+    assert allowed.remaining == 1
+
+
+def test_zero_request_budget_has_no_retry_after(app, monkeypatch):
+    cfg = app.state.cfg
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", None)
+    cfg.set("auth.api_keys", {"zero": "zero-token"})
+    monkeypatch.setitem(
+        app.state.tenant_rate_limits, "zero", {60: 0, 3600: -1}
+    )
+    response = TestClient(app).get(
+        "/v1/collections/zero",
+        headers={"Authorization": "Bearer zero-token"},
+    )
+    assert response.status_code == 429
+    assert response.headers["X-RateLimit-Remaining"] == "0"
+    assert "Retry-After" not in response.headers
+
+
+def test_zero_tenant_concurrency_refuses_request(app, monkeypatch):
+    cfg = app.state.cfg
+    cfg.set("auth.mode", "static")
+    cfg.set("auth.global_key", None)
+    cfg.set("auth.api_keys", {"zero": "zero-token"})
+    monkeypatch.setitem(app.state.tenant_limits, "zero", 0)
+    response = TestClient(app).get(
+        "/v1/collections/zero",
+        headers={"Authorization": "Bearer zero-token"},
+    )
+    assert response.status_code == 429
+    assert response.json()["code"] == "tenant_rate_limited"
+
+
 def test_tenant_rate_limited_returns_429(app, monkeypatch):
     """Tenant at its concurrent limit gets 429 tenant_rate_limited."""
     cfg = app.state.cfg
@@ -131,14 +173,14 @@ def test_unconfigured_tenant_uses_default(app, monkeypatch):
 
 
 def test_unconfigured_tenant_no_default_unlimited(app, monkeypatch):
-    """default_limit=0 means unlimited; requests must not get 429."""
+    """default_limit=-1 means unlimited; requests must not get 429."""
     cfg = app.state.cfg
     cfg.set("auth.mode", "static")
     cfg.set("auth.global_key", None)
     cfg.set("auth.api_keys", {"acme": "acmetoken"})
 
-    # No per-tenant limit; global default = 0 (unlimited).
-    monkeypatch.setattr(app.state, "tenant_default_limit", 0)
+    # No per-tenant limit; global default = -1 (unlimited).
+    monkeypatch.setattr(app.state, "tenant_default_limit", -1)
     # Even with a high active count, unlimited means no 429.
     monkeypatch.setitem(app.state.tenant_active, "acme", 9999)
 
@@ -157,7 +199,7 @@ def test_moving_window_request_limit_returns_429(app, monkeypatch):
     cfg.set("auth.mode", "static")
     cfg.set("auth.global_key", None)
     cfg.set("auth.api_keys", {"acme": "acmetoken"})
-    monkeypatch.setitem(app.state.tenant_rate_limits, "acme", {60: 2, 3600: 0})
+    monkeypatch.setitem(app.state.tenant_rate_limits, "acme", {60: 2, 3600: -1})
     monkeypatch.setattr(app.state, "tenant_rate_clock", lambda: 120.0)
 
     client = TestClient(app, base_url="http://localhost")
@@ -185,7 +227,7 @@ def test_moving_window_limits_are_isolated_by_tenant(app, monkeypatch):
         "auth.api_keys",
         {"acme": "acmetoken", "other": "othertoken"},
     )
-    monkeypatch.setattr(app.state, "tenant_default_rate_limits", {60: 1, 3600: 0})
+    monkeypatch.setattr(app.state, "tenant_default_rate_limits", {60: 1, 3600: -1})
     monkeypatch.setattr(app.state, "tenant_rate_clock", lambda: 120.0)
 
     client = TestClient(app, base_url="http://localhost")
@@ -214,7 +256,7 @@ def test_concurrency_refusal_does_not_charge_moving_window(app, monkeypatch):
     cfg.set("auth.mode", "static")
     cfg.set("auth.global_key", None)
     cfg.set("auth.api_keys", {"acme": "acmetoken"})
-    monkeypatch.setitem(app.state.tenant_rate_limits, "acme", {60: 2, 3600: 0})
+    monkeypatch.setitem(app.state.tenant_rate_limits, "acme", {60: 2, 3600: -1})
     monkeypatch.setattr(app.state, "tenant_rate_clock", lambda: 120.0)
     monkeypatch.setitem(app.state.tenant_limits, "acme", 1)
     monkeypatch.setitem(app.state.tenant_active, "acme", 1)

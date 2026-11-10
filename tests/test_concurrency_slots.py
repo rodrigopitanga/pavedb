@@ -31,7 +31,7 @@ def test_ingest_share_caps_one_tenant_below_instance_cap(
     """One tenant must not be able to hold every shared ingest slot."""
     # Off by default: a share is pure throughput loss on a single-tenant
     # instance, so it is opt-in and a shared deployment turns it on.
-    assert app.state.max_ingests_per_tenant == 0
+    assert app.state.max_ingests_per_tenant == -1
 
     client.post("/v1/collections/acme/sharecol")
     client.post("/v1/collections/other/sharecol")
@@ -70,7 +70,7 @@ def test_search_share_caps_one_tenant_below_instance_cap(app, monkeypatch):
     """One tenant must not be able to hold every shared search slot."""
     # Off by default, like the ingest share: a share is pure throughput
     # loss on a single-tenant instance, so a shared deployment turns it on.
-    assert app.state.max_searches_per_tenant == 0
+    assert app.state.max_searches_per_tenant == -1
 
     cfg = app.state.cfg
     cfg.set("auth.mode", "static")

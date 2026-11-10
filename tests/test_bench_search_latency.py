@@ -278,8 +278,8 @@ def test_tenant_benchmark_times_persistent_charges(app, monkeypatch, tmp_path):
     cfg.set("auth.mode", "static")
     cfg.set("auth.global_key", "admin-token")
     cfg.set("auth.api_keys", {"bench": "tenant-token"})
-    monkeypatch.setitem(app.state.tenant_rate_limits, "bench", {60: 104, 3600: 0})
-    monkeypatch.setattr(app.state, "tenant_default_limit", 0)
+    monkeypatch.setitem(app.state.tenant_rate_limits, "bench", {60: 104, 3600: -1})
+    monkeypatch.setattr(app.state, "tenant_default_limit", -1)
     real_client = httpx.AsyncClient
     real_charge = app.state.tenant_rate_limiter
     charges = []

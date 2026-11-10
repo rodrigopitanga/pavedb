@@ -29,8 +29,8 @@ def test_chunk_limit_enforced_over_http(client):
     # Replacing an existing document at the cap stays allowed.
     assert _ingest(client, "sunshine", "d2", "replaced").status_code == 201
 
-    # Per-tenant override beats the default; 0 disables the cap.
-    get_cfg().set("tenants.moonbeam.max_chunks_per_collection", 0)
+    # Per-tenant override beats the default; -1 disables the cap.
+    get_cfg().set("tenants.moonbeam.max_chunks_per_collection", -1)
     assert _ingest(client, "moonbeam", "d1").status_code == 201
     assert _ingest(client, "moonbeam", "d2").status_code == 201
     assert _ingest(client, "moonbeam", "d3").status_code == 201
@@ -104,3 +104,15 @@ def test_concurrent_ingests_cannot_exceed_limit(tmp_path):
 
     assert outcomes.count("ok") == 3
     assert outcomes.count("limit") == 5
+
+
+def test_zero_chunk_quota_refuses_ingest(tmp_path):
+    get_cfg().set("tenants.default_max_chunks_per_collection", 0)
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    try:
+        store.index_records("acme", "books", "d1", [("d1::0", "text", {})])
+        raise AssertionError("zero chunk quota admitted ingest")
+    except ChunkLimitError:
+        pass
+    get_cfg().set("tenants.acme.max_chunks_per_collection", -1)
+    store.index_records("acme", "books", "d1", [("d1::0", "text", {})])

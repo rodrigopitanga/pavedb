@@ -82,7 +82,7 @@ def operation_gate(request: Request, tenant: str, op: str):
     generalized from the ingest gate: both counters move under one lock
     because a detached worker thread releases them from the pool, not the
     event loop. Returns ``(slot, None)`` when admitted or ``(None,
-    (source, active, limit))`` when a bound is reached; 0 disables a
+    (source, active, limit))`` when a bound is reached; -1 disables a
     bound.
     """
     state = request.app.state
@@ -101,16 +101,16 @@ def operation_gate(request: Request, tenant: str, op: str):
             gates[op] = gate
 
     cfg = get_cfg()
-    max_i = int(cfg.get(f"{op}.max_concurrent") or 0)
-    max_t = int(cfg.get(f"{op}.max_concurrent_per_tenant") or 0)
+    max_i = int(cfg.get(f"{op}.max_concurrent"))
+    max_t = int(cfg.get(f"{op}.max_concurrent_per_tenant"))
     lock = gate["lock"]
     per = gate["per_tenant"]
     with lock:
         active_i = gate["active"]
         active_t = per.get(tenant, 0)
-        if max_i > 0 and active_i >= max_i:
+        if max_i >= 0 and active_i >= max_i:
             return None, (f"instance-scoped {op} cap", active_i, max_i)
-        if max_t > 0 and active_t >= max_t:
+        if max_t >= 0 and active_t >= max_t:
             return None, (f"tenant-scoped {op} cap", active_t, max_t)
         gate["active"] = active_i + 1
         per[tenant] = active_t + 1

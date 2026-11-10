@@ -2230,10 +2230,16 @@ class CatalogDB:
         enabled = sorted(
             (int(window), int(limit))
             for window, limit in limits.items()
-            if int(window) > 0 and int(limit) > 0
+            if int(window) > 0 and int(limit) >= 0
         )
         if not enabled:
             return RateLimitDecision(allowed=True)
+        for window, limit in enabled:
+            if limit == 0:
+                return RateLimitDecision(
+                    allowed=False, limit=0, remaining=0,
+                    retry_after=0, window_seconds=window,
+                )
 
         timestamp = time.time() if now is None else float(now)
         if not math.isfinite(timestamp):
@@ -2627,12 +2633,12 @@ class CatalogDB:
         embed_config: dict[str, Any] | None = None,
         pavedb_version: str | None = None,
         collection_schema_version: int | None = None,
-        max_collections: int = 0,
+        max_collections: int = -1,
     ) -> None:
         with self._writer() as conn, conn:
             # Count and insert share the writer lock and transaction, so the
             # limit cannot be raced past by concurrent creates.
-            if max_collections > 0:
+            if max_collections >= 0:
                 exists = conn.execute(
                     "SELECT 1 FROM collections WHERE tenant=? AND name=?",
                     (tenant, name),
@@ -2694,7 +2700,7 @@ class CatalogDB:
         pavedb_version: str | None,
         collection_schema_version: int | None,
         query_homes: list[tuple[str, str]],
-        max_collections: int = 0,
+        max_collections: int = -1,
     ) -> None:
         """Write one restored catalog row and its query-home index atomically.
 
@@ -2709,7 +2715,7 @@ class CatalogDB:
                 "SELECT 1 FROM collections WHERE tenant=? AND name=?",
                 (tenant, name),
             ).fetchone()
-            if max_collections > 0 and exists is None:
+            if max_collections >= 0 and exists is None:
                 (count,) = conn.execute(
                     "SELECT COUNT(*) FROM collections WHERE tenant=?",
                     (tenant,),

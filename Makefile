@@ -979,7 +979,7 @@ LAT_FILTERS       ?= none,exact,wildcard,mixed
 BENCH_EMBEDDER_MODEL ?= sentence-transformers/all-MiniLM-L6-v2
 BENCH_EMBEDDER_RUNTIME ?= auto
 BENCH_EMBEDDER_DEVICE ?= auto
-BENCH_TENANT_MAX_CONCURRENT ?= 0
+BENCH_TENANT_MAX_CONCURRENT ?= -1
 STR_LENGTH        ?= 90
 STR_CONCUR        ?= 8
 STR_SUITE         ?= base
@@ -1013,7 +1013,7 @@ _bench-with-server:
 	  export PAVEDB_AUTH__TENANTS_FILE=null; \
 	  export PAVEDB_AUTH__API_KEYS='{"bench":"bench-rate-limit-token"}'; \
 	  export PAVEDB_TENANTS__DEFAULT_MAX_RPM=$$(($(LAT_LENGTH) + 100)); \
-	  export PAVEDB_TENANTS__DEFAULT_MAX_RPH=0; \
+	  export PAVEDB_TENANTS__DEFAULT_MAX_RPH=-1; \
 	fi; \
 	bench_url="$(_default_url)"; \
 	managed=0; \
@@ -1221,7 +1221,7 @@ _bench-with-server:
 .PHONY: bench-latency-rate-limited
 bench-latency-rate-limited: install-dev
 	@$(MAKE) -o install-dev BENCH_FORCE_EPHEMERAL=1 \
-	  BENCH_API_KEY=bench-rate-limit-token BENCH_TENANT_MAX_CONCURRENT=0 \
+	  BENCH_API_KEY=bench-rate-limit-token BENCH_TENANT_MAX_CONCURRENT=-1 \
 	  _bench_rate_limit=1 _latency_suffix=-rate-limited bench-latency
 
 .PHONY: bench-latency bench-latency-run

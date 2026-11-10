@@ -326,8 +326,8 @@ def test_rate_limit_variant_configures_a_non_admin_tenant(bench_harness, tmp_pat
     }
     assert config["PAVEDB_AUTH__GLOBAL_KEY"] != "bench-rate-limit-token"
     assert config["PAVEDB_TENANTS__DEFAULT_MAX_RPM"] == "300"
-    assert config["PAVEDB_TENANTS__DEFAULT_MAX_RPH"] == "0"
-    assert config["PAVEDB_TENANTS__DEFAULT_MAX_CONCURRENT"] == "0"
+    assert config["PAVEDB_TENANTS__DEFAULT_MAX_RPH"] == "-1"
+    assert config["PAVEDB_TENANTS__DEFAULT_MAX_CONCURRENT"] == "-1"
 
 
 @pytest.fixture(params=[0, 300, -300], ids=["steady", "forward", "backward"])

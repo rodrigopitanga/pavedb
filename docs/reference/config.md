@@ -72,7 +72,7 @@ replace dots with double underscores, so `auth.mode` becomes
 
 - Default: `2`
 - Env var: `PAVEDB_ARCHIVE__MAX_CONCURRENT`
-- Description: Collection archive dumps/restores running at once on this instance; 0
+- Description: Collection archive dumps/restores running at once on this instance; -1
   disables the bound. Archives read or rebuild a whole collection, so the default stays
   small.
 
@@ -80,21 +80,21 @@ replace dots with double underscores, so `auth.mode` becomes
 
 - Default: `1`
 - Env var: `PAVEDB_ARCHIVE__MAX_CONCURRENT_PER_TENANT`
-- Description: Collection archive operations one tenant may run at once; 0 disables the
+- Description: Collection archive operations one tenant may run at once; -1 disables the
   bound.
 
 ### `reindex.max_concurrent`
 
 - Default: `1`
 - Env var: `PAVEDB_REINDEX__MAX_CONCURRENT`
-- Description: Reindex jobs running at once on this instance; 0 disables the bound. A
+- Description: Reindex jobs running at once on this instance; -1 disables the bound. A
   reindex re-embeds a whole collection.
 
 ### `reindex.max_concurrent_per_tenant`
 
 - Default: `1`
 - Env var: `PAVEDB_REINDEX__MAX_CONCURRENT_PER_TENANT`
-- Description: Reindex jobs one tenant may run at once; 0 disables the bound.
+- Description: Reindex jobs one tenant may run at once; -1 disables the bound.
 
 ## Authentication
 
@@ -313,7 +313,7 @@ collection's vector-space identity.
 
 - Default: `500`
 - Env var: `PAVEDB_INGEST__MAX_FILE_SIZE_MB`
-- Description: Reject document uploads larger than this many megabytes; 0 disables the
+- Description: Reject document uploads larger than this many megabytes; -1 disables the
   limit.
 
 ### `ingest.max_batch_size_mb`
@@ -321,19 +321,19 @@ collection's vector-space identity.
 - Default: `null`
 - Env var: `PAVEDB_INGEST__MAX_BATCH_SIZE_MB`
 - Description: Reject a batch ingest request whose documents add up to more than this
-  many megabytes of text; null uses ingest.max_file_size_mb, 0 disables the limit.
+  many megabytes of text; null uses ingest.max_file_size_mb, -1 disables the limit.
 
 ### `ingest.max_concurrent`
 
 - Default: `7`
 - Env var: `PAVEDB_INGEST__MAX_CONCURRENT`
-- Description: Maximum number of concurrent ingest operations; 0 disables the cap.
+- Description: Maximum number of concurrent ingest operations; -1 disables the cap.
 
 ### `ingest.max_concurrent_per_tenant`
 
-- Default: `0`
+- Default: `-1`
 - Env var: `PAVEDB_INGEST__MAX_CONCURRENT_PER_TENANT`
-- Description: Maximum share of ingest.max_concurrent that one tenant may hold. 0 (the
+- Description: Maximum share of ingest.max_concurrent that one tenant may hold. -1 (the
   default) disables the share: any tenant may fill the whole ingest pool, which is what
   a single-tenant instance wants. Set it on a shared instance, where one tenant filling
   the pool starves every other. Note ingest.max_concurrent (7) is smaller than
@@ -346,13 +346,13 @@ collection's vector-space identity.
 
 - Default: `42`
 - Env var: `PAVEDB_SEARCH__MAX_CONCURRENT`
-- Description: Maximum number of concurrent search operations; 0 disables the cap.
+- Description: Maximum number of concurrent search operations; -1 disables the cap.
 
 ### `search.max_concurrent_per_tenant`
 
-- Default: `0`
+- Default: `-1`
 - Env var: `PAVEDB_SEARCH__MAX_CONCURRENT_PER_TENANT`
-- Description: Maximum share of search.max_concurrent that one tenant may hold. 0 (the
+- Description: Maximum share of search.max_concurrent that one tenant may hold. -1 (the
   default) disables the share: any tenant may fill the whole search pool, which is what
   a single-tenant instance wants. Set it on a shared instance, where one tenant filling
   the pool starves every other. Note search.max_concurrent (42) is not smaller than
@@ -451,59 +451,59 @@ collection's vector-space identity.
 
 - Default: `42`
 - Env var: `PAVEDB_TENANTS__DEFAULT_MAX_CONCURRENT`
-- Description: Default per-tenant concurrent request cap; 0 disables the cap.
+- Description: Default per-tenant concurrent request cap; -1 disables the cap.
 
 ### `tenants.default_max_rpm`
 
-- Default: `0`
+- Default: `-1`
 - Env var: `PAVEDB_TENANTS__DEFAULT_MAX_RPM`
-- Description: Default moving-window request limit per tenant and minute; 0 disables the
-  limit. Per-tenant max_rpm in tenants.yml overrides it.
+- Description: Default moving-window request limit per tenant and minute; -1 disables
+  the limit. Per-tenant max_rpm in tenants.yml overrides it.
 
 ### `tenants.default_max_rph`
 
-- Default: `0`
+- Default: `-1`
 - Env var: `PAVEDB_TENANTS__DEFAULT_MAX_RPH`
-- Description: Default moving-window request limit per tenant and hour; 0 disables the
+- Description: Default moving-window request limit per tenant and hour; -1 disables the
   limit. Per-tenant max_rph in tenants.yml overrides it.
 
 ### `tenants.default_max_collections`
 
-- Default: `0`
+- Default: `-1`
 - Env var: `PAVEDB_TENANTS__DEFAULT_MAX_COLLECTIONS`
-- Description: Default per-tenant collection-count limit enforced at creation; 0
+- Description: Default per-tenant collection-count limit enforced at creation; -1
   disables the cap. Per-tenant max_collections in tenants.yml overrides it.
 
 ### `tenants.default_max_chunks_per_collection`
 
-- Default: `0`
+- Default: `-1`
 - Env var: `PAVEDB_TENANTS__DEFAULT_MAX_CHUNKS_PER_COLLECTION`
-- Description: Default cap on indexed chunks per collection enforced at ingest; 0
+- Description: Default cap on indexed chunks per collection enforced at ingest; -1
   disables the cap. Per-tenant max_chunks_per_collection in tenants.yml overrides it.
 
 ### `tenants.default_max_chunks_per_tenant`
 
-- Default: `0`
+- Default: `-1`
 - Env var: `PAVEDB_TENANTS__DEFAULT_MAX_CHUNKS_PER_TENANT`
 - Description: Default cap on indexed chunks across all of a tenant's collections,
-  enforced at ingest; 0 disables the cap. Per-tenant max_chunks_per_tenant in
+  enforced at ingest; -1 disables the cap. Per-tenant max_chunks_per_tenant in
   tenants.yml overrides it. This is the tenant's storage ceiling:
   max_chunks_per_collection alone bounds one collection, so a tenant allowed several has
   no ceiling without this.
 
 ### `tenants.default_max_archives_per_day`
 
-- Default: `0`
+- Default: `-1`
 - Env var: `PAVEDB_TENANTS__DEFAULT_MAX_ARCHIVES_PER_DAY`
 - Description: Collection archive operations (dump or restore) a tenant may start per
-  day; 0 = unlimited. Override per tenant as tenants.<name>.max_archives_per_day.
+  day; -1 = unlimited. Override per tenant as tenants.<name>.max_archives_per_day.
   Charged on the persistent per-operation rate window.
 
 ### `tenants.default_max_reindex_per_month`
 
-- Default: `0`
+- Default: `-1`
 - Env var: `PAVEDB_TENANTS__DEFAULT_MAX_REINDEX_PER_MONTH`
-- Description: Reindex jobs a tenant may start per 30 days; 0 = unlimited. Override per
+- Description: Reindex jobs a tenant may start per 30 days; -1 = unlimited. Override per
   tenant as tenants.<name>.max_reindex_per_month. Charged on the persistent per-
   operation rate window.
 
@@ -540,7 +540,7 @@ collection's vector-space identity.
 - Default: `16`
 - Env var: `PAVEDB_SERVER__MAX_REQUEST_BODY_MB`
 - Description: Reject general request bodies above this many MB with 413 before routing
-  or authentication; 0 disables the cap. Documents use ingest.max_file_size_mb. Archive
+  or authentication; -1 disables the cap. Documents use ingest.max_file_size_mb. Archive
   restore authenticates before upload and is exempt.
 
 ### `server.timeout_keep_alive`

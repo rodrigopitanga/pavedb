@@ -84,12 +84,22 @@ def test_batch_ingest_total_limit_has_its_own_key(client, cfg):
     assert r.json()["succeeded"] == 3
 
 
-def test_ingest_no_limit_when_zero(client, cfg):
+def test_ingest_no_limit_when_minus_one(client, cfg):
     client.post("/v1/collections/acme/sizelimit3")
 
-    cfg.set("ingest.max_file_size_mb", 0)  # 0 = unlimited
+    cfg.set("ingest.max_file_size_mb", -1)  # -1 = unlimited
 
     files = {"file": ("any.txt", b"hello world", "text/plain")}
     r = client.post("/v1/collections/acme/sizelimit3/documents", files=files)
 
     assert r.status_code == 201
+
+
+def test_ingest_zero_size_limit_rejects_nonempty_file(client, cfg):
+    client.post("/v1/collections/acme/zero-size")
+    cfg.set("ingest.max_file_size_mb", 0)
+    response = client.post(
+        "/v1/collections/acme/zero-size/documents",
+        files={"file": ("a.txt", b"x", "text/plain")},
+    )
+    assert response.status_code == 413

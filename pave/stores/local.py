@@ -601,7 +601,7 @@ class LocalStore:
     ) -> tuple[int, int]:
         """(cap, chunks already held elsewhere) for the tenant chunk ceiling.
 
-        Returns (0, 0) where no cap is set, which is the default: an uncapped
+        Returns (-1, 0) where no cap is set, which is the default: an uncapped
         tenant pays for none of the counting.
 
         Call before taking the collection write lock. Ingest holds the tenant
@@ -610,9 +610,18 @@ class LocalStore:
         available before either operation can admit chunks.
         """
         cap = self._tenant_limit(tenant, "max_chunks_per_tenant")
-        if cap <= 0:
-            return 0, 0
+        if cap == -1:
+            return -1, 0
         return cap, self.tenant_chunk_count(tenant, excluding=collection)
+
+    def _reject_zero_chunk_allowance(self, tenant: str, collection: str) -> None:
+        """Refuse known zero budgets before encoding any incoming chunks."""
+        if self._tenant_limit(tenant, "max_chunks_per_tenant") == 0:
+            raise TenantChunkLimitError(f"tenant '{tenant}' has no chunk allowance")
+        if self._tenant_limit(tenant, "max_chunks_per_collection") == 0:
+            raise ChunkLimitError(
+                f"collection '{tenant}/{collection}' has no chunk allowance"
+            )
 
     @contextmanager
     def _tenant_chunk_write_lock(
@@ -626,9 +635,9 @@ class LocalStore:
         """
         if not adding_chunks or self._tenant_limit(
             tenant, "max_chunks_per_tenant"
-        ) <= 0:
+        ) == -1:
             with self._collection_write_lock(tenant, collection):
-                yield 0, 0
+                yield -1, 0
             return
         with self._state_lock.read_lock():
             with self._borrow_collection_lock(f"t_{tenant}:quota") as lock:
@@ -1320,7 +1329,7 @@ class LocalStore:
         name: str,
         cfg: CollectionConfig,
         display_name: str | None = None,
-        max_collections: int = 0,
+        max_collections: int = -1,
     ) -> None:
         self._with_catalog_retry(
             "register_collection",
@@ -1342,7 +1351,7 @@ class LocalStore:
     @staticmethod
     def _tenant_limit(tenant: str, field: str) -> int:
         """Per-tenant cap named *field*; tenants.yml override, else the
-        tenants.default_<field> global, 0 = unlimited."""
+        tenants.default_<field> global, -1 = unlimited."""
         tenants_cfg = get_cfg().get("tenants") or {}
         if isinstance(tenants_cfg, dict):
             tenant_cfg = tenants_cfg.get(tenant)
@@ -1351,7 +1360,7 @@ class LocalStore:
                 if override is not None:
                     return int(override)
         raw = get_cfg().get(f"tenants.default_{field}")
-        return int(raw) if raw is not None else 0
+        return int(raw) if raw is not None else -1
 
     def _tenant_max_collections(self, tenant: str) -> int:
         """Collection-count cap. Enforced only on explicit create, never on
@@ -1388,11 +1397,11 @@ class LocalStore:
 
         The cap comes from the one number-resolution path
         (`tenants.<name>.<field>` override, else `tenants.default_<field>`,
-        0 = unlimited → None); the charge goes through the one persistent
+        -1 = unlimited → None); the charge goes through the one persistent
         rate engine. Returns the decision, or None when unlimited.
         """
         cap = self._tenant_limit(tenant, field)
-        if cap <= 0:
+        if cap == -1:
             return None
         return self.charge_rate_limit(tenant, op, {window_seconds: cap})
 
@@ -1432,7 +1441,7 @@ class LocalStore:
                 collection,
                 cfg,
                 max_collections=(
-                    self._tenant_max_collections(tenant) if recovered is None else 0
+                    self._tenant_max_collections(tenant) if recovered is None else -1
                 ),
             )
         return cfg
@@ -2180,7 +2189,7 @@ class LocalStore:
                     requested,
                     display_name=display_name,
                     max_collections=(
-                        self._tenant_max_collections(tenant) if is_new else 0
+                        self._tenant_max_collections(tenant) if is_new else -1
                     ),
                 )
             except Exception:
@@ -4159,6 +4168,8 @@ class LocalStore:
                 doc_meta,
             )
         )
+        if rids_to_add:
+            self._reject_zero_chunk_allowance(tenant, collection)
         if byov:
             vectors = np.asarray(vectors, dtype=np.float32)
         elif not rids_to_add:
@@ -4187,7 +4198,7 @@ class LocalStore:
             # the already-indexed document version. Tenant admission and
             # collection write locks keep both counts stable through the write.
             max_chunks = self._tenant_limit(tenant, "max_chunks_per_collection")
-            if rids_to_add and (max_chunks > 0 or tenant_cap > 0):
+            if rids_to_add and (max_chunks >= 0 or tenant_cap >= 0):
                 # One read serves both caps, and the tenant ceiling
                 # answers first: `chunk_limit_reached` means another
                 # collection has room, which is false once the tenant's own
@@ -4195,14 +4206,14 @@ class LocalStore:
                 total, replacing = col_db.chunk_counts(docid)
                 projected = total - replacing + len(rids_to_add)
                 if (
-                    tenant_cap > 0
+                    tenant_cap >= 0
                     and tenant_chunks_elsewhere + projected > tenant_cap
                 ):
                     raise TenantChunkLimitError(
                         f"tenant '{tenant}' would exceed its chunk limit "
                         f"({tenant_cap}) across its collections"
                     )
-                if max_chunks > 0 and projected > max_chunks:
+                if max_chunks >= 0 and projected > max_chunks:
                     raise ChunkLimitError(
                         f"collection '{tenant}/{collection}' would exceed "
                         f"its chunk limit ({max_chunks})"
@@ -4323,6 +4334,9 @@ class LocalStore:
             all_rids.extend(rids)
             all_texts.extend(texts)
 
+        if all_rids:
+            self._reject_zero_chunk_allowance(tenant, collection)
+
         vectors = (
             self._encode_embedder(embedder, all_texts)
             if all_rids else None
@@ -4342,7 +4356,7 @@ class LocalStore:
             max_chunks = self._tenant_limit(
                 tenant, "max_chunks_per_collection"
             )
-            if all_rids and (max_chunks > 0 or tenant_cap > 0):
+            if all_rids and (max_chunks >= 0 or tenant_cap >= 0):
                 # One read and the same tenant-first order as
                 # index_records. A batch gives back only the chunks of the
                 # docids it carries, which is what `replacing` sums.
@@ -4353,14 +4367,14 @@ class LocalStore:
                 )
                 projected = total - replacing + len(all_rids)
                 if (
-                    tenant_cap > 0
+                    tenant_cap >= 0
                     and tenant_chunks_elsewhere + projected > tenant_cap
                 ):
                     raise TenantChunkLimitError(
                         f"tenant '{tenant}' would exceed its chunk limit "
                         f"({tenant_cap}) across its collections"
                     )
-                if max_chunks > 0 and projected > max_chunks:
+                if max_chunks >= 0 and projected > max_chunks:
                     raise ChunkLimitError(
                         f"collection '{tenant}/{collection}' would exceed "
                         f"its chunk limit ({max_chunks})"
@@ -5993,13 +6007,13 @@ class LocalStore:
                 tenant_cap, elsewhere = self._tenant_chunk_budget(
                     tenant, collection,
                 )
-                if tenant_cap > 0 and elsewhere + chunk_count > tenant_cap:
+                if tenant_cap >= 0 and elsewhere + chunk_count > tenant_cap:
                     raise TenantChunkLimitError(
                         f"tenant '{tenant}' would exceed its chunk limit "
                         f"({tenant_cap}) across its collections"
                     )
                 max_chunks = self._tenant_limit(tenant, "max_chunks_per_collection")
-                if max_chunks > 0 and chunk_count > max_chunks:
+                if max_chunks >= 0 and chunk_count > max_chunks:
                     raise ChunkLimitError(
                         f"collection '{tenant}/{collection}' would exceed "
                         f"its chunk limit ({max_chunks})"

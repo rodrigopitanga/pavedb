@@ -244,7 +244,7 @@ def _coerce(s: str) -> Any:
         if low in {"true", "false"}:
             return low == "true"
         try:
-            if s.isdigit():
+            if re.fullmatch(r"[+-]?\d+", s):
                 return int(s)
             return float(s)
         except Exception:
@@ -412,12 +412,12 @@ def _validate_size_limit(path: str, value: Any) -> None:
         isinstance(value, bool)
         or not isinstance(value, (int, float))
         or (isinstance(value, float) and not math.isfinite(value))
-        or value < 0
+        or (value < 0 and value != -1)
         or (value > 0 and value * 1024 * 1024 < 1)
         or value > sys.float_info.max / (1024 * 1024)
     ):
         raise ValueError(
-            f"{path} must be a finite nonnegative MB value "
+            f"{path} must be a finite MB value >= -1 "
             f"(at least one byte if positive); got {value!r}"
         )
 
@@ -436,9 +436,58 @@ def _validate_size_limit_update(path: str, value: Any) -> None:
 def _validate_config(cfg: dict[str, Any]) -> None:
     _validate_search(cfg)
     _validate_chunking(cfg)
+    quota_fields = (
+        "max_concurrent", "max_rpm", "max_rph", "max_collections",
+        "max_chunks_per_collection", "max_chunks_per_tenant",
+        "max_archives_per_day", "max_reindex_per_month",
+    )
+    tenants = cfg.get("tenants", {})
+    if isinstance(tenants, dict):
+        for name, values in tenants.items():
+            if name.startswith("default_") and name[8:] in quota_fields:
+                _validate_quota(f"tenants.{name}", values)
+            elif isinstance(values, dict):
+                for field in quota_fields:
+                    if values.get(field) is not None:
+                        _validate_quota(
+                            f"tenants.{name}.{field}", values[field]
+                        )
+    for section in ("search", "ingest", "archive", "reindex"):
+        values = cfg.get(section, {})
+        if isinstance(values, dict):
+            for field in ("max_concurrent", "max_concurrent_per_tenant"):
+                if field in values:
+                    _validate_quota(f"{section}.{field}", values[field])
     for path in _SIZE_LIMIT_KEYS:
         section, name = path.split(".")
         _validate_size_limit(path, cfg[section][name])
+
+
+def _validate_quota(path: str, value: Any) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < -1:
+        raise ValueError(f"{path} must be an integer >= -1; got {value!r}")
+
+
+def _validate_quota_update(path: str, value: Any) -> None:
+    parts = path.split(".")
+    if isinstance(value, dict) and (
+        path == "tenants"
+        or (len(parts) == 2 and parts[0] == "tenants")
+        or path in {"search", "ingest", "archive", "reindex"}
+    ):
+        for field, nested in value.items():
+            _validate_quota_update(f"{path}.{field}", nested)
+        return
+    if parts[0] == "tenants":
+        if len(parts) == 2 and parts[1].startswith("default_max_"):
+            _validate_quota(path, value)
+        elif len(parts) == 3 and parts[2].startswith("max_") and value is not None:
+            _validate_quota(path, value)
+    elif parts[0] in {"search", "ingest", "archive", "reindex"}:
+        if len(parts) == 2 and parts[1] in {
+            "max_concurrent", "max_concurrent_per_tenant"
+        }:
+            _validate_quota(path, value)
 
 
 CHUNKING_STRATEGIES = ("fixed", "none")
@@ -622,6 +671,7 @@ class Config:
     def set(self, path: str, value: Any) -> None:
         with self._lock:
             _validate_size_limit_update(self._path_prefix + path, value)
+            _validate_quota_update(self._path_prefix + path, value)
             self._set_into(self._cfg, path, value)
 
     def as_dict(self) -> dict[str, Any]:

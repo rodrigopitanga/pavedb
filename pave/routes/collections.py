@@ -330,11 +330,16 @@ def build_collections_router(error, resp, get_rid, trace) -> APIRouter:
         decision = charge(tenant, op, field, window_seconds)
         if decision is None or decision.allowed:
             return None
+        detail = (
+            f"{op} limit reached: {decision.limit} per "
+            f"{decision.window_seconds}s"
+        )
+        if decision.retry_after:
+            detail += f"; retry in {decision.retry_after}s"
         return error(
             429,
             f"{op}_rate_limited",
-            f"{op} limit reached: {decision.limit} per "
-            f"{decision.window_seconds}s; retry in {decision.retry_after}s",
+            detail,
             request=request,
             request_id=rid,
         )

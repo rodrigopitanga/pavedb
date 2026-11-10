@@ -323,7 +323,7 @@ def _tenant_window_limit_exception(
             ),
         },
         headers={
-            "Retry-After": str(retry_after),
+            **({"Retry-After": str(retry_after)} if retry_after else {}),
             "X-RateLimit-Limit": str(limit),
             "X-RateLimit-Remaining": "0",
             "X-RateLimit-Window": str(window_seconds),
@@ -420,7 +420,7 @@ async def tenant_limit_gate(
             if charge_request_rate
             else {}
         )
-        window_limited = any(limit > 0 for limit in rate_limits.values())
+        window_limited = any(limit >= 0 for limit in rate_limits.values())
         if window_limited:
             decision = await run_in_threadpool(
                 state.tenant_rate_limiter,
@@ -434,7 +434,7 @@ async def tenant_limit_gate(
                     tenant=tenant,
                     limit=int(decision.limit or 0),
                     window_seconds=int(decision.window_seconds or 0),
-                    retry_after=int(decision.retry_after or 1),
+                    retry_after=int(decision.retry_after or 0),
                     path=request.url.path,
                     request_id=getattr(request.state, "request_id", None),
                 )
@@ -456,7 +456,7 @@ def _take_tenant_slot(
 ) -> ConcurrencySlot | None:
     """Take the tenant's concurrent slot, or raise 429; None when uncapped."""
     max_c = state.tenant_limits.get(tenant, state.tenant_default_limit)
-    if max_c <= 0:
+    if max_c == -1:
         return None
 
     active = state.tenant_active

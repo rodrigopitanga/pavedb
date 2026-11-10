@@ -128,7 +128,7 @@ def test_replace_keeps_child_views_live(tmp_path):
     ],
 )
 @pytest.mark.parametrize(
-    "value", ["invalid", True, -1, float("nan"), float("inf"), 1e-9, 1e308]
+    "value", ["invalid", True, -2, -0.5, float("nan"), float("inf"), 1e-9, 1e308]
 )
 def test_invalid_size_caps_are_rejected_on_load_and_set(path, value):
     section, name = path.split(".")
@@ -151,15 +151,46 @@ def test_invalid_size_cap_env_and_reload_leave_previous_config(monkeypatch, tmp_
 
 
 @pytest.mark.parametrize(
+    "path",
+    ["tenants.default_max_rpm", "tenants.acme.max_collections",
+     "search.max_concurrent"],
+)
+@pytest.mark.parametrize("value", [True, -2, 1.5, "0"])
+def test_invalid_quota_values_are_rejected_on_load_and_set(path, value):
+    parts = path.split(".")
+    data = {parts[0]: {parts[1]: value}}
+    if len(parts) == 3:
+        data = {parts[0]: {parts[1]: {parts[2]: value}}}
+    with pytest.raises(ValueError, match=path):
+        Config(data=data)
+    cfg = Config(data={})
+    with pytest.raises(ValueError, match=path):
+        cfg.set(path, value)
+
+
+def test_invalid_quota_in_section_update_is_rejected():
+    cfg = Config(data={})
+    with pytest.raises(ValueError, match="tenants.acme.max_rpm"):
+        cfg.set("tenants", {"acme": {"max_rpm": -2}})
+    assert cfg.get("tenants.default_max_rpm") == -1
+
+
+def test_negative_one_quota_environment_override_is_integer(monkeypatch, tmp_path):
+    monkeypatch.setenv("PAVEDB_TENANTS__DEFAULT_MAX_RPM", "-1")
+    cfg = Config(path=tmp_path / "missing.yml")
+    assert cfg.get("tenants.default_max_rpm") == -1
+
+
+@pytest.mark.parametrize(
     "path,value,limit_path",
     [
-        ("ingest", {"max_file_size_mb": -1}, "ingest.max_file_size_mb"),
+        ("ingest", {"max_file_size_mb": -2}, "ingest.max_file_size_mb"),
         (
             "ingest",
-            {"max_file_size_mb": 10, "max_batch_size_mb": -1},
+            {"max_file_size_mb": 10, "max_batch_size_mb": -2},
             "ingest.max_batch_size_mb",
         ),
-        ("server", {"max_request_body_mb": -1}, "server.max_request_body_mb"),
+        ("server", {"max_request_body_mb": -2}, "server.max_request_body_mb"),
     ],
 )
 def test_invalid_size_caps_are_rejected_in_section_updates(
@@ -188,6 +219,6 @@ def test_invalid_size_caps_are_rejected_in_child_views(section, name):
     before = cfg.get(path)
 
     with pytest.raises(ValueError, match=path):
-        getattr(cfg, section).set(name, -1)
+        getattr(cfg, section).set(name, -2)
 
     assert cfg.get(path) == before

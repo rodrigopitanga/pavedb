@@ -41,8 +41,8 @@ def test_tenant_chunk_limit_enforced_over_http(client):
     ).status_code == 200
     assert _ingest(client, "seltzer", "three", "d3").status_code == 201
 
-    # Per-tenant override beats the default; 0 disables the cap.
-    get_cfg().set("tenants.kramerica.max_chunks_per_tenant", 0)
+    # Per-tenant override beats the default; -1 disables the cap.
+    get_cfg().set("tenants.kramerica.max_chunks_per_tenant", -1)
     for name in ("one", "two", "three"):
         assert _ingest(client, "kramerica", name, "d1").status_code == 201
 
@@ -70,13 +70,22 @@ def test_uncapped_tenant_is_never_counted(tmp_path, monkeypatch):
         lambda self, tenant, *, excluding=None: calls.append(tenant) or 0,
     )
 
-    # 0 = unlimited is the default, and it must cost no cross-collection read.
+    # -1 = unlimited is the default, and it must cost no cross-collection read.
     store.index_records("acme", "vault", "d1", [("d1::0", "one", {})])
     assert calls == []
 
     get_cfg().set("tenants.default_max_chunks_per_tenant", 10)
     store.index_records("acme", "vault", "d2", [("d2::0", "two", {})])
     assert calls == ["acme"]
+
+
+def test_zero_tenant_chunk_budget_refuses_ingest(tmp_path):
+    get_cfg().set("tenants.default_max_chunks_per_tenant", 0)
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    with pytest.raises(TenantChunkLimitError):
+        store.index_records("acme", "books", "d1", [("d1::0", "text", {})])
+    get_cfg().set("tenants.acme.max_chunks_per_tenant", -1)
+    store.index_records("acme", "books", "d1", [("d1::0", "text", {})])
 
 
 def test_rejected_ingest_keeps_the_existing_document(tmp_path):

@@ -190,7 +190,7 @@ Set these before you have tenants, not after:
 - `ingest.max_concurrent` — instance-wide ingest slots
 - `ingest.max_batch_size_mb` — total across one batch, not per document
 - `server.max_request_body_mb` — general request bodies, checked before routing
-  or authentication; `0` disables the cap
+  or authentication; `-1` disables the cap
 
 Chunking bounds belong here too: `chunking.min_size`/`max_size` and
 `chunking.min_overlap`/`max_overlap` limit what a collection may choose at
@@ -208,7 +208,7 @@ the archive into memory, so leave enough headroom for its compressed size.
 
 Request rate is the other ceiling, and it is off by default.
 `tenants.default_max_rpm` and `tenants.default_max_rph` give every tenant a
-moving-window budget per minute and per hour; `0` disables a window, and
+moving-window budget per minute and per hour; `-1` disables a window, and
 `max_rpm` or `max_rph` under a tenant in the sidecar overrides the default for
 that tenant alone. The counters live in the catalog, so a restart does not hand
 a tenant a fresh budget, and a refused request is not charged against it. A
@@ -333,7 +333,7 @@ they carry the same two dials with tighter defaults: `archive.max_concurrent`
 (2) / `archive.max_concurrent_per_tenant` (1) and `reindex.max_concurrent`
 (1) / `reindex.max_concurrent_per_tenant` (1) bound simultaneous work, and
 `tenants.default_max_archives_per_day` / `tenants.default_max_reindex_per_month`
-(both 0 = unlimited, per-tenant overrides as usual) charge the same
+(both -1 = unlimited, per-tenant overrides as usual) charge the same
 persistent rate windows the request budget uses — one counter engine, one
 number-resolution path, whatever the window length. A refused operation
 answers `503 <op>_capacity` (concurrency) or `429 <op>_rate_limited`
@@ -350,7 +350,7 @@ from one number. `max_chunks_per_tenant` is that number: the indexed chunks a
 tenant may hold across every collection it owns, refused at ingest with
 `429 tenant_chunk_limit_reached`. Set it per tenant as
 `tenants.<name>.max_chunks_per_tenant` in `tenants.yml`, or for every tenant
-as `tenants.default_max_chunks_per_tenant`; 0 disables it. Set both caps, or
+as `tenants.default_max_chunks_per_tenant`; -1 disables it. Set both caps, or
 the per-collection cap alone bounds nothing at the tenant level. A write that
 breaks both answers `tenant_chunk_limit_reached`, because the per-collection
 code means there is room in another collection and here there is none.

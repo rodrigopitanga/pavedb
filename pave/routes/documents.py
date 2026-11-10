@@ -62,11 +62,11 @@ def build_documents_router(cfg, error, resp, get_rid, trace) -> APIRouter:
         with state.ingest_lock:
             active_i = state.active_ingests
             active_t = per.get(tenant, 0)
-            if max_i > 0 and active_i >= max_i:
+            if max_i >= 0 and active_i >= max_i:
                 source, active, limit = (
                     "instance-scoped ingest cap", active_i, max_i
                 )
-            elif max_t > 0 and active_t >= max_t:
+            elif max_t >= 0 and active_t >= max_t:
                 source, active, limit = (
                     "tenant-scoped ingest cap", active_t, max_t
                 )

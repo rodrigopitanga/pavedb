@@ -66,13 +66,13 @@ def test_per_tenant_override_beats_default(client):
     cfg = get_cfg()
     cfg.set("tenants.default_max_collections", 1)
     cfg.set("tenants.initech.max_collections", 2)
-    cfg.set("tenants.hooli.max_collections", 0)
+    cfg.set("tenants.hooli.max_collections", -1)
 
     assert client.post("/v1/collections/initech/one").status_code == 201
     assert client.post("/v1/collections/initech/two").status_code == 201
     assert client.post("/v1/collections/initech/three").status_code == 429
 
-    # 0 override disables the cap even with a global default set.
+    # -1 override disables the cap even with a global default set.
     assert client.post("/v1/collections/hooli/one").status_code == 201
     assert client.post("/v1/collections/hooli/two").status_code == 201
 
@@ -94,3 +94,16 @@ def test_concurrent_creates_cannot_exceed_limit(tmp_path):
     assert outcomes.count("ok") == 3
     assert outcomes.count("limit") == 5
     assert len(store.list_collections("acme")) == 3
+
+
+def test_zero_denies_new_collection_and_minus_one_allows_it(tmp_path):
+    cfg = get_cfg()
+    cfg.set("tenants.default_max_collections", 0)
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    try:
+        store.create_collection("acme", "blocked")
+        raise AssertionError("zero collection quota admitted a create")
+    except CollectionLimitError:
+        pass
+    cfg.set("tenants.acme.max_collections", -1)
+    store.create_collection("acme", "allowed")

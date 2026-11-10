@@ -164,7 +164,7 @@ def test_cancelled_search_keeps_slot(client, app, monkeypatch):
 
 def test_search_unlimited_uses_default_executor(client, app, monkeypatch):
     client.post("/v1/collections/acme/unlimitedcol")
-    monkeypatch.setattr(app.state, "max_searches", 0)
+    monkeypatch.setattr(app.state, "max_searches", -1)
     monkeypatch.setattr(app.state, "search_executor", None)
 
     r = client.post(

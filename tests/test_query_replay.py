@@ -371,7 +371,7 @@ def test_admin_replay_does_not_spend_owner_moving_window_budget(
     cfg.set("auth.mode", "static")
     cfg.set("auth.global_key", "adminkey")
     cfg.set("auth.api_keys", {"other": "otherkey"})
-    monkeypatch.setitem(app.state.tenant_rate_limits, "acme", {60: 1, 3600: 0})
+    monkeypatch.setitem(app.state.tenant_rate_limits, "acme", {60: 1, 3600: -1})
     monkeypatch.setattr(app.state, "tenant_rate_clock", lambda: 120.0)
 
     c = TestClient(app, base_url="http://localhost")
