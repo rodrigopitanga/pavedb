@@ -49,19 +49,15 @@ Isso restaura a paridade na interface suportada pelo cliente local.
 
 ### Migração da configuração antes de atualizar
 
-**Zeros que significavam ilimitado em 0.9.7 e anteriores devem virar -1.**
-Converta a configuração principal e o arquivo de tenants e atualize overrides
-de ambiente ou do plano de controle antes de iniciar a 0.9.8:
-
-```sh
-python -m pave.migrate_limits config.yml --output config.new.yml
-python -m pave.migrate_limits tenants.yml --output tenants.new.yml
-```
-
-O conversor não abre o banco e cria novos arquivos com modo `0600`, sem
-sobrescrever os originais. Revise e instale os resultados com permissões de
-leitura para o serviço. Sem `--output`, ele lista apenas as cotas que mudariam.
-Consulte o [guia de migração](guides/running-it.md#quota-values-and-upgrading-from-097).
+Antes de iniciar a 0.9.8, guarde cópias seguras de `config.yml` e
+`tenants.yml`. Confira as chaves de cotas no
+[guia de migração](guides/running-it.md#quota-values-and-upgrading-from-097)
+e altere para `-1` apenas valores `0` explícitos e antigos que significavam
+ilimitado. Confira também overrides de ambiente e manifestos de implantação.
+Se a configuração de tenants é gerada, atualize a origem, inclusive no Console,
+e não apenas o `tenants.yml` emitido. Preserve zeros novos usados para negar
+acesso e zeros sem relação com cotas. Confira os valores resultantes antes de
+iniciar a 0.9.8.
 
 Timeouts, chunking e quantidade de workers mantêm seus significados. Não há
 reescrita do banco, e o uso acumulado das janelas é preservado. Não envie uma

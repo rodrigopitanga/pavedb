@@ -14,9 +14,8 @@
 - Use `0` for no quota allowance and `-1` for unlimited across tenant count,
   rate, concurrency and operation budgets, and request/ingest byte ceilings.
 - Reject invalid quota values and keep unlimited defaults at `-1`.
-- Add `python -m pave.migrate_limits` to convert old unlimited YAML zeros into
-  new private files. Migrate environment and generated configuration too.
-  See the
+- Change old unlimited `0` values to `-1` by hand before upgrading, including
+  environment and generated configuration. See the
   [migration guide](docs/guides/running-it.md#quota-values-and-upgrading-from-097).
 
 ---

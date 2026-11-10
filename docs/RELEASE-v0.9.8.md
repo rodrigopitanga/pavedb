@@ -49,20 +49,14 @@ operations. This restores parity for the supported local-client surface.
 
 ### Configuration migration before upgrading
 
-**Explicit unlimited zeros from 0.9.7 and earlier must become -1.** Convert
-both the main configuration and tenant sidecar, and update environment or
-control-plane overrides before starting 0.9.8:
-
-```sh
-python -m pave.migrate_limits config.yml --output config.new.yml
-python -m pave.migrate_limits tenants.yml --output tenants.new.yml
-```
-
-The converter opens no database, writes new files with mode `0600`, and never
-overwrites the originals. Review and install the results with ownership and
-permissions the service can read. Without `--output`, it lists quota paths
-that would change. See the
-[complete migration guide](guides/running-it.md#quota-values-and-upgrading-from-097).
+Before starting 0.9.8, keep secure copies of `config.yml` and `tenants.yml`.
+Review the quota keys in the
+[migration guide](guides/running-it.md#quota-values-and-upgrading-from-097),
+then change only explicit old `0` values that meant unlimited to `-1`. Check
+environment overrides and deployment manifests too. If tenant configuration is
+generated, update its source, including Console, rather than only the emitted
+`tenants.yml`. Keep intentional new zero-as-deny values and unrelated zeros.
+Verify the resulting values before starting 0.9.8.
 
 Timeout, chunking and worker-count semantics are unchanged. No database rewrite
 is required and accumulated rate-window usage is preserved. Do not send

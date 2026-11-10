@@ -246,36 +246,41 @@ windows count admitted starts, not completions; the reindex month is a moving
 existing privileges; verify tenant restrictions with tenant credentials.
 
 **This changes the meaning of explicit zeros in older configurations.** Before
-starting 0.9.8, convert old unlimited zeros to `-1` in both `config.yml` and
-`tenants.yml`. The packaged migration tool opens no database and leaves the
-originals intact:
+starting 0.9.8, make secure copies of the existing `config.yml` and
+`tenants.yml`, then review these quota keys against their old intended values:
 
-```sh
-# Without --output: report the quota paths that would change, without secrets.
-python -m pave.migrate_limits /path/to/config.yml
-python -m pave.migrate_limits /path/to/config.yml --output /path/to/config.new.yml
-python -m pave.migrate_limits /path/to/tenants.yml --output /path/to/tenants.new.yml
-```
+- `tenants.default_max_concurrent`, `tenants.default_max_rpm`,
+  `tenants.default_max_rph`, `tenants.default_max_collections`,
+  `tenants.default_max_chunks_per_collection`,
+  `tenants.default_max_chunks_per_tenant`,
+  `tenants.default_max_archives_per_day`, and
+  `tenants.default_max_reindex_per_month`.
+- Under each named tenant in `tenants.yml`: `max_concurrent`, `max_rpm`,
+  `max_rph`, `max_collections`, `max_chunks_per_collection`,
+  `max_chunks_per_tenant`, `max_archives_per_day`, and
+  `max_reindex_per_month`.
+- `search`, `ingest`, `archive`, and `reindex`: `max_concurrent` and
+  `max_concurrent_per_tenant` under each section.
+- `ingest.max_file_size_mb`, `ingest.max_batch_size_mb`, and
+  `server.max_request_body_mb`.
 
-Run this with the new package before starting the service. Review the new files,
-then install them in place of the originals with the ownership/read permissions
-needed by the service. Output is a new file with mode `0600`; existing files
-are never overwritten. YAML is normalized, so comments and anchors are not
-preserved. The converter changes only recognized quota zeros, leaves positive
-limits and `-1` intact, and rejects invalid legacy values. It is for old configs:
-do not run it on new zero-as-deny policies.
+Change only explicit legacy `0` values that meant unlimited to `-1`. Check
+`PAVEDB_*` environment overrides, Compose/Kubernetes manifests, and the source
+of `${VARIABLE}` references as well as the YAML files. Environment values take
+precedence over YAML. For generated tenant configuration, update its source,
+including Console, rather than only the emitted `tenants.yml`.
 
-Also update unlimited zeros in `PAVEDB_*` environment overrides, Compose/Kubernetes
-manifests, and any control plane that generates tenant configuration. Environment
-values take precedence over YAML. Quotas written as `${VARIABLE}` references need
-manual migration at their source; the tool does not resolve or expose them.
-Do not send zero-as-deny policy to a 0.9.7 server, which interprets it as unlimited.
-No stored-data or rate-bucket migration is required, and existing usage is retained.
+Keep positive limits, existing `-1` values, intentional new zero-as-deny
+values, and unrelated zeros such as `search.timeout_ms=0` untouched. Verify
+the effective quota values and file ownership/read permissions before starting
+0.9.8. Do not send zero-as-deny policy to a 0.9.7 server, which interprets it
+as unlimited. No database rewrite or rate-bucket migration is required;
+existing usage is retained.
 
 Timeouts, chunking and worker counts are separate: `search.timeout_ms=0` still
 disables the timeout; chunk sizes must be positive and overlap may be zero within
 operator bounds. Embedder worker counts retain `auto` and their existing minimum
-of one. The quota migration does not change these values.
+of one. Leave these values unchanged during the quota update.
 
 ## Metadata values stored before 0.9.8
 
