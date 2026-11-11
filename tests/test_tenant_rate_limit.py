@@ -1,6 +1,10 @@
 # (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+import asyncio
+import threading
+
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -282,17 +286,74 @@ def test_rate_charge_error_releases_concurrency_slot(app, monkeypatch):
     cfg.set("auth.global_key", None)
     cfg.set("auth.api_keys", {"acme": "acmetoken"})
     monkeypatch.setitem(app.state.tenant_limits, "acme", 1)
-    monkeypatch.setitem(app.state.tenant_rate_limits, "acme", {60: 1})
+    monkeypatch.setitem(app.state.tenant_rate_limits, "acme", {60: 4})
+
+    charge = app.state.tenant_rate_limiter
 
     def fail_charge(*args, **kwargs):
         raise RuntimeError("rate charge failed")
 
-    monkeypatch.setattr(app.state, "tenant_rate_limiter", fail_charge)
     client = TestClient(app, base_url="http://localhost")
-    with pytest.raises(RuntimeError, match="rate charge failed"):
-        client.get(
-            "/v1/collections/acme",
-            headers={"Authorization": "Bearer acmetoken"},
-        )
+    headers = {"Authorization": "Bearer acmetoken"}
+    path = "/v1/collections/acme"
+    app.state.tenant_rate_limiter = fail_charge
+    try:
+        with pytest.raises(RuntimeError, match="rate charge failed"):
+            client.get(path, headers=headers)
+    finally:
+        # Explicit restore, not monkeypatch.context(): under this suite's
+        # Starlette State (plain dict-backed __setattr__), a nested
+        # monkeypatch context occasionally failed to restore the attribute
+        # before the next assertion, leaving app.state without
+        # tenant_rate_limiter and failing the next request with an
+        # unrelated-looking AttributeError.
+        app.state.tenant_rate_limiter = charge
 
+    assert app.state.tenant_active["acme"] == 0
+
+    for remaining in (3, 2):
+        response = client.get(path, headers=headers)
+        assert response.status_code == 200
+        assert response.headers["X-RateLimit-Remaining"] == str(remaining)
+        assert app.state.tenant_active["acme"] == 0
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocked_charge(*args, **kwargs):
+        started.set()
+        release.wait(timeout=5)
+        return charge(*args, **kwargs)
+
+    async def cancel_during_charge():
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(
+            transport=transport, base_url="http://localhost"
+        ) as async_client:
+            request = asyncio.create_task(async_client.get(path, headers=headers))
+            try:
+                # A loaded CI runner can take well over a second to schedule
+                # the threadpool worker that sets ``started``; budget 10s
+                # instead of 1s so this does not flake under contention.
+                for _ in range(10_000):
+                    if started.is_set():
+                        break
+                    await asyncio.sleep(0.001)
+                assert started.is_set()
+                assert app.state.tenant_active["acme"] == 1
+                request.cancel()
+            finally:
+                release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await request
+
+    app.state.tenant_rate_limiter = blocked_charge
+    try:
+        asyncio.run(cancel_during_charge())
+    finally:
+        app.state.tenant_rate_limiter = charge
+
+    assert app.state.tenant_active["acme"] == 0
+    recovered = client.get(path, headers=headers)
+    assert recovered.status_code == 200
     assert app.state.tenant_active["acme"] == 0
