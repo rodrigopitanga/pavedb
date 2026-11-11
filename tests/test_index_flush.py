@@ -10,6 +10,7 @@ import faiss
 import numpy as np
 import pytest
 
+from pave.backends.faiss import FaissBackend
 from pave.stores.local import LocalStore
 from utils import FakeEmbedder
 
@@ -267,10 +268,26 @@ def test_dirty_index_rebuilds_from_chunks_on_reopen(tmp_path):
     assert not (index_dir / ".pavedb-index-dirty").exists()
 
 
-def test_empty_rebuild_persists_before_clearing_dirty_marker(tmp_path):
+@pytest.mark.parametrize("archive_kind", ["collection", "instance"])
+def test_empty_rebuild_persists_before_clearing_dirty_marker(
+    tmp_path, archive_kind,
+):
     tenant, collection = "acme", "empty_rebuild"
-    store = LocalStore(str(tmp_path), FakeEmbedder())
-    store.create_collection(tenant, collection)
+    store = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    store.create_collection(
+        tenant, collection,
+        display_name="Empty rebuild archive",
+        priority_key="archive_rank",
+    )
+    store.log_query(
+        query_id="empty-rebuild-query",
+        tenant=tenant,
+        collection=collection,
+        actor="admin",
+        query_text="orphan",
+        k=1,
+        result_count=0,
+    )
     index_dir = _index_dir(store, tenant, collection)
 
     # Simulate an index flush that retained a vector after its chunk was
@@ -282,9 +299,86 @@ def test_empty_rebuild_persists_before_clearing_dirty_marker(tmp_path):
     marker.touch()
     assert faiss.read_index(str(index_dir / "faiss.index")).ntotal == 1
 
-    reopened = LocalStore(str(tmp_path), FakeEmbedder())
+    reopened = LocalStore(str(tmp_path / "source"), FakeEmbedder())
     assert not reopened.search(tenant, collection, "orphan", k=1)
     assert faiss.read_index(str(index_dir / "faiss.index")).ntotal == 0
     assert json.loads((index_dir / "id_map.json").read_text())["rid_to_id"] == {}
     assert not marker.exists()
     reopened.close()
+
+    reopened_again = LocalStore(str(tmp_path / "source"), FakeEmbedder())
+    assert not reopened_again.search(tenant, collection, "orphan", k=1)
+    assert faiss.read_index(str(index_dir / "faiss.index")).ntotal == 0
+    assert json.loads((index_dir / "id_map.json").read_text())["rid_to_id"] == {}
+    assert not marker.exists()
+
+    archive_path = tmp_path / f"{archive_kind}.zip"
+    if archive_kind == "collection":
+        reopened_again.dump_collection_archive(
+            tenant, collection, archive_path,
+        )
+    else:
+        reopened_again.dump_archive(archive_path)
+    restored = LocalStore(
+        str(tmp_path / f"restored-{archive_kind}"), FakeEmbedder(),
+    )
+    if archive_kind == "collection":
+        restored.restore_collection_archive(
+            tenant, collection, archive_path.read_bytes(),
+        )
+    else:
+        restored.restore_archive(archive_path.read_bytes())
+
+    # The archive has to carry the published empty pair; checking only
+    # after a search would pass on a stale pair the reopen just rebuilt.
+    restored_index = _index_dir(restored, tenant, collection)
+    assert faiss.read_index(str(restored_index / "faiss.index")).ntotal == 0
+    assert json.loads((restored_index / "id_map.json").read_text())["rid_to_id"] == {}
+    assert not (restored_index / ".pavedb-index-dirty").exists()
+
+    assert not restored.search(tenant, collection, "orphan", k=1)
+    assert faiss.read_index(str(restored_index / "faiss.index")).ntotal == 0
+    assert json.loads((restored_index / "id_map.json").read_text())["rid_to_id"] == {}
+    settings = restored.get_collection_detail(tenant, collection)
+    assert settings["display_name"] == "Empty rebuild archive"
+    assert settings["priority_key"] == "archive_rank"
+    entry = restored.get_query_log_entry(
+        tenant, collection, "empty-rebuild-query",
+    )
+    assert entry is not None
+    assert entry["query_text"] == "orphan"
+    restored.close()
+    reopened_again.close()
+
+
+def test_empty_rebuild_flush_failure_keeps_stale_pair(tmp_path, monkeypatch):
+    tenant, collection = "acme", "empty_rebuild_failure"
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    store.create_collection(tenant, collection)
+    index_dir = _index_dir(store, tenant, collection)
+    backend = store._emb[(tenant, collection)]
+    backend.add(["orphan::0"], np.ones((1, 64), dtype=np.float32))
+    store.close()
+
+    marker = index_dir / ".pavedb-index-dirty"
+    marker.touch()
+    index_before = (index_dir / "faiss.index").read_bytes()
+    map_before = (index_dir / "id_map.json").read_bytes()
+    # Without a stale pair on disk the byte comparisons below would hold
+    # even if a failed flush had erased the index.
+    assert faiss.read_index(str(index_dir / "faiss.index")).ntotal == 1
+    assert "orphan::0" in json.loads(map_before)["rid_to_id"]
+
+    def fail_flush(self, *, force=False):
+        assert force
+        assert self.count() == 0
+        raise OSError("injected empty rebuild flush failure")
+
+    monkeypatch.setattr(FaissBackend, "flush", fail_flush)
+    reopened = LocalStore(str(tmp_path), FakeEmbedder())
+    with pytest.raises(OSError, match="injected empty rebuild flush failure"):
+        reopened.search(tenant, collection, "orphan", k=1)
+
+    assert marker.is_file()
+    assert (index_dir / "faiss.index").read_bytes() == index_before
+    assert (index_dir / "id_map.json").read_bytes() == map_before
