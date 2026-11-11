@@ -430,8 +430,9 @@ production — and your code barely changes along the way:
 ## 🗺️ Roadmap
 
 Short/mid-term tasks and long-term plans are all tracked in
-[`ROADMAP.md`](ROADMAP.md). Pick one, open an issue titled `claim: <task ID>`, and
-ship a patch. If you find a bug, file it under the *Issues* tab.
+[`ROADMAP.md`](ROADMAP.md). Pick one, coordinate on the GitLab issue CI already
+syncs for that task ID, and ship a patch. If you find a bug, file it under the
+*Issues* tab.
 
 ## 📜 License
 

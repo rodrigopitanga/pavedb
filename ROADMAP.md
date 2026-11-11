@@ -3,8 +3,9 @@
 
 # Roadmap
 
-tl;dr: This roadmap tracks production readiness and integration milestones. To claim a
-task, open an issue titled `claim: <task ID>` and link your branch or PR.
+tl;dr: This roadmap tracks production readiness and integration milestones.
+CI syncs roadmap tasks to GitLab issues under their stable task IDs. Coordinate
+work on the existing issue and link the corresponding merge request there.
 Detailed design plans live under `docs/design/` and are indexed after the task tables.
 
 > PaveDB is an inspectable retrieval database: text searches keep their source

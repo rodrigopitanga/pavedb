@@ -169,10 +169,11 @@ policy applies to PaveDB and the standalone PaveDB SDK repositories.
   closes it after merge, including scheduled reconciliation. No closing trailer
   is required. For roadmap `P` keys, the task title must also be fully struck
   through in `ROADMAP.md`; partial work stays open.
-- To claim a task, open an issue titled `claim: <task ID>` and describe the
-approach.
+- Do not open a separate claim issue: CI syncs every roadmap row to a GitLab
+  issue titled `<task ID>: <task>`. Describe the approach on that issue and link
+  the merge request there.
 - Good first issues live under the `bite-sized` label. Submit a draft PR
-within a few days of claiming.
+  within a few days of claiming.
 
 ## Feature plans
 
