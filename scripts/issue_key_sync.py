@@ -239,6 +239,28 @@ def mr_texts(gl: GitLab) -> dict[str, str]:
     return commits
 
 
+def missing_reporters(
+    commits: dict[str, str], issues: dict[str, dict[str, object]]
+) -> list[str]:
+    """Commits closing an issue labelled ``reported-by::<handle>`` without a
+    ``Reported-by:`` trailer naming ``@<handle>``; the changelog credits it."""
+    errors: list[str] = []
+    for sha, text in commits.items():
+        trailers = re.findall(r"(?m)^Reported-by: (.+)$", text)
+        for key in sorted(subject_keys(text)):
+            labels = (issues.get(key) or {}).get("labels") or []
+            for label in labels:
+                if not str(label).startswith("reported-by::"):
+                    continue
+                handle = "@" + str(label).split("::", 1)[1]
+                if not any(handle in t for t in trailers):
+                    errors.append(
+                        f"{sha[:12]} closes {key}, reported by {handle}: add "
+                        f"'Reported-by: <Name> ({handle})' trailer"
+                    )
+    return errors
+
+
 def title_key(title: str) -> str:
     match = re.match(rf"^((?:{_KEY_BODY})):", title)
     return match.group(1) if match else ""
@@ -822,6 +844,8 @@ def sync(*, reconcile_requested: bool = False) -> int:
         return reconcile(gl, issues, default_branch)
 
     commit_refs = mr_texts(gl) if mr_iid else local_commit_texts()
+    if mr_iid and (errors := missing_reporters(commit_refs, issues)):
+        raise RuntimeError("Missing Reported-by trailers:\n" + "\n".join(errors))
     if on_default:
         sync_roadmap_issues(gl, issues)
     completed = completed_roadmap_keys() if on_default else set()

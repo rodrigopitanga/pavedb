@@ -789,3 +789,18 @@ def test_retry_after_delay_reads_a_naive_date_as_utc():
     when = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=30)
     stamp = when.strftime("%a, %d %b %Y %H:%M:%S")
     assert 25 < retry_after_delay(_headers(stamp), 8) <= 30
+
+
+def test_missing_reporters_requires_trailer_for_reported_issues():
+    issues = {
+        "B1": {"labels": ["BUG", "reported-by::ann"]},
+        "B2": {"labels": ["BUG"]},
+    }
+    commits = {
+        "a" * 40: "[store][fix] x (B1)\n\nReported-by: Ann Lee (@ann)",
+        "b" * 40: "[api][fix] y (B1)\n\nBody naming B2.",
+        "c" * 40: "[api][fix] z (B2)",
+    }
+    errors = issue_key_sync.missing_reporters(commits, issues)
+    assert errors == [f"{'b' * 12} closes B1, reported by @ann: "
+                      "add 'Reported-by: <Name> (@ann)' trailer"]

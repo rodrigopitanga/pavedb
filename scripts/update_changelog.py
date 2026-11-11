@@ -92,6 +92,14 @@ def _anchor_tag_from_history() -> str:
             return ""
 
 
+def _reporters(rev_range: str | None) -> list[str]:
+    """Reported-by trailer values in the range, first appearance first."""
+    args = ["git", "log", "--reverse",
+            "--format=%(trailers:key=Reported-by,valueonly,separator=%x0a)"]
+    out = sh(*args, rev_range) if rev_range else sh(*args)
+    return list(dict.fromkeys(l.strip() for l in out.splitlines() if l.strip()))
+
+
 def main() -> int:
     if len(sys.argv) < 2:
         print("usage: update_changelog.py <VERSION>", file=sys.stderr)
@@ -191,6 +199,12 @@ def main() -> int:
         body_lines.append(f"\n### {title}")
         for msg in msgs:
             body_lines.append(f"- {msg}")
+    reporters = _reporters(f"{last_tag}..HEAD" if last_tag else None)
+    if reporters:
+        body_lines.append(
+            "\nThanks to the developers who reported or contributed issue "
+            "reports: " + ", ".join(reporters) + "."
+        )
     body = "\n".join(body_lines).lstrip("\n") + "\n"
     sep = "\n---\n"
 

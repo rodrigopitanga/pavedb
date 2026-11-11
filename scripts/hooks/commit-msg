@@ -1,0 +1,49 @@
+#!/usr/bin/env python3
+# (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""Append Reported-by trailers for issues closed by the subject's (KEY).
+
+The reporter comes from the issue's ``reported-by::<handle>`` label on
+GitLab. Best effort: without glab or network access the message is kept.
+"""
+import json
+import re
+import subprocess
+import sys
+import urllib.parse
+
+
+def api(path):
+    out = subprocess.run(["glab", "api", path], capture_output=True,
+                         text=True, timeout=15, check=True).stdout
+    return json.loads(out)
+
+
+path = sys.argv[1]
+msg = open(path, encoding="utf-8").read()
+m = re.search(r"\(([^()]+)\)\s*$", msg.split("\n", 1)[0])
+trailers = []
+for key in [k.strip() for k in m.group(1).split(",")] if m else []:
+    try:
+        issues = api("projects/:fullpath/issues?scope=all&in=title&search="
+                     + urllib.parse.quote(key))
+    except (OSError, subprocess.SubprocessError, ValueError):
+        continue
+    for issue in issues:
+        if issue["title"].split(":", 1)[0] != key:
+            continue
+        for label in issue.get("labels", []):
+            if not label.startswith("reported-by::"):
+                continue
+            handle = label.split("::", 1)[1]
+            if f"(@{handle})" in msg or any(f"(@{handle})" in t for t in trailers):
+                continue
+            try:
+                users = api("users?username=" + urllib.parse.quote(handle))
+                name = users[0]["name"] if users else handle
+            except (OSError, subprocess.SubprocessError, ValueError):
+                name = handle
+            trailers.append(f"Reported-by: {name} (@{handle})")
+if trailers:
+    args = [a for t in trailers for a in ("--trailer", t)]
+    subprocess.run(["git", "interpret-trailers", "--in-place", *args, path], check=True)

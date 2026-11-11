@@ -611,6 +611,11 @@ release:
 	done
 
 # -------- changelog --------
+# commit-msg records Reported-by from the closed issue; changelog thanks them.
+.PHONY: hooks
+hooks:
+	@git config core.hooksPath scripts/hooks && echo "git hooks: scripts/hooks"
+
 .PHONY: changelog
 changelog:
 	@if [ -z "$(VERSION)" ]; then echo "VERSION not detected ($(PKG_INTERNAL)/version.py). Set VERSION=x.y.z if needed."; exit 1; fi
