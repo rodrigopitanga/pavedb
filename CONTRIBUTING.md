@@ -99,8 +99,9 @@ Use the `[tag]` prefix format for commits that affect functionality:
 [tag] Short imperative description (≤72 chars)
 ```
 
-**Style:** One-liners are preferred. For complex commits, skip a line and add a
-breakdown:
+**Style:** One-liners are preferred. A body, when needed, is neutral and
+objective, at most 3-4 lines, and never refers to the author, the maintainer,
+or tooling. For complex commits, skip a line and add a breakdown:
 
 ```
 [core] Add collection move across all layers
@@ -123,14 +124,14 @@ breakdown:
 | `[conf]` | Configuration | Configuration management |
 | `[fix]` | Bug Fixes | Bug fixes |
 | `[perf]` | Performance | Optimizations, benchmarks |
-| `[bench]` | Benchmarks | Benchmark scripts, results |
 | `[build]` | Build | Build system, dependencies (make, pip) |
 | `[pkg]` | Packaging | PyPI/Docker packaging |
-| `[doc]` | Documentation | README, docstrings, guides |
+| `[doc]` | Documentation | User-facing guides and references |
 | `[test]` | Testing | Test suite changes |
+| `[bench]` | Benchmarks | Benchmark scripts, results |
+| `[infra]` | Infrastructure | CI/CD, deployment scripts |
 | `[log]` | Logging | Log streams, observability, metrics |
 | `[ui]` | UI | Web UI changes |
-| `[infra]` | Infrastructure | CI/CD, deployment scripts |
 
 **Two tags max**, most relevant first: `[api][cli] Add delete document endpoint`
 
@@ -138,22 +139,44 @@ Use `[sdk]` for commits in the standalone Python SDK repository. The same tag al
 applies inside PaveDB when a change exists primarily to support the SDK/client
 interface boundary.
 
-**Feature plan reference:** when a commit implements work tracked in `docs/design/`,
-include the plan ID in parentheses at the end of the first line:
+**Issue keys:** `R<wave>-<n>` review findings (`R1-103`), `P<n>-<id>` roadmap
+and plan items (`P2-28`), and `B<n>`, `F<n>`, `G<n>` bugs, features and goals
+(`B76`). A trailing `(KEY)` on the first line closes that issue once the
+commit lands:
 
 ```
 [log] dev stream cleanup (P2-28)
 ```
 
-**Chores** use `chore:` for maintenance that doesn't affect functionality:
+To reference an issue without closing it, name the key in the body only
+(for example `Follows B79.`). Do not use `Closes:` or `Refs:` trailers, and
+never put `(refs KEY)` on the first line.
+
+**Review follow-ups:** a fix from review of a commit is squashed into that
+commit, not landed on its own. Keep it separate only when folding would
+conflict with unrelated work in between.
+
+**Chores** use `chore(<scope>):`, with a tag above as scope, for anything that
+does not belong in the changelog: tests, CI, benchmarks, internal docs and
+plans, roadmap edits. A `doc`, `test`, `infra`, or `bench` change that refers
+to an issue key is never a chore; it keeps its `[tag]`:
 
 ```
-chore: update copyright headers
-chore(deps): bump sentence-transformers to 5.x
+chore(test): allow five seconds for cancelled search worker startup
+chore(infra): stabilize CI on unpinned runners
+chore(docs): update roadmap
 ```
 
-**Changelog:** Only commits starting with `[tag]` or `chore:` are included. Release
-commits (`chore(release): vX.Y.Z`) are auto-skipped.
+**Changelog:** only `[tag]` commits are included, filed under their first tag,
+so lead with the area: `[store][fix]`, not `[fix][store]`. Use a bare `[fix]`
+only for a fix spanning several areas. `chore` commits are skipped.
+
+**Reporters:** an issue reported by someone outside the project carries a
+`reported-by::<handle>` label. A commit that closes it carries a
+`Reported-by: Name (@handle)` trailer, added by the committer; merge request
+pipelines reject a closing commit without it, and `make changelog` thanks
+every reporter. Optionally, `make hooks` installs a `commit-msg` hook that
+adds the trailer from GitLab when `glab` is set up.
 
 **Commit identity:** configure Git with the project maintainer identity before
 committing. Do not rely on fallback machine hostnames or unset Git identity. This
