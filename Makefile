@@ -617,7 +617,7 @@ hooks:
 	@git config core.hooksPath scripts/hooks && echo "git hooks: scripts/hooks"
 
 .PHONY: changelog
-changelog:
+changelog: venv
 	@if [ -z "$(VERSION)" ]; then echo "VERSION not detected ($(PKG_INTERNAL)/version.py). Set VERSION=x.y.z if needed."; exit 1; fi
 	@TMPFILE=$$(mktemp); \
 	cp CHANGELOG.md $$TMPFILE; \
@@ -626,7 +626,7 @@ changelog:
 	rm -f $$TMPFILE
 
 .PHONY: changelog-write
-changelog-write:
+changelog-write: venv
 	@if [ -z "$(VERSION)" ]; then echo "VERSION not detected ($(PKG_INTERNAL)/version.py). Set VERSION=x.y.z if needed."; exit 1; fi
 	@$(PYTHON_BIN) scripts/update_changelog.py $(VERSION)
 	@awk 'BEGIN{p=0} /^## /{p=1} p{print} /^---/{exit}' CHANGELOG.md
@@ -1373,8 +1373,8 @@ benchmark: install-dev
 
 .PHONY: pypi-push pypitest-push
 
-pypi-push:
+pypi-push: venv
 	$(PYTHON_BIN) -m twine upload --skip-existing $(DIST_DIR)/*
 
-pypitest-push:
+pypitest-push: venv
 	$(PYTHON_BIN) -m twine upload --skip-existing --repository testpypi $(DIST_DIR)/*
