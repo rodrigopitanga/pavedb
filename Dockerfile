@@ -5,14 +5,12 @@
 ARG BASE_IMAGE=python:3.11-slim
 FROM ${BASE_IMAGE}
 
-ARG BUILD_ID=unknown
 # Native sbert/torch embedder wheel: 1 = CPU-only (no NVIDIA CUDA), 0 = default
 # (CUDA on Linux). Selects deps only; runtime device is embedder.sbert.device.
 ARG TORCH_WHEEL_CPU=0
 
 # make build args available at runtime and in RUN shells
-ENV BUILD_ID=${BUILD_ID} \
-    PIP_DEFAULT_TIMEOUT=300 \
+ENV PIP_DEFAULT_TIMEOUT=300 \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
@@ -57,7 +55,10 @@ RUN pip install --no-cache-dir --no-deps --progress-bar=off /app
 # (torch/scipy/numpy/faiss). They are the redistributed license payload — do
 # NOT add a slimming step that deletes *.dist-info (see THIRD_PARTY_LICENSES.md).
 
-# Write build id file and label the image. Use ${BUILD_ID} expansion.
+# Write build id file and label the image. BUILD_ID changes every build, so
+# it is declared here: earlier, it would invalidate every cached layer.
+ARG BUILD_ID=unknown
+ENV BUILD_ID=${BUILD_ID}
 RUN printf "%s\n" "${BUILD_ID}" > /app/BUILD_ID
 LABEL org.opencontainers.image.revision=${BUILD_ID} \
       org.opencontainers.image.title="PaveDB" \

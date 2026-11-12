@@ -346,6 +346,15 @@ bump:
 # -------- build / artifacts --------
 .PHONY: build
 build: install
+	@if [ "$(FORCE)" != "1" ] && [ -z "$(_PYPI_DIRTY_SUFFIX)" ] && \
+	  ls $(DIST_DIR)/*-$(BUILD_VERSION)*.whl $(DIST_DIR)/*-$(BUILD_VERSION).tar.gz >/dev/null 2>&1; then \
+	  echo "dist/ already holds $(BUILD_VERSION) from a clean tree; skipping (FORCE=1 rebuilds)."; \
+	  exit 0; \
+	fi; \
+	$(MAKE) --no-print-directory -o install _build-dist
+
+.PHONY: _build-dist
+_build-dist: install
 	rm -rf $(DIST_DIR) $(BUILD_DIR)
 	$(PYTHON_BIN) -m pip install -q build twine
 	@echo "Building Python distributions for $(BUILD_VERSION)"
