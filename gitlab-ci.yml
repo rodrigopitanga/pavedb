@@ -304,6 +304,13 @@ bench:
   # and would also release the gate from the stage it is sequenced behind, so
   # a red suite would stop blocking it.
   dependencies: []
+  # Save the pip and model caches even when the job fails or is cancelled;
+  # a red or timed-out run otherwise leaves the next one to download again.
+  cache:
+    paths:
+      - .cache/pip
+      - .cache/huggingface
+    when: always
   before_script:
     - apt-get update -qq
     - apt-get install -y -qq curl git make
