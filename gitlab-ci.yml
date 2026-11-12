@@ -339,8 +339,10 @@ bench:
     paths:
       - benchmarks/results/
     expire_in: 4 weeks
+  # Best-effort on merge requests; mandatory once merged and on tags.
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      allow_failure: true
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
     - if: '$CI_COMMIT_TAG'
   allow_failure: false
@@ -424,8 +426,9 @@ publish-testpypi:
 # Docker: release candidates (CPU only)
 publish-docker-rc:
   stage: release
+  # Any amd64 Docker runner; the published images are amd64.
   tags:
-    - jaeger
+    - docker
   image: docker:24.0.9
   services:
     - docker:24.0.9-dind
@@ -450,8 +453,9 @@ publish-docker-rc:
 # publish-docker-cuda.
 publish-docker:
   stage: release
+  # Any amd64 Docker runner; the published images are amd64.
   tags:
-    - jaeger
+    - docker
   image: docker:24.0.9
   services:
     - docker:24.0.9-dind
@@ -475,8 +479,9 @@ publish-docker:
 publish-docker-cuda:
   stage: release
   allow_failure: true
+  # Any amd64 Docker runner; the published images are amd64.
   tags:
-    - jaeger
+    - docker
   image: docker:24.0.9
   services:
     - docker:24.0.9-dind
