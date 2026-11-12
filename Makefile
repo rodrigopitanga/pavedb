@@ -244,7 +244,7 @@ install: venv
 
 .PHONY: install-dev
 install-dev: install
-	@$(PIP_BIN) install -q ".[test]"
+	@$(PIP_BIN) install -q ".[test]" build twine wheel
 	@echo "✅ Dev/test deps installed."
 
 # -------- test / serve / cli --------
@@ -761,7 +761,7 @@ _build-check-run: venv
 	exit 1
 
 .PHONY: build-check
-build-check: venv
+build-check: install-dev
 	@$(MAKE) -o venv _build-check-artifacts
 	@$(MAKE) -o venv _build-check-run
 
