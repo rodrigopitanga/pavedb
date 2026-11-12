@@ -1,6 +1,12 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
+## 0.9.8.1 — 2026-11-12
+
+### Build
+- Streamline release pipeline, benchmarks and issue sync (B96, B97)
+
+---
 ## 0.9.8 — 2026-11-12
 
 ### Documentation

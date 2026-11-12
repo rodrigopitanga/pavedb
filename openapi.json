@@ -4053,7 +4053,7 @@
   "info": {
     "description": "Inspectable Retrieval Database",
     "title": "PaveDB",
-    "version": "0.9.8"
+    "version": "0.9.8.1"
   },
   "openapi": "3.1.0",
   "paths": {
