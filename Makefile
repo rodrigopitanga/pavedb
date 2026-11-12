@@ -448,8 +448,8 @@ release:
 	POST_TAG=0; \
 	revert_changes() { \
 	  echo "Reverting version bumps and changelog..."; \
-	  git restore --staged CHANGELOG.md $(PKG_INTERNAL)/version.py 2>/dev/null || true; \
-	  git checkout -- CHANGELOG.md $(PKG_INTERNAL)/version.py 2>/dev/null || true; \
+	  git restore --staged CHANGELOG.md $(PKG_INTERNAL)/version.py docs/reference/cli.md docs/reference/pavecli.1 openapi.json 2>/dev/null || true; \
+	  git checkout -- CHANGELOG.md $(PKG_INTERNAL)/version.py docs/reference/cli.md docs/reference/pavecli.1 openapi.json 2>/dev/null || true; \
 	}; \
 	trap 'status=$$?; if [ "$$status" -ne 0 ] && [ "$$POST_TAG" = "1" ] && [ "$$TAG_TOUCHED" = "1" ]; then echo "Release failed after tagging; deleting tag v$(VERSION) (keeping bumped commit)."; git tag -d "v$(VERSION)" >/dev/null 2>&1 || true; fi; exit $$status' ERR; \
 	case "$(PYPI_BUILD)" in 0|1) ;; *) echo "Invalid PYPI_BUILD=$(PYPI_BUILD); expected 0 or 1."; exit 1 ;; esac; \
@@ -468,6 +468,7 @@ release:
 	echo "Bumping to $(VERSION) via 'make bump'..."; \
 	$(MAKE) bump VERSION=$(VERSION) || { echo "Version bump failed."; revert_changes; exit 1; }; \
 	$(MAKE) changelog-write VERSION=$(VERSION) || { echo "Changelog generation failed."; revert_changes; exit 1; }; \
+	$(MAKE) docs-refresh || { echo "Reference doc refresh failed."; revert_changes; exit 1; }; \
 	echo "Checking generated reference docs..."; \
 	$(MAKE) docs-ref-check || { echo "Reference docs are stale."; revert_changes; exit 1; }; \
 	echo "Running tests..."; \
@@ -508,7 +509,7 @@ release:
 	else \
 	  echo "Delegating Docker build to CI (DOCKER_BUILD=0)."; \
 	fi; \
-	git add CHANGELOG.md $(PKG_INTERNAL)/version.py 2>/dev/null || true; \
+	git add CHANGELOG.md $(PKG_INTERNAL)/version.py docs/reference/cli.md docs/reference/pavecli.1 openapi.json 2>/dev/null || true; \
 	if git diff --cached --quiet; then \
 	  echo "Nothing to commit — release commit already exists, skipping."; \
 	else \
