@@ -1,22 +1,111 @@
 <!-- (C) 2025 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-## 0.9.8 — Unreleased
+## 0.9.8 — 2026-11-12
+
+### Documentation
+- Evaluate the remote CLI for multisite management (P2-32)
+- Correct the P2-32 evaluation's envelope and drift claims (P2-32)
+- Drop the stale manifest wording from tenant profiles
+- Drop the tracked stub files and fix the synopsis
+- Add the list-queries gap to the F6 drift finding (P2-32)
+- Audit pavecli against POSIX and Unix conventions (R2-93)
+- [test] Correct the health guide for anonymous probes
+- Note the pre-0.9.8 metadata rewrite when upgrading
+- State both readiness checks in the health guides
+- Correct the ops-log instrumentation coverage
+- Align SQLite tenant ownership plan (R5-96)
+- Document manual quota migration (R2-109)
+
+### Store
+- [fix] Report the tenant ceiling over both chunk caps
+- [fix] Preserve metadata values through ingest and filters (B40, B75)
+- [fix] Preserve mixed-type filter matches (B74)
+- [fix] Recover missing collection catalog rows from sidecars (B82)
+- [fix] Preserve restored data when backup cleanup fails (R1-99)
+- Serialize rate charges with catalog replacement (R1-100)
+- [fix] Enforce collection archive restore policy (R1-101)
+- [fix] Restrict new local storage permissions (R1-103)
+- Preserve documents when replacement re-encoding fails (R1-105)
+- [fix] Persist empty index rebuilds before clearing marker (R1-106)
+- [fix] Make tenant chunk admission atomic (B93)
+
+### API
+- [fix] Cache admin key and preserve tenant auth on file errors (B62)
+- [fix] Validate dev HTTP Host and Origin (B68)
+- [fix] Reload admin key after in-place rotation
+- [fix] Reject non-finite and float32-overflowing vectors (B76)
+- [fix] Hide version and backend details from public health probes (B79)
+- List durable reindex jobs (R4-89)
+- [fix] Accept embedder selector for reindex (R6-90)
+- Release tenant slots when rate charging fails (R1-107)
+- [fix] Release operation slots after rate charge errors (R1-108)
+
+### Infrastructure
+- Ignore sandbox stub files (B92)
+- Run the merge path on the fast test suite
+- Serialize the bench gate on its pinned runner
+- Run the suite tiers on four workers
+- Drop the bench gate's unused artifact download
+- Respect roadmap completion when closing issue keys (R6-91)
+- Preserve curated roadmap issue details (R3-97)
+- Credit issue reporters through Reported-by trailers
+- Publish a best-effort CUDA image for final releases
+
+### CLI
+- [fix] Accept -V as a short --version alias (B92)
+- Support -V version flag (B92)
+- [fix] Correct man page option metavars and line breaks (R2-92)
+- [fix] Validate CLI and local client tenant names (B38)
+- [fix] Restrict pavecli init files to mode 0600 (B66)
+- Add foreground reindex with interrupt pause (R5-88)
+- Apply POSIX and Unix CLI audit findings (R2-104)
+
+### Build
+- Depend on venv in changelog and pypi-push targets
+- Refresh version-stamped reference docs during release
+- Install build, twine, and wheel with the dev dependencies
+- Skip unchanged rebuilds of dists and Docker layers
+
+### Config
+- Parse dev flag strings safely (B61)
+- Parse JSON API key maps from environment (B64)
+- [fix] Reject invalid size-limit config (B95)
+- [fix] Enforce zero quota and minus-one unlimited semantics (R1-110)
+
+### Testing
+- Reject unsupported CI rule syntax
+- Guard the pinned pavecli synopsis against drift (B92)
+- Cover empty rebuild recovery acceptance (R4-111)
+- Cover tenant slot recovery and cancellation (R4-112)
+
+### Core
+- [api] Bound what a tenant stores across its collections (P2-21)
+- [fix] Reject text batches on identity collections (B78)
+- [fix] Retire failed SBERT worker pipes before reuse (R1-98)
+
+### Log
+- Include query ownership in admin ops events (B73)
+- Restrict access log files and omit query strings (B81)
+- [fix] Redact reindex job errors (R1-102)
+
+### Performance
+- Guard filtered search by selectivity (R2-84)
+- Bound bench server startup, shutdown, and stress phases
+- Measure tenant rate-limit charges in p99 gate (R5-85)
+
+### SDK
+- [fix] Implement the 0.9.7 collection hooks in the local provider (B91)
+- Sync reindex support and completed-feature documentation
+
+### UI
+- Replace the PaveDB icon and favicon with the new mark
+- Escape configured instance strings in HTML (B80)
 
 ### Bug Fixes
-- [sdk] Implement the 0.9.7 collection hooks in the local provider (B91).
-- Store and compare metadata values as sent (B40, B74, B75). Documents
-  ingested before 0.9.8 keep the rewritten text, so filtering them by their
-  real values needs a re-ingest. See the
-  [upgrade note](docs/guides/running-it.md#metadata-values-stored-before-098).
+- Yield to the locked load on a racing collection recovery
 
-### Configuration
-- Use `0` for no quota allowance and `-1` for unlimited across tenant count,
-  rate, concurrency and operation budgets, and request/ingest byte ceilings.
-- Reject invalid quota values and keep unlimited defaults at `-1`.
-- Change old unlimited `0` values to `-1` by hand before upgrading, including
-  environment and generated configuration. See the
-  [migration guide](docs/guides/running-it.md#quota-values-and-upgrading-from-097).
+Thanks to the developers who reported or contributed issue reports: Daniel Diniz (@devdanzin).
 
 ---
 

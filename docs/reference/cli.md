@@ -35,7 +35,7 @@ They refuse to run while another PaveDB process owns it.
 
 ## Legal Notice
 
-PaveDB 0.9.7 (pavecli)
+PaveDB 0.9.8 (pavecli)
 Copyright (C) 2025, 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com>
 There is NO WARRANTY, to the extent permitted by law.
 
