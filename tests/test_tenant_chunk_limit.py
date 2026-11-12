@@ -3,6 +3,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from pathlib import Path
 import sqlite3
 from threading import Event
 
@@ -384,3 +385,11 @@ def test_concurrent_collection_delete_still_admits_an_ingest(
         ingesting.result(timeout=30)
 
     assert store.tenant_chunk_count("acme") == 2
+
+
+def test_prebuild_skips_a_collection_still_being_created(tmp_path):
+    """The unlocked prebuild can see a new collection's directory before its
+    config is written; it must leave recovery to the locked load."""
+    store = LocalStore(str(tmp_path), FakeEmbedder())
+    Path(store._base_path("acme", "vault")).mkdir(parents=True)
+    assert store._prebuild_collection_embedder("acme", "vault") is None
