@@ -476,8 +476,8 @@ four-component `vX.Y.Z.W` tag is a package/image correction release.
 
 | Tag pattern | PyPI | TestPyPI | GitLab Package Registry | Docker |
 |-------------|------|----------|-------------------------|--------|
-| `vX.Y.Z` | ✓ | — | ✓ | CPU only |
-| `vX.Y.Z.W` | ✓ | — | ✓ | CPU only |
+| `vX.Y.Z` | ✓ | — | ✓ | CPU, plus CUDA best-effort |
+| `vX.Y.Z.W` | ✓ | — | ✓ | CPU, plus CUDA best-effort |
 | `vX.Y.ZrcN` (N ≤ 999) | — | ✓ | ✓ | CPU only |
 | `vX.Y.Z<other>` | — | — | ✓ | — |
 
