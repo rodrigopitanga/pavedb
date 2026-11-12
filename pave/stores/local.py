@@ -1839,7 +1839,14 @@ class LocalStore:
         except Exception:
             return None  # the locked load reports catalog trouble itself
         if stored is None:
-            stored = self._recover_collection_config(tenant, collection)
+            try:
+                stored = self._recover_collection_config(tenant, collection)
+            except CollectionConfigRecoveryError:
+                # A concurrent first ingest into a brand-new collection can
+                # have created the directory but not yet written
+                # collection.json; this best-effort path yields to the
+                # locked _load_or_init, which recovers or reports for real.
+                return None
             if stored is None:
                 return None
         return self._prebuild_embedder(self._effective_collection_config(stored))
