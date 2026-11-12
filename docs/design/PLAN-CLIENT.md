@@ -1,4 +1,4 @@
-<!-- (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
+export-queriesexport-queries<!-- (C) 2026 Rodrigo Rodrigues da Silva <rodrigo@flowlexi.com> -->
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
 # Client / Library Plan (P1-15 + P1-24 + P1-75 + P2-32)
@@ -286,34 +286,34 @@ public search surface cannot reach the inspectability PaveDB sells. Fix
 it in the SDK first, and the command shell formats what the transport
 already returns — no raw escape hatch on the public client API.
 
-**F5 — exit codes and error metadata are not orchestrator-ready.**
-`main_cli` turns a `ServiceError` into `{ok: false, code, error}` with
-exit 1 and leaves every other outcome at exit 0. Remotely there is a
-third class, the failure worth retrying, and the server already marks it:
-`Retry-After` on a throttled request (`pave/auth.py`), and `request_id`
-plus `latency_ms` on the error body `_error` builds (`pave/main.py`).
-`HttpClient._raise_data` keeps only `code` and `message` and never the
-status, so a caller cannot separate a missing collection from a throttled
-instance, nor correlate either with that instance's own logs.
+**F5 — exit codes and error metadata need a remote contract.**
+`main_cli` already exits 1 for `{ok: false}` results, 130 for a paused
+reindex, and 2 for argument errors; successful results exit 0. What is
+missing is a distinction between retryable and terminal remote failures.
+The server already sends `Retry-After` when throttling (`pave/auth.py`),
+and `_error` includes `request_id` and `latency_ms` (`pave/main.py`).
+But `HttpClient._raise_data` retains only `code` and `message`, dropping
+the HTTP status and diagnostic metadata. SDK callers therefore lack a
+reliable status-based retry policy and cannot correlate failures with
+server logs. Preserve this information in the SDK before defining the
+remote shell's error and exit-code contract.
 
-**F6 — the surfaces already drift both ways, so "the same CLI, remotely"
-is not deliverable.** The SDK carries tenant provisioning and key methods
-with no `pavecli` command. The offline CLI supports `reindex`, `reindex-status`,
-`reindex-resume`, and `reindex-cancel`. `pavecli` carries three operations with
-no SDK method: `reset-metrics`
-(`DELETE /v1/admin/metrics`), the catalog-wide
-`get-query`/`replay-query`, which resolve a `query_id` without naming
-its collection (`/v1/admin/queries/{query_id}`) where the SDK reaches
-only the collection-scoped routes, and `list-queries`, which browses
-the catalog's `query_home` pointer rows with tenant and collection as
-optional filters. That last one is not an SDK gap to close: P1-51
-refused `GET /v1/admin/queries` on purpose, so the HTTP API lists
-queries one collection at a time and the pointer index stays local.
-Three more commands have no remote meaning at all: `init` writes an
-instance's config, and the `admin show-key`/`rotate-key` pair reads
-and rewrites the admin key on disk. A remote shell is a subset the
-HTTP API shapes — generated and tested against the SDK's own coverage,
-never mirrored from `pavecli`'s command list.
+**F6 — a remote shell must follow shipped HTTP and SDK capabilities.**
+The SDK and `pavecli` have different coverage, but the divergence is
+not bidirectional to the extent previously claimed. The SDK exposes
+tenant provisioning and key methods, although tenant-key routes remain
+unshipped (P2-38). The local CLI has `init` and `admin show-key` /
+`rotate-key`, which operate on instance files and have no remote
+equivalent, plus `reset-metrics` (`DELETE /v1/admin/metrics`), which
+lacks an SDK method. Its catalog-wide `list-queries` uses local
+`query_home` pointers; P1-51 deliberately excluded a corresponding
+HTTP endpoint. Catalog-wide `get-query` and `replay-query` also differ
+from the SDK's collection-scoped routes. `move-collection` only renames
+within one tenant. Query export (P2-13), document versioning (P2-14),
+telemetry (P2-22), bulk deletion (P2-24), and profiles (P2-26) are
+unshipped roadmap work, not existing CLI commands. A remote shell must
+therefore be a tested subset of supported HTTP and SDK operations,
+not a mechanical copy of `pavecli`.
 
 ### Decisions
 
