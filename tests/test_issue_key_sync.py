@@ -804,3 +804,73 @@ def test_missing_reporters_requires_trailer_for_reported_issues():
     errors = issue_key_sync.missing_reporters(commits, issues)
     assert errors == [f"{'b' * 12} closes B1, reported by @ann: "
                       "add 'Reported-by: <Name> (@ann)' trailer"]
+
+
+def test_reporter_check_on_branch_push_is_read_only(monkeypatch):
+    """The standalone CI validation may not mutate issue notes or state."""
+    key = "B1"
+    sha = "b" * 40
+    class ReadOnlyGL:
+        project_id = "123"
+        def __init__(self, **kwargs):
+            assert kwargs.get("read_only") is True
+        def paged(self, path):
+            return [{
+                "title": "B1: metadata fix", "iid": 9,
+                "labels": ["reported-by::ann"],
+            }]
+        def request(self, *args, **kwargs):
+            raise AssertionError("read-only check attempted an API mutation")
+    monkeypatch.setattr(issue_key_sync, "GitLab", ReadOnlyGL)
+    monkeypatch.setattr(issue_key_sync, "local_commit_texts", lambda **kw: {
+        sha: "[fix] metadata (B1)\n\nReported-by: Reporter (@ann)"
+    })
+    monkeypatch.delenv("CI_MERGE_REQUEST_IID", raising=False)
+    assert issue_key_sync.main(["--check-reporters"]) == 0
+
+
+def test_reporter_check_fails_branch_pipeline_for_missing_trailer(monkeypatch):
+    sha = "b" * 40
+    class ReadOnlyGL:
+        project_id = "123"
+        def __init__(self, **kwargs):
+            assert kwargs.get("read_only") is True
+        def paged(self, path):
+            return [{"title": "B1: metadata fix", "iid": 9,
+                     "labels": ["reported-by::ann"]}]
+    monkeypatch.setattr(issue_key_sync, "GitLab", ReadOnlyGL)
+    monkeypatch.setattr(issue_key_sync, "local_commit_texts", lambda **kw: {
+        sha: "[fix] metadata (B1)"
+    })
+    monkeypatch.delenv("CI_MERGE_REQUEST_IID", raising=False)
+    with pytest.raises(RuntimeError, match="Missing Reported-by trailers"):
+        issue_key_sync.main(["--check-reporters"])
+
+
+def test_new_branch_checks_all_commits_since_branch_point(monkeypatch):
+    sha = "f" * 40
+    monkeypatch.setenv("CI_COMMIT_SHA", sha)
+    monkeypatch.setenv("CI_COMMIT_BEFORE_SHA", issue_key_sync.ZERO_SHA)
+    monkeypatch.setenv("CI_COMMIT_BRANCH", "bug/example")
+    monkeypatch.setenv("CI_DEFAULT_BRANCH", "main")
+    calls = []
+    def fake_sh(*args):
+        calls.append(args)
+        if args[1] == "merge-base":
+            return "a" * 40
+        if args[1] == "log":
+            return f"{sha}\x00[fix] message (B1)\x00body\x01"
+        raise AssertionError(args)
+    monkeypatch.setattr(issue_key_sync, "sh", fake_sh)
+    assert issue_key_sync.local_commit_texts(strict=True)[sha] == "[fix] message (B1)\n\nbody"
+    assert ("git", "log", "--format=%H%x00%s%x00%b%x01", f"{'a' * 40}..{sha}") in calls
+
+
+def test_read_only_gitlab_requires_no_write_token(monkeypatch):
+    monkeypatch.setenv("CI_PROJECT_ID", "123")
+    monkeypatch.delenv("GITLAB_ISSUE_TOKEN", raising=False)
+    monkeypatch.delenv("GITLAB_ISSUE_READ_TOKEN", raising=False)
+    gl = issue_key_sync.GitLab(read_only=True)
+    assert gl.token == ""
+    with pytest.raises(RuntimeError, match="read-only"):
+        gl.request("POST", "/projects/123/issues")

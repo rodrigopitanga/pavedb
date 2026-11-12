@@ -1,6 +1,10 @@
 import pytest
 
-from scripts.validate_release_announcement import validate_release_announcement
+from scripts.validate_release_announcement import (
+    prepare_release_announcement,
+    release_notes_source,
+    validate_release_announcement,
+)
 
 
 def write_release(
@@ -135,6 +139,39 @@ def test_rejects_mismatched_release_h1(tmp_path):
         validate_release_announcement("v1.0.1", tmp_path)
 
 
-def test_rejects_four_component_correction_tag(tmp_path):
-    with pytest.raises(ValueError, match="not a standard release tag"):
-        validate_release_announcement("v1.0.1.1", tmp_path)
+def test_four_component_correction_can_have_own_notes(tmp_path):
+    write_release(tmp_path, "v1.0.1.1", "PaveDB 1.0.1.1")
+    assert validate_release_announcement("v1.0.1.1", tmp_path) == "PaveDB 1.0.1.1"
+    assert release_notes_source("v1.0.1.1", tmp_path) == "v1.0.1.1"
+    assert prepare_release_announcement("v1.0.1.1", tmp_path) == "PaveDB 1.0.1.1"
+    assert (tmp_path / "release-notes.md").read_text().startswith("# PaveDB 1.0.1.1")
+
+
+def test_correction_falls_back_to_base_notes_with_correct_release_title(tmp_path):
+    write_release(tmp_path, "v1.0.1", "PaveDB 1.0.1", "English source.", "Fonte PT.")
+    assert release_notes_source("v1.0.1.4", tmp_path) == "v1.0.1"
+    assert prepare_release_announcement("v1.0.1.4", tmp_path) == "PaveDB 1.0.1.4"
+    assert (tmp_path / "release-title.txt").read_text() == "PaveDB 1.0.1.4\n"
+    notes = (tmp_path / "release-notes.md").read_text()
+    assert "# PaveDB 1.0.1.4" in notes
+    assert "English source." in notes
+    assert "Fonte PT." in notes
+    assert notes.count("# PaveDB 1.0.1.4") == 1
+
+
+def test_correction_cannot_hide_partial_bilingual_notes(tmp_path):
+    write_release(tmp_path, "v1.0.2", "PaveDB 1.0.2")
+    docs = tmp_path / "docs"
+    (docs / "RELEASE-v1.0.2.1.md").write_text("# PaveDB 1.0.2.1\n## English\nBody")
+    with pytest.raises(ValueError, match="incomplete correction"):
+        prepare_release_announcement("v1.0.2.1", tmp_path)
+
+
+def test_four_component_for_named_minor_base(tmp_path):
+    write_release(tmp_path, "v1.0.0", "PaveDB 1.0.0 — First Light")
+    assert prepare_release_announcement("v1.0.0.1", tmp_path) == "PaveDB 1.0.0.1"
+
+
+def test_historical_patchvec_correction_uses_base_notes(tmp_path):
+    write_release(tmp_path, "v0.5.4", "PatchVec 0.5.4")
+    assert prepare_release_announcement("v0.5.4.1", tmp_path) == "PatchVec 0.5.4.1"

@@ -68,13 +68,19 @@ def retry_after_delay(headers: email.message.Message | None, fallback: float) ->
 
 
 class GitLab:
-    def __init__(self) -> None:
+    def __init__(self, *, read_only: bool = False) -> None:
         self.api_url = os.environ.get("CI_API_V4_URL", "https://gitlab.com/api/v4")
         self.project_id = os.environ.get("CI_PROJECT_ID", "")
-        self.token = os.environ.get("GITLAB_ISSUE_TOKEN", "")
+        self.read_only = read_only
+        # Reporter validation can read a public project's issues anonymously;
+        # a private project can supply a restricted read_api token instead.
+        # Never pass the issue-writing token to arbitrary branch/MR code.
+        self.token = os.environ.get(
+            "GITLAB_ISSUE_READ_TOKEN" if read_only else "GITLAB_ISSUE_TOKEN", ""
+        )
         if not self.project_id:
             raise SystemExit("CI_PROJECT_ID is required")
-        if not self.token:
+        if not self.token and not read_only:
             raise SystemExit("GITLAB_ISSUE_TOKEN is required")
 
     def request(
@@ -83,8 +89,10 @@ class GitLab:
         path: str,
         data: dict[str, str] | None = None,
     ) -> object:
+        if getattr(self, "read_only", False) and method != "GET":
+            raise RuntimeError("read-only GitLab client cannot modify issues")
         encoded = None
-        headers = {"PRIVATE-TOKEN": self.token}
+        headers = {"PRIVATE-TOKEN": self.token} if self.token else {}
         if data is not None:
             encoded = urllib.parse.urlencode(data).encode()
         # Retry transient failures so a single API hiccup does not orphan a
@@ -191,7 +199,7 @@ def subject_keys(text: str) -> set[str]:
     return set(re.split(r",\s*", trail.group(1))) if trail else set()
 
 
-def local_commit_texts() -> dict[str, str]:
+def local_commit_texts(*, strict: bool = False) -> dict[str, str]:
     sha = os.environ.get("CI_COMMIT_SHA", "")
     before = os.environ.get("CI_COMMIT_BEFORE_SHA", "")
     if not sha:
@@ -200,10 +208,41 @@ def local_commit_texts() -> dict[str, str]:
     rev = sha
     if before and before != ZERO_SHA:
         rev = f"{before}..{sha}"
+    elif os.environ.get("CI_COMMIT_BRANCH") and (
+        os.environ.get("CI_COMMIT_BRANCH") != os.environ.get("CI_DEFAULT_BRANCH", "main")
+    ):
+        # CI_COMMIT_BEFORE_SHA is all zero on a new branch. Checking HEAD alone
+        # misses earlier commits in the first push; use the fork point instead.
+        default = os.environ.get("CI_DEFAULT_BRANCH", "main")
+        remote_ref = f"refs/remotes/origin/{default}"
+        try:
+            base = sh("git", "merge-base", sha, remote_ref)
+        except (OSError, subprocess.CalledProcessError):
+            # GitLab's detached checkout might not have fetched the default
+            # branch even with GIT_DEPTH=0. Fetch only when needed.
+            try:
+                subprocess.run(
+                    ["git", "fetch", "--no-tags", "origin", f"refs/heads/{default}:{remote_ref}"],
+                    check=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                base = sh("git", "merge-base", sha, remote_ref)
+            except (OSError, subprocess.CalledProcessError) as error:
+                raise RuntimeError(
+                    "Cannot establish commit range for new branch; Reported-by "
+                    "check would otherwise miss commits"
+                ) from error
+        rev = f"{base}..{sha}"
 
     try:
         raw = sh("git", "log", "--format=%H%x00%s%x00%b%x01", rev)
-    except (OSError, subprocess.CalledProcessError):
+    except (OSError, subprocess.CalledProcessError) as error:
+        if strict:
+            raise RuntimeError(
+                f"Could not inspect complete commit range {rev!r}; "
+                "refusing an incomplete Reported-by check"
+            ) from error
         msg = os.environ.get("CI_COMMIT_MESSAGE", "")
         return {sha: msg} if msg else {}
 
@@ -823,6 +862,23 @@ def selfcheck() -> int:
     return 0
 
 
+def check_reporters() -> int:
+    """Read-only Reported-by check for branch pushes and merge requests.
+
+    No issue notes, closures or roadmap updates are performed. The write path
+    is isolated in the default-branch post-success CI job.
+    """
+    gl = GitLab(read_only=True)
+    commits = (
+        mr_texts(gl) if os.environ.get("CI_MERGE_REQUEST_IID") else local_commit_texts(strict=True)
+    )
+    errors = missing_reporters(commits, issue_map(gl))
+    if errors:
+        raise RuntimeError("Missing Reported-by trailers:\n" + "\n".join(errors))
+    print(f"Reported-by checks passed for {len(commits)} commit(s)")
+    return 0
+
+
 def sync(*, reconcile_requested: bool = False) -> int:
     gl = GitLab()
     validate_review_keys(gl)
@@ -844,8 +900,6 @@ def sync(*, reconcile_requested: bool = False) -> int:
         return reconcile(gl, issues, default_branch)
 
     commit_refs = mr_texts(gl) if mr_iid else local_commit_texts()
-    if mr_iid and (errors := missing_reporters(commit_refs, issues)):
-        raise RuntimeError("Missing Reported-by trailers:\n" + "\n".join(errors))
     if on_default:
         sync_roadmap_issues(gl, issues)
     completed = completed_roadmap_keys() if on_default else set()
@@ -891,9 +945,11 @@ def main(args: list[str]) -> int:
         return selfcheck()
     if args == ["chaos-failure"]:
         return sync_chaos_failure()
+    if args == ["--check-reporters"]:
+        return check_reporters()
     if args in ([], ["--reconcile"]):
         return sync(reconcile_requested=bool(args))
-    raise SystemExit("usage: issue_key_sync.py [--reconcile|chaos-failure]")
+    raise SystemExit("usage: issue_key_sync.py [--check-reporters|--reconcile|chaos-failure]")
 
 
 if __name__ == "__main__":

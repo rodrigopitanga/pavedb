@@ -2,7 +2,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 stages:
-  - mirror
   - test
   - benchmark
   - security
@@ -30,70 +29,13 @@ variables:
   GET_SOURCES_ATTEMPTS: "3"
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   HF_HOME: "$CI_PROJECT_DIR/.cache/huggingface"
-  SAST_STAGE: security
-  SECRET_DETECTION_STAGE: security
-  SECRET_DETECTION_ENABLED: "true"
+  # Included GitLab security analyzers are assigned to `security` below.
+  # Do not rely on *_STAGE environment variables for template job stages.
 
 cache:
   paths:
     - .cache/pip
     - .cache/huggingface
-
-mirror-github:
-  stage: mirror
-  image: alpine:3.20
-  variables:
-    GITHUB_MIRROR_REPO: rodrigopitanga/pavedb
-    # Full history: the push has to prove it fast-forwards the GitHub tip,
-    # which the default shallow fetch cannot once the default branch has
-    # advanced at least GIT_DEPTH commits since the last mirrored release.
-    GIT_DEPTH: "0"
-  before_script:
-    - apk add --no-cache git
-  script:
-    - |
-      test -n "${GITHUB_MIRROR_TOKEN:-}" || {
-        echo "GITHUB_MIRROR_TOKEN is missing"
-        exit 1
-      }
-    - git remote remove github-mirror 2>/dev/null || true
-    - |
-      github_url="https://x-access-token:${GITHUB_MIRROR_TOKEN}"
-      github_url="${github_url}@github.com/${GITHUB_MIRROR_REPO}.git"
-      git remote add github-mirror "$github_url"
-    - |
-      main_ref="+refs/heads/${CI_DEFAULT_BRANCH}:"
-      main_ref="${main_ref}refs/remotes/origin/${CI_DEFAULT_BRANCH}"
-      git fetch origin "$main_ref"
-    - git fetch origin "+refs/tags/${CI_COMMIT_TAG}:refs/tags/${CI_COMMIT_TAG}"
-    - |
-      main_dst="refs/remotes/origin/${CI_DEFAULT_BRANCH}:"
-      main_dst="${main_dst}refs/heads/${CI_DEFAULT_BRANCH}"
-      git push github-mirror "$main_dst"
-    - git push github-mirror "refs/tags/${CI_COMMIT_TAG}"
-  rules:
-    - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}(\.\d{1,4})?$/'
-
-issue-key-sync:
-  stage: test
-  script:
-    - python scripts/issue_key_sync.py
-  rules:
-    - if: '$GITLAB_ISSUE_TOKEN && $CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$GITLAB_ISSUE_TOKEN && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-
-# Full reconcile: close every open issue already fixed on the default branch,
-# catching anything a push-scoped run missed (transient failure, no runner).
-# Schedule-only + GIT_DEPTH:0 so this heavier pass never loads the frequent
-# commit jobs. Add a scheduled pipeline (Build > Pipeline schedules) to run it.
-issue-reconcile:
-  stage: test
-  variables:
-    GIT_DEPTH: "0"
-  script:
-    - python scripts/issue_key_sync.py --reconcile
-  rules:
-    - if: '$GITLAB_ISSUE_TOKEN && $CI_PIPELINE_SOURCE == "schedule"'
 
 sqlite-fts:
   stage: test
@@ -116,22 +58,18 @@ sqlite-fts:
 
 validate-release-announcement:
   stage: test
+  # The helper accepts vX.Y.Z.W and, when both correction-note files are
+  # absent, validates/reuses the bilingual notes of vX.Y.Z. It still names
+  # the published GitLab/GitHub release after the actual correction tag.
   script:
-    - >-
-      python scripts/validate_release_announcement.py "$CI_COMMIT_TAG"
-      > release-title.txt
-    - |
-      {
-        cat "docs/RELEASE-${CI_COMMIT_TAG}.md"
-        sed '1d' "docs/RELEASE-${CI_COMMIT_TAG}_pt.md"
-      } > release-notes.md
+    - python scripts/validate_release_announcement.py --prepare "$CI_COMMIT_TAG"
   artifacts:
     paths:
       - release-title.txt
       - release-notes.md
     expire_in: 1 week
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}$/'
+    - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}(\.\d{1,4})?$/'
 
 # The suite runs in two tiers, the same split as `make test-fast` and
 # `make test`. The full suite outgrew a merge-path budget: on 2026-10-30 the
@@ -268,47 +206,36 @@ pytest-arm64:
     # arm64 artifact untested — the hole this job exists to close.
     - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}(\.\d{1,4})?$/'
 
-bench:
-  stage: benchmark
-  # Pinned to m4-colima, the runner pytest-arm64 already uses and leaves
-  # idle between tags: the shared xeon group runner measures ~2.3s for the
-  # same 200-query run that calibrates p99 at ~280ms on GitLab SaaS, so an
-  # unpinned job inherits that slower host's timing variance for nothing
-  # (2026-10-21: three concurrent jobs on one host, with !85's bench red on
-  # the latency gate).
-  tags:
-    - m4-colima
-  # Serialize benchmark jobs across this project too: interruptible (set
-  # above, under `default`) retires only what one ref supersedes, so two
-  # open merge requests would still time m4-colima side by side without a
-  # group of their own.
-  resource_group: bench
+# Read-only Reported-by validation, on *every* branch push and MR pipeline.
+# Previously the validation happened inside issue-key-sync, only on MRs; it
+# also wrote notes about unmerged commits. New branches require full history
+# to check all commits since their fork point, not merely the branch HEAD.
+issue-reported-by:
+  stage: test
   variables:
-    # Cold local runners download the model on first run; give startup headroom.
-    BENCH_STARTUP_TIMEOUT_S: "120"
-  # Nothing in this job reads a prior stage's artifacts: `make benchmark`
-  # builds from the checkout and starts its own ephemeral server, while the
-  # test stage publishes the suite's junit.xml and .pytest_cache for triage
-  # and, where the announce jobs run, the release title and notes those jobs
-  # fetch for themselves by naming `validate-release-announcement` in their
-  # own `dependencies` — that key takes job names, not paths. Left undeclared,
-  # GitLab fetches every one of them before `before_script` runs — a round
-  # trip to the instance this job has no other reason to make, and one that
-  # can fail on its own: on 2026-11-03 the first GET lost its DNS lookup and
-  # the job ended inside download_artifacts at 4.1m, before a single query was
-  # timed (job 17704770842, then "no files in benchmarks/results/" because the
-  # benchmark never ran). On 2026-11-04 job 17718725194 was redirected to the
-  # artifact CDN instead and stalled there 26m20s over pytest's 34 KB archive
-  # before falling back to the coordinator, then ended on an expired token
-  # during the dependency install, again with no query timed — sibling runs on
-  # this runner that went straight to the coordinator spent 1.2-4.3s on the
-  # same step. An empty list removes that step and claims nothing about the
-  # lookup or the CDN it can be redirected to. `needs: []` would empty it too,
-  # and would also release the gate from the stage it is sequenced behind, so
-  # a red suite would stop blocking it.
+    GIT_DEPTH: "0"
+  cache: []
   dependencies: []
-  # Save the pip and model caches even when the job fails or is cancelled;
-  # a red or timed-out run otherwise leaves the next one to download again.
+  # Public issues require no token; private projects can set a masked
+  # GITLAB_ISSUE_READ_TOKEN (read_api). Never expose the write-capable token
+  # to unprotected feature branches or merge request pipelines.
+  script:
+    - python scripts/issue_key_sync.py --check-reporters
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH'
+  allow_failure: false
+
+.benchmark-job:
+  stage: benchmark
+  # b97: Only actual benchmark runs occupy a runner. The old chain spawned a
+  # container (bench-gate) just to test one artifact marker, and scheduled a
+  # hosted benchmark that GitLab could not create (ci_quota_exceeded).
+  # Serialize benchmark workloads across pipelines on our runners.
+  resource_group: bench
+  dependencies: []
+  variables:
+    BENCH_STARTUP_TIMEOUT_S: "120"
   cache:
     paths:
       - .cache/pip
@@ -317,14 +244,6 @@ bench:
   before_script:
     - apt-get update -qq
     - apt-get install -y -qq curl git make
-  # The p99 ceiling is a property of the host that times the run. The job
-  # is pinned to m4-colima above, but the ceiling stays sized for the
-  # slowest host that could still pick it up if that pin ever comes off:
-  # 2000 ms was calibrated where search p99 is ~280 ms (GitLab SaaS); the
-  # shared xeon group runner measures ~2.3 s for this same 200-query run,
-  # so that ceiling was red there before any regression existed. Sized for
-  # that host the way the suite budgets are: a gross regression still
-  # trips the gate, and a red still means the server.
   script:
     - >-
       LAT_SLO_P99_MS=${LAT_SLO_P99_MS:-4000}
@@ -337,76 +256,36 @@ bench:
       STR_CONCUR=${STR_CONCUR:-4}
       TORCH_WHEEL_CPU=1
       make benchmark bench-latency-rate-limited
-      && touch benchmarks/results/.bench-ok
   artifacts:
     when: always
     paths:
       - benchmarks/results/
     expire_in: 4 weeks
-  # Best-effort on merge requests; mandatory once merged and on tags.
-  # Colima only on merge requests, best-effort. After merge and on tags an
-  # offline or failing colima (a stuck job is dropped after about an hour)
-  # hands over to bench-flowlexi, then bench-hosted; bench-gate requires one
-  # of the three to pass.
   retry:
     max: 2
     when:
       - runner_system_failure
+
+# MR diagnostic benchmark on the faster Colima runner, best-effort as before.
+bench:
+  extends: .benchmark-job
+  tags:
+    - m4-colima
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-    - if: '$CI_COMMIT_TAG'
   allow_failure: true
 
+# Mandatory after merge/on tags. One reliable flowlexi runner performs the
+# actual benchmark: no gate, no artifact relay, no hosted quota failure, no
+# duplicate benchmark when Colima succeeded. This trades Colima-first speed
+# for a deterministic mandatory check; runner failure blocks publication.
 bench-flowlexi:
-  extends: bench
+  extends: .benchmark-job
   tags:
     - flowlexi
-  needs:
-    - job: bench
-      artifacts: false
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      when: on_failure
     - if: '$CI_COMMIT_TAG'
-      when: on_failure
-  allow_failure: true
-
-bench-hosted:
-  extends: bench
-  tags:
-    - saas-linux-small-amd64
-  needs:
-    - job: bench-flowlexi
-      artifacts: false
-  rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      when: on_failure
-    - if: '$CI_COMMIT_TAG'
-      when: on_failure
-  # Hosted jobs fail at creation while the free-tier quota is exhausted;
-  # bench-gate, not this job, decides whether the pipeline passes.
-  allow_failure: true
-
-# Mandatory after merge and on tags: passes when any bench job left its
-# success marker in benchmarks/results/.
-bench-gate:
-  stage: benchmark
-  image: alpine:3.20
-  needs:
-    - job: bench
-      optional: true
-    - job: bench-flowlexi
-      optional: true
-    - job: bench-hosted
-      optional: true
-  script:
-    - test -f benchmarks/results/.bench-ok || { echo "No bench job passed."; exit 1; }
-  rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-      when: always
-    - if: '$CI_COMMIT_TAG'
-      when: always
   allow_failure: false
 
 chaos-nightly:
@@ -446,6 +325,8 @@ chaos-nightly:
 # PyPI publish for final releases only (vX.Y.Z)
 publish-pypi:
   stage: release
+  interruptible: false
+  dependencies: []
   script:
     - python -m pip install --upgrade build twine
     - python -m build
@@ -460,6 +341,8 @@ publish-pypi:
 # GitLab PyPI: all versioned tags (final, rc, alpha, beta, etc.)
 publish-gitlab-pypi:
   stage: release
+  interruptible: false
+  dependencies: []
   script:
     - python -m pip install --upgrade build twine
     - python -m build
@@ -474,6 +357,8 @@ publish-gitlab-pypi:
 # Test PyPI: release candidates only (vX.Y.Zrc0-rc999)
 publish-testpypi:
   stage: release
+  interruptible: false
+  dependencies: []
   script:
     - python -m pip install --upgrade build twine
     - python -m build
@@ -488,6 +373,7 @@ publish-testpypi:
 # Docker: release candidates (CPU only)
 publish-docker-rc:
   stage: release
+  interruptible: false
   allow_failure: true
   # GitLab-hosted amd64 first; publish-docker-rc-fallback rebuilds on flowlexi.
   tags:
@@ -497,9 +383,22 @@ publish-docker-rc:
     - docker:24.0.9-dind
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
-  before_script:
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
   script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    # The fallback runs after the primary, but rebuilds if registry tags differ.
+    - |
+      if [ "${DOCKER_FALLBACK:-0}" = "1" ]; then
+        version="${CI_COMMIT_TAG#v}"
+        image_base="$CI_REGISTRY_IMAGE/pavedb"
+        version_ref="$image_base:$version-cpu"
+        latest_ref="$image_base:latest-cpu"
+        old_manifest="$(docker manifest inspect "$version_ref" 2>/dev/null || true)"
+        latest_manifest="$(docker manifest inspect "$latest_ref" 2>/dev/null || true)"
+        if [ -n "$old_manifest" ] && [ "$old_manifest" = "$latest_manifest" ]; then
+          echo "Both image tags already match; skipping fallback."
+          exit 0
+        fi
+      fi
     - export VERSION="${CI_COMMIT_TAG#v}"
     - export IMAGE_BASE="$CI_REGISTRY_IMAGE/pavedb"
     - export IMAGE_TAG="$VERSION-cpu"
@@ -516,18 +415,21 @@ publish-docker-rc-fallback:
   extends: publish-docker-rc
   tags:
     - flowlexi
+  variables:
+    DOCKER_FALLBACK: "1"
   needs:
     - job: publish-docker-rc
       artifacts: false
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}rc\d{1,3}$/'
-      when: on_failure
+
   allow_failure: false
 
 # Docker: final releases — CPU image. The CUDA image follows in
 # publish-docker-cuda.
 publish-docker:
   stage: release
+  interruptible: false
   allow_failure: true
   # GitLab-hosted amd64 first; publish-docker-fallback rebuilds on flowlexi.
   tags:
@@ -537,9 +439,22 @@ publish-docker:
     - docker:24.0.9-dind
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
-  before_script:
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
   script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    # The fallback runs after the primary, but rebuilds if registry tags differ.
+    - |
+      if [ "${DOCKER_FALLBACK:-0}" = "1" ]; then
+        version="${CI_COMMIT_TAG#v}"
+        image_base="$CI_REGISTRY_IMAGE/pavedb"
+        version_ref="$image_base:$version-cpu"
+        latest_ref="$image_base:latest-cpu"
+        old_manifest="$(docker manifest inspect "$version_ref" 2>/dev/null || true)"
+        latest_manifest="$(docker manifest inspect "$latest_ref" 2>/dev/null || true)"
+        if [ -n "$old_manifest" ] && [ "$old_manifest" = "$latest_manifest" ]; then
+          echo "Both image tags already match; skipping fallback."
+          exit 0
+        fi
+      fi
     - export VERSION="${CI_COMMIT_TAG#v}"
     - export IMAGE_BASE="$CI_REGISTRY_IMAGE/pavedb"
     - export BUILD_ID_CPU="${CI_PIPELINE_ID:-0}-${CI_COMMIT_SHORT_SHA:-dev}-cpu"
@@ -554,18 +469,21 @@ publish-docker-fallback:
   extends: publish-docker
   tags:
     - flowlexi
+  variables:
+    DOCKER_FALLBACK: "1"
   needs:
     - job: publish-docker
       artifacts: false
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}(\.\d{1,4})?$/'
-      when: on_failure
+
   allow_failure: false
 
 # Docker: final releases — CUDA image, best-effort. It bundles NVIDIA's
 # CUDA runtime (see THIRD_PARTY_LICENSES.md); a failure leaves the release green.
 publish-docker-cuda:
   stage: release
+  interruptible: false
   allow_failure: true
   # GitLab-hosted amd64 first; publish-docker-cuda-fallback rebuilds on flowlexi.
   tags:
@@ -575,9 +493,22 @@ publish-docker-cuda:
     - docker:24.0.9-dind
   variables:
     DOCKER_TLS_CERTDIR: "/certs"
-  before_script:
-    - docker login -u "$CI_REGISTRY_USER" -p "$CI_REGISTRY_PASSWORD" "$CI_REGISTRY"
   script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    # The fallback runs after the primary, but rebuilds if registry tags differ.
+    - |
+      if [ "${DOCKER_FALLBACK:-0}" = "1" ]; then
+        version="${CI_COMMIT_TAG#v}"
+        image_base="$CI_REGISTRY_IMAGE/pavedb"
+        version_ref="$image_base:$version-cuda"
+        latest_ref="$image_base:latest-cuda"
+        old_manifest="$(docker manifest inspect "$version_ref" 2>/dev/null || true)"
+        latest_manifest="$(docker manifest inspect "$latest_ref" 2>/dev/null || true)"
+        if [ -n "$old_manifest" ] && [ "$old_manifest" = "$latest_manifest" ]; then
+          echo "Both image tags already match; skipping fallback."
+          exit 0
+        fi
+      fi
     - export VERSION="${CI_COMMIT_TAG#v}"
     - export IMAGE_BASE="$CI_REGISTRY_IMAGE/pavedb"
     - export BUILD_ID_CUDA="${CI_PIPELINE_ID:-0}-${CI_COMMIT_SHORT_SHA:-dev}-cuda"
@@ -592,16 +523,87 @@ publish-docker-cuda-fallback:
   extends: publish-docker-cuda
   tags:
     - flowlexi
+  variables:
+    DOCKER_FALLBACK: "1"
   needs:
     - job: publish-docker-cuda
       artifacts: false
   rules:
     - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}(\.\d{1,4})?$/'
-      when: on_failure
+
   allow_failure: true
+
+mirror-github:
+  stage: release
+  interruptible: false
+  dependencies: []
+  image: alpine:3.20
+  variables:
+    GITHUB_MIRROR_REPO: rodrigopitanga/pavedb
+    # Full history: the push has to prove it fast-forwards the GitHub tip,
+    # which the default shallow fetch cannot once the default branch has
+    # advanced at least GIT_DEPTH commits since the last mirrored release.
+    GIT_DEPTH: "0"
+  before_script:
+    - apk add --no-cache git
+  script:
+    - |
+      test -n "${GITHUB_MIRROR_TOKEN:-}" || {
+        echo "GITHUB_MIRROR_TOKEN is missing"
+        exit 1
+      }
+    - git remote remove github-mirror 2>/dev/null || true
+    - |
+      github_url="https://x-access-token:${GITHUB_MIRROR_TOKEN}"
+      github_url="${github_url}@github.com/${GITHUB_MIRROR_REPO}.git"
+      git remote add github-mirror "$github_url"
+    - |
+      main_ref="+refs/heads/${CI_DEFAULT_BRANCH}:"
+      main_ref="${main_ref}refs/remotes/origin/${CI_DEFAULT_BRANCH}"
+      git fetch origin "$main_ref"
+    - git fetch origin "+refs/tags/${CI_COMMIT_TAG}:refs/tags/${CI_COMMIT_TAG}"
+    - |
+      main_dst="refs/remotes/origin/${CI_DEFAULT_BRANCH}:"
+      main_dst="${main_dst}refs/heads/${CI_DEFAULT_BRANCH}"
+      git push github-mirror "$main_dst"
+    - git push github-mirror "refs/tags/${CI_COMMIT_TAG}"
+  rules:
+    - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}(\.\d{1,4})?$/'
+
+# Post-success issue writes. Only default-branch *push* pipelines qualify:
+# neither a speculative MR nor a red test/benchmark/security pipeline can
+# post commit notes or close issues. Stage ordering makes needs unnecessary.
+issue-key-sync:
+  stage: announce
+  interruptible: false
+  resource_group: issue-sync
+  cache: []
+  dependencies: []
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - python scripts/issue_key_sync.py
+  rules:
+    - if: '$GITLAB_ISSUE_TOKEN && $CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# A scheduled reconciliation also mutates issues. Keep it behind the same
+# successful-pipeline boundary and serialize against the per-push sync.
+issue-reconcile:
+  stage: announce
+  interruptible: false
+  resource_group: issue-sync
+  cache: []
+  dependencies: []
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - python scripts/issue_key_sync.py --reconcile
+  rules:
+    - if: '$GITLAB_ISSUE_TOKEN && $CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
 announce-gitlab:
   stage: announce
+  interruptible: false
   image: registry.gitlab.com/gitlab-org/cli:latest
   variables:
     GLAB_ENABLE_CI_AUTOLOGIN: "true"
@@ -614,10 +616,11 @@ announce-gitlab:
         --notes-file "release-notes.md" \
         --ref "$CI_COMMIT_SHA"
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}$/'
+    - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}(\.\d{1,4})?$/'
 
 announce-github:
   stage: announce
+  interruptible: false
   image: alpine:3.20
   variables:
     GITHUB_MIRROR_REPO: rodrigopitanga/pavedb
@@ -649,7 +652,16 @@ announce-github:
           --title "$title" --notes-file "$notes" --verify-tag
       fi
   rules:
-    - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}$/'
+    - if: '$CI_COMMIT_TAG =~ /^v\d{1,4}\.\d{1,4}\.\d{1,4}(\.\d{1,4})?$/'
+
+# The included templates default their analyzers to the `test` stage.
+# Override only their stage, retaining upstream scan rules and scripts.
+# `sast` is the parent of the SAST analyzer jobs; secret_detection is its job.
+sast:
+  stage: security
+
+secret_detection:
+  stage: security
 
 include:
   - template: Security/SAST.gitlab-ci.yml
