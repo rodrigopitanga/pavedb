@@ -570,6 +570,26 @@ release:
 	else \
 	  TAG_REMOTES="$(RELEASE_TAG_REMOTES_PRERELEASE)"; \
 	fi; \
+	echo "Pushing release commit to branch remotes..."; \
+	declare -A PUSHED_URLS_BRANCH=(); \
+	BRANCH_PUSHED=0; \
+	for remote in $$BRANCH_REMOTES; do \
+	  if url=$$(git remote get-url "$$remote" 2>/dev/null); then \
+	    if [ -n "$${PUSHED_URLS_BRANCH[$$url]+x}" ]; then \
+	      echo "Skipping duplicate remote URL: $$remote -> $$url"; \
+	      continue; \
+	    fi; \
+	    git push "$$remote" "$$BRANCH"; \
+	    PUSHED_URLS_BRANCH[$$url]=1; \
+	    BRANCH_PUSHED=1; \
+	  else \
+	    echo "Skipping missing remote: $$remote"; \
+	  fi; \
+	done; \
+	if [ "$$BRANCH_PUSHED" -ne 1 ]; then \
+	  echo "Error: no release branch was pushed"; \
+	  exit 1; \
+	fi; \
 	echo "Pushing tag v$(VERSION) to: $$TAG_REMOTES"; \
 	declare -A PUSHED_URLS=(); \
 	for remote in $$TAG_REMOTES; do \
@@ -604,21 +624,8 @@ release:
 	fi; \
 	echo "  Published: $$DOCKER_PUBLISHED"; \
 	echo "  Destination: $$DOCKER_WHERE"; \
-	echo ""; \
-	echo "Next step: push commits to branch remotes"; \
-	declare -A SHOWN_URLS=(); \
-	for remote in $$BRANCH_REMOTES; do \
-	  if url=$$(git remote get-url "$$remote" 2>/dev/null); then \
-	    if [ -n "$${SHOWN_URLS[$$url]+x}" ]; then \
-	      echo "  # skipping duplicate remote URL: $$remote -> $$url"; \
-	      continue; \
-	    fi; \
-	    SHOWN_URLS[$$url]=1; \
-	    echo "  git push $$remote $$BRANCH"; \
-	  else \
-	    echo "  # skipping missing remote: $$remote"; \
-	  fi; \
-	done
+	echo ""
+
 
 # -------- changelog --------
 # commit-msg records Reported-by from the closed issue; changelog thanks them.
